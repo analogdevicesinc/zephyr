@@ -673,6 +673,66 @@ static int adxl372_attr_set_thresh(struct device *dev, enum sensor_channel chan,
 	}
 }
 
+static int adxl372_attr_set_wakeup(struct device *dev, enum sensor_channel chan,
+				   enum sensor_attribute attr,
+				   const struct sensor_value *val)
+{
+	const struct adxl372_dev_config *cfg = dev->config->config_info;
+	enum adxl372_instant_on_th_mode threshold;
+	u32_t value;
+	s64_t micro_ms2 = val->val1 * 1000000LL + val->val2;
+	int ret;
+
+	value = abs(micro_ms2);
+
+	switch (value) {
+	case 98066500 ... 147099750: /* 10g..15g */
+		threshold = ADXL372_INSTANT_ON_LOW_TH;
+		break;
+	case 294199500 ... 392266000: /* 30g..40g */
+		threshold = ADXL372_INSTANT_ON_HIGH_TH;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	switch (chan) {
+	case SENSOR_CHAN_ACCEL_X:
+	case SENSOR_CHAN_ACCEL_Y:
+	case SENSOR_CHAN_ACCEL_Z:
+	case SENSOR_CHAN_ACCEL_XYZ:
+		ret = adxl372_set_op_mode(dev, ADXL372_FULL_BW_MEASUREMENT);
+		if (ret) {
+			return ret;
+		}
+
+		if (cfg->filter_settle == ADXL372_FILTER_SETTLE_16) {
+			value = 16 + 1;
+		} else {
+			value = 370 + 1;
+		}
+
+		k_sleep(value);
+
+		ret =  adxl372_set_instant_on_th(dev, threshold);
+		if (ret) {
+			return ret;
+		}
+
+		ret = adxl372_set_op_mode(dev, ADXL372_INSTANT_ON);
+		if (ret) {
+			return ret;
+		}
+
+		break;
+	default:
+		LOG_ERR("attr_set() not supported on this channel");
+			return -ENOTSUP;
+	}
+
+	return ret;
+}
+
 static int adxl372_attr_set(struct device *dev, enum sensor_channel chan,
 			    enum sensor_attribute attr,
 			    const struct sensor_value *val)
@@ -683,9 +743,14 @@ static int adxl372_attr_set(struct device *dev, enum sensor_channel chan,
 	case SENSOR_ATTR_UPPER_THRESH:
 	case SENSOR_ATTR_LOWER_THRESH:
 		return adxl372_attr_set_thresh(dev, chan, attr, val);
+	case SENSOR_ATTR_WAKEUP_THRESH:
+		return adxl372_attr_set_wakeup(dev, chan, attr, val);
+	case SENSOR_ATTR_WAKEUP:
+		return adxl372_set_op_mode(dev, ADXL372_FULL_BW_MEASUREMENT);
 	default:
 		return -ENOTSUP;
 	}
+
 }
 
 static int adxl372_sample_fetch(struct device *dev, enum sensor_channel chan)
