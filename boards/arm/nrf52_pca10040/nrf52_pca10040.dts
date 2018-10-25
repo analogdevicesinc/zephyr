@@ -101,6 +101,13 @@
 	status = "ok";
 	sda-pin = <26>;
 	scl-pin = <27>;
+
+	adxl372: adxl372@1d {
+		compatible = "adi,adxl372";
+		reg = <0x1d>;
+		label = "ADXL372";
+		int1-gpios = <&gpio0 17 0>;
+	};
 };
 
 &i2c1 {
