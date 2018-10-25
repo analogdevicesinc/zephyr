@@ -231,6 +231,15 @@ enum sensor_attribute {
 	 * algorithms to calibrate itself on a certain axis, or all of them.
 	 */
 	SENSOR_ATTR_CALIB_TARGET,
+	/**
+	 * Wakeup threshold. If the applied sensor motion, force, etc.
+	 * crosses this threshold, the device exists sleep or any low power
+	 * mode and enters full on or measurement mode. The device may stay
+	 * in this mode until this wakeup threshold is set again. The user
+	 * can exit this mode using the SENSOR_ATTR_WAKEUP attribute.
+	 */
+	SENSOR_ATTR_WAKEUP_THRESH,
+	SENSOR_ATTR_WAKEUP,
 };
 
 /**
