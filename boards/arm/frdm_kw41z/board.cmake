@@ -1,11 +1,13 @@
-set_ifndef(OPENSDA_FW jlink)
+# SPDX-License-Identifier: Apache-2.0
+
+set_ifndef(OPENSDA_FW daplink)
 
 if(OPENSDA_FW STREQUAL jlink)
-  set_ifndef(BOARD_DEBUG_RUNNER jlink)
-  set_ifndef(BOARD_FLASH_RUNNER jlink)
+  board_set_debugger_ifnset(jlink)
+  board_set_flasher_ifnset(jlink)
 elseif(OPENSDA_FW STREQUAL daplink)
-  set_ifndef(BOARD_DEBUG_RUNNER pyocd)
-  set_ifndef(BOARD_FLASH_RUNNER pyocd)
+  board_set_debugger_ifnset(pyocd)
+  board_set_flasher_ifnset(pyocd)
 endif()
 
 board_runner_args(jlink "--device=MKW41Z512xxx4")

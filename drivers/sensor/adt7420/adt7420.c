@@ -5,13 +5,18 @@
  */
 
 #include <device.h>
-#include <i2c.h>
-#include <misc/byteorder.h>
-#include <misc/util.h>
+#include <drivers/i2c.h>
+#include <sys/byteorder.h>
+#include <sys/util.h>
 #include <kernel.h>
-#include <sensor.h>
-#include <misc/__assert.h>
+#include <drivers/sensor.h>
+#include <sys/__assert.h>
+
 #include "adt7420.h"
+
+#define LOG_LEVEL CONFIG_SENSOR_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_REGISTER(ADT7420);
 
 static int adt7420_temp_reg_read(struct device *dev, u8_t reg, s16_t *val)
 {
@@ -44,7 +49,7 @@ static int adt7420_attr_set(struct device *dev,
 {
 	struct adt7420_data *drv_data = dev->driver_data;
 	const struct adt7420_dev_config *cfg = dev->config->config_info;
-	u8_t val8, reg = 0;
+	u8_t val8, reg = 0U;
 	u16_t rate;
 	s64_t value;
 
@@ -71,7 +76,7 @@ static int adt7420_attr_set(struct device *dev,
 					ADT7420_REG_CONFIG,
 					ADT7420_CONFIG_OP_MODE(~0),
 					ADT7420_CONFIG_OP_MODE(val8)) < 0) {
-			SYS_LOG_DBG("Failed to set attribute!");
+			LOG_DBG("Failed to set attribute!");
 			return -EIO;
 		}
 
@@ -92,7 +97,7 @@ static int adt7420_attr_set(struct device *dev,
 		value = (value / ADT7420_TEMP_SCALE) << 1;
 
 		if (adt7420_temp_reg_write(dev, reg, value) < 0) {
-			SYS_LOG_DBG("Failed to set attribute!");
+			LOG_DBG("Failed to set attribute!");
 			return -EIO;
 		}
 
@@ -161,8 +166,9 @@ static int adt7420_probe(struct device *dev)
 		return ret;
 	}
 
-	if (value != ADT7420_DEFAULT_ID)
+	if (value != ADT7420_DEFAULT_ID) {
 		return -ENODEV;
+	}
 
 	ret = i2c_reg_write_byte(drv_data->i2c, cfg->i2c_addr,
 			ADT7420_REG_CONFIG, ADT7420_CONFIG_RESOLUTION |
@@ -185,7 +191,7 @@ static int adt7420_probe(struct device *dev)
 
 #ifdef CONFIG_ADT7420_TRIGGER
 	if (adt7420_init_interrupt(dev) < 0) {
-		SYS_LOG_ERR("Failed to initialize interrupt!");
+		LOG_ERR("Failed to initialize interrupt!");
 		return -EIO;
 	}
 #endif
@@ -200,7 +206,7 @@ static int adt7420_init(struct device *dev)
 
 	drv_data->i2c = device_get_binding(cfg->i2c_port);
 	if (drv_data->i2c == NULL) {
-		SYS_LOG_DBG("Failed to get pointer to %s device!",
+		LOG_DBG("Failed to get pointer to %s device!",
 			    cfg->i2c_port);
 		return -EINVAL;
 	}
@@ -211,14 +217,14 @@ static int adt7420_init(struct device *dev)
 static struct adt7420_data adt7420_driver;
 
 static const struct adt7420_dev_config adt7420_config = {
-	.i2c_port = CONFIG_ADT7420_I2C_MASTER_DEV_NAME,
-	.i2c_addr = CONFIG_ADT7420_I2C_ADDR,
+	.i2c_port = DT_INST_0_ADI_ADT7420_BUS_NAME,
+	.i2c_addr = DT_INST_0_ADI_ADT7420_BASE_ADDRESS,
 #ifdef CONFIG_ADT7420_TRIGGER
-	.gpio_port = CONFIG_ADT7420_GPIO_DEV_NAME,
-	.int_gpio = CONFIG_ADT7420_GPIO_PIN_NUM,
+	.gpio_port = DT_INST_0_ADI_ADT7420_INT_GPIOS_CONTROLLER,
+	.int_gpio = DT_INST_0_ADI_ADT7420_INT_GPIOS_PIN,
 #endif
 };
 
-DEVICE_AND_API_INIT(adt7420, CONFIG_ADT7420_NAME, adt7420_init, &adt7420_driver,
+DEVICE_AND_API_INIT(adt7420, DT_INST_0_ADI_ADT7420_LABEL, adt7420_init, &adt7420_driver,
 		    &adt7420_config, POST_KERNEL, CONFIG_SENSOR_INIT_PRIORITY,
 		    &adt7420_driver_api);

@@ -33,6 +33,16 @@ extern "C" {
 /** @brief Flag forcing severity level prefix. */
 #define LOG_OUTPUT_FLAG_LEVEL			BIT(3)
 
+/** @brief Flag preventing the logger from adding CR and LF characters. */
+#define LOG_OUTPUT_FLAG_CRLF_NONE		BIT(4)
+
+/** @brief Flag forcing a single LF character for line breaks. */
+#define LOG_OUTPUT_FLAG_CRLF_LFONLY		BIT(5)
+
+/** @brief Flag forcing syslog format specified in RFC 5424
+ */
+#define LOG_OUTPUT_FLAG_FORMAT_SYSLOG		BIT(6)
+
 /**
  * @brief Prototype of the function processing output data.
  *
@@ -40,7 +50,11 @@ extern "C" {
  * @param length Data length.
  * @param ctx  User context.
  *
- * @return Number of bytes processed.
+ * @return Number of bytes processed, dropped or discarded.
+ *
+ * @note If the log output function cannot process all of the data, it is
+ *       its responsibility to mark them as dropped or discarded by returning
+ *       the corresponding number of bytes dropped or discarded to the caller.
  */
 typedef int (*log_output_func_t)(u8_t *buf, size_t size, void *ctx);
 
@@ -48,6 +62,7 @@ typedef int (*log_output_func_t)(u8_t *buf, size_t size, void *ctx);
 struct log_output_control_block {
 	size_t offset;
 	void *ctx;
+	const char *hostname;
 };
 
 /** @brief Log_output instance structure. */
@@ -87,6 +102,51 @@ void log_output_msg_process(const struct log_output *log_output,
 			    struct log_msg *msg,
 			    u32_t flags);
 
+/** @brief Process log string
+ *
+ * Function is formatting provided string adding optional prefixes and
+ * postfixes.
+ *
+ * @param log_output Pointer to log_output instance.
+ * @param src_level  Log source and level structure.
+ * @param timestamp  Timestamp.
+ * @param fmt        String.
+ * @param ap         String arguments.
+ * @param flags      Optional flags.
+ *
+ */
+void log_output_string(const struct log_output *log_output,
+		       struct log_msg_ids src_level, u32_t timestamp,
+		       const char *fmt, va_list ap, u32_t flags);
+
+/** @brief Process log hexdump
+ *
+ * Function is formatting provided hexdump adding optional prefixes and
+ * postfixes.
+ *
+ * @param log_output Pointer to log_output instance.
+ * @param src_level  Log source and level structure.
+ * @param timestamp  Timestamp.
+ * @param metadata   String.
+ * @param data       Data.
+ * @param length     Data length.
+ * @param flags      Optional flags.
+ *
+ */
+void log_output_hexdump(const struct log_output *log_output,
+			     struct log_msg_ids src_level, u32_t timestamp,
+			     const char *metadata, const u8_t *data,
+			     u32_t length, u32_t flags);
+
+/** @brief Process dropped messages indication.
+ *
+ * Function prints error message indicating lost log messages.
+ *
+ * @param log_output Pointer to the log output instance.
+ * @param cnt        Number of dropped messages.
+ */
+void log_output_dropped_process(const struct log_output *log_output, u32_t cnt);
+
 /** @brief Flush output buffer.
  *
  * @param log_output Pointer to the log output instance.
@@ -104,6 +164,16 @@ static inline void log_output_ctx_set(const struct log_output *log_output,
 	log_output->control_block->ctx = ctx;
 }
 
+/** @brief Function for setting hostname of this device
+ *
+ * @param log_output	Pointer to the log output instance.
+ * @param hostname	Hostname of this device
+ */
+static inline void log_output_hostname_set(const struct log_output *log_output,
+					   const char *hostname)
+{
+	log_output->control_block->hostname = hostname;
+}
 
 /** @brief Set timestamp frequency.
  *

@@ -6,8 +6,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define LOG_MODULE_NAME net_test
-#define NET_LOG_LEVEL CONFIG_NET_DHCPV4_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_REGISTER(net_test, CONFIG_NET_DHCPV4_LOG_LEVEL);
 
 #include <zephyr.h>
 #include <linker/sections.h>
@@ -25,7 +25,10 @@
 #include <net/dhcpv4.h>
 #include <net/ethernet.h>
 #include <net/net_mgmt.h>
-#include <net/udp.h>
+#include <net/dummy.h>
+
+#include "ipv4.h"
+#include "udp_internal.h"
 
 #include <tc_util.h>
 #include <ztest.h>
@@ -137,10 +140,6 @@ static const unsigned char ack[382] = {
 0x56, 0x8f, 0xb6, 0xfa, 0x69, 0xff
 };
 
-static const struct net_eth_addr src_addr = {
-	{ 0x00, 0x00, 0x5E, 0x00, 0x53, 0x01 } };
-static const struct net_eth_addr dst_addr = {
-	{ 0x00, 0x00, 0x5E, 0x00, 0x53, 0x02 } };
 static const struct in_addr server_addr = { { { 192, 0, 2, 1 } } };
 static const struct in_addr client_addr = { { { 255, 255, 255, 255 } } };
 
@@ -155,14 +154,9 @@ struct dhcp_msg {
 	u8_t type;
 };
 
-static void test_result(bool pass)
-{
-	if (pass) {
-		TC_END_REPORT(TC_PASS);
-	} else {
-		TC_END_REPORT(TC_PASS);
-	}
-}
+static struct k_sem test_lock;
+
+#define WAIT_TIME K_SECONDS(CONFIG_NET_DHCPV4_INITIAL_DELAY_MAX + 1)
 
 struct net_dhcpv4_context {
 	u8_t mac_addr[sizeof(struct net_eth_addr)];
@@ -202,130 +196,40 @@ static void net_dhcpv4_iface_init(struct net_if *iface)
 	net_if_set_link_addr(iface, mac, 6, NET_LINK_ETHERNET);
 }
 
-static struct net_buf *pkt_get_data(struct net_pkt *pkt, struct net_if *iface)
-{
-	struct net_buf *frag;
-	struct net_eth_hdr *hdr;
-
-	net_pkt_set_ll_reserve(pkt, net_if_get_ll_reserve(iface, NULL));
-
-	frag = net_pkt_get_frag(pkt, K_FOREVER);
-	if (!frag) {
-		return NULL;
-	}
-
-	hdr = (struct net_eth_hdr *)(frag->data - net_pkt_ll_reserve(pkt));
-	hdr->type = htons(NET_ETH_PTYPE_IP);
-
-	net_ipaddr_copy(&hdr->dst, &src_addr);
-	net_ipaddr_copy(&hdr->src, &dst_addr);
-
-	return frag;
-}
-
-static void set_ipv4_header(struct net_pkt *pkt)
-{
-	struct net_ipv4_hdr *ipv4;
-	u16_t length;
-
-	ipv4 = NET_IPV4_HDR(pkt);
-
-	ipv4->vhl = 0x45; /* IP version and header length */
-	ipv4->tos = 0x00;
-
-	length = sizeof(offer) + sizeof(struct net_ipv4_hdr) +
-		 sizeof(struct net_udp_hdr);
-
-	ipv4->len = htons(length);
-
-	(void)memset(ipv4->id, 0, 4); /* id and offset */
-
-	ipv4->ttl = 0xFF;
-	ipv4->proto = IPPROTO_UDP;
-
-	net_ipaddr_copy(&ipv4->src, &server_addr);
-	net_ipaddr_copy(&ipv4->dst, &client_addr);
-}
-
-static void set_udp_header(struct net_pkt *pkt)
-{
-	struct net_udp_hdr *udp;
-	u16_t length;
-
-	udp = (struct net_udp_hdr *)((u8_t *)(NET_IPV4_HDR(pkt)) +
-				     sizeof(struct net_ipv4_hdr));
-
-	udp->src_port = htons(SERVER_PORT);
-	udp->dst_port = htons(CLIENT_PORT);
-
-	length = sizeof(offer) + sizeof(struct net_udp_hdr);
-	udp->len = htons(length);
-	udp->chksum = 0;
-}
-
 struct net_pkt *prepare_dhcp_offer(struct net_if *iface, u32_t xid)
 {
 	struct net_pkt *pkt;
-	struct net_buf *frag;
-	int bytes, remaining = sizeof(offer), pos = 0;
-	u16_t offset;
 
-	pkt = net_pkt_get_reserve_rx(0, K_FOREVER);
+	pkt = net_pkt_alloc_with_buffer(iface, sizeof(offer), AF_INET,
+					IPPROTO_UDP, K_FOREVER);
 	if (!pkt) {
 		return NULL;
 	}
 
-	frag = pkt_get_data(pkt, iface);
-	if (!frag) {
-		net_pkt_unref(pkt);
-		return NULL;
+	net_pkt_set_ipv4_ttl(pkt, 0xFF);
+
+	if (net_ipv4_create(pkt, &server_addr, &client_addr) ||
+	    net_udp_create(pkt, htons(SERVER_PORT), htons(CLIENT_PORT))) {
+		goto fail;
 	}
 
-	net_pkt_set_iface(pkt, iface);
-	net_pkt_set_ll_reserve(pkt, net_buf_headroom(frag));
-	net_pkt_set_family(pkt, AF_INET);
-	net_pkt_set_ip_hdr_len(pkt, sizeof(struct net_ipv4_hdr));
-
-	net_pkt_frag_add(pkt, frag);
-
-	/* Place the IPv4 header */
-	set_ipv4_header(pkt);
-
-	/* Place the UDP header */
-	set_udp_header(pkt);
-
-	net_buf_add(frag, NET_IPV4UDPH_LEN);
-	offset = NET_IPV4UDPH_LEN;
-
-	while (remaining > 0) {
-		int copy;
-
-		bytes = net_buf_tailroom(frag);
-		copy = remaining > bytes ? bytes : remaining;
-
-		memcpy(frag->data + offset, &offer[pos], copy);
-
-		net_buf_add(frag, copy);
-
-		pos += bytes;
-		remaining -= bytes;
-
-		if (remaining > 0) {
-			frag = pkt_get_data(pkt, iface);
-			if (!frag) {
-				goto fail;
-			}
-
-			offset = 0;
-			net_pkt_frag_add(pkt, frag);
-		}
+	if (net_pkt_write(pkt, offer, 4)) {
+		goto fail;
 	}
 
-	/* Now fixup the expect XID */
-	frag = net_pkt_write_be32(pkt, pkt->frags,
-				   (sizeof(struct net_ipv4_hdr) +
-				    sizeof(struct net_udp_hdr)) + 4,
-				   &offset, xid);
+	/* Update xid from the client request */
+	if (net_pkt_write_be32(pkt, xid)) {
+		goto fail;
+	}
+
+	if (net_pkt_write(pkt, offer + 8, sizeof(offer) - 8)) {
+		goto fail;
+	}
+
+	net_pkt_cursor_init(pkt);
+
+	net_ipv4_finalize(pkt, IPPROTO_UDP);
+
 	return pkt;
 
 fail:
@@ -336,66 +240,37 @@ fail:
 struct net_pkt *prepare_dhcp_ack(struct net_if *iface, u32_t xid)
 {
 	struct net_pkt *pkt;
-	struct net_buf *frag;
-	int bytes, remaining = sizeof(ack), pos = 0;
-	u16_t offset;
 
-	pkt = net_pkt_get_reserve_rx(0, K_FOREVER);
+	pkt = net_pkt_alloc_with_buffer(iface, sizeof(offer), AF_INET,
+					IPPROTO_UDP, K_FOREVER);
 	if (!pkt) {
 		return NULL;
 	}
 
-	frag = pkt_get_data(pkt, iface);
-	if (!frag) {
-		net_pkt_unref(pkt);
-		return NULL;
+	net_pkt_set_ipv4_ttl(pkt, 0xFF);
+
+	if (net_ipv4_create(pkt, &server_addr, &client_addr) ||
+	    net_udp_create(pkt, htons(SERVER_PORT), htons(CLIENT_PORT))) {
+		goto fail;
 	}
 
-	net_pkt_set_iface(pkt, iface);
-	net_pkt_set_ll_reserve(pkt, net_buf_headroom(frag));
-	net_pkt_set_family(pkt, AF_INET);
-	net_pkt_set_ip_hdr_len(pkt, sizeof(struct net_ipv4_hdr));
-
-	net_pkt_frag_add(pkt, frag);
-
-	/* Place the IPv4 header */
-	set_ipv4_header(pkt);
-
-	/* Place the UDP header */
-	set_udp_header(pkt);
-
-	net_buf_add(frag, NET_IPV4UDPH_LEN);
-	offset = NET_IPV4UDPH_LEN;
-
-	while (remaining > 0) {
-		int copy;
-
-		bytes = net_buf_tailroom(frag);
-		copy = remaining > bytes ? bytes : remaining;
-
-		memcpy(frag->data + offset, &ack[pos], copy);
-
-		net_buf_add(frag, copy);
-
-		pos += bytes;
-		remaining -= bytes;
-
-		if (remaining > 0) {
-			frag = pkt_get_data(pkt, iface);
-			if (!frag) {
-				goto fail;
-			}
-
-			offset = 0;
-			net_pkt_frag_add(pkt, frag);
-		}
+	if (net_pkt_write(pkt, ack, 4)) {
+		goto fail;
 	}
 
-	/* Now fixup the expect XID */
-	frag = net_pkt_write_be32(pkt, pkt->frags,
-				   (sizeof(struct net_ipv4_hdr) +
-				    sizeof(struct net_udp_hdr)) + 4,
-				   &offset, xid);
+	/* Update xid from the client request */
+	if (net_pkt_write_be32(pkt, xid)) {
+		goto fail;
+	}
+
+	if (net_pkt_write(pkt, ack + 8, sizeof(ack) - 8)) {
+		goto fail;
+	}
+
+	net_pkt_cursor_init(pkt);
+
+	net_ipv4_finalize(pkt, IPPROTO_UDP);
+
 	return pkt;
 
 fail:
@@ -405,66 +280,58 @@ fail:
 
 static int parse_dhcp_message(struct net_pkt *pkt, struct dhcp_msg *msg)
 {
-	struct net_buf *frag = pkt->frags;
-	u8_t type;
-	u16_t offset;
-
-	frag = net_frag_skip(frag, 0, &offset,
-			   /* size of op, htype, hlen, hops */
-			   (sizeof(struct net_ipv4_hdr) +
-			    sizeof(struct net_udp_hdr)) + 4);
-	if (!frag) {
+	/* Skip IPv4 and UDP headers */
+	if (net_pkt_skip(pkt, NET_IPV4UDPH_LEN)) {
 		return 0;
 	}
 
-	frag = net_frag_read_be32(frag, offset, &offset, &msg->xid);
-	if (!frag) {
+	/* Skip DHCPv4 headers (size of op, htype, hlen, hops) */
+	if (net_pkt_skip(pkt, 4)) {
 		return 0;
 	}
 
-	frag = net_frag_skip(frag, offset, &offset,
-			   /* size of op, htype ... cookie */
-			   (36 + 64 + 128 + 4));
-	if (!frag) {
+	if (net_pkt_read_be32(pkt, &msg->xid)) {
 		return 0;
 	}
 
-	while (frag) {
-		u8_t length;
+	/* Skip DHCPv4 Options (size of op, htype, ... cookie) */
+	if (net_pkt_skip(pkt, 36 + 64 + 128 + 4)) {
+		return 0;
+	}
 
-		frag = net_frag_read_u8(frag, offset, &offset, &type);
-		if (!frag) {
+	while (1) {
+		u8_t length = 0U;
+		u8_t type;
+
+		if (net_pkt_read_u8(pkt, &type)) {
 			return 0;
 		}
 
 		if (type == MSG_TYPE) {
-			frag = net_frag_skip(frag, offset, &offset, 1);
-			if (!frag) {
+			if (net_pkt_skip(pkt, 1)) {
 				return 0;
 			}
 
-			frag = net_frag_read_u8(frag, offset, &offset,
-						&msg->type);
-			if (!frag) {
+			if (net_pkt_read_u8(pkt, &msg->type)) {
 				return 0;
 			}
 
 			return 1;
 		}
 
-		frag = net_frag_read_u8(frag, offset, &offset, &length);
-		if (frag) {
-			frag = net_frag_skip(frag, offset, &offset, length);
-			if (!frag) {
-				return 0;
-			}
+		if (net_pkt_read_u8(pkt, &length)) {
+			return 0;
+		}
+
+		if (length && net_pkt_skip(pkt, length)) {
+			return 0;
 		}
 	}
 
 	return 0;
 }
 
-static int tester_send(struct net_if *iface, struct net_pkt *pkt)
+static int tester_send(struct device *dev, struct net_pkt *pkt)
 {
 	struct net_pkt *rpkt;
 	struct dhcp_msg msg;
@@ -481,36 +348,34 @@ static int tester_send(struct net_if *iface, struct net_pkt *pkt)
 
 	if (msg.type == DISCOVER) {
 		/* Reply with DHCPv4 offer message */
-		rpkt = prepare_dhcp_offer(iface, msg.xid);
+		rpkt = prepare_dhcp_offer(net_pkt_iface(pkt), msg.xid);
 		if (!rpkt) {
 			return -EINVAL;
 		}
 	} else if (msg.type == REQUEST) {
 		/* Reply with DHCPv4 ACK message */
-		rpkt = prepare_dhcp_ack(iface, msg.xid);
+		rpkt = prepare_dhcp_ack(net_pkt_iface(pkt), msg.xid);
 		if (!rpkt) {
 			return -EINVAL;
 		}
-
 	} else {
 		/* Invalid message type received */
 		return -EINVAL;
 	}
 
-	if (net_recv_data(iface, rpkt)) {
+	if (net_recv_data(net_pkt_iface(rpkt), rpkt)) {
 		net_pkt_unref(rpkt);
 
 		return -EINVAL;
 	}
 
-	net_pkt_unref(pkt);
-	return NET_OK;
+	return 0;
 }
 
 struct net_dhcpv4_context net_dhcpv4_context_data;
 
-static struct net_if_api net_dhcpv4_if_api = {
-	.init = net_dhcpv4_iface_init,
+static struct dummy_api net_dhcpv4_if_api = {
+	.iface_api.init = net_dhcpv4_iface_init,
 	.send = tester_send,
 };
 
@@ -530,14 +395,15 @@ static void receiver_cb(struct net_mgmt_event_callback *cb,
 		return;
 	}
 
-	test_result(true);
+	k_sem_give(&test_lock);
 }
 
 void test_dhcp(void)
 {
 	struct net_if *iface;
 
-	k_thread_priority_set(k_current_get(), K_PRIO_COOP(7));
+	k_sem_init(&test_lock, 0, UINT_MAX);
+
 	net_mgmt_init_event_callback(&rx_cb, receiver_cb,
 				     NET_EVENT_IPV4_ADDR_ADD);
 
@@ -545,13 +411,14 @@ void test_dhcp(void)
 
 	iface = net_if_get_default();
 	if (!iface) {
-		TC_PRINT("Interface not available n");
-		return;
+		zassert_true(false, "Interface not available");
 	}
 
 	net_dhcpv4_start(iface);
 
-	k_yield();
+	if (k_sem_take(&test_lock, WAIT_TIME)) {
+		zassert_true(false, "Timeout while waiting");
+	}
 }
 
 /**test case main entry */

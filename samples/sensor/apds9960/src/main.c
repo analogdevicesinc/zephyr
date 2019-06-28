@@ -6,10 +6,10 @@
  */
 
 #include <zephyr.h>
-#include <sensor.h>
+#include <drivers/sensor.h>
 #include <device.h>
 #include <stdio.h>
-#include <misc/printk.h>
+#include <sys/printk.h>
 
 #ifdef CONFIG_APDS9960_TRIGGER
 K_SEM_DEFINE(sem, 0, 1);
@@ -29,7 +29,7 @@ void main(void)
 	struct sensor_value intensity, pdata;
 
 	printk("APDS9960 sample application\n");
-	dev = device_get_binding(CONFIG_APDS9960_DRV_NAME);
+	dev = device_get_binding(DT_INST_0_AVAGO_APDS9960_LABEL);
 	if (!dev) {
 		printk("sensor: device not found.\n");
 		return;
@@ -79,11 +79,11 @@ void main(void)
 		u32_t p_state;
 
 		p_state = DEVICE_PM_LOW_POWER_STATE;
-		device_set_power_state(dev, p_state);
+		device_set_power_state(dev, p_state, NULL, NULL);
 		printk("set low power state for 2s\n");
 		k_sleep(2000);
 		p_state = DEVICE_PM_ACTIVE_STATE;
-		device_set_power_state(dev, p_state);
+		device_set_power_state(dev, p_state, NULL, NULL);
 #endif
 	}
 }

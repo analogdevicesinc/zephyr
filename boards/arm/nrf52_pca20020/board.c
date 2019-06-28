@@ -5,9 +5,8 @@
  */
 
 #include <init.h>
-#include <board.h>
-#include <gpio.h>
-#include <misc/printk.h>
+#include <drivers/gpio.h>
+#include <sys/printk.h>
 
 #define VDD_PWR_CTRL_GPIO_PIN 30
 #define CCS_VDD_PWR_CTRL_GPIO_PIN 10
@@ -41,7 +40,7 @@ static int pwr_ctrl_init(struct device *dev)
  * from the VDD power rail. Both of these power rails need to be enabled before
  * the sensor driver init can be performed. The VDD rail also has to be powered up
  * before the CCS_VDD rail. These checks are to enforce the power up sequence
- * constraits.
+ * constraints.
  */
 
 #if CONFIG_BOARD_VDD_PWR_CTRL_INIT_PRIORITY <= CONFIG_GPIO_NRF_INIT_PRIORITY
@@ -50,7 +49,7 @@ static int pwr_ctrl_init(struct device *dev)
 #endif
 
 static const struct pwr_ctrl_cfg vdd_pwr_ctrl_cfg = {
-	.port = CONFIG_GPIO_P0_DEV_NAME,
+	.port = DT_GPIO_P0_DEV_NAME,
 	.pin = VDD_PWR_CTRL_GPIO_PIN,
 };
 
@@ -68,7 +67,7 @@ DEVICE_INIT(vdd_pwr_ctrl_init, "", pwr_ctrl_init, NULL, &vdd_pwr_ctrl_cfg,
 #endif
 
 static const struct pwr_ctrl_cfg ccs_vdd_pwr_ctrl_cfg = {
-	.port = CONFIG_GPIO_SX1509B_DEV_NAME,
+	.port = DT_INST_0_SEMTECH_SX1509B_LABEL,
 	.pin = CCS_VDD_PWR_CTRL_GPIO_PIN,
 };
 

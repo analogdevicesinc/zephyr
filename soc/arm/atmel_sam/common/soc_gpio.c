@@ -8,7 +8,7 @@
  * module HAL driver.
  */
 
-#include <misc/__assert.h>
+#include <sys/__assert.h>
 #include "soc_gpio.h"
 
 /*
@@ -54,7 +54,7 @@ static void configure_common_attr(Pio *pio, u32_t mask, u32_t flags)
 static void configure_input_attr(Pio *pio, u32_t mask, u32_t flags)
 {
 	/* Configure input filter */
-	if ((flags & SOC_GPIO_IN_FILTER_MASK) != 0) {
+	if ((flags & SOC_GPIO_IN_FILTER_MASK) != 0U) {
 		if ((flags & SOC_GPIO_IN_FILTER_MASK) == SOC_GPIO_IN_FILTER_DEBOUNCE) {
 			/* Enable de-bounce, disable de-glitch */
 #if defined PIO_IFSCER_P0

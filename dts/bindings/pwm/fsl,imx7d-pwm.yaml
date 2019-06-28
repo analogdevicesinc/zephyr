@@ -3,9 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: i.MX7D PWM
-id: fsl,imx7d-pwm
 version: 0.1
 
 description: >
@@ -19,16 +18,10 @@ properties:
       constraint: "fsl,imx7d-pwm"
 
     reg:
-      type: array
-      description: mmio register space
-      generation: define
       category: required
 
     interrupts:
-      type: array
       category: required
-      description: required interrupts
-      generation: define
 
     prescaler:
      type: int
@@ -42,4 +35,7 @@ properties:
      description: Set the RDC permission for this peripheral
      generation: define
 
-...
+"#cells":
+  - channel
+# period in terms of nanoseconds
+  - period

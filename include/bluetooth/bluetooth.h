@@ -19,8 +19,8 @@
 
 #include <stdbool.h>
 #include <string.h>
-#include <misc/printk.h>
-#include <misc/util.h>
+#include <sys/printk.h>
+#include <sys/util.h>
 #include <net/buf.h>
 #include <bluetooth/hci.h>
 #include <bluetooth/crypto.h>
@@ -29,6 +29,13 @@
 extern "C" {
 #endif
 
+/**
+ * @brief Generic Access Profile
+ * @defgroup bt_gap Generic Access Profile
+ * @ingroup bluetooth
+ * @{
+ */
+
 /** @def BT_ID_DEFAULT
  *
  *  Convenience macro for specifying the default identity. This helps
@@ -36,13 +43,6 @@ extern "C" {
  *  supported.
  */
 #define BT_ID_DEFAULT 0
-
-/**
- * @brief Generic Access Profile
- * @defgroup bt_gap Generic Access Profile
- * @ingroup bluetooth
- * @{
- */
 
 /**
  * @typedef bt_ready_cb_t
@@ -277,6 +277,17 @@ enum {
 	 *  bt_conn_create_slave_le().
 	 */
 	BT_LE_ADV_OPT_DIR_MODE_LOW_DUTY = BIT(4),
+
+	/** Enable use of Resolvable Private Address (RPA) as the target address
+	 *  in directed advertisements when CONFIG_BT_PRIVACY is not enabled.
+	 *  This is required if the remote device is privacy-enabled and
+	 *  supports address resolution of the target address in directed
+	 *  advertisement.
+	 *  It is the responsibility of the application to check that the remote
+	 *  device supports address resolution of directed advertisements by
+	 *  reading its Central Address Resolution characteristic.
+	 */
+	BT_LE_ADV_OPT_DIR_ADDR_RPA = BIT(5),
 };
 
 /** LE Advertising Parameters. */
@@ -343,10 +354,29 @@ struct bt_le_adv_param {
  *  @param sd_len Number of elements in sd
  *
  *  @return Zero on success or (negative) error code otherwise.
+ *  @return -ECONNREFUSED When connectable advertising is requested and there
+ *			  is already maximum number of connections established.
+ *			  This error code is only guaranteed when using Zephyr
+ *			  controller, for other controllers code returned in
+ *			  this case may be -EIO.
  */
 int bt_le_adv_start(const struct bt_le_adv_param *param,
 		    const struct bt_data *ad, size_t ad_len,
 		    const struct bt_data *sd, size_t sd_len);
+
+/** @brief Update advertising
+ *
+ *  Update advertisement and scan response data.
+ *
+ *  @param ad Data to be used in advertisement packets.
+ *  @param ad_len Number of elements in ad
+ *  @param sd Data to be used in scan response packets.
+ *  @param sd_len Number of elements in sd
+ *
+ *  @return Zero on success or (negative) error code otherwise.
+ */
+int bt_le_adv_update_data(const struct bt_data *ad, size_t ad_len,
+			  const struct bt_data *sd, size_t sd_len);
 
 /** @brief Stop advertising
  *
@@ -365,7 +395,7 @@ int bt_le_adv_stop(void);
  *  @param addr Advertiser LE address and type.
  *  @param rssi Strength of advertiser signal.
  *  @param adv_type Type of advertising response from advertiser.
- *  @param data Buffer containing advertiser data.
+ *  @param buf Buffer containing advertiser data.
  */
 typedef void bt_le_scan_cb_t(const bt_addr_le_t *addr, s8_t rssi,
 			     u8_t adv_type, struct net_buf_simple *buf);
@@ -467,11 +497,24 @@ void bt_data_parse(struct net_buf_simple *ad,
 		   bool (*func)(struct bt_data *data, void *user_data),
 		   void *user_data);
 
+/** OOB data that is specific for LE SC pairing method. */
+struct bt_le_oob_sc_data {
+	/** Random Number. */
+	u8_t r[16];
+
+	/** Confirm Value. */
+	u8_t c[16];
+};
+
+/** General OOB data. */
 struct bt_le_oob {
 	/** LE address. If local privacy is enabled this is Resolvable Private
 	 *  Address.
 	 */
 	bt_addr_le_t addr;
+
+	/** OOB data that are relevant for LESC pairing. */
+	struct bt_le_oob_sc_data le_sc_data;
 };
 
 /**
@@ -486,6 +529,9 @@ struct bt_le_oob {
  *
  * @param id  Local identity, in most cases BT_ID_DEFAULT.
  * @param oob LE related information
+ *
+ *  @return Zero on success or error code otherwise, positive in case
+ *  of protocol error or negative (POSIX) in case of stack internal error
  */
 int bt_le_oob_get_local(u8_t id, struct bt_le_oob *oob);
 

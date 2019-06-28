@@ -6,39 +6,40 @@
 
 #include <kernel.h>
 #include <stdio.h>
-#include <misc/printk.h>
-#include <shell/legacy_shell.h>
+#include <sys/printk.h>
+#include <shell/shell.h>
+#include <shell/shell_uart.h>
+
 #include <openthread/cli.h>
-#include <platform.h>
+#include <openthread/instance.h>
 
 #include "platform-zephyr.h"
-
-#define OT_SHELL_MODULE "ot"
 
 #define OT_SHELL_BUFFER_SIZE 256
 
 static char rx_buffer[OT_SHELL_BUFFER_SIZE];
+
+static const struct shell *shell_p;
 
 int otConsoleOutputCallback(const char *aBuf, uint16_t aBufLength,
 			    void *aContext)
 {
 	ARG_UNUSED(aContext);
 
-	printk("%s", aBuf);
+	shell_fprintf(shell_p, SHELL_NORMAL, "%s", aBuf);
 
 	return aBufLength;
 }
 
-static int ot_cmd(int argc, char *argv[])
+#define SHELL_HELP_OT	"OpenThread subcommands\n" \
+			"Use \"ot help\" to get the list of subcommands"
+
+static int ot_cmd(const struct shell *shell, size_t argc, char *argv[])
 {
 	char *buf_ptr = rx_buffer;
 	size_t buf_len = OT_SHELL_BUFFER_SIZE;
 	size_t arg_len = 0;
 	int i;
-
-	if (argc < 2) {
-		return -1;
-	}
 
 	for (i = 1; i < argc; i++) {
 		if (arg_len) {
@@ -52,8 +53,9 @@ static int ot_cmd(int argc, char *argv[])
 		arg_len = snprintf(buf_ptr, buf_len, "%s", argv[i]);
 
 		if (arg_len >= buf_len) {
-			printk("OT shell buffer full\n");
-			return -1;
+			shell_fprintf(shell, SHELL_WARNING,
+				      "OT shell buffer full\n");
+			return -ENOEXEC;
 		}
 	}
 
@@ -61,19 +63,16 @@ static int ot_cmd(int argc, char *argv[])
 		buf_len -= arg_len;
 	}
 
+	shell_p = shell;
 	otCliConsoleInputLine(rx_buffer, OT_SHELL_BUFFER_SIZE - buf_len);
 
 	return 0;
 }
 
-static struct shell_cmd ot_commands[] = {
-	{ "cmd", ot_cmd, "OpenThread command" },
-	{NULL, NULL, NULL}
-};
+SHELL_CMD_ARG_REGISTER(ot, NULL, SHELL_HELP_OT, ot_cmd, 2, 255);
 
 void platformShellInit(otInstance *aInstance)
 {
-	SHELL_REGISTER(OT_SHELL_MODULE, ot_commands);
 	otCliConsoleInit(aInstance, otConsoleOutputCallback, NULL);
 }
 

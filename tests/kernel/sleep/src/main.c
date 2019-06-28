@@ -7,7 +7,7 @@
 #include <tc_util.h>
 #include <ztest.h>
 #include <arch/cpu.h>
-#include <misc/util.h>
+#include <sys/util.h>
 #include <irq_offload.h>
 #include <stdbool.h>
 
@@ -22,7 +22,7 @@
 
 #define ONE_SECOND		(MSEC_PER_SEC)
 #define ONE_SECOND_ALIGNED	\
-	(u32_t)(__ticks_to_ms(_ms_to_ticks(ONE_SECOND) + _TICK_ALIGN))
+	(u32_t)(__ticks_to_ms(z_ms_to_ticks(ONE_SECOND) + _TICK_ALIGN))
 
 static struct k_sem test_thread_sem;
 static struct k_sem helper_thread_sem;
@@ -73,7 +73,7 @@ static void align_to_tick_boundary(void)
 	while (k_uptime_get_32() == tick) {
 		/* Busy wait to align to tick boundary */
 #if defined(CONFIG_ARCH_POSIX)
-		posix_halt_cpu();
+		k_busy_wait(50);
 #endif
 	}
 
@@ -233,10 +233,13 @@ void test_sleep(void)
 	status = TC_PASS;
 }
 
+extern void test_usleep(void);
+
 /*test case main entry*/
 void test_main(void)
 {
 	ztest_test_suite(sleep,
-			 ztest_unit_test(test_sleep));
+			 ztest_unit_test(test_sleep),
+			 ztest_unit_test(test_usleep));
 	ztest_run_test_suite(sleep);
 }

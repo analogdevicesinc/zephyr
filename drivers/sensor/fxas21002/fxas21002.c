@@ -5,8 +5,12 @@
  */
 
 #include "fxas21002.h"
-#include <misc/util.h>
-#include <misc/__assert.h>
+#include <sys/util.h>
+#include <sys/__assert.h>
+#include <logging/log.h>
+
+#define LOG_LEVEL CONFIG_SENSOR_LOG_LEVEL
+LOG_MODULE_REGISTER(FXAS21002);
 
 /* Sample period in microseconds, indexed by output data rate encoding (DR) */
 static const u32_t sample_period[] = {
@@ -23,7 +27,7 @@ static int fxas21002_sample_fetch(struct device *dev, enum sensor_channel chan)
 	int i;
 
 	if (chan != SENSOR_CHAN_ALL) {
-		SYS_LOG_ERR("Unsupported sensor channel");
+		LOG_ERR("Unsupported sensor channel");
 		return -ENOTSUP;
 	}
 
@@ -32,7 +36,7 @@ static int fxas21002_sample_fetch(struct device *dev, enum sensor_channel chan)
 	/* Read all the channels in one I2C transaction. */
 	if (i2c_burst_read(data->i2c, config->i2c_address,
 			   FXAS21002_REG_OUTXMSB, buffer, sizeof(buffer))) {
-		SYS_LOG_ERR("Could not fetch sample");
+		LOG_ERR("Could not fetch sample");
 		ret = -EIO;
 		goto exit;
 	}
@@ -117,7 +121,7 @@ static int fxas21002_channel_get(struct device *dev, enum sensor_channel chan,
 	}
 
 	if (ret != 0) {
-		SYS_LOG_ERR("Unsupported sensor channel");
+		LOG_ERR("Unsupported sensor channel");
 	}
 
 	k_sem_give(&data->sem);
@@ -134,7 +138,7 @@ int fxas21002_get_power(struct device *dev, enum fxas21002_power *power)
 	if (i2c_reg_read_byte(data->i2c, config->i2c_address,
 			      FXAS21002_REG_CTRLREG1,
 			      &val)) {
-		SYS_LOG_ERR("Could not get power setting");
+		LOG_ERR("Could not get power setting");
 		return -EIO;
 	}
 	val &= FXAS21002_CTRLREG1_POWER_MASK;
@@ -171,9 +175,9 @@ u32_t fxas21002_get_transition_time(enum fxas21002_power start,
 	transition_time = sample_period[dr];
 
 	if (start == FXAS21002_POWER_READY) {
-		transition_time += 5000;
+		transition_time += 5000U;
 	} else {
-		transition_time += 60000;
+		transition_time += 60000U;
 	}
 
 	return transition_time;
@@ -190,7 +194,7 @@ static int fxas21002_init(struct device *dev)
 	/* Get the I2C device */
 	data->i2c = device_get_binding(config->i2c_name);
 	if (data->i2c == NULL) {
-		SYS_LOG_ERR("Could not find I2C device");
+		LOG_ERR("Could not find I2C device");
 		return -EINVAL;
 	}
 
@@ -200,12 +204,12 @@ static int fxas21002_init(struct device *dev)
 	 */
 	if (i2c_reg_read_byte(data->i2c, config->i2c_address,
 			      FXAS21002_REG_WHOAMI, &whoami)) {
-		SYS_LOG_ERR("Could not get WHOAMI value");
+		LOG_ERR("Could not get WHOAMI value");
 		return -EIO;
 	}
 
 	if (whoami != config->whoami) {
-		SYS_LOG_ERR("WHOAMI value received 0x%x, expected 0x%x",
+		LOG_ERR("WHOAMI value received 0x%x, expected 0x%x",
 			    whoami, config->whoami);
 		return -EIO;
 	}
@@ -222,7 +226,7 @@ static int fxas21002_init(struct device *dev)
 	do {
 		if (i2c_reg_read_byte(data->i2c, config->i2c_address,
 				      FXAS21002_REG_CTRLREG1, &ctrlreg1)) {
-			SYS_LOG_ERR("Could not get ctrlreg1 value");
+			LOG_ERR("Could not get ctrlreg1 value");
 			return -EIO;
 		}
 	} while (ctrlreg1 & FXAS21002_CTRLREG1_RST_MASK);
@@ -232,7 +236,7 @@ static int fxas21002_init(struct device *dev)
 				FXAS21002_REG_CTRLREG0,
 				FXAS21002_CTRLREG0_FS_MASK,
 				config->range)) {
-		SYS_LOG_ERR("Could not set range");
+		LOG_ERR("Could not set range");
 		return -EIO;
 	}
 
@@ -241,7 +245,7 @@ static int fxas21002_init(struct device *dev)
 				FXAS21002_REG_CTRLREG1,
 				FXAS21002_CTRLREG1_DR_MASK,
 				config->dr << FXAS21002_CTRLREG1_DR_SHIFT)) {
-		SYS_LOG_ERR("Could not set output data rate");
+		LOG_ERR("Could not set output data rate");
 		return -EIO;
 	}
 
@@ -249,14 +253,14 @@ static int fxas21002_init(struct device *dev)
 
 #if CONFIG_FXAS21002_TRIGGER
 	if (fxas21002_trigger_init(dev)) {
-		SYS_LOG_ERR("Could not initialize interrupts");
+		LOG_ERR("Could not initialize interrupts");
 		return -EIO;
 	}
 #endif
 
 	/* Set active */
 	if (fxas21002_set_power(dev, FXAS21002_POWER_ACTIVE)) {
-		SYS_LOG_ERR("Could not set active");
+		LOG_ERR("Could not set active");
 		return -EIO;
 	}
 
@@ -267,7 +271,7 @@ static int fxas21002_init(struct device *dev)
 	k_busy_wait(transition_time);
 	k_sem_give(&data->sem);
 
-	SYS_LOG_DBG("Init complete");
+	LOG_DBG("Init complete");
 
 	return 0;
 }
@@ -281,20 +285,25 @@ static const struct sensor_driver_api fxas21002_driver_api = {
 };
 
 static const struct fxas21002_config fxas21002_config = {
-	.i2c_name = CONFIG_FXAS21002_I2C_NAME,
-	.i2c_address = CONFIG_FXAS21002_I2C_ADDRESS,
+	.i2c_name = DT_INST_0_NXP_FXAS21002_BUS_NAME,
+	.i2c_address = DT_INST_0_NXP_FXAS21002_BASE_ADDRESS,
 	.whoami = CONFIG_FXAS21002_WHOAMI,
 	.range = CONFIG_FXAS21002_RANGE,
 	.dr = CONFIG_FXAS21002_DR,
 #ifdef CONFIG_FXAS21002_TRIGGER
-	.gpio_name = CONFIG_FXAS21002_GPIO_NAME,
-	.gpio_pin = CONFIG_FXAS21002_GPIO_PIN,
+#ifdef CONFIG_FXAS21002_DRDY_INT1
+	.gpio_name = DT_INST_0_NXP_FXAS21002_INT1_GPIOS_CONTROLLER,
+	.gpio_pin = DT_INST_0_NXP_FXAS21002_INT1_GPIOS_PIN,
+#else
+	.gpio_name = DT_INST_0_NXP_FXAS21002_INT2_GPIOS_CONTROLLER,
+	.gpio_pin = DT_INST_0_NXP_FXAS21002_INT2_GPIOS_PIN,
+#endif
 #endif
 };
 
 static struct fxas21002_data fxas21002_data;
 
-DEVICE_AND_API_INIT(fxas21002, CONFIG_FXAS21002_NAME, fxas21002_init,
+DEVICE_AND_API_INIT(fxas21002, DT_INST_0_NXP_FXAS21002_LABEL, fxas21002_init,
 		    &fxas21002_data, &fxas21002_config,
 		    POST_KERNEL, CONFIG_SENSOR_INIT_PRIORITY,
 		    &fxas21002_driver_api);

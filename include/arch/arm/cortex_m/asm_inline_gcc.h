@@ -35,46 +35,6 @@ extern "C" {
 
 /**
  *
- * @brief find most significant bit set in a 32-bit word
- *
- * This routine finds the first bit set starting from the most significant bit
- * in the argument passed in and returns the index of that bit.  Bits are
- * numbered starting at 1 from the least significant bit.  A return value of
- * zero indicates that the value passed is zero.
- *
- * @return most significant bit set, 0 if @a op is 0
- */
-
-static ALWAYS_INLINE unsigned int find_msb_set(u32_t op)
-{
-	if (!op) {
-		return 0;
-	}
-
-	return 32 - __builtin_clz(op);
-}
-
-
-/**
- *
- * @brief find least significant bit set in a 32-bit word
- *
- * This routine finds the first bit set starting from the least significant bit
- * in the argument passed in and returns the index of that bit.  Bits are
- * numbered starting at 1 from the least significant bit.  A return value of
- * zero indicates that the value passed is zero.
- *
- * @return least significant bit set, 0 if @a op is 0
- */
-
-static ALWAYS_INLINE unsigned int find_lsb_set(u32_t op)
-{
-	return __builtin_ffs(op);
-}
-
-
-/**
- *
  * @brief Disable all interrupts on the CPU
  *
  * This routine disables interrupts.  It can be called from either interrupt or
@@ -106,15 +66,17 @@ static ALWAYS_INLINE unsigned int find_lsb_set(u32_t op)
  *
  * @internal
  *
- * On Cortex-M3/M4, this function prevents exceptions of priority lower than
- * the two highest priorities from interrupting the CPU.
+ * On ARMv7-M and ARMv8-M Mainline CPUs, this function prevents regular
+ * exceptions (i.e. with interrupt priority lower than or equal to
+ * _EXC_IRQ_DEFAULT_PRIO) from interrupting the CPU. NMI, Faults, SVC,
+ * and Zero Latency IRQs (if supported) may still interrupt the CPU.
  *
- * On Cortex-M0/M0+, this function reads the value of PRIMASK which shows
- * if interrupts are enabled, then disables all interrupts except NMI.
- *
+ * On ARMv6-M and ARMv8-M Baseline CPUs, this function reads the value of
+ * PRIMASK which shows if interrupts are enabled, then disables all interrupts
+ * except NMI.
  */
 
-static ALWAYS_INLINE unsigned int _arch_irq_lock(void)
+static ALWAYS_INLINE unsigned int z_arch_irq_lock(void)
 {
 	unsigned int key;
 
@@ -130,7 +92,8 @@ static ALWAYS_INLINE unsigned int _arch_irq_lock(void)
 	__asm__ volatile(
 		"mov %1, %2;"
 		"mrs %0, BASEPRI;"
-		"msr BASEPRI, %1"
+		"msr BASEPRI, %1;"
+		"isb;"
 		: "=r"(key), "=r"(tmp)
 		: "i"(_EXC_IRQ_DEFAULT_PRIO)
 		: "memory");
@@ -161,20 +124,35 @@ static ALWAYS_INLINE unsigned int _arch_irq_lock(void)
  *
  */
 
-static ALWAYS_INLINE void _arch_irq_unlock(unsigned int key)
+static ALWAYS_INLINE void z_arch_irq_unlock(unsigned int key)
 {
 #if defined(CONFIG_ARMV6_M_ARMV8_M_BASELINE)
 	if (key) {
 		return;
 	}
-	__asm__ volatile("cpsie i" : : : "memory");
+	__asm__ volatile(
+		"cpsie i;"
+		"isb"
+		: : : "memory");
 #elif defined(CONFIG_ARMV7_M_ARMV8_M_MAINLINE)
-	__asm__ volatile("msr BASEPRI, %0" :  : "r"(key) : "memory");
+	__asm__ volatile(
+		"msr BASEPRI, %0;"
+		"isb;"
+		:  : "r"(key) : "memory");
 #else
 #error Unknown ARM architecture
 #endif /* CONFIG_ARMV6_M_ARMV8_M_BASELINE */
 }
 
+/**
+ * Returns true if interrupts were unlocked prior to the
+ * z_arch_irq_lock() call that produced the key argument.
+ */
+static ALWAYS_INLINE bool z_arch_irq_unlocked(unsigned int key)
+{
+	/* This convention works for both PRIMASK and BASEPRI */
+	return key == 0;
+}
 
 #endif /* _ASMLANGUAGE */
 

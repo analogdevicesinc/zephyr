@@ -1,15 +1,19 @@
 .. _usb_hid-mouse:
 
 USB HID mouse Sample Application
-####################################
+################################
 
 Overview
 ********
 
 This sample app demonstrates use of a USB Human Interface Device (HID) driver
-by the Zephyr project.  This very simple driver enumerates a board with a button
-into a "mouse" that only has a left-mouse button and can't move.
-This sample can be found under :file:`samples/subsys/usb/hid-mouse` in the
+by the Zephyr project. This very simple driver enumerates a board with a button
+into a mouse that has a left mouse button and optionally (depending on
+the number of buttons on the board) a right mouse button, X-axis movement,
+and Y-axis movement.
+If the USB peripheral driver supports remote wakeup feature, wakeup request
+will be performed on every button click if the bus is in suspended state.
+This sample can be found under :zephyr_file:`samples/subsys/usb/hid-mouse` in the
 Zephyr project tree.
 
 Requirements
@@ -21,8 +25,14 @@ GPIO button in your board.
 To use this sample, you will require a board that defines the user switch in its
 header file. The :file:`board.h` must define the following variables:
 
-- SW0_GPIO_NAME
+- SW0_GPIO_CONTROLLER
 - SW0_GPIO_PIN
+
+The following variables are optional and depend on available board buttons:
+
+- For right-button: SW1_GPIO_CONTROLLER, SW1_GPIO_PIN
+- For X-axis: SW2_GPIO_CONTROLLER, SW2_GPIO_PIN
+- For Y-axis: SW3_GPIO_CONTROLLER, SW3_GPIO_PIN
 
 Building and Running
 ********************
@@ -91,3 +101,6 @@ by ``evtest``:
     Event: time 1167609663.730510, type 4 (EV_MSC), code 4 (MSC_SCAN), value 90001
     Event: time 1167609663.730510, type 1 (EV_KEY), code 272 (BTN_LEFT), value 0
     Event: time 1167609663.730510, -------------- SYN_REPORT ------------
+
+If your board has more than one button, they will act as right mouse button,
+X-axis movement, and Y-axis movement.

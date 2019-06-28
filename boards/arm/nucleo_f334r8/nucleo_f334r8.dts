@@ -13,6 +13,7 @@
 
 	chosen {
 		zephyr,console = &usart2;
+		zephyr,shell-uart = &usart2;
 		zephyr,sram = &sram0;
 		zephyr,flash = &flash0;
 	};
@@ -43,14 +44,14 @@
 	current-speed = <115200>;
 	pinctrl-0 = <&usart1_pins_b>;
 	pinctrl-names = "default";
-	status = "ok";
+	status = "okay";
 };
 
 &usart2 {
 	current-speed = <115200>;
 	pinctrl-0 = <&usart2_pins_a>;
 	pinctrl-names = "default";
-	status = "ok";
+	status = "okay";
 };
 
 &usart3 {
@@ -59,18 +60,45 @@
 	pinctrl-names = "default";
 };
 
-&spi1 {
-	status = "ok";
+arduino_i2c: &i2c1 {
+      status = "okay";
+      clock-frequency = <I2C_BITRATE_FAST>;
+};
+
+arduino_spi: &spi1 {
+	status = "okay";
 };
 
 &timers1 {
-	status = "ok";
+	status = "okay";
 
 	pwm {
-		status = "ok";
+		status = "okay";
 	};
 };
 
 &rtc {
-	status = "ok";
+	status = "okay";
+};
+
+&iwdg {
+	status = "okay";
+};
+
+&flash0 {
+	/*
+	 * For more information, see:
+	 * http://docs.zephyrproject.org/latest/guides/dts/index.html#flash-partitions
+	 */
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		/* Set 6Kb of storage at the end of the 64Kb of flash */
+		storage_partition: partition@e800 {
+			label = "storage";
+			reg = <0x0000e800 0x00001800>;
+		};
+	};
 };

@@ -27,11 +27,11 @@ void test_gpio_pin_read_write(void)
 	gpio_pin_configure(dev, PIN_IN, GPIO_DIR_IN);
 	gpio_pin_disable_callback(dev, PIN_IN);
 
-	u32_t val_write, val_read = 0;
+	u32_t val_write, val_read = 0U;
 	int i = 0;
 
 	while (i++ < 32) {
-		val_write = sys_rand32_get() / 3 % 2;
+		val_write = sys_rand32_get() / 3U % 2;
 		zassert_true(gpio_pin_write(dev, PIN_OUT, val_write) == 0,
 			    "write data fail");
 		TC_PRINT("write: %" PRIu32 "\n", val_write);

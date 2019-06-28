@@ -47,7 +47,10 @@ mapping:
        mapping:
          "type":
             type: str
-            required: yes
+            required: no
+         "fixture":
+            type: str
+            required: no
          "ordered":
             type: bool
             required: no
@@ -56,7 +59,7 @@ mapping:
             required: no
          "regex":
             type: seq
-            required: yes
+            required: no
             sequence:
               - type: str
      "min_ram":
@@ -101,9 +104,6 @@ mapping:
         type: str
         required: yes
       "description":
-        type: str
-        required: no
-      "platforms":
         type: str
         required: no
   # The list of testcases -- IDK why this is a sequence of
@@ -160,7 +160,10 @@ mapping:
                mapping:
                  "type":
                     type: str
-                    required: yes
+                    required: no
+                 "fixture":
+                    type: str
+                    required: no
                  "ordered":
                     type: bool
                     required: no
@@ -169,7 +172,7 @@ mapping:
                     required: no
                  "regex":
                     type: seq
-                    required: yes
+                    required: no
                     sequence:
                       - type: str
              "min_ram":

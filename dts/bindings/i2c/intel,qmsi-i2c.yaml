@@ -3,9 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: Intel QMSI i2c
-id: intel,qmsi-i2c
 version: 0.1
 
 description: >
@@ -19,15 +18,7 @@ properties:
       constraint: "intel,qmsi-i2c"
 
     reg:
-      type: array
-      description: mmio register space
-      generation: define
       category: required
 
     interrupts:
-      type: array
       category: required
-      description: required interrupts
-      generation: define
-
-...

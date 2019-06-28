@@ -16,7 +16,7 @@
 #include <device.h>
 #include <init.h>
 #include <soc.h>
-#include <uart.h>
+#include <drivers/uart.h>
 #include <linker/sections.h>
 #include <arch/cpu.h>
 #include <cortex_m/exc.h>
@@ -87,8 +87,6 @@ static int nxp_lpc54114_init(struct device *arg)
 	/* disable interrupts */
 	oldLevel = irq_lock();
 
-	_ClearFaults();
-
 	/* Initialize FRO/system clock to 48 MHz */
 	clkInit();
 
@@ -150,12 +148,12 @@ int _slave_init(struct device *arg)
 			*(uint32_t *)CORE_M0_BOOT_ADDRESS);
 
 	/* Reset the secondary core and start its clocks */
-	temp = SYSCON->CPCTRL;
+	temp = SYSCON->CPUCTRL;
 	temp |= 0xc0c48000;
-	SYSCON->CPCTRL = (temp | SYSCON_CPCTRL_CM0CLKEN_MASK
-					| SYSCON_CPCTRL_CM0RSTEN_MASK);
-	SYSCON->CPCTRL = (temp | SYSCON_CPCTRL_CM0CLKEN_MASK)
-					& (~SYSCON_CPCTRL_CM0RSTEN_MASK);
+	SYSCON->CPUCTRL = (temp | SYSCON_CPUCTRL_CM0CLKEN_MASK
+					| SYSCON_CPUCTRL_CM0RSTEN_MASK);
+	SYSCON->CPUCTRL = (temp | SYSCON_CPUCTRL_CM0CLKEN_MASK)
+					& (~SYSCON_CPUCTRL_CM0RSTEN_MASK);
 
 	return 0;
 }

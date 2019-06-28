@@ -83,7 +83,7 @@ zephyr_smp_trim_front(void *buf, size_t len, void *arg)
  *
  *     struct net_buf *frag;
  *     struct net_buf *rsp;
- *     // [...]
+ *     ...
  *     while (rsp != NULL) {
  *         frag = zephyr_smp_split_frag(&rsp, zst, get_mtu());
  *         if (frag == NULL) {
@@ -175,7 +175,7 @@ zephyr_smp_tx_rsp(struct smp_streamer *ns, void *rsp, void *arg)
 	nb = rsp;
 
 	mtu = zst->zst_get_mtu(rsp);
-	if (mtu == 0) {
+	if (mtu == 0U) {
 		/* The transport cannot support a transmission right now. */
 		return MGMT_ERR_EUNKNOWN;
 	}

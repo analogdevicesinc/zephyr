@@ -12,14 +12,14 @@
 #include <string.h>
 #include <ztest.h>
 
-#include "fcb.h"
+#include <fs/fcb.h>
 #include "fcb_priv.h"
 
 #ifdef __cplusplus
 #extern "C" {
 #endif
 
-#define TEST_FCB_FLASH_AREA_ID 2 /* this is id of 1. image slot flash area */
+#define TEST_FCB_FLASH_AREA_ID DT_FLASH_AREA_IMAGE_1_ID
 
 extern struct fcb test_fcb;
 

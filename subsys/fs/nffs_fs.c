@@ -9,11 +9,11 @@
 #include <zephyr/types.h>
 #include <errno.h>
 #include <init.h>
-#include <flash.h>
-#include <fs.h>
-#include <crc16.h>
-#include <misc/__assert.h>
-#include <misc/printk.h>
+#include <drivers/flash.h>
+#include <fs/fs.h>
+#include <sys/crc.h>
+#include <sys/__assert.h>
+#include <sys/printk.h>
 #include <nffs/os.h>
 #include <nffs/nffs.h>
 
@@ -219,7 +219,10 @@ static int inode_to_dirent(struct nffs_inode_entry *inode,
 		entry->size = 0;
 	} else {
 		entry->type = FS_DIR_ENTRY_FILE;
-		nffs_inode_data_len(inode, &size);
+		rc = nffs_inode_data_len(inode, &size);
+		if (rc) {
+			return rc;
+		}
 		entry->size = size;
 	}
 
@@ -537,8 +540,8 @@ static int nffs_mount(struct fs_mount_t *mountp)
 	/* Set flash descriptor fields */
 	flash_desc->id = 0;
 	flash_desc->sector_count = flash_get_page_count(flash_dev);
-	flash_desc->area_offset = FLASH_AREA_STORAGE_OFFSET;
-	flash_desc->area_size = FLASH_AREA_STORAGE_SIZE;
+	flash_desc->area_offset = DT_FLASH_AREA_STORAGE_OFFSET;
+	flash_desc->area_size = DT_FLASH_AREA_STORAGE_SIZE;
 
 	rc = nffs_misc_reset();
 	if (rc) {

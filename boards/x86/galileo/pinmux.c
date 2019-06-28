@@ -7,14 +7,14 @@
  */
 
 #include <kernel.h>
-#include <board.h>
+#include "board.h"
 #include <device.h>
 #include <init.h>
 
-#include <pinmux.h>
-#include <i2c.h>
-#include <gpio.h>
-#include <pwm.h>
+#include <drivers/pinmux.h>
+#include <drivers/i2c.h>
+#include <drivers/gpio.h>
+#include <drivers/pwm.h>
 
 #include <pinmux/pinmux.h>
 
@@ -265,7 +265,7 @@ static struct mux_path _galileo_path[PINMUX_NUM_PINS * NUM_PIN_FUNCS] = {
 			    { EXP0,  7,   PIN_LOW, (GPIO_DIR_OUT) },
 			    { NONE,  0, DONT_CARE, (GPIO_DIR_IN)  },
 			    { NONE,  0, DONT_CARE, (GPIO_DIR_IN)  } } },
-	{9, PINMUX_FUNC_C, {{ NONE,  0, DONT_CARE, (GPIO_DIR_IN)  }, /* NONE */
+	{9, PINMUX_FUNC_D, {{ NONE,  0, DONT_CARE, (GPIO_DIR_IN)  }, /* NONE */
 			    { NONE,  0, DONT_CARE, (GPIO_DIR_IN)  },
 			    { NONE,  0, DONT_CARE, (GPIO_DIR_IN)  },
 			    { NONE,  0, DONT_CARE, (GPIO_DIR_IN)  },
@@ -482,12 +482,12 @@ static struct mux_path _galileo_path[PINMUX_NUM_PINS * NUM_PIN_FUNCS] = {
 			     { NONE,  0, DONT_CARE, (GPIO_DIR_IN)  } } },
 };
 
-int _galileo_pinmux_set_pin(struct device *port, u8_t pin, u32_t func)
+int z_galileo_pinmux_set_pin(struct device *port, u8_t pin, u32_t func)
 {
 	struct galileo_data * const drv_data = port->driver_data;
 
-	u8_t mux_index = 0;
-	u8_t i = 0;
+	u8_t mux_index = 0U;
+	u8_t i = 0U;
 	struct mux_path *enable = NULL;
 	struct pin_config *mux_config = drv_data->mux_config;
 
@@ -507,7 +507,7 @@ int _galileo_pinmux_set_pin(struct device *port, u8_t pin, u32_t func)
 
 	enable = &_galileo_path[mux_index];
 
-	for (i = 0; i < 5; i++) {
+	for (i = 0U; i < 5; i++) {
 		switch (enable->path[i].mux) {
 		case EXP0:
 			gpio_pin_write(drv_data->exp0,
@@ -567,13 +567,16 @@ int _galileo_pinmux_set_pin(struct device *port, u8_t pin, u32_t func)
 		case NONE:
 			/* no need to do anything */
 			break;
+		default:
+			__ASSERT(false, "Invalid pinmux option");
+			break;
 		}
 	}
 
 	return 0;
 }
 
-int _galileo_pinmux_get_pin(struct device *port, u32_t pin, u32_t *func)
+int z_galileo_pinmux_get_pin(struct device *port, u32_t pin, u32_t *func)
 {
 	struct galileo_data * const drv_data = port->driver_data;
 	struct pin_config *mux_config = drv_data->mux_config;
@@ -659,7 +662,7 @@ static int pinmux_set(struct device *dev,
 		return -EINVAL;
 	}
 
-	return _galileo_pinmux_set_pin(dev, pin, func);
+	return z_galileo_pinmux_set_pin(dev, pin, func);
 }
 
 static int pinmux_get(struct device *dev,
@@ -670,7 +673,7 @@ static int pinmux_get(struct device *dev,
 		return -EINVAL;
 	}
 
-	return _galileo_pinmux_get_pin(dev, pin, func);
+	return z_galileo_pinmux_get_pin(dev, pin, func);
 }
 
 static struct pinmux_driver_api api_funcs = {
@@ -730,7 +733,7 @@ static int pinmux_galileo_initialize(struct device *port)
 	 * from the above mapping as selected by the end user
 	 */
 	for (i = 0; i < PINMUX_NUM_PINS; i++) {
-		_galileo_pinmux_set_pin(port,
+		z_galileo_pinmux_set_pin(port,
 				 mux_config[i].pin_num,
 				 mux_config[i].mode);
 	}

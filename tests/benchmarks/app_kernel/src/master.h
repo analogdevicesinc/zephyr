@@ -19,7 +19,7 @@
 
 #include <string.h>
 
-#include <misc/util.h>
+#include <sys/util.h>
 
 
 /* uncomment the define below to use floating point arithmetic */
@@ -28,17 +28,13 @@
 /* printf format defines. */
 #define FORMAT "| %-65s|%10u|\n"
 
-/* global defines */
-/* number of nsec per usec */
-#define NSEC_PER_USEC 1000
-
 /* length of the output line */
 #define SLINE_LEN 256
 
-#define SLEEP_TIME ((sys_clock_ticks_per_sec / 4) > 0 ? \
-		    sys_clock_ticks_per_sec / 4 : 1)
-#define WAIT_TIME ((sys_clock_ticks_per_sec / 10) > 0 ? \
-		   sys_clock_ticks_per_sec / 10 : 1)
+#define SLEEP_TIME ((CONFIG_SYS_CLOCK_TICKS_PER_SEC / 4) > 0 ?	\
+		    CONFIG_SYS_CLOCK_TICKS_PER_SEC / 4 : 1)
+#define WAIT_TIME ((CONFIG_SYS_CLOCK_TICKS_PER_SEC / 10) > 0 ?	\
+		   CONFIG_SYS_CLOCK_TICKS_PER_SEC / 10 : 1)
 #define NR_OF_NOP_RUNS 10000
 #define NR_OF_FIFO_RUNS 500
 #define NR_OF_SEMA_RUNS 500
@@ -48,7 +44,7 @@
 #define NR_OF_EVENT_RUNS  1000
 #define NR_OF_MBOX_RUNS 128
 #define NR_OF_PIPE_RUNS 256
-/* #define SEMA_WAIT_TIME (5 * sys_clock_ticks_per_sec) */
+/* #define SEMA_WAIT_TIME (5 * CONFIG_SYS_CLOCK_TICKS_PER_SEC) */
 #define SEMA_WAIT_TIME (5000)
 /* global data */
 extern char msg[MAX_MSG];
@@ -126,12 +122,6 @@ extern void pipe_test(void);
 #define pipe_test dummy_test
 #endif
 
-#ifdef EVENT_BENCH
-extern void event_test(void);
-#else
-#define event_test dummy_test
-#endif
-
 /* kernel objects needed for benchmarking */
 extern struct k_mutex DEMO_MUTEX;
 
@@ -156,8 +146,6 @@ extern struct k_pipe PIPE_BIGBUFF;
 
 
 extern struct k_mem_slab MAP1;
-
-extern struct k_alert TEST_EVENT;
 
 extern struct k_mem_pool DEMOPOOL;
 

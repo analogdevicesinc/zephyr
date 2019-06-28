@@ -26,9 +26,9 @@ enum {
 	BT_CONN_BR_PAIRING_INITIATOR,	/* local host starts authentication */
 	BT_CONN_CLEANUP,                /* Disconnected, pending cleanup */
 	BT_CONN_AUTO_PHY_UPDATE,        /* Auto-update PHY */
-	BT_CONN_AUTO_DATA_LEN,          /* Auto data len change in progress */
 	BT_CONN_SLAVE_PARAM_UPDATE,	/* If slave param update timer fired */
 	BT_CONN_SLAVE_PARAM_SET,	/* If slave param were set from app */
+	BT_CONN_SLAVE_PARAM_L2CAP,	/* If should force L2CAP for CPUP */
 
 	/* Total number of flags - must be at the end of the enum */
 	BT_CONN_NUM_FLAGS,
@@ -46,6 +46,8 @@ struct bt_conn_le {
 
 	u16_t			latency;
 	u16_t			timeout;
+	u16_t			pending_latency;
+	u16_t			pending_timeout;
 
 	u8_t			features[8];
 
@@ -77,11 +79,18 @@ struct bt_conn_sco {
 };
 #endif
 
-typedef void (*bt_conn_tx_cb_t)(struct bt_conn *conn);
+typedef void (*bt_conn_tx_cb_t)(struct bt_conn *conn, void *user_data);
+
+struct bt_conn_tx_data {
+	bt_conn_tx_cb_t cb;
+	void *user_data;
+};
 
 struct bt_conn_tx {
 	sys_snode_t node;
-	bt_conn_tx_cb_t cb;
+	struct bt_conn *conn;
+	struct k_work work;
+	struct bt_conn_tx_data data;
 };
 
 struct bt_conn {
@@ -135,11 +144,11 @@ void bt_conn_recv(struct bt_conn *conn, struct net_buf *buf, u8_t flags);
 
 /* Send data over a connection */
 int bt_conn_send_cb(struct bt_conn *conn, struct net_buf *buf,
-		    bt_conn_tx_cb_t cb);
+		    bt_conn_tx_cb_t cb, void *user_data);
 
 static inline int bt_conn_send(struct bt_conn *conn, struct net_buf *buf)
 {
-	return bt_conn_send_cb(conn, buf, NULL);
+	return bt_conn_send_cb(conn, buf, NULL, NULL);
 }
 
 /* Add a new LE connection */
@@ -179,7 +188,6 @@ int bt_conn_addr_le_cmp(const struct bt_conn *conn, const bt_addr_le_t *peer);
  * e.g. as the handle since that's assigned to us by the controller.
  */
 #define BT_CONN_ID_INVALID 0xff
-u8_t bt_conn_get_id(struct bt_conn *conn);
 struct bt_conn *bt_conn_lookup_id(u8_t id);
 
 /* Look up a connection state. For BT_ADDR_LE_ANY, returns the first connection

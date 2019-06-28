@@ -4,11 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <logging/log.h>
+LOG_MODULE_DECLARE(net_nats_sample, LOG_LEVEL_DBG);
+
 #include <ctype.h>
 #include <errno.h>
-#include <json.h>
-#include <misc/printk.h>
-#include <misc/util.h>
+#include <data/json.h>
+#include <sys/printk.h>
+#include <sys/util.h>
 #include <net/net_pkt.h>
 #include <net/net_context.h>
 #include <net/net_core.h>
@@ -98,24 +101,14 @@ static bool is_sid_valid(const char *sid, size_t len)
 static int transmitv(struct net_context *conn, int iovcnt,
 		     struct io_vec *iov)
 {
-	struct net_pkt *pkt;
-	int i;
+	u8_t buf[1024];
+	int i, pos;
 
-	pkt = net_pkt_get_tx(conn, K_FOREVER);
-	if (!pkt) {
-		return -ENOMEM;
+	for (i = 0, pos = 0; i < iovcnt; pos += iov[i].len, i++) {
+		memcpy(&buf[pos], iov[i].base, iov[i].len);
 	}
 
-	for (i = 0; i < iovcnt; i++) {
-		if (!net_pkt_append_all(pkt, iov[i].len, iov[i].base,
-					K_FOREVER)) {
-			net_pkt_unref(pkt);
-
-			return -ENOMEM;
-		}
-	}
-
-	return net_context_send(pkt, NULL, K_NO_WAIT, NULL, NULL);
+	return net_context_send(conn, buf, pos, NULL, K_NO_WAIT, NULL);
 }
 
 static inline int transmit(struct net_context *conn, const char buffer[],
@@ -247,8 +240,8 @@ static int copy_pkt_to_buf(struct net_buf *src, u16_t offset,
 		src = src->frags;
 	}
 
-	for (copied = 0; src && n_bytes > 0; offset = 0) {
-		to_copy = min(n_bytes, src->len - offset);
+	for (copied = 0U; src && n_bytes > 0; offset = 0U) {
+		to_copy = MIN(n_bytes, src->len - offset);
 
 		memcpy(dst + copied, (char *)src->data + offset, to_copy);
 		copied += to_copy;
@@ -533,13 +526,17 @@ int nats_publish(const struct nats *nats,
 	});
 }
 
-static void receive_cb(struct net_context *ctx, struct net_pkt *pkt, int status,
+static void receive_cb(struct net_context *ctx,
+		       struct net_pkt *pkt,
+		       union net_ip_header *ip_hdr,
+		       union net_proto_header *proto_hdr,
+		       int status,
 		       void *user_data)
 {
 	struct nats *nats = user_data;
 	char cmd_buf[CMD_BUF_LEN];
 	struct net_buf *tmp;
-	u16_t pos = 0, cmd_len = 0;
+	u16_t pos = 0U, cmd_len = 0U;
 	size_t len;
 	u8_t *end_of_line;
 
@@ -554,8 +551,13 @@ static void receive_cb(struct net_context *ctx, struct net_pkt *pkt, int status,
 		return;
 	}
 
-	tmp = pkt->frags;
-	pos = net_pkt_appdata(pkt) - tmp->data;
+	tmp = pkt->cursor.buf;
+	if (!tmp) {
+		net_pkt_unref(pkt);
+		return;
+	}
+
+	pos = pkt->cursor.pos - tmp->data;
 
 	while (tmp) {
 		len = tmp->len - pos;
@@ -569,15 +571,18 @@ static void receive_cb(struct net_context *ctx, struct net_pkt *pkt, int status,
 			break;
 		}
 
-		tmp = net_frag_read(tmp, pos, &pos, len,
-				    (u8_t *)(cmd_buf + cmd_len));
+		if (net_pkt_read(pkt, (u8_t *)(cmd_buf + cmd_len), len)) {
+			break;
+		}
+
 		cmd_len += len;
 
 		if (end_of_line) {
+			u8_t dummy;
 			int ret;
 
-			if (tmp) {
-				tmp = net_frag_read(tmp, pos, &pos, 1, NULL);
+			if (net_pkt_read_u8(pkt, &dummy)) {
+				break;
 			}
 
 			cmd_buf[cmd_len] = '\0';
@@ -588,8 +593,12 @@ static void receive_cb(struct net_context *ctx, struct net_pkt *pkt, int status,
 				/* FIXME: What to do with unhandled messages? */
 				break;
 			}
-			cmd_len = 0;
+
+			cmd_len = 0U;
 		}
+
+		tmp = pkt->cursor.buf;
+		pos = pkt->cursor.pos - tmp->data;
 	}
 
 	net_pkt_unref(pkt);

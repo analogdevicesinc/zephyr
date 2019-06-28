@@ -5,3 +5,8 @@ arch: arm
 toolchain:
   - zephyr
   - gnuarmemb
+  - xtools
+supported:
+  - netif:wifi
+  - i2c
+  - gpio

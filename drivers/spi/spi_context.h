@@ -12,8 +12,8 @@
 #ifndef ZEPHYR_DRIVERS_SPI_SPI_CONTEXT_H_
 #define ZEPHYR_DRIVERS_SPI_SPI_CONTEXT_H_
 
-#include <gpio.h>
-#include <spi.h>
+#include <drivers/gpio.h>
+#include <drivers/spi.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -51,10 +51,10 @@ struct spi_context {
 };
 
 #define SPI_CONTEXT_INIT_LOCK(_data, _ctx_name)				\
-	._ctx_name.lock = _K_SEM_INITIALIZER(_data._ctx_name.lock, 0, 1)
+	._ctx_name.lock = Z_SEM_INITIALIZER(_data._ctx_name.lock, 0, 1)
 
 #define SPI_CONTEXT_INIT_SYNC(_data, _ctx_name)				\
-	._ctx_name.sync = _K_SEM_INITIALIZER(_data._ctx_name.sync, 0, 1)
+	._ctx_name.sync = Z_SEM_INITIALIZER(_data._ctx_name.sync, 0, 1)
 
 static inline bool spi_context_configured(struct spi_context *ctx,
 					  const struct spi_config *config)
@@ -96,13 +96,6 @@ static inline void spi_context_release(struct spi_context *ctx, int status)
 #endif /* CONFIG_SPI_ASYNC */
 }
 
-static inline void spi_context_unlock_unconditionally(struct spi_context *ctx)
-{
-	if (!k_sem_count_get(&ctx->lock)) {
-		k_sem_give(&ctx->lock);
-	}
-}
-
 static inline int spi_context_wait_for_completion(struct spi_context *ctx)
 {
 	int status = 0;
@@ -141,7 +134,7 @@ static inline void spi_context_complete(struct spi_context *ctx, int status)
 				status = ctx->recv_frames;
 			}
 #endif /* CONFIG_SPI_SLAVE */
-			k_poll_signal(ctx->signal, status);
+			k_poll_signal_raise(ctx->signal, status);
 		}
 
 		if (!(ctx->config->operation & SPI_LOCK_ON)) {
@@ -181,20 +174,22 @@ static inline void spi_context_cs_configure(struct spi_context *ctx)
 			       ctx->config->cs->gpio_pin,
 			       spi_context_cs_inactive_value(ctx));
 	} else {
-		SYS_LOG_INF("CS control inhibited (no GPIO device)");
+		LOG_INF("CS control inhibited (no GPIO device)");
 	}
 }
 
-static inline void spi_context_cs_control(struct spi_context *ctx, bool on)
+static inline void _spi_context_cs_control(struct spi_context *ctx,
+					   bool on, bool force_off)
 {
-	if (ctx->config->cs && ctx->config->cs->gpio_dev) {
+	if (ctx->config && ctx->config->cs && ctx->config->cs->gpio_dev) {
 		if (on) {
 			gpio_pin_write(ctx->config->cs->gpio_dev,
 				       ctx->config->cs->gpio_pin,
 				       spi_context_cs_active_value(ctx));
 			k_busy_wait(ctx->config->cs->delay);
 		} else {
-			if (ctx->config->operation & SPI_HOLD_ON_CS) {
+			if (!force_off &&
+			    ctx->config->operation & SPI_HOLD_ON_CS) {
 				return;
 			}
 
@@ -206,18 +201,33 @@ static inline void spi_context_cs_control(struct spi_context *ctx, bool on)
 	}
 }
 
+static inline void spi_context_cs_control(struct spi_context *ctx, bool on)
+{
+	_spi_context_cs_control(ctx, on, false);
+}
+
+static inline void spi_context_unlock_unconditionally(struct spi_context *ctx)
+{
+	/* Forcing CS to go to inactive status */
+	_spi_context_cs_control(ctx, false, true);
+
+	if (!k_sem_count_get(&ctx->lock)) {
+		k_sem_give(&ctx->lock);
+	}
+}
+
 static inline
 void spi_context_buffers_setup(struct spi_context *ctx,
 			       const struct spi_buf_set *tx_bufs,
 			       const struct spi_buf_set *rx_bufs,
 			       u8_t dfs)
 {
-	SYS_LOG_DBG("tx_bufs %p - rx_bufs %p - %u", tx_bufs, rx_bufs, dfs);
+	LOG_DBG("tx_bufs %p - rx_bufs %p - %u", tx_bufs, rx_bufs, dfs);
 
 	if (tx_bufs) {
 		ctx->current_tx = tx_bufs->buffers;
 		ctx->tx_count = tx_bufs->count;
-		ctx->tx_buf = ctx->current_tx->buf;
+		ctx->tx_buf = (const u8_t *)ctx->current_tx->buf;
 		ctx->tx_len = ctx->current_tx->len / dfs;
 	} else {
 		ctx->current_tx = NULL;
@@ -229,7 +239,7 @@ void spi_context_buffers_setup(struct spi_context *ctx,
 	if (rx_bufs) {
 		ctx->current_rx = rx_bufs->buffers;
 		ctx->rx_count = rx_bufs->count;
-		ctx->rx_buf = ctx->current_rx->buf;
+		ctx->rx_buf = (u8_t *)ctx->current_rx->buf;
 		ctx->rx_len = ctx->current_rx->len / dfs;
 	} else {
 		ctx->current_rx = NULL;
@@ -244,7 +254,7 @@ void spi_context_buffers_setup(struct spi_context *ctx,
 	ctx->recv_frames = 0;
 #endif /* CONFIG_SPI_SLAVE */
 
-	SYS_LOG_DBG("current_tx %p (%zu), current_rx %p (%zu),"
+	LOG_DBG("current_tx %p (%zu), current_rx %p (%zu),"
 		    " tx buf/len %p/%zu, rx buf/len %p/%zu",
 		    ctx->current_tx, ctx->tx_count,
 		    ctx->current_rx, ctx->rx_count,
@@ -259,7 +269,7 @@ void spi_context_update_tx(struct spi_context *ctx, u8_t dfs, u32_t len)
 	}
 
 	if (len > ctx->tx_len) {
-		SYS_LOG_ERR("Update exceeds current buffer");
+		LOG_ERR("Update exceeds current buffer");
 		return;
 	}
 
@@ -268,7 +278,7 @@ void spi_context_update_tx(struct spi_context *ctx, u8_t dfs, u32_t len)
 		ctx->tx_count--;
 		if (ctx->tx_count) {
 			ctx->current_tx++;
-			ctx->tx_buf = ctx->current_tx->buf;
+			ctx->tx_buf = (const u8_t *)ctx->current_tx->buf;
 			ctx->tx_len = ctx->current_tx->len / dfs;
 		} else {
 			ctx->tx_buf = NULL;
@@ -277,7 +287,7 @@ void spi_context_update_tx(struct spi_context *ctx, u8_t dfs, u32_t len)
 		ctx->tx_buf += dfs * len;
 	}
 
-	SYS_LOG_DBG("tx buf/len %p/%zu", ctx->tx_buf, ctx->tx_len);
+	LOG_DBG("tx buf/len %p/%zu", ctx->tx_buf, ctx->tx_len);
 }
 
 static ALWAYS_INLINE
@@ -307,7 +317,7 @@ void spi_context_update_rx(struct spi_context *ctx, u8_t dfs, u32_t len)
 	}
 
 	if (len > ctx->rx_len) {
-		SYS_LOG_ERR("Update exceeds current buffer");
+		LOG_ERR("Update exceeds current buffer");
 		return;
 	}
 
@@ -316,7 +326,7 @@ void spi_context_update_rx(struct spi_context *ctx, u8_t dfs, u32_t len)
 		ctx->rx_count--;
 		if (ctx->rx_count) {
 			ctx->current_rx++;
-			ctx->rx_buf = ctx->current_rx->buf;
+			ctx->rx_buf = (u8_t *)ctx->current_rx->buf;
 			ctx->rx_len = ctx->current_rx->len / dfs;
 		} else {
 			ctx->rx_buf = NULL;
@@ -325,7 +335,7 @@ void spi_context_update_rx(struct spi_context *ctx, u8_t dfs, u32_t len)
 		ctx->rx_buf += dfs * len;
 	}
 
-	SYS_LOG_DBG("rx buf/len %p/%zu", ctx->rx_buf, ctx->rx_len);
+	LOG_DBG("rx buf/len %p/%zu", ctx->rx_buf, ctx->rx_len);
 }
 
 static ALWAYS_INLINE

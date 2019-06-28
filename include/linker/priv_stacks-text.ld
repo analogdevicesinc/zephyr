@@ -3,28 +3,36 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-#ifndef PRIV_STACKS_TEXT_AREA
-#if defined(CONFIG_DEBUG) || defined(CONFIG_STACK_CANARIES)
-#define PRIV_STACKS_TEXT_AREA	256
-#else
-#define PRIV_STACKS_TEXT_AREA	128
-#endif
-#endif
-
 #ifdef CONFIG_USERSPACE
 	/* We need to reserve room for the gperf generated hash functions.
 	 * Fortunately, unlike the data tables, the size of the code is
 	 * reasonably predictable.
-	 *
-	 * The linker will error out complaining that the location pointer
-	 * is moving backwards if the reserved room isn't large enough.
 	 */
 	_priv_stacks_text_area_start = .;
 	*(".priv_stacks.text*")
 	_priv_stacks_text_area_end = .;
-#ifndef LINKER_PASS2
-	PROVIDE(_k_priv_stack_find = .);
-#endif
-	. += PRIV_STACKS_TEXT_AREA - (_priv_stacks_text_area_end - _priv_stacks_text_area_start);
-#endif /* CONFIG_USERSPACE */
 
+	_priv_stacks_text_area_used = _priv_stacks_text_area_end - _priv_stacks_text_area_start;
+
+#ifndef LINKER_PASS2
+	PROVIDE(z_priv_stack_find = .);
+#endif
+
+	/* In a valid build the MAX function will always evaluate to the
+	second argument below, but to give the user a good error message
+	when the area overflows we need to temporarily corrupt the
+	location counter, and then detect the overflow with an assertion
+	later on. */
+
+	. = MAX(., _priv_stacks_text_area_start + CONFIG_PRIVILEGED_STACK_TEXT_AREA);
+
+	ASSERT(
+		CONFIG_PRIVILEGED_STACK_TEXT_AREA >= _priv_stacks_text_area_used,
+"The configuration system has incorrectly set
+'CONFIG_PRIVILEGED_STACK_TEXT_AREA' to
+CONFIG_PRIVILEGED_STACK_TEXT_AREA, which is not big enough. You must
+through Kconfig either disable 'CONFIG_USERSPACE', or set
+'CONFIG_PRIVILEGED_STACK_TEXT_AREA' to a value larger than
+CONFIG_PRIVILEGED_STACK_TEXT_AREA."
+		);
+#endif /* CONFIG_USERSPACE */

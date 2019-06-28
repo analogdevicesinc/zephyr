@@ -11,13 +11,14 @@
 #include <errno.h>
 #include <stdbool.h>
 #include <zephyr/types.h>
-#include <misc/byteorder.h>
-#include <misc/util.h>
+#include <sys/byteorder.h>
+#include <sys/util.h>
 
 #include <bluetooth/bluetooth.h>
 #include <bluetooth/mesh.h>
 
 #define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_MESH_DEBUG_MODEL)
+#define LOG_MODULE_NAME bt_mesh_health_srv
 #include "common/log.h"
 
 #include "mesh.h"
@@ -90,7 +91,7 @@ static size_t health_get_current(struct bt_mesh_model *mod,
 			BT_ERR("Failed to get faults (err %d)", err);
 			sys_put_le16(comp->cid, company_ptr);
 			*test_id = HEALTH_TEST_STANDARD;
-			fault_count = 0;
+			fault_count = 0U;
 		} else {
 			sys_put_le16(company_id, company_ptr);
 			net_buf_simple_add(msg, fault_count);
@@ -99,7 +100,7 @@ static size_t health_get_current(struct bt_mesh_model *mod,
 		BT_WARN("No callback for getting faults");
 		sys_put_le16(comp->cid, company_ptr);
 		*test_id = HEALTH_TEST_STANDARD;
-		fault_count = 0;
+		fault_count = 0U;
 	}
 
 	return fault_count;
@@ -222,7 +223,7 @@ static void send_attention_status(struct bt_mesh_model *model,
 	u8_t time;
 
 	time = k_delayed_work_remaining_get(&srv->attn_timer) / 1000;
-	BT_DBG("%u second%s", time, (time == 1) ? "" : "s");
+	BT_DBG("%u second%s", time, (time == 1U) ? "" : "s");
 
 	bt_mesh_model_msg_init(&msg, OP_ATTENTION_STATUS);
 
@@ -250,7 +251,7 @@ static void attention_set_unrel(struct bt_mesh_model *model,
 
 	time = net_buf_simple_pull_u8(buf);
 
-	BT_DBG("%u second%s", time, (time == 1) ? "" : "s");
+	BT_DBG("%u second%s", time, (time == 1U) ? "" : "s");
 
 	bt_mesh_attention(model, time);
 }
@@ -341,8 +342,10 @@ static int health_pub_update(struct bt_mesh_model *mod)
 	BT_DBG("");
 
 	count = health_get_current(mod, pub->msg);
-	if (!count) {
-		pub->period_div = 0;
+	if (count) {
+		pub->fast_period = 1U;
+	} else {
+		pub->fast_period = 0U;
 	}
 
 	return 0;
@@ -356,6 +359,15 @@ int bt_mesh_fault_update(struct bt_mesh_elem *elem)
 	if (!mod) {
 		return -EINVAL;
 	}
+
+	/* Let periodic publishing, if enabled, take care of sending the
+	 * Health Current Status.
+	 */
+	if (bt_mesh_model_pub_period_get(mod)) {
+		return 0;
+	}
+
+	health_pub_update(mod);
 
 	return bt_mesh_model_publish(mod);
 }
@@ -424,7 +436,7 @@ void bt_mesh_attention(struct bt_mesh_model *model, u8_t time)
 			srv->cb->attn_on(model);
 		}
 
-		k_delayed_work_submit(&srv->attn_timer, time * 1000);
+		k_delayed_work_submit(&srv->attn_timer, time * 1000U);
 	} else {
 		k_delayed_work_cancel(&srv->attn_timer);
 

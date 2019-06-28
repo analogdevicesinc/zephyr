@@ -1,0 +1,32 @@
+
+title: OpenISA GPIO
+version: 0.1
+
+description: >
+    This is a representation of the OpenISA GPIO nodes
+
+inherits:
+    !include base.yaml
+
+properties:
+    compatible:
+      constraint: "openisa,rv32m1-gpio"
+
+    reg:
+      category: required
+
+    interrupts:
+      category: required
+
+    label:
+      category: required
+
+    clocks:
+      type: array
+      category: optional
+      description: Clock gate control information
+      generation: define
+
+"#cells":
+  - pin
+  - flags

@@ -30,7 +30,7 @@
  *
  *
  * @return -EAGAIN, or a return value set by a call to
- * _set_thread_return_value()
+ * z_set_thread_return_value()
  *
  */
 
@@ -48,9 +48,7 @@ int __swap(unsigned int key)
  */
 	_kernel.current->callee_saved.key = key;
 	_kernel.current->callee_saved.retval = -EAGAIN;
-	/* retval may be modified with a call to _set_thread_return_value() */
-
-	z_sys_trace_thread_switched_in();
+	/* retval may be modified with a call to z_set_thread_return_value() */
 
 	posix_thread_status_t *ready_thread_ptr =
 		(posix_thread_status_t *)
@@ -88,14 +86,19 @@ int __swap(unsigned int key)
  * Note that we will never come back to this thread:
  * posix_core_main_thread_start() does never return
  */
-void _arch_switch_to_main_thread(struct k_thread *main_thread,
+void z_arch_switch_to_main_thread(struct k_thread *main_thread,
 		k_thread_stack_t *main_stack,
 		size_t main_stack_size, k_thread_entry_t _main)
 {
 	posix_thread_status_t *ready_thread_ptr =
 			(posix_thread_status_t *)
 			_kernel.ready_q.cache->callee_saved.thread_status;
+
+	z_sys_trace_thread_switched_out();
+
 	_kernel.current = _kernel.ready_q.cache;
+
+	z_sys_trace_thread_switched_in();
 
 	posix_main_thread_start(ready_thread_ptr->thread_idx);
 } /* LCOV_EXCL_LINE */
@@ -111,7 +114,7 @@ void posix_irq_check_idle_exit(void)
 		s32_t idle_val = _kernel.idle;
 
 		_kernel.idle = 0;
-		_sys_power_save_idle_exit(idle_val);
+		z_sys_power_save_idle_exit(idle_val);
 	}
 }
 #endif

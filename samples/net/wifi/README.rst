@@ -16,12 +16,11 @@ Building and Running
 
 Verify the board and chip you are targeting provide Wi-Fi support.
 
-For instance, Atmel's Winc1500 chip is supported on top of
-quark_se_c1000_devboard board.
+For instance you can use TI's CC3220 by selecting the cc3220sf_launchxl board.
 
 .. zephyr-app-commands::
    :zephyr-app: samples/net/wifi
-   :board: quark_se_c1000_devboard
+   :board: cc3220sf_launchxl
    :goals: build
    :compact:
 
@@ -30,10 +29,9 @@ Sample console interaction
 
 .. code-block:: console
 
-   shell> select wifi
-   wifi> scan
+   shell> wifi scan
    Scan requested
-   wifi>
+   shell>
    Num  | SSID                             (len) | Chan | RSSI | Sec
    1    | kapoueh!                         8     | 1    | -93  | WPA/WPA2
    2    | mooooooh                         8     | 6    | -89  | WPA/WPA2
@@ -42,8 +40,8 @@ Sample console interaction
    ----------
    Scan request done
 
-   wifi> connect "gksu" 4 SecretStuff
+   shell> wifi connect "gksu" 4 SecretStuff
    Connection requested
-   wifi>
+   shell>
    Connected
-   wifi>
+   shell>

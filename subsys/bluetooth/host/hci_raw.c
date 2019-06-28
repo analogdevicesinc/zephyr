@@ -7,12 +7,13 @@
  */
 
 #include <errno.h>
-#include <atomic.h>
+#include <sys/atomic.h>
 
 #include <bluetooth/hci_driver.h>
 #include <bluetooth/hci_raw.h>
 
 #define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_DEBUG_HCI_CORE)
+#define LOG_MODULE_NAME bt_hci_raw
 #include "common/log.h"
 
 #include "hci_ecc.h"

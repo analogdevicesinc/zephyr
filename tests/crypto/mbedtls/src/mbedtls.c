@@ -7,13 +7,8 @@
  *  This file is part of mbed TLS (https://tls.mbed.org)
  */
 
-#if defined(CONFIG_STDOUT_CONSOLE)
-#include <stdio.h>
-#define  MBEDTLS_PRINT printf
-#else
-#include <misc/printk.h>
+#include <sys/printk.h>
 #define  MBEDTLS_PRINT (int(*)(const char *, ...)) printk
-#endif /* CONFIG_STDOUT_CONSOLE */
 
 #include <string.h>
 #include <stdio.h>
@@ -80,7 +75,7 @@
 #if defined(MBEDTLS_RSA_C)
 int rand(void)
 {
-	static u32_t seed = 7;
+	static ZTEST_DMEM u32_t seed = 7U;
 
 	seed ^= seed << 13;
 	seed ^= seed >> 17;
@@ -160,7 +155,7 @@ static void create_entropy_seed_file(void)
 #endif
 
 #if defined(MBEDTLS_MEMORY_BUFFER_ALLOC_C)
-unsigned char buf[16384];
+ZTEST_BMEM unsigned char buf[16000];
 #endif
 
 void test_mbedtls(void)
@@ -169,7 +164,9 @@ void test_mbedtls(void)
 
 	void *pointer;
 
+#if defined(MBEDTLS_PLATFORM_PRINTF_ALT)
 	mbedtls_platform_set_printf(MBEDTLS_PRINT);
+#endif
 
 	TC_START("Performing mbedTLS crypto tests:");
 
@@ -419,17 +416,17 @@ void test_mbedtls(void)
 
 	if (v != 0) {
 		mbedtls_printf("  Executed %d test suites\n\n", suites_tested);
-
 		if (suites_failed > 0) {
 			mbedtls_printf("  [ %d tests FAIL ]\n\n",
 				       suites_failed);
-			TC_END_RESULT(TC_FAIL);
-			TC_END_REPORT(TC_FAIL);
 		} else {
 			mbedtls_printf("  [ All tests PASS ]\n\n");
-			TC_END_RESULT(TC_PASS);
-			TC_END_REPORT(TC_PASS);
 		}
+		zassert_not_equal(suites_tested, 0,
+			      "ran %d tests", suites_tested);
+		zassert_equal(suites_failed, 0,
+			      "%d tests failed", suites_failed);
+
 #if defined(_WIN32)
 		mbedtls_printf("  Press Enter to exit this program.\n");
 		fflush(stdout);

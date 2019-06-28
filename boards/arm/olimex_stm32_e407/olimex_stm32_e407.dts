@@ -13,6 +13,7 @@
 
 	chosen {
 		zephyr,console = &usart1;
+		zephyr,shell-uart = &usart1;
 		zephyr,sram = &sram0;
 		zephyr,flash = &flash0;
 		zephyr,ccm = &ccm0;
@@ -44,23 +45,32 @@
 	current-speed = <115200>;
 	pinctrl-0 = <&usart1_pins_a>;
 	pinctrl-names = "default";
-	status = "ok";
+	status = "okay";
 };
 
 &usart3 {
 	current-speed = <115200>;
 	pinctrl-0 = <&usart3_pins_a>;
 	pinctrl-names = "default";
-	status = "ok";
+	status = "okay";
 };
 
 &usart6 {
 	current-speed = <115200>;
 	pinctrl-0 = <&usart6_pins_b>;
 	pinctrl-names = "default";
-	status = "ok";
+	status = "okay";
 };
 
 &rtc {
-	status = "ok";
+	status = "okay";
+};
+
+/* Only one interface should be enabled at a time: usbotg_fs or usbotg_hs */
+usb_otg1: &usbotg_fs {
+	status = "disabled";
+};
+
+usb_otg2: &usbotg_hs {
+	status = "okay";
 };

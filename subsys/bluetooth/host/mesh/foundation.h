@@ -127,6 +127,7 @@ void bt_mesh_attention(struct bt_mesh_model *model, u8_t time);
 u8_t *bt_mesh_label_uuid_get(u16_t addr);
 
 struct bt_mesh_hb_pub *bt_mesh_hb_pub_get(void);
+void bt_mesh_hb_pub_disable(void);
 struct bt_mesh_cfg_srv *bt_mesh_cfg_get(void);
 
 u8_t bt_mesh_net_transmit_get(void);
@@ -142,7 +143,7 @@ void bt_mesh_subnet_del(struct bt_mesh_subnet *sub, bool store);
 struct bt_mesh_app_key *bt_mesh_app_key_alloc(u16_t app_idx);
 void bt_mesh_app_key_del(struct bt_mesh_app_key *key, bool store);
 
-#include <misc/byteorder.h>
+#include <sys/byteorder.h>
 
 static inline void key_idx_pack(struct net_buf_simple *buf,
 				u16_t idx1, u16_t idx2)

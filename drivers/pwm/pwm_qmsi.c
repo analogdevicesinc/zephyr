@@ -6,12 +6,12 @@
 
 #include <errno.h>
 
-#include <pwm.h>
+#include <drivers/pwm.h>
 #include <device.h>
 #include <kernel.h>
 #include <init.h>
-#include <power.h>
-#include <misc/util.h>
+#include <power/power.h>
+#include <sys/util.h>
 
 #include "qm_pwm.h"
 #include "clk.h"
@@ -70,7 +70,7 @@ static int __set_one_port(struct device *dev, qm_pwm_t id, u32_t pwm,
 	/* Disable timer to prevent any output */
 	qm_pwm_stop(id, pwm);
 
-	if (on == 0) {
+	if (on == 0U) {
 		/* stop PWM if so specified */
 		goto pwm_set_port_return;
 	}
@@ -79,8 +79,8 @@ static int __set_one_port(struct device *dev, qm_pwm_t id, u32_t pwm,
 	 * off period must be more than zero. Otherwise, the PWM pin will be
 	 * turned off. Let's use the minimum value which is 1 for this case.
 	 */
-	if (off == 0) {
-		off = 1;
+	if (off == 0U) {
+		off = 1U;
 	}
 
 	/* PWM mode, user-defined count mode, timer disabled */
@@ -136,7 +136,7 @@ static int pwm_qmsi_pin_set(struct device *dev, u32_t pwm,
 		return -EINVAL;
 	}
 
-	if (period_cycles == 0 || pulse_cycles > period_cycles) {
+	if (period_cycles == 0U || pulse_cycles > period_cycles) {
 		return -EINVAL;
 	}
 
@@ -147,9 +147,9 @@ static int pwm_qmsi_pin_set(struct device *dev, u32_t pwm,
 	 * low must be more than zero. Otherwise, the PWM pin will be
 	 * turned off. Let's make sure low is always more than zero.
 	 */
-	if (low == 0) {
+	if (low == 0U) {
 		high--;
-		low = 1;
+		low = 1U;
 	}
 
 	return __set_one_port(dev, QM_PWM_0, pwm, high, low);
@@ -247,20 +247,24 @@ static int pwm_qmsi_resume_from_suspend(struct device *dev)
 * the *context may include IN data or/and OUT data
 */
 static int pwm_qmsi_device_ctrl(struct device *dev, u32_t ctrl_command,
-				void *context)
+				void *context, device_pm_cb cb, void *arg)
 {
+	int ret = 0;
+
 	if (ctrl_command == DEVICE_PM_SET_POWER_STATE) {
 		if (*((u32_t *)context) == DEVICE_PM_SUSPEND_STATE) {
-			return pwm_qmsi_suspend(dev);
+			ret = pwm_qmsi_suspend(dev);
 		} else if (*((u32_t *)context) == DEVICE_PM_ACTIVE_STATE) {
-			return pwm_qmsi_resume_from_suspend(dev);
+			ret = pwm_qmsi_resume_from_suspend(dev);
 		}
 	} else if (ctrl_command == DEVICE_PM_GET_POWER_STATE) {
 		*((u32_t *)context) = pwm_qmsi_get_power_state(dev);
-		return 0;
 	}
 
-	return 0;
+	if (cb) {
+		cb(dev, ret, context, arg);
+	}
+	return ret;
 }
 #endif
 

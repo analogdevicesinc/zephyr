@@ -7,8 +7,7 @@ Overview
 ********
 
 Make a USB Bluetooth dongle out of Zephyr. Requires USB device support from the
-board it runs on (e.g. :ref:`arduino_101` has this).
-
+board it runs on (e.g. :ref:`nrf52840_pca10056` supports both BLE and USB).
 
 Requirements
 ************
@@ -18,7 +17,7 @@ Requirements
 
 Building and Running
 ********************
-This sample can be found under :file:`samples/bluetooth/hci_usb` in the
+This sample can be found under :zephyr_file:`samples/bluetooth/hci_usb` in the
 Zephyr tree.
 
-See :ref:`bluetooth setup section <bluetooth_setup>` for details.
+See :ref:`bluetooth samples section <bluetooth-samples>` for details.

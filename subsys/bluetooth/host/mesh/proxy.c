@@ -7,7 +7,7 @@
  */
 
 #include <zephyr.h>
-#include <misc/byteorder.h>
+#include <sys/byteorder.h>
 
 #include <net/buf.h>
 #include <bluetooth/bluetooth.h>
@@ -16,6 +16,7 @@
 #include <bluetooth/mesh.h>
 
 #define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_MESH_DEBUG_PROXY)
+#define LOG_MODULE_NAME bt_mesh_proxy
 #include "common/log.h"
 
 #include "mesh.h"
@@ -29,6 +30,12 @@
 
 #define PDU_TYPE(data)     (data[0] & BIT_MASK(6))
 #define PDU_SAR(data)      (data[0] >> 6)
+
+/* Mesh Profile 1.0 Section 6.6:
+ * "The timeout for the SAR transfer is 20 seconds. When the timeout
+ *  expires, the Proxy Server shall disconnect."
+ */
+#define PROXY_SAR_TIMEOUT  K_SECONDS(20)
 
 #define SAR_COMPLETE       0x00
 #define SAR_FIRST          0x01
@@ -67,11 +74,9 @@ static bool proxy_adv_enabled;
 
 #if defined(CONFIG_BT_MESH_GATT_PROXY)
 static void proxy_send_beacons(struct k_work *work);
-static u16_t proxy_ccc_val;
 #endif
 
 #if defined(CONFIG_BT_MESH_PB_GATT)
-static u16_t prov_ccc_val;
 static bool prov_fast_adv;
 #endif
 
@@ -88,11 +93,12 @@ static struct bt_mesh_proxy_client {
 #if defined(CONFIG_BT_MESH_GATT_PROXY)
 	struct k_work send_beacons;
 #endif
+	struct k_delayed_work    sar_timer;
 	struct net_buf_simple    buf;
 } clients[CONFIG_BT_MAX_CONN] = {
 	[0 ... (CONFIG_BT_MAX_CONN - 1)] = {
 #if defined(CONFIG_BT_MESH_GATT_PROXY)
-		.send_beacons = _K_WORK_INITIALIZER(proxy_send_beacons),
+		.send_beacons = Z_WORK_INITIALIZER(proxy_send_beacons),
 #endif
 	},
 };
@@ -117,6 +123,19 @@ static struct bt_mesh_proxy_client *find_client(struct bt_conn *conn)
 	}
 
 	return NULL;
+}
+
+static void proxy_sar_timeout(struct k_work *work)
+{
+	struct bt_mesh_proxy_client *client;
+
+	BT_WARN("Proxy SAR timeout");
+
+	client = CONTAINER_OF(work, struct bt_mesh_proxy_client, sar_timer);
+	if (client->conn) {
+		bt_conn_disconnect(client->conn,
+				   BT_HCI_ERR_REMOTE_USER_TERM_CONN);
+	}
 }
 
 #if defined(CONFIG_BT_MESH_GATT_PROXY)
@@ -224,7 +243,7 @@ static void send_filter_status(struct bt_mesh_proxy_client *client,
 		net_buf_simple_add_u8(buf, 0x01);
 	}
 
-	for (filter_size = 0, i = 0; i < ARRAY_SIZE(client->filter); i++) {
+	for (filter_size = 0U, i = 0; i < ARRAY_SIZE(client->filter); i++) {
 		if (client->filter[i] != BT_MESH_ADDR_UNASSIGNED) {
 			filter_size++;
 		}
@@ -360,7 +379,7 @@ void bt_mesh_proxy_identity_start(struct bt_mesh_subnet *sub)
 void bt_mesh_proxy_identity_stop(struct bt_mesh_subnet *sub)
 {
 	sub->node_id = BT_MESH_NODE_IDENTITY_STOPPED;
-	sub->node_id_start = 0;
+	sub->node_id_start = 0U;
 }
 
 int bt_mesh_proxy_identity_enable(void)
@@ -474,6 +493,7 @@ static ssize_t proxy_recv(struct bt_conn *conn,
 			return -EINVAL;
 		}
 
+		k_delayed_work_submit(&client->sar_timer, PROXY_SAR_TIMEOUT);
 		client->msg_type = PDU_TYPE(data);
 		net_buf_simple_add_mem(&client->buf, data + 1, len - 1);
 		break;
@@ -489,6 +509,7 @@ static ssize_t proxy_recv(struct bt_conn *conn,
 			return -EINVAL;
 		}
 
+		k_delayed_work_submit(&client->sar_timer, PROXY_SAR_TIMEOUT);
 		net_buf_simple_add_mem(&client->buf, data + 1, len - 1);
 		break;
 
@@ -503,6 +524,7 @@ static ssize_t proxy_recv(struct bt_conn *conn,
 			return -EINVAL;
 		}
 
+		k_delayed_work_cancel(&client->sar_timer);
 		net_buf_simple_add_mem(&client->buf, data + 1, len - 1);
 		proxy_complete_pdu(client);
 		break;
@@ -565,6 +587,7 @@ static void proxy_disconnected(struct bt_conn *conn, u8_t reason)
 				bt_mesh_pb_gatt_close(conn);
 			}
 
+			k_delayed_work_cancel(&client->sar_timer);
 			bt_conn_unref(client->conn);
 			client->conn = NULL;
 			break;
@@ -584,24 +607,21 @@ struct net_buf_simple *bt_mesh_proxy_get_buf(void)
 }
 
 #if defined(CONFIG_BT_MESH_PB_GATT)
-static ssize_t prov_ccc_write(struct bt_conn *conn,
-			      const struct bt_gatt_attr *attr,
-			      const void *buf, u16_t len,
-			      u16_t offset, u8_t flags)
+static void prov_ccc_changed(const struct bt_gatt_attr *attr, u16_t value)
+{
+	BT_DBG("value 0x%04x", value);
+}
+
+static bool prov_ccc_write(struct bt_conn *conn,
+			   const struct bt_gatt_attr *attr, u16_t value)
 {
 	struct bt_mesh_proxy_client *client;
-	u16_t *value = attr->user_data;
 
-	BT_DBG("len %u: %s", len, bt_hex(buf, len));
+	BT_DBG("value 0x%04x", value);
 
-	if (len != sizeof(*value)) {
-		return BT_GATT_ERR(BT_ATT_ERR_INVALID_ATTRIBUTE_LEN);
-	}
-
-	*value = sys_get_le16(buf);
-	if (*value != BT_GATT_CCC_NOTIFY) {
-		BT_WARN("Client wrote 0x%04x instead enabling notify", *value);
-		return len;
+	if (value != BT_GATT_CCC_NOTIFY) {
+		BT_WARN("Client wrote 0x%04x instead enabling notify", value);
+		return false;
 	}
 
 	/* If a connection exists there must be a client */
@@ -613,18 +633,10 @@ static ssize_t prov_ccc_write(struct bt_conn *conn,
 		bt_mesh_pb_gatt_open(conn);
 	}
 
-	return len;
+	return true;
 }
 
-static ssize_t prov_ccc_read(struct bt_conn *conn,
-			     const struct bt_gatt_attr *attr,
-			     void *buf, u16_t len, u16_t offset)
-{
-	u16_t *value = attr->user_data;
-
-	return bt_gatt_attr_read(conn, attr, buf, len, offset, value,
-				 sizeof(*value));
-}
+static struct bt_gatt_ccc_cfg prov_ccc_cfg[BT_GATT_CCC_MAX] = {};
 
 /* Mesh Provisioning Service Declaration */
 static struct bt_gatt_attr prov_attrs[] = {
@@ -638,10 +650,8 @@ static struct bt_gatt_attr prov_attrs[] = {
 	BT_GATT_CHARACTERISTIC(BT_UUID_MESH_PROV_DATA_OUT,
 			       BT_GATT_CHRC_NOTIFY, BT_GATT_PERM_NONE,
 			       NULL, NULL, NULL),
-	/* Add custom CCC as clients need to be tracked individually */
-	BT_GATT_DESCRIPTOR(BT_UUID_GATT_CCC,
-			   BT_GATT_PERM_WRITE | BT_GATT_PERM_READ,
-			   prov_ccc_read, prov_ccc_write, &prov_ccc_val),
+	BT_GATT_CCC_MANAGED(prov_ccc_cfg, prov_ccc_changed, prov_ccc_write,
+			    NULL),
 };
 
 static struct bt_gatt_service prov_svc = BT_GATT_SERVICE(prov_attrs);
@@ -651,6 +661,14 @@ int bt_mesh_proxy_prov_enable(void)
 	int i;
 
 	BT_DBG("");
+
+	if (gatt_svc == MESH_GATT_PROV) {
+		return -EALREADY;
+	}
+
+	if (gatt_svc != MESH_GATT_NONE) {
+		return -EBUSY;
+	}
 
 	bt_gatt_service_register(&prov_svc);
 	gatt_svc = MESH_GATT_PROV;
@@ -666,11 +684,19 @@ int bt_mesh_proxy_prov_enable(void)
 	return 0;
 }
 
-int bt_mesh_proxy_prov_disable(void)
+int bt_mesh_proxy_prov_disable(bool disconnect)
 {
 	int i;
 
 	BT_DBG("");
+
+	if (gatt_svc == MESH_GATT_NONE) {
+		return -EALREADY;
+	}
+
+	if (gatt_svc != MESH_GATT_PROV) {
+		return -EBUSY;
+	}
 
 	bt_gatt_service_unregister(&prov_svc);
 	gatt_svc = MESH_GATT_NONE;
@@ -678,11 +704,20 @@ int bt_mesh_proxy_prov_disable(void)
 	for (i = 0; i < ARRAY_SIZE(clients); i++) {
 		struct bt_mesh_proxy_client *client = &clients[i];
 
-		if (client->conn && client->filter_type == PROV) {
+		if (!client->conn || client->filter_type != PROV) {
+			continue;
+		}
+
+		if (disconnect) {
+			bt_conn_disconnect(client->conn,
+					   BT_HCI_ERR_REMOTE_USER_TERM_CONN);
+		} else {
 			bt_mesh_pb_gatt_close(client->conn);
 			client->filter_type = NONE;
 		}
 	}
+
+	bt_mesh_adv_update();
 
 	return 0;
 }
@@ -690,24 +725,21 @@ int bt_mesh_proxy_prov_disable(void)
 #endif /* CONFIG_BT_MESH_PB_GATT */
 
 #if defined(CONFIG_BT_MESH_GATT_PROXY)
-static ssize_t proxy_ccc_write(struct bt_conn *conn,
-			       const struct bt_gatt_attr *attr,
-			       const void *buf, u16_t len,
-			       u16_t offset, u8_t flags)
+static void proxy_ccc_changed(const struct bt_gatt_attr *attr, u16_t value)
+{
+	BT_DBG("value 0x%04x", value);
+}
+
+static bool proxy_ccc_write(struct bt_conn *conn,
+			    const struct bt_gatt_attr *attr, u16_t value)
 {
 	struct bt_mesh_proxy_client *client;
-	u16_t value;
 
-	BT_DBG("len %u: %s", len, bt_hex(buf, len));
+	BT_DBG("value: 0x%04x", value);
 
-	if (len != sizeof(value)) {
-		return BT_GATT_ERR(BT_ATT_ERR_INVALID_ATTRIBUTE_LEN);
-	}
-
-	value = sys_get_le16(buf);
 	if (value != BT_GATT_CCC_NOTIFY) {
 		BT_WARN("Client wrote 0x%04x instead enabling notify", value);
-		return len;
+		return false;
 	}
 
 	/* If a connection exists there must be a client */
@@ -719,18 +751,10 @@ static ssize_t proxy_ccc_write(struct bt_conn *conn,
 		k_work_submit(&client->send_beacons);
 	}
 
-	return len;
+	return true;
 }
 
-static ssize_t proxy_ccc_read(struct bt_conn *conn,
-			      const struct bt_gatt_attr *attr,
-			      void *buf, u16_t len, u16_t offset)
-{
-	u16_t *value = attr->user_data;
-
-	return bt_gatt_attr_read(conn, attr, buf, len, offset, value,
-				 sizeof(*value));
-}
+static struct bt_gatt_ccc_cfg proxy_ccc_cfg[BT_GATT_CCC_MAX] = {};
 
 /* Mesh Proxy Service Declaration */
 static struct bt_gatt_attr proxy_attrs[] = {
@@ -745,10 +769,8 @@ static struct bt_gatt_attr proxy_attrs[] = {
 			       BT_GATT_CHRC_NOTIFY,
 			       BT_GATT_PERM_NONE,
 			       NULL, NULL, NULL),
-	/* Add custom CCC as clients need to be tracked individually */
-	BT_GATT_DESCRIPTOR(BT_UUID_GATT_CCC,
-			   BT_GATT_PERM_READ | BT_GATT_PERM_WRITE,
-			   proxy_ccc_read, proxy_ccc_write, &proxy_ccc_val),
+	BT_GATT_CCC_MANAGED(proxy_ccc_cfg, proxy_ccc_changed, proxy_ccc_write,
+			    NULL),
 };
 
 static struct bt_gatt_service proxy_svc = BT_GATT_SERVICE(proxy_attrs);
@@ -758,6 +780,14 @@ int bt_mesh_proxy_gatt_enable(void)
 	int i;
 
 	BT_DBG("");
+
+	if (gatt_svc == MESH_GATT_PROXY) {
+		return -EALREADY;
+	}
+
+	if (gatt_svc != MESH_GATT_NONE) {
+		return -EBUSY;
+	}
 
 	bt_gatt_service_register(&proxy_svc);
 	gatt_svc = MESH_GATT_PROXY;
@@ -792,6 +822,14 @@ void bt_mesh_proxy_gatt_disconnect(void)
 int bt_mesh_proxy_gatt_disable(void)
 {
 	BT_DBG("");
+
+	if (gatt_svc == MESH_GATT_NONE) {
+		return -EALREADY;
+	}
+
+	if (gatt_svc != MESH_GATT_PROXY) {
+		return -EBUSY;
+	}
 
 	bt_mesh_proxy_gatt_disconnect();
 
@@ -1137,8 +1175,8 @@ static s32_t gatt_proxy_advertise(struct bt_mesh_subnet *sub)
 		 * 6 slices, but make sure that a slice is at least one
 		 * second long (to avoid excessive rotation).
 		 */
-		max_timeout = NODE_ID_TIMEOUT / max(subnet_count, 6);
-		max_timeout = max(max_timeout, K_SECONDS(1));
+		max_timeout = NODE_ID_TIMEOUT / MAX(subnet_count, 6);
+		max_timeout = MAX(max_timeout, K_SECONDS(1));
 
 		if (remaining > max_timeout || remaining < 0) {
 			remaining = max_timeout;
@@ -1274,6 +1312,8 @@ int bt_mesh_proxy_init(void)
 
 		client->buf.size = CLIENT_BUF_SIZE;
 		client->buf.__buf = client_buf_data + (i * CLIENT_BUF_SIZE);
+
+		k_delayed_work_init(&client->sar_timer, proxy_sar_timeout);
 	}
 
 	bt_conn_cb_register(&conn_callbacks);

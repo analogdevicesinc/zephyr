@@ -10,8 +10,8 @@
 #include <stddef.h>
 #include <string.h>
 #include <errno.h>
-#include <misc/printk.h>
-#include <misc/byteorder.h>
+#include <sys/printk.h>
+#include <sys/byteorder.h>
 #include <zephyr.h>
 
 #include <bluetooth/bluetooth.h>
@@ -21,7 +21,6 @@
 #include <bluetooth/gatt.h>
 
 #include <gatt/hrs.h>
-#include <gatt/dis.h>
 #include <gatt/bas.h>
 
 struct bt_conn *default_conn;
@@ -67,7 +66,6 @@ static void bt_ready(int err)
 
 	hrs_init(0x01);
 	bas_init();
-	dis_init(CONFIG_SOC, "Manufacturer");
 
 	err = bt_le_adv_start(BT_LE_ADV_CONN_NAME, ad, ARRAY_SIZE(ad), NULL, 0);
 	if (err) {

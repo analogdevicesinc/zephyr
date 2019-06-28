@@ -10,7 +10,7 @@
 #include <device.h>
 #include <init.h>
 #include <soc.h>
-#include <uart.h>
+#include <drivers/uart.h>
 #include <linker/sections.h>
 #include <fsl_common.h>
 #include <fsl_clock.h>
@@ -188,8 +188,6 @@ static int kw2xd_init(struct device *arg)
 
 	/* release I/O power hold to allow normal run state */
 	PMC->REGSC |= PMC_REGSC_ACKISO_MASK;
-
-	_ClearFaults();
 
 	/* Initialize PLL/system clock to 48 MHz */
 	clkInit();

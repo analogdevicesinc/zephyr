@@ -5,12 +5,13 @@
  */
 
 #include <errno.h>
-#include <spi.h>
-#include <clock_control.h>
+#include <drivers/spi.h>
+#include <drivers/clock_control.h>
 #include <fsl_lpspi.h>
 
-#define SYS_LOG_LEVEL CONFIG_SYS_LOG_SPI_LEVEL
-#include <logging/sys_log.h>
+#define LOG_LEVEL CONFIG_SPI_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_REGISTER(spi_mcux_lpspi);
 
 #include "spi_context.h"
 
@@ -93,7 +94,7 @@ static void spi_mcux_transfer_next_packet(struct device *dev)
 	status = LPSPI_MasterTransferNonBlocking(base, &data->handle,
 						 &transfer);
 	if (status != kStatus_Success) {
-		SYS_LOG_ERR("Transfer could not start");
+		LOG_ERR("Transfer could not start");
 	}
 }
 
@@ -130,10 +131,15 @@ static int spi_mcux_configure(struct device *dev,
 	u32_t clock_freq;
 	u32_t word_size;
 
+	if (spi_context_configured(&data->ctx, spi_cfg)) {
+		/* This configuration is already in use */
+		return 0;
+	}
+
 	LPSPI_MasterGetDefaultConfig(&master_config);
 
 	if (spi_cfg->slave > CHIP_SELECT_COUNT) {
-		SYS_LOG_ERR("Slave %d is greater than %d",
+		LOG_ERR("Slave %d is greater than %d",
 			    spi_cfg->slave,
 			    CHIP_SELECT_COUNT);
 		return -EINVAL;
@@ -141,7 +147,7 @@ static int spi_mcux_configure(struct device *dev,
 
 	word_size = SPI_WORD_SIZE_GET(spi_cfg->operation);
 	if (word_size > MAX_DATA_WIDTH) {
-		SYS_LOG_ERR("Word size %d is greater than %d",
+		LOG_ERR("Word size %d is greater than %d",
 			    word_size, MAX_DATA_WIDTH);
 		return -EINVAL;
 	}
@@ -269,9 +275,9 @@ static const struct spi_driver_api spi_mcux_driver_api = {
 static void spi_mcux_config_func_0(struct device *dev);
 
 static const struct spi_mcux_config spi_mcux_config_0 = {
-	.base = (LPSPI_Type *) SPI_0_BASE_ADDRESS,
-	.clock_name = SPI_0_CLOCK_CONTROLLER,
-	.clock_subsys = (clock_control_subsys_t) SPI_0_CLOCK_NAME,
+	.base = (LPSPI_Type *) DT_NXP_IMX_LPSPI_SPI_0_BASE_ADDRESS,
+	.clock_name = DT_NXP_IMX_LPSPI_SPI_0_CLOCK_CONTROLLER,
+	.clock_subsys = (clock_control_subsys_t) DT_NXP_IMX_LPSPI_SPI_0_CLOCK_NAME,
 	.irq_config_func = spi_mcux_config_func_0,
 };
 
@@ -280,17 +286,17 @@ static struct spi_mcux_data spi_mcux_data_0 = {
 	SPI_CONTEXT_INIT_SYNC(spi_mcux_data_0, ctx),
 };
 
-DEVICE_AND_API_INIT(spi_mcux_0, SPI_0_LABEL, &spi_mcux_init,
+DEVICE_AND_API_INIT(spi_mcux_0, DT_NXP_IMX_LPSPI_SPI_0_LABEL, &spi_mcux_init,
 		    &spi_mcux_data_0, &spi_mcux_config_0,
 		    POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
 		    &spi_mcux_driver_api);
 
 static void spi_mcux_config_func_0(struct device *dev)
 {
-	IRQ_CONNECT(SPI_0_IRQ, SPI_0_IRQ_PRIORITY,
+	IRQ_CONNECT(DT_NXP_IMX_LPSPI_SPI_0_IRQ_0, DT_NXP_IMX_LPSPI_SPI_0_IRQ_0_PRIORITY,
 		    spi_mcux_isr, DEVICE_GET(spi_mcux_0), 0);
 
-	irq_enable(SPI_0_IRQ);
+	irq_enable(DT_NXP_IMX_LPSPI_SPI_0_IRQ_0);
 }
 #endif /* SPI_0 */
 
@@ -298,9 +304,9 @@ static void spi_mcux_config_func_0(struct device *dev)
 static void spi_mcux_config_func_1(struct device *dev);
 
 static const struct spi_mcux_config spi_mcux_config_1 = {
-	.base = (LPSPI_Type *) SPI_1_BASE_ADDRESS,
-	.clock_name = SPI_1_CLOCK_CONTROLLER,
-	.clock_subsys = (clock_control_subsys_t) SPI_1_CLOCK_NAME,
+	.base = (LPSPI_Type *) DT_NXP_IMX_LPSPI_SPI_1_BASE_ADDRESS,
+	.clock_name = DT_NXP_IMX_LPSPI_SPI_1_CLOCK_CONTROLLER,
+	.clock_subsys = (clock_control_subsys_t) DT_NXP_IMX_LPSPI_SPI_1_CLOCK_NAME,
 	.irq_config_func = spi_mcux_config_func_1,
 };
 
@@ -309,17 +315,17 @@ static struct spi_mcux_data spi_mcux_data_1 = {
 	SPI_CONTEXT_INIT_SYNC(spi_mcux_data_1, ctx),
 };
 
-DEVICE_AND_API_INIT(spi_mcux_1, SPI_1_LABEL, &spi_mcux_init,
+DEVICE_AND_API_INIT(spi_mcux_1, DT_NXP_IMX_LPSPI_SPI_1_LABEL, &spi_mcux_init,
 		    &spi_mcux_data_1, &spi_mcux_config_1,
 		    POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
 		    &spi_mcux_driver_api);
 
 static void spi_mcux_config_func_1(struct device *dev)
 {
-	IRQ_CONNECT(SPI_1_IRQ, SPI_1_IRQ_PRIORITY,
+	IRQ_CONNECT(DT_NXP_IMX_LPSPI_SPI_1_IRQ_0, DT_NXP_IMX_LPSPI_SPI_1_IRQ_0_PRIORITY,
 		    spi_mcux_isr, DEVICE_GET(spi_mcux_1), 0);
 
-	irq_enable(SPI_1_IRQ);
+	irq_enable(DT_NXP_IMX_LPSPI_SPI_1_IRQ_0);
 }
 #endif /* SPI_1 */
 
@@ -327,9 +333,9 @@ static void spi_mcux_config_func_1(struct device *dev)
 static void spi_mcux_config_func_2(struct device *dev);
 
 static const struct spi_mcux_config spi_mcux_config_2 = {
-	.base = (LPSPI_Type *) SPI_2_BASE_ADDRESS,
-	.clock_name = SPI_2_CLOCK_CONTROLLER,
-	.clock_subsys = (clock_control_subsys_t) SPI_2_CLOCK_NAME,
+	.base = (LPSPI_Type *) DT_NXP_IMX_LPSPI_SPI_2_BASE_ADDRESS,
+	.clock_name = DT_NXP_IMX_LPSPI_SPI_2_CLOCK_CONTROLLER,
+	.clock_subsys = (clock_control_subsys_t) DT_NXP_IMX_LPSPI_SPI_2_CLOCK_NAME,
 	.irq_config_func = spi_mcux_config_func_2,
 };
 
@@ -338,17 +344,17 @@ static struct spi_mcux_data spi_mcux_data_2 = {
 	SPI_CONTEXT_INIT_SYNC(spi_mcux_data_2, ctx),
 };
 
-DEVICE_AND_API_INIT(spi_mcux_2, SPI_2_LABEL, &spi_mcux_init,
+DEVICE_AND_API_INIT(spi_mcux_2, DT_NXP_IMX_LPSPI_SPI_2_LABEL, &spi_mcux_init,
 		    &spi_mcux_data_2, &spi_mcux_config_2,
 		    POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
 		    &spi_mcux_driver_api);
 
 static void spi_mcux_config_func_2(struct device *dev)
 {
-	IRQ_CONNECT(SPI_2_IRQ, SPI_2_IRQ_PRIORITY,
+	IRQ_CONNECT(DT_NXP_IMX_LPSPI_SPI_2_IRQ_0, DT_NXP_IMX_LPSPI_SPI_2_IRQ_0_PRIORITY,
 		    spi_mcux_isr, DEVICE_GET(spi_mcux_2), 0);
 
-	irq_enable(SPI_2_IRQ);
+	irq_enable(DT_NXP_IMX_LPSPI_SPI_2_IRQ_0);
 }
 #endif /* SPI_2 */
 
@@ -356,9 +362,9 @@ static void spi_mcux_config_func_2(struct device *dev)
 static void spi_mcux_config_func_3(struct device *dev);
 
 static const struct spi_mcux_config spi_mcux_config_3 = {
-	.base = (LPSPI_Type *) SPI_3_BASE_ADDRESS,
-	.clock_name = SPI_3_CLOCK_CONTROLLER,
-	.clock_subsys = (clock_control_subsys_t) SPI_3_CLOCK_NAME,
+	.base = (LPSPI_Type *) DT_NXP_IMX_LPSPI_SPI_3_BASE_ADDRESS,
+	.clock_name = DT_NXP_IMX_LPSPI_SPI_3_CLOCK_CONTROLLER,
+	.clock_subsys = (clock_control_subsys_t) DT_NXP_IMX_LPSPI_SPI_3_CLOCK_NAME,
 	.irq_config_func = spi_mcux_config_func_3,
 };
 
@@ -367,16 +373,16 @@ static struct spi_mcux_data spi_mcux_data_3 = {
 	SPI_CONTEXT_INIT_SYNC(spi_mcux_data_3, ctx),
 };
 
-DEVICE_AND_API_INIT(spi_mcux_3, SPI_3_LABEL, &spi_mcux_init,
+DEVICE_AND_API_INIT(spi_mcux_3, DT_NXP_IMX_LPSPI_SPI_3_LABEL, &spi_mcux_init,
 		    &spi_mcux_data_3, &spi_mcux_config_3,
 		    POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
 		    &spi_mcux_driver_api);
 
 static void spi_mcux_config_func_3(struct device *dev)
 {
-	IRQ_CONNECT(SPI_3_IRQ, SPI_3_IRQ_PRIORITY,
+	IRQ_CONNECT(DT_NXP_IMX_LPSPI_SPI_3_IRQ_0, DT_NXP_IMX_LPSPI_SPI_3_IRQ_0_PRIORITY,
 		    spi_mcux_isr, DEVICE_GET(spi_mcux_3), 0);
 
-	irq_enable(SPI_3_IRQ);
+	irq_enable(DT_NXP_IMX_LPSPI_SPI_3_IRQ_0);
 }
 #endif /* CONFIG_SPI_3 */

@@ -14,20 +14,23 @@
 #include "zephyr/types.h"
 #include "irq.h"
 #include "device.h"
-#include "drivers/system_timer.h"
+#include <drivers/timer/system_timer.h>
 #include "sys_clock.h"
 #include "timer_model.h"
 #include "soc.h"
 #include "posix_trace.h"
 
+#include "legacy_api.h"
+
 static u64_t tick_period; /* System tick period in number of hw cycles */
 static s64_t silent_ticks;
+static s32_t _sys_idle_elapsed_ticks = 1;
 
 /**
  * Return the current HW cycle counter
  * (number of microseconds since boot in 32bits)
  */
-u32_t _timer_cycle_get_32(void)
+u32_t z_timer_cycle_get_32(void)
 {
 	return hwm_get_time();
 }
@@ -41,14 +44,14 @@ u32_t _timer_cycle_get_32(void)
  * if sys_ticks is K_FOREVER (or another negative number),
  * we will effectively silence the tick interrupts forever
  */
-void _timer_idle_enter(s32_t sys_ticks)
+void z_timer_idle_enter(s32_t sys_ticks)
 {
 	if (silent_ticks > 0) { /* LCOV_EXCL_BR_LINE */
 		/* LCOV_EXCL_START */
 		posix_print_warning("native timer: Re-entering idle mode with "
 				    "%i ticks pending\n",
 				    silent_ticks);
-		_timer_idle_exit();
+		z_clock_idle_exit();
 		/* LCOV_EXCL_STOP */
 	}
 	if (sys_ticks < 0) {
@@ -72,12 +75,12 @@ void _timer_idle_enter(s32_t sys_ticks)
  * Note that we do not assume this function is called before the interrupt is
  * raised (the interrupt can handle it announcing all ticks)
  */
-void _timer_idle_exit(void)
+void z_clock_idle_exit(void)
 {
 	silent_ticks -= hwtimer_get_pending_silent_ticks();
 	if (silent_ticks > 0) {
 		_sys_idle_elapsed_ticks = silent_ticks;
-		_sys_clock_tick_announce();
+		z_clock_announce(_sys_idle_elapsed_ticks);
 	}
 	silent_ticks = 0;
 	hwtimer_set_silent_ticks(0);
@@ -93,17 +96,17 @@ static void sp_timer_isr(void *arg)
 	ARG_UNUSED(arg);
 	_sys_idle_elapsed_ticks = silent_ticks + 1;
 	silent_ticks = 0;
-	_sys_clock_tick_announce();
+	z_clock_announce(_sys_idle_elapsed_ticks);
 }
 
 /*
  * Enable the hw timer, setting its tick period, and setup its interrupt
  */
-int _sys_clock_driver_init(struct device *device)
+int z_clock_driver_init(struct device *device)
 {
 	ARG_UNUSED(device);
 
-	tick_period = 1000000ul / sys_clock_ticks_per_sec;
+	tick_period = 1000000ul / CONFIG_SYS_CLOCK_TICKS_PER_SEC;
 
 	hwtimer_enable(tick_period);
 
@@ -122,7 +125,7 @@ int _sys_clock_driver_init(struct device *device)
  * Note that interrupts may be received in the meanwhile and that therefore this
  * thread may loose context
  */
-void k_busy_wait(u32_t usec_to_wait)
+void z_arch_busy_wait(u32_t usec_to_wait)
 {
 	u64_t time_end = hwm_get_time() + usec_to_wait;
 
@@ -133,3 +136,19 @@ void k_busy_wait(u32_t usec_to_wait)
 	}
 }
 #endif
+
+#if defined(CONFIG_SYSTEM_CLOCK_DISABLE)
+/**
+ *
+ * @brief Stop announcing sys ticks into the kernel
+ *
+ * Disable the system ticks generation
+ *
+ * @return N/A
+ */
+void sys_clock_disable(void)
+{
+	irq_disable(TIMER_TICK_IRQ);
+	hwtimer_set_silent_ticks(INT64_MAX);
+}
+#endif /* CONFIG_SYSTEM_CLOCK_DISABLE */

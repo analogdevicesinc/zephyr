@@ -6,7 +6,7 @@
 
 if SOC_NSIM_EM
 
-config CPU_EM4_DMIPS
+config CPU_EM4_FPUDA
 	def_bool y
 
 config NUM_IRQ_PRIO_LEVELS
@@ -25,16 +25,16 @@ config RGF_NUM_BANKS
 	default 2
 
 config SYS_CLOCK_HW_CYCLES_PER_SEC
-	default 10000000
+	default 5000000
 
 config HARVARD
-	def_bool y
+	default y
 
 config ARC_FIRQ
-	def_bool y
+	default y
 
 config CACHE_FLUSHING
-	def_bool y
+	default y
 
 if (ARC_MPU_VER = 2)
 

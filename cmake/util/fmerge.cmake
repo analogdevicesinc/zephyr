@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+
 # Merges a list of files into a destination file.
 # Usage: list of files as arguments, first argument is the destination file
 
@@ -12,6 +14,6 @@ set(DEST_FILE ${CMAKE_ARGV3})
 file(REMOVE ${DEST_FILE})
 
 foreach(i RANGE 4 ${ARGC})
-	file(READ ${CMAKE_ARGV${i}} BUF)
-	file(APPEND ${DEST_FILE} ${BUF})
+  file(READ ${CMAKE_ARGV${i}} BUF)
+  file(APPEND ${DEST_FILE} ${BUF})
 endforeach()

@@ -42,7 +42,8 @@ static struct k_work_q offload_work_q;
 static K_THREAD_STACK_DEFINE(offload_work_q_stack,
 			     CONFIG_OFFLOAD_WORKQUEUE_STACK_SIZE);
 
-#define STACK_SIZE 1024
+#define STACK_SIZE (1024 + CONFIG_TEST_EXTRA_STACKSIZE)
+
 static K_THREAD_STACK_DEFINE(stack1, STACK_SIZE);
 static K_THREAD_STACK_DEFINE(stack2, STACK_SIZE);
 
@@ -147,13 +148,13 @@ void alternate_thread(void *arg1, void *arg2, void *arg3)
 
 void regression_thread(void *arg1, void *arg2, void *arg3)
 {
-	u32_t ncalls = 0;
+	u32_t ncalls = 0U;
 
 	ARG_UNUSED(arg1);
 	ARG_UNUSED(arg2);
 	ARG_UNUSED(arg3);
 
-	k_sem_give(&ALT_SEM);   /* Activate alternate_tast() */
+	k_sem_give(&ALT_SEM);   /* Activate alternate_thread() */
 
 	ncalls = critical_loop(ncalls);
 
@@ -183,8 +184,8 @@ void regression_thread(void *arg1, void *arg2, void *arg3)
 
 static void init_objects(void)
 {
-	critical_var = 0;
-	alt_thread_iterations = 0;
+	critical_var = 0U;
+	alt_thread_iterations = 0U;
 	k_work_q_start(&offload_work_q,
 		       offload_work_q_stack,
 		       K_THREAD_STACK_SIZEOF(offload_work_q_stack),

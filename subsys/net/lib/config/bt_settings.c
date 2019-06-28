@@ -6,8 +6,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define LOG_MODULE_NAME net_config_bt
-#define NET_LOG_LEVEL LOG_LEVEL_DBG
+#include <logging/log.h>
+LOG_MODULE_DECLARE(net_config, CONFIG_NET_CONFIG_LOG_LEVEL);
 
 #include <zephyr.h>
 #include <errno.h>
@@ -24,15 +24,13 @@
 #if defined(CONFIG_NET_CONFIG_BT_NODE)
 #define ADV_STR "on"
 
-static struct bt_gatt_attr attrs[] = {
+BT_GATT_SERVICE_DEFINE(ipss_svc,
 	/* IP Support Service Declaration */
 	BT_GATT_PRIMARY_SERVICE(BT_UUID_IPSS),
-};
-
-static struct bt_gatt_service ipss_svc = BT_GATT_SERVICE(attrs);
+);
 #endif
 
-int _net_config_bt_setup(void)
+int z_net_config_bt_setup(void)
 {
 	struct net_if *iface;
 	struct device *dev;
@@ -54,8 +52,6 @@ int _net_config_bt_setup(void)
 	}
 
 #if defined(CONFIG_NET_CONFIG_BT_NODE)
-	bt_gatt_service_register(&ipss_svc);
-
 	if (net_mgmt(NET_REQUEST_BT_ADVERTISE, iface, ADV_STR,
 		     sizeof(ADV_STR))) {
 		return -EINVAL;

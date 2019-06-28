@@ -5,121 +5,87 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <board.h>
-#include <gpio.h>
+#include <drivers/gpio.h>
 
+#include "app_gpio.h"
 #include "ble_mesh.h"
 #include "device_composition.h"
-#include "publisher.h"
+#include "no_transition_work_handler.h"
 #include "state_binding.h"
+#include "storage.h"
 #include "transition.h"
 
-struct device *led_device[4];
-struct device *button_device[4];
+#if defined(CONFIG_MCUMGR)
+#include <mgmt/smp_bt.h>
+#include "smp_svr.h"
+#endif
 
-static struct k_work button_work;
+static bool reset;
 
-static void button_pressed(struct device *dev,
-			   struct gpio_callback *cb, u32_t pins)
+static void light_default_var_init(void)
 {
-	k_work_submit(&button_work);
-}
-
-static void gpio_init(void)
-{
-	static struct gpio_callback button_cb[4];
-
-	/* LEDs configuration & setting */
-
-	led_device[0] = device_get_binding(LED0_GPIO_CONTROLLER);
-	gpio_pin_configure(led_device[0], LED0_GPIO_PIN,
-			   GPIO_DIR_OUT | GPIO_PUD_PULL_UP);
-	gpio_pin_write(led_device[0], LED0_GPIO_PIN, 1);
-
-	led_device[1] = device_get_binding(LED1_GPIO_CONTROLLER);
-	gpio_pin_configure(led_device[1], LED1_GPIO_PIN,
-			   GPIO_DIR_OUT | GPIO_PUD_PULL_UP);
-	gpio_pin_write(led_device[1], LED1_GPIO_PIN, 1);
-
-	led_device[2] = device_get_binding(LED2_GPIO_CONTROLLER);
-	gpio_pin_configure(led_device[2], LED2_GPIO_PIN,
-			   GPIO_DIR_OUT | GPIO_PUD_PULL_UP);
-	gpio_pin_write(led_device[2], LED2_GPIO_PIN, 1);
-
-	led_device[3] = device_get_binding(LED3_GPIO_CONTROLLER);
-	gpio_pin_configure(led_device[3], LED3_GPIO_PIN,
-			   GPIO_DIR_OUT | GPIO_PUD_PULL_UP);
-	gpio_pin_write(led_device[3], LED3_GPIO_PIN, 1);
-
-	/* Buttons configuration & setting */
-
-	k_work_init(&button_work, publish);
-
-	button_device[0] = device_get_binding(SW0_GPIO_CONTROLLER);
-	gpio_pin_configure(button_device[0], SW0_GPIO_PIN,
-			   (GPIO_DIR_IN | GPIO_INT | GPIO_INT_EDGE |
-			    GPIO_PUD_PULL_UP |
-			    GPIO_INT_DEBOUNCE | GPIO_INT_ACTIVE_LOW));
-	gpio_init_callback(&button_cb[0], button_pressed, BIT(SW0_GPIO_PIN));
-	gpio_add_callback(button_device[0], &button_cb[0]);
-	gpio_pin_enable_callback(button_device[0], SW0_GPIO_PIN);
-
-	button_device[1] = device_get_binding(SW1_GPIO_CONTROLLER);
-	gpio_pin_configure(button_device[1], SW1_GPIO_PIN,
-			   (GPIO_DIR_IN | GPIO_INT | GPIO_INT_EDGE |
-			    GPIO_PUD_PULL_UP |
-			    GPIO_INT_DEBOUNCE | GPIO_INT_ACTIVE_LOW));
-	gpio_init_callback(&button_cb[1], button_pressed, BIT(SW1_GPIO_PIN));
-	gpio_add_callback(button_device[1], &button_cb[1]);
-	gpio_pin_enable_callback(button_device[1], SW1_GPIO_PIN);
-
-	button_device[2] = device_get_binding(SW2_GPIO_CONTROLLER);
-	gpio_pin_configure(button_device[2], SW2_GPIO_PIN,
-			   (GPIO_DIR_IN | GPIO_INT | GPIO_INT_EDGE |
-			    GPIO_PUD_PULL_UP |
-			    GPIO_INT_DEBOUNCE | GPIO_INT_ACTIVE_LOW));
-	gpio_init_callback(&button_cb[2], button_pressed, BIT(SW2_GPIO_PIN));
-	gpio_add_callback(button_device[2], &button_cb[2]);
-	gpio_pin_enable_callback(button_device[2], SW2_GPIO_PIN);
-
-	button_device[3] = device_get_binding(SW3_GPIO_CONTROLLER);
-	gpio_pin_configure(button_device[3], SW3_GPIO_PIN,
-			   (GPIO_DIR_IN | GPIO_INT | GPIO_INT_EDGE |
-			    GPIO_PUD_PULL_UP |
-			    GPIO_INT_DEBOUNCE | GPIO_INT_ACTIVE_LOW));
-	gpio_init_callback(&button_cb[3], button_pressed, BIT(SW3_GPIO_PIN));
-	gpio_add_callback(button_device[3], &button_cb[3]);
-	gpio_pin_enable_callback(button_device[3], SW3_GPIO_PIN);
-}
-
-void light_default_status_init(void)
-{
-	/* Assume following vaules are retrived from Persistence Storage
-	 * and these had saved by respective Setup Servers.
-	 * (Start)
-	 */
 	gen_def_trans_time_srv_user_data.tt = 0x00;
+
 	gen_power_onoff_srv_user_data.onpowerup = STATE_DEFAULT;
 
 	light_lightness_srv_user_data.light_range_min = LIGHTNESS_MIN;
 	light_lightness_srv_user_data.light_range_max = LIGHTNESS_MAX;
+	light_lightness_srv_user_data.last = LIGHTNESS_MAX;
 	light_lightness_srv_user_data.def = LIGHTNESS_MAX;
 
 	light_ctl_srv_user_data.temp_range_min = TEMP_MIN;
 	light_ctl_srv_user_data.temp_range_max = TEMP_MAX;
 	light_ctl_srv_user_data.lightness_def = LIGHTNESS_MAX;
 	light_ctl_srv_user_data.temp_def = TEMP_MIN;
-	/* (End) */
 
-	/* Assume following values are retrived from Persistence
-	 * Storage and these had saved before power down.
-	 * (Start)
-	 */
-	light_lightness_srv_user_data.last = LIGHTNESS_MAX;
-	light_ctl_srv_user_data.temp_last = TEMP_MIN;
-	/* (End) */
+	light_ctl_srv_user_data.lightness_temp_last =
+		(u32_t) ((LIGHTNESS_MAX << 16) | TEMP_MIN);
+}
+
+static void light_default_status_init(void)
+{
+	u16_t lightness;
+
+	lightness = (u16_t) (light_ctl_srv_user_data.lightness_temp_last >> 16);
+
+	if (lightness) {
+		gen_onoff_srv_root_user_data.onoff = STATE_ON;
+	} else {
+		gen_onoff_srv_root_user_data.onoff = STATE_OFF;
+	}
+
+	/* Retrieve Default Lightness & Temperature Values */
+
+	if (light_ctl_srv_user_data.lightness_temp_def) {
+		light_ctl_srv_user_data.lightness_def = (u16_t)
+			(light_ctl_srv_user_data.lightness_temp_def >> 16);
+
+		light_ctl_srv_user_data.temp_def = (u16_t)
+			(light_ctl_srv_user_data.lightness_temp_def);
+	}
+
+	light_lightness_srv_user_data.def =
+		light_ctl_srv_user_data.lightness_def;
 
 	light_ctl_srv_user_data.temp = light_ctl_srv_user_data.temp_def;
+
+	/* Retrieve Range of Lightness & Temperature */
+
+	if (light_lightness_srv_user_data.lightness_range) {
+		light_lightness_srv_user_data.light_range_max = (u16_t)
+			(light_lightness_srv_user_data.lightness_range >> 16);
+
+		light_lightness_srv_user_data.light_range_min = (u16_t)
+			(light_lightness_srv_user_data.lightness_range);
+	}
+
+	if (light_ctl_srv_user_data.temperature_range) {
+		light_ctl_srv_user_data.temp_range_max = (u16_t)
+			(light_ctl_srv_user_data.temperature_range >> 16);
+
+		light_ctl_srv_user_data.temp_range_min = (u16_t)
+			(light_ctl_srv_user_data.temperature_range);
+	}
 
 	switch (gen_power_onoff_srv_user_data.onpowerup) {
 	case STATE_OFF:
@@ -131,34 +97,32 @@ void light_default_status_init(void)
 		state_binding(ONOFF, ONOFF_TEMP);
 		break;
 	case STATE_RESTORE:
-		/* Assume following value is retrived from Persistence
-		 * Storage and it had saved before power down.
-		 * (Start)
-		 */
-		gen_onoff_srv_root_user_data.onoff = STATE_ON;
-		/* (End) */
+		light_lightness_srv_user_data.last = (u16_t)
+			(light_ctl_srv_user_data.lightness_temp_last >> 16);
 
 		light_ctl_srv_user_data.temp =
-			light_ctl_srv_user_data.temp_last;
+			(u16_t) (light_ctl_srv_user_data.lightness_temp_last);
 
 		state_binding(ONPOWERUP, ONOFF_TEMP);
 		break;
 	}
 
 	default_tt = gen_def_trans_time_srv_user_data.tt;
+
+	init_lightness_target_values();
+	init_temp_target_values();
 }
 
-void update_light_state(void)
+void update_led_gpio(void)
 {
 	u8_t power, color;
 
-	power = 100 * ((float) light_lightness_srv_user_data.actual / 65535);
-	color = 100 * ((float) (gen_level_srv_s0_user_data.level + 32768)
-		       / 65535);
+	power = 100 * ((float) lightness / 65535);
+	color = 100 * ((float) (temperature + 32768) / 65535);
 
 	printk("power-> %d, color-> %d\n", power, color);
 
-	if (gen_onoff_srv_root_user_data.onoff == STATE_ON) {
+	if (lightness) {
 		/* LED1 On */
 		gpio_pin_write(led_device[0], LED0_GPIO_PIN, 0);
 	} else {
@@ -183,23 +147,75 @@ void update_light_state(void)
 	}
 }
 
+void update_light_state(void)
+{
+	update_led_gpio();
+
+	if (*ptr_counter == 0 || reset == false) {
+		reset = true;
+		k_work_submit(&no_transition_work);
+	}
+}
+
+static void short_time_multireset_bt_mesh_unprovisioning(void)
+{
+	if (reset_counter >= 4U) {
+		reset_counter = 0U;
+		printk("BT Mesh reset\n");
+		bt_mesh_reset();
+	} else {
+		printk("Reset Counter -> %d\n", reset_counter);
+		reset_counter++;
+	}
+
+	save_on_flash(RESET_COUNTER);
+}
+
+static void reset_counter_timer_handler(struct k_timer *dummy)
+{
+	reset_counter = 0U;
+	save_on_flash(RESET_COUNTER);
+	printk("Reset Counter set to Zero\n");
+}
+
+K_TIMER_DEFINE(reset_counter_timer, reset_counter_timer_handler, NULL);
+
 void main(void)
 {
 	int err;
 
-	light_default_status_init();
+	light_default_var_init();
 
-	gpio_init();
+	app_gpio_init();
 
-	update_light_state();
+#if defined(CONFIG_MCUMGR)
+	smp_svr_init();
+#endif
 
 	printk("Initializing...\n");
 
+	ps_settings_init();
+
 	/* Initialize the Bluetooth Subsystem */
-	err = bt_enable(bt_ready);
+	err = bt_enable(NULL);
 	if (err) {
 		printk("Bluetooth init failed (err %d)\n", err);
+		return;
 	}
 
-	randomize_publishers_TID();
+	bt_ready();
+
+	light_default_status_init();
+
+	update_light_state();
+
+	short_time_multireset_bt_mesh_unprovisioning();
+	k_timer_start(&reset_counter_timer, K_MSEC(7000), 0);
+
+#if defined(CONFIG_MCUMGR)
+	/* Initialize the Bluetooth mcumgr transport. */
+	smp_bt_register();
+
+	k_timer_start(&smp_svr_timer, 0, K_MSEC(1000));
+#endif
 }

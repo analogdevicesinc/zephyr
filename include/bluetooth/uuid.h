@@ -17,7 +17,7 @@
  * @{
  */
 
-#include <misc/util.h>
+#include <sys/util.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -407,6 +407,14 @@ struct bt_uuid_128 {
  *  @brief Mesh Proxy Data Out
  */
 #define BT_UUID_MESH_PROXY_DATA_OUT       BT_UUID_DECLARE_16(0x2ade)
+/** @def BT_UUID_GATT_CLIENT_FEATURES
+ *  @brief Client Supported Features
+ */
+#define BT_UUID_GATT_CLIENT_FEATURES      BT_UUID_DECLARE_16(0x2b29)
+/** @def BT_UUID_GATT_DB_HASH
+ *  @brief Database Hash
+ */
+#define BT_UUID_GATT_DB_HASH              BT_UUID_DECLARE_16(0x2b2a)
 
 /*
  * Protocol UUIDs
@@ -463,7 +471,10 @@ int bt_uuid_cmp(const struct bt_uuid *u1, const struct bt_uuid *u2);
  */
 void bt_uuid_to_str(const struct bt_uuid *uuid, char *str, size_t len);
 
-/** @brief Convert Bluetooth UUID to string in place.
+const char *bt_uuid_str_real(const struct bt_uuid *uuid);
+
+/** @def bt_uuid_str
+ *  @brief Convert Bluetooth UUID to string in place.
  *
  *  Converts Bluetooth UUID to string in place. UUID has to be in 16 bits or
  *  128 bits format.
@@ -472,7 +483,7 @@ void bt_uuid_to_str(const struct bt_uuid *uuid, char *str, size_t len);
  *
  *  @return String representation of the UUID given
  */
-const char *bt_uuid_str(const struct bt_uuid *uuid);
+#define bt_uuid_str(_uuid) log_strdup(bt_uuid_str_real(_uuid))
 #else
 static inline void bt_uuid_to_str(const struct bt_uuid *uuid, char *str,
 				  size_t len)

@@ -8,8 +8,8 @@
 #define ZEPHYR_DRIVERS_SENSOR_AMG88XX_AMG88XX_H_
 
 #include <device.h>
-#include <gpio.h>
-#include <misc/util.h>
+#include <drivers/gpio.h>
+#include <sys/util.h>
 
 #define AMG88XX_I2C_ADDRESS	CONFIG_AMG88XX_I2C_ADDR
 
@@ -135,10 +135,5 @@ int amg88xx_trigger_set(struct device *dev,
 
 int amg88xx_init_interrupt(struct device *dev);
 #endif /* CONFIG_AMG88XX_TRIGGER */
-
-#define SYS_LOG_DOMAIN "AMG88XX"
-#define SYS_LOG_LEVEL CONFIG_SYS_LOG_SENSOR_LEVEL
-
-#include <logging/sys_log.h>
 
 #endif

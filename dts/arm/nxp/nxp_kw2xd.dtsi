@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 #include <arm/armv7-m.dtsi>
 #include <dt-bindings/clock/kinetis_sim.h>
 #include <dt-bindings/gpio/gpio.h>
@@ -27,8 +29,6 @@
 			compatible = "nxp,k64f-mcg";
 			reg = <0x40064000 0xd>;
 			system-clock-frequency = <48000000>;
-
-			clock-controller;
 		};
 
 		clock-controller@40065000 {
@@ -53,7 +53,6 @@
 			clk-divider-bus = <1>;
 			clk-divider-flash = <2>;
 
-			clock-controller;
 			#clock-cells = <3>;
 		};
 
@@ -253,7 +252,6 @@
 			label = "SPI_1";
 			clocks = <&sim KINETIS_SIM_BUS_CLK 0x103C 13>;
 
-			cs-gpios = <&gpiob 10 0>;
 			pinctrl-0 = <&spi1_default>;
 			pinctrl-names = "default";
 			#address-cells = <1>;
@@ -266,7 +264,7 @@
 				spi-max-frequency = <8000000>;
 				irqb-gpios = <&gpiob 3 0>;
 				reset-gpios = <&gpiob 19 0>;
-				status = "ok";
+				status = "okay";
 			};
 		};
 
@@ -287,8 +285,8 @@
 			reg = <0x40038000 0x98>;
 			interrupts = <42 0>;
 			label = "PWM_0";
-			/* channel information needed - fixme */
 			status = "disabled";
+			#pwm-cells = <2>;
 		};
 
 		pwm1: pwm@40039000{
@@ -296,8 +294,8 @@
 			reg = <0x40039000 0x98>;
 			interrupts = <43 0>;
 			label = "PWM_1";
-			/* channel information needed - fixme */
 			status = "disabled";
+			#pwm-cells = <2>;
 		};
 
 		pwm2: pwm@4003a000{
@@ -305,8 +303,8 @@
 			reg = <0x4003a000 0x98>;
 			interrupts = <44 0>;
 			label = "PWM_2";
-			/* channel information needed - fixme */
 			status = "disabled";
+			#pwm-cells = <2>;
 		};
 
 		adc0: adc@4003b000{
@@ -325,6 +323,14 @@
 			num-bidir-endpoints = <16>;
 			status = "disabled";
 			label = "USBD";
+		};
+
+		rnga: random@40029000 {
+			compatible = "nxp,kinetis-rnga";
+			reg = <0x40029000 0x1000>;
+			status = "okay";
+			interrupts = <23 0>;
+			label = "RNGA";
 		};
 	};
 };

@@ -4,11 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define LOG_MODULE_NAME net_zperf_shell_utils
-#define NET_LOG_LEVEL LOG_LEVEL_DBG
-
 #include <ctype.h>
-#include <misc/printk.h>
+#include <sys/printk.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -24,8 +21,8 @@ const char *KBPS_UNIT[] = { "Mbps", "Kbps" };
 const u32_t K[] = { 1024 * 1024, 1024, 0 };
 const char *K_UNIT[] = { "M", "K", "" };
 
-void print_number(u32_t value, const u32_t *divisor,
-	const char **units)
+void print_number(const struct shell *shell, u32_t value,
+		  const u32_t *divisor, const char **units)
 {
 	const char **unit;
 	const u32_t *div;
@@ -39,12 +36,13 @@ void print_number(u32_t value, const u32_t *divisor,
 		unit++;
 	}
 
-	if (*div != 0) {
+	if (*div != 0U) {
 		radix = value / *div;
-		dec = (value % *div) * 100 / *div;
-		printk("%u.%s%u %s", radix, (dec < 10) ? "0" : "", dec, *unit);
+		dec = (value % *div) * 100U / *div;
+		shell_fprintf(shell, SHELL_NORMAL, "%u.%s%u %s", radix,
+			      (dec < 10) ? "0" : "", dec, *unit);
 	} else {
-		printk("%u %s", value, *unit);
+		shell_fprintf(shell, SHELL_NORMAL, "%u %s", value, *unit);
 	}
 }
 
@@ -63,7 +61,7 @@ long parse_number(const char *string, const u32_t *divisor,
 
 	do {
 		cmp = strncasecmp(suffix, *unit++, 1);
-	} while (cmp != 0 && *++div != 0);
+	} while (cmp != 0 && *++div != 0U);
 
-	return (*div == 0) ? dec : dec * *div;
+	return (*div == 0U) ? dec : dec * *div;
 }

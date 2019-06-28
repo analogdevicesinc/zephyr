@@ -47,7 +47,6 @@
 
 		rcc: rcc@40021000 {
 			compatible = "st,stm32-rcc";
-			clocks-controller;
 			#clock-cells = <2>;
 			reg = <0x40021000 0x400>;
 			label = "STM32_CLK_RCC";
@@ -105,6 +104,13 @@
 			};
 		};
 
+		iwdg: watchdog@40003000 {
+			compatible = "st,stm32-watchdog";
+			reg = <0x40003000 0x400>;
+			label = "IWDG";
+			status = "disabled";
+		};
+
 		usart1: serial@40013800 {
 			compatible = "st,stm32-usart", "st,stm32-uart";
 			reg = <0x40013800 0x400>;
@@ -154,6 +160,15 @@
 			interrupts = <25 3>;
 			status = "disabled";
 			label = "SPI_1";
+		};
+
+		adc1: adc@40012400 {
+			compatible = "st,stm32-adc";
+			reg = <0x40012400 0x400>;
+			clocks = <&rcc STM32_CLOCK_BUS_APB2 0x00000200>;
+			interrupts = <12 0>;
+			status = "disabled";
+			label = "ADC_1";
 		};
 	};
 };

@@ -6,7 +6,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <atomic.h>
+#include <sys/atomic.h>
 #include <zephyr/types.h>
 #include <string.h>
 
@@ -14,8 +14,12 @@
 #include <bluetooth/bluetooth.h>
 #include <bluetooth/conn.h>
 
-#include <misc/byteorder.h>
+#include <sys/byteorder.h>
 #include <net/buf.h>
+
+#include <logging/log.h>
+#define LOG_MODULE_NAME bttester_gap
+LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
 #include "bttester.h"
 
@@ -111,7 +115,7 @@ static void controller_index_list(u8_t *data,  u16_t len)
 
 	rp = (void *) buf;
 
-	rp->num = 1;
+	rp->num = 1U;
 	rp->index[0] = CONTROLLER_INDEX;
 
 	tester_send(BTP_SERVICE_ID_GAP, GAP_READ_CONTROLLER_INDEX_LIST,
@@ -216,9 +220,9 @@ static void start_advertising(const u8_t *data, u16_t len)
 	bool adv_conn;
 	int i;
 
-	for (i = 0, adv_len = 1; i < cmd->adv_data_len; adv_len++) {
+	for (i = 0, adv_len = 1U; i < cmd->adv_data_len; adv_len++) {
 		if (adv_len >= ARRAY_SIZE(ad)) {
-			SYS_LOG_ERR("ad[] Out of memory");
+			LOG_ERR("ad[] Out of memory");
 			goto fail;
 		}
 
@@ -228,9 +232,9 @@ static void start_advertising(const u8_t *data, u16_t len)
 		i += ad[adv_len].data_len;
 	}
 
-	for (i = 0, sd_len = 0; i < cmd->scan_rsp_len; sd_len++) {
+	for (i = 0, sd_len = 0U; i < cmd->scan_rsp_len; sd_len++) {
 		if (sd_len >= ARRAY_SIZE(sd)) {
-			SYS_LOG_ERR("sd[] Out of memory");
+			LOG_ERR("sd[] Out of memory");
 			goto fail;
 		}
 
@@ -245,7 +249,7 @@ static void start_advertising(const u8_t *data, u16_t len)
 	/* BTP API don't allow to set empty scan response data. */
 	if (bt_le_adv_start(adv_conn ? BT_LE_ADV_CONN : BT_LE_ADV_NCONN,
 			    ad, adv_len, sd_len ? sd : NULL, sd_len) < 0) {
-		SYS_LOG_ERR("Failed to start advertising");
+		LOG_ERR("Failed to start advertising");
 		goto fail;
 	}
 
@@ -282,7 +286,7 @@ static u8_t get_ad_flags(struct net_buf_simple *ad)
 	u8_t len, i;
 
 	/* Parse advertisement to get flags */
-	for (i = 0; i < ad->len; i += len - 1) {
+	for (i = 0U; i < ad->len; i += len - 1) {
 		len = ad->data[i++];
 		if (!len) {
 			break;
@@ -335,14 +339,14 @@ static void device_found(const bt_addr_le_t *addr, s8_t rssi, u8_t evtype,
 
 		/* ignore non-discoverable devices */
 		if (!(flags & BT_LE_AD_DISCOV_MASK)) {
-			SYS_LOG_DBG("Non discoverable, skipping");
+			LOG_DBG("Non discoverable, skipping");
 			return;
 		}
 
 		/* if Limited Discovery - ignore general discoverable devices */
 		if ((discovery_flags & GAP_DISCOVERY_FLAG_LIMITED) &&
 		    !(flags & BT_LE_AD_LIMITED)) {
-			SYS_LOG_DBG("General discoverable, skipping");
+			LOG_DBG("General discoverable, skipping");
 			return;
 		}
 	}
@@ -354,7 +358,7 @@ static void device_found(const bt_addr_le_t *addr, s8_t rssi, u8_t evtype,
 
 		/* skip if there is no pending advertisement */
 		if (!adv_buf->len) {
-			SYS_LOG_INF("No pending advertisement, skipping");
+			LOG_INF("No pending advertisement, skipping");
 			return;
 		}
 
@@ -368,7 +372,7 @@ static void device_found(const bt_addr_le_t *addr, s8_t rssi, u8_t evtype,
 		 * this one
 		 */
 		if (bt_addr_le_cmp(addr, &a)) {
-			SYS_LOG_INF("Address does not match, skipping");
+			LOG_INF("Address does not match, skipping");
 			goto done;
 		}
 
@@ -394,7 +398,7 @@ static void device_found(const bt_addr_le_t *addr, s8_t rssi, u8_t evtype,
 	/* if Active Scan and scannable event - wait for Scan Response */
 	if ((discovery_flags & GAP_DISCOVERY_FLAG_LE_ACTIVE_SCAN) &&
 	    (evtype == BT_LE_ADV_IND || evtype == BT_LE_ADV_SCAN_IND)) {
-		SYS_LOG_DBG("Waiting for scan response");
+		LOG_DBG("Waiting for scan response");
 		return;
 	}
 done:

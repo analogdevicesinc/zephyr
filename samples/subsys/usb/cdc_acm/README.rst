@@ -10,17 +10,15 @@ This sample app demonstrates use of a USB Communication Device Class (CDC)
 Abstract Control Model (ACM) driver provided by the Zephyr project.
 Received data from the serial port is echoed back to the same port
 provided by this driver.
-This sample can be found under :file:`samples/subsys/usb/cdc_acm` in the
+This sample can be found under :zephyr_file:`samples/subsys/usb/cdc_acm` in the
 Zephyr project tree.
 
 Requirements
 ************
 
-This project requires an USB device driver,
-which is available for Intel Quark* SE SoC based boards like
-:ref:`arduino_101`.
-For the Arduino 101 board you need a USB to 3.3V TTL serial cable.
-Connect it to UART1 as described in
+This project requires an USB device driver, which is available for Intel Quark*
+SE SoC based boards like :ref:`arduino_101`.  For the Arduino 101 board you need
+a USB to 3.3V TTL serial cable.  Connect it to UART1 as described in
 :ref:`Connecting Serial Output section <arduino_101>`.
 
 Building and Running

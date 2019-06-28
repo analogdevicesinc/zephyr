@@ -6,9 +6,9 @@
 #ifndef ZEPHYR_INCLUDE_SCHED_PRIQ_H_
 #define ZEPHYR_INCLUDE_SCHED_PRIQ_H_
 
-#include <misc/util.h>
-#include <misc/dlist.h>
-#include <misc/rb.h>
+#include <sys/util.h>
+#include <sys/dlist.h>
+#include <sys/rb.h>
 
 /* Two abstractions are defined here for "thread priority queues".
  *
@@ -31,33 +31,33 @@
 
 struct k_thread;
 
-struct k_thread *_priq_dumb_best(sys_dlist_t *pq);
-void _priq_dumb_remove(sys_dlist_t *pq, struct k_thread *thread);
-void _priq_dumb_add(sys_dlist_t *pq, struct k_thread *thread);
+struct k_thread *z_priq_dumb_best(sys_dlist_t *pq);
+void z_priq_dumb_remove(sys_dlist_t *pq, struct k_thread *thread);
+void z_priq_dumb_add(sys_dlist_t *pq, struct k_thread *thread);
 
 struct _priq_rb {
 	struct rbtree tree;
 	int next_order_key;
 };
 
-void _priq_rb_add(struct _priq_rb *pq, struct k_thread *thread);
-void _priq_rb_remove(struct _priq_rb *pq, struct k_thread *thread);
-struct k_thread *_priq_rb_best(struct _priq_rb *pq);
+void z_priq_rb_add(struct _priq_rb *pq, struct k_thread *thread);
+void z_priq_rb_remove(struct _priq_rb *pq, struct k_thread *thread);
+struct k_thread *z_priq_rb_best(struct _priq_rb *pq);
 
 /* Traditional/textbook "multi-queue" structure.  Separate lists for a
  * small number (max 32 here) of fixed priorities.  This corresponds
  * to the original Zephyr scheduler.  RAM requirements are
  * comparatively high, but performance is very fast.  Won't work with
  * features like deadline scheduling which need large priority spaces
- * to represet their requirements.
+ * to represent their requirements.
  */
 struct _priq_mq {
 	sys_dlist_t queues[32];
 	unsigned int bitmask; /* bit 1<<i set if queues[i] is non-empty */
 };
 
-void _priq_mq_add(struct _priq_mq *pq, struct k_thread *thread);
-void _priq_mq_remove(struct _priq_mq *pq, struct k_thread *thread);
-struct k_thread *_priq_mq_best(struct _priq_mq *pq);
+void z_priq_mq_add(struct _priq_mq *pq, struct k_thread *thread);
+void z_priq_mq_remove(struct _priq_mq *pq, struct k_thread *thread);
+struct k_thread *z_priq_mq_best(struct _priq_mq *pq);
 
 #endif /* ZEPHYR_INCLUDE_SCHED_PRIQ_H_ */

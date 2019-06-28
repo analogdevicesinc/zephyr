@@ -10,8 +10,8 @@
 #define ZEPHYR_DRIVERS_SENSOR_BMC150_MAGN_BMC150_MAGN_H_
 
 #include <zephyr/types.h>
-#include <i2c.h>
-#include <misc/util.h>
+#include <drivers/i2c.h>
+#include <sys/util.h>
 
 #define BMC150_MAGN_REG_CHIP_ID		0x40
 #define BMC150_MAGN_CHIP_ID_VAL		0x32
@@ -175,7 +175,4 @@ int bmc150_magn_trigger_set(struct device *dev,
 int bmc150_magn_init_interrupt(struct device *dev);
 #endif
 
-#define SYS_LOG_DOMAIN "BMC150_MAGN"
-#define SYS_LOG_LEVEL CONFIG_SYS_LOG_SENSOR_LEVEL
-#include <logging/sys_log.h>
 #endif /* ZEPHYR_DRIVERS_SENSOR_BMC150_MAGN_BMC150_MAGN_H_ */

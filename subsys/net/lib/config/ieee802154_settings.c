@@ -6,8 +6,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define LOG_MODULE_NAME net_config_ieee802154
-#define NET_LOG_LEVEL CONFIG_NET_L2_IEEE802154_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_DECLARE(net_config, CONFIG_NET_CONFIG_LOG_LEVEL);
 
 #include <zephyr.h>
 #include <errno.h>
@@ -17,7 +17,7 @@
 #include <net/net_mgmt.h>
 #include <net/ieee802154_mgmt.h>
 
-int _net_config_ieee802154_setup(void)
+int z_net_config_ieee802154_setup(void)
 {
 	u16_t channel = CONFIG_NET_CONFIG_IEEE802154_CHANNEL;
 	u16_t pan_id = CONFIG_NET_CONFIG_IEEE802154_PAN_ID;

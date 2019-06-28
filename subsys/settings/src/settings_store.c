@@ -12,19 +12,16 @@
 #include <stddef.h>
 #include <sys/types.h>
 #include <errno.h>
-#include <misc/__assert.h>
 
 #include "settings/settings.h"
 #include "settings_priv.h"
 
-struct settings_dup_check_arg {
-	const char *name;
-	const char *val;
-	int is_dup;
-};
+#include <logging/log.h>
+LOG_MODULE_DECLARE(settings, CONFIG_SETTINGS_LOG_LEVEL);
 
-sys_slist_t  settings_load_srcs;
+sys_slist_t settings_load_srcs;
 struct settings_store *settings_save_dst;
+extern struct k_mutex settings_lock;
 
 void settings_src_register(struct settings_store *cs)
 {
@@ -44,16 +41,15 @@ void settings_dst_register(struct settings_store *cs)
 	settings_save_dst = cs;
 }
 
-static void settings_load_cb(char *name, char *val, void *cb_arg)
-{
-	int rc = settings_set_value(name, val);
-	__ASSERT(rc == 0, "set-value operation failure\n");
-	(void)rc;
-}
-
 int settings_load(void)
 {
+	return settings_load_subtree(NULL);
+}
+
+int settings_load_subtree(const char *subtree)
+{
 	struct settings_store *cs;
+	int rc;
 
 	/*
 	 * for every config store
@@ -61,66 +57,45 @@ int settings_load(void)
 	 *    apply config
 	 *    commit all
 	 */
-
+	k_mutex_lock(&settings_lock, K_FOREVER);
 	SYS_SLIST_FOR_EACH_CONTAINER(&settings_load_srcs, cs, cs_next) {
-		cs->cs_itf->csi_load(cs, settings_load_cb, NULL);
+		cs->cs_itf->csi_load(cs, subtree);
 	}
-	return settings_commit(NULL);
-}
-
-static void settings_dup_check_cb(char *name, char *val, void *cb_arg)
-{
-	struct settings_dup_check_arg *cdca = (struct settings_dup_check_arg *)
-					      cb_arg;
-
-	if (strcmp(name, cdca->name)) {
-		return;
-	}
-	if (!val) {
-		if (!cdca->val || cdca->val[0] == '\0') {
-			cdca->is_dup = 1;
-		} else {
-			cdca->is_dup = 0;
-		}
-	} else {
-		if (cdca->val && !strcmp(val, cdca->val)) {
-			cdca->is_dup = 1;
-		} else {
-			cdca->is_dup = 0;
-		}
-	}
+	rc = settings_commit_subtree(subtree);
+	k_mutex_unlock(&settings_lock);
+	return rc;
 }
 
 /*
  * Append a single value to persisted config. Don't store duplicate value.
  */
-int settings_save_one(const char *name, char *value)
+int settings_save_one(const char *name, const void *value, size_t val_len)
 {
+	int rc;
 	struct settings_store *cs;
-	struct settings_dup_check_arg cdca;
 
 	cs = settings_save_dst;
 	if (!cs) {
 		return -ENOENT;
 	}
 
-	/*
-	 * Check if we're writing the same value again.
-	 */
-	cdca.name = name;
-	cdca.val = value;
-	cdca.is_dup = 0;
-	cs->cs_itf->csi_load(cs, settings_dup_check_cb, &cdca);
-	if (cdca.is_dup == 1) {
-		return 0;
-	}
-	return cs->cs_itf->csi_save(cs, name, value);
+	k_mutex_lock(&settings_lock, K_FOREVER);
+
+	rc = cs->cs_itf->csi_save(cs, name, (char *)value, val_len);
+
+	k_mutex_unlock(&settings_lock);
+
+	return rc;
+}
+
+int settings_delete(const char *name)
+{
+	return settings_save_one(name, NULL, 0);
 }
 
 int settings_save(void)
 {
 	struct settings_store *cs;
-	struct settings_handler *ch;
 	int rc;
 	int rc2;
 
@@ -134,15 +109,27 @@ int settings_save(void)
 	}
 	rc = 0;
 
-	SYS_SLIST_FOR_EACH_CONTAINER(&settings_handlers, ch, node) {
+	Z_STRUCT_SECTION_FOREACH(settings_handler_static, ch) {
 		if (ch->h_export) {
-			rc2 = ch->h_export(settings_save_one,
-					   SETTINGS_EXPORT_PERSIST);
+			rc2 = ch->h_export(settings_save_one);
 			if (!rc) {
 				rc = rc2;
 			}
 		}
 	}
+
+#if defined(CONFIG_SETTINGS_DYNAMIC_HANDLERS)
+	struct settings_handler *ch;
+	SYS_SLIST_FOR_EACH_CONTAINER(&settings_handlers, ch, node) {
+		if (ch->h_export) {
+			rc2 = ch->h_export(settings_save_one);
+			if (!rc) {
+				rc = rc2;
+			}
+		}
+	}
+#endif /* CONFIG_SETTINGS_DYNAMIC_HANDLERS */
+
 	if (cs->cs_itf->csi_save_end) {
 		cs->cs_itf->csi_save_end(cs);
 	}

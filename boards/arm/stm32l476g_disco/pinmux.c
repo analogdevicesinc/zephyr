@@ -7,17 +7,17 @@
 #include <kernel.h>
 #include <device.h>
 #include <init.h>
-#include <pinmux.h>
-#include <sys_io.h>
+#include <drivers/pinmux.h>
+#include <sys/sys_io.h>
 
 #include <pinmux/stm32/pinmux_stm32.h>
 
 /* pin assignments for STM32L476G DISCOVERY board */
 static const struct pin_config pinconf[] = {
-#ifdef CONFIG_UART_STM32_PORT_2
+#ifdef CONFIG_UART_2
 	{STM32_PIN_PD5, STM32L4X_PINMUX_FUNC_PD5_USART2_TX},
 	{STM32_PIN_PD6, STM32L4X_PINMUX_FUNC_PD6_USART2_RX},
-#endif	/* CONFIG_UART_STM32_PORT_2 */
+#endif	/* CONFIG_UART_2 */
 };
 
 static int pinmux_stm32_init(struct device *port)

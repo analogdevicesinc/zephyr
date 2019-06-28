@@ -3,32 +3,45 @@
 # Copyright (c) 2017 Nordic Semiconductor ASA
 #
 # SPDX-License-Identifier: Apache-2.0
-#
 
 #
 # DFU
 #
 
-menu "DFU options"
-
-config IMG_MANAGER
+menuconfig IMG_MANAGER
 	bool "DFU image manager"
 	help
 	  Enable support for managing DFU image.
 
+if IMG_MANAGER
+
 choice
 	prompt "Image manager"
 	default MCUBOOT_IMG_MANAGER
-	depends on IMG_MANAGER
 	help
 	  Choice support for managing DFU image.
 	  So far only mcuboot support is available.
 
 config MCUBOOT_IMG_MANAGER
 	bool "Image manager for mcuboot"
+	select FLASH_MAP
 	help
 	  Enable support for managing DFU image downloaded using mcuboot.
+
 endchoice
+
+if MCUBOOT_IMG_MANAGER
+config MCUBOOT_TRAILER_SWAP_TYPE
+	bool "use trailer's swap_type field"
+	default y
+	help
+	  Enables usage swap type field which is required after
+	  "Fix double swap on interrupted revert"  mcuboot patch
+	  (https://github.com/JuulLabs-OSS/mcuboot/pull/485)
+	  Disable this option if need to be compatible with earlier version
+	  of MCUBoot.
+endif
+
 
 config IMG_BLOCK_BUF_SIZE
 	int "Image writer buffer size"
@@ -38,22 +51,18 @@ config IMG_BLOCK_BUF_SIZE
 	  Size (in Bytes) of buffer for image writer. Must be a multiple of
 	  the access alignment required by used flash driver.
 
-config SYS_LOG_IMG_MANAGER_LEVEL
-	int "Image manager Log level"
-	depends on SYS_LOG && MCUBOOT_IMG_MANAGER
-	default 0
-	range 0 4
+config 	IMG_ERASE_PROGRESSIVELY
+	bool "Erase flash progressively when receiving new firmware"
+	depends on MCUBOOT_IMG_MANAGER
+	select FLASH_PAGE_LAYOUT
 	help
-	  Sets log level for the image manager.
-	  Levels are:
+	 If enabled, flash is erased as necessary when receiving new firmware,
+	 instead of erasing the whole image slot at once. This is necessary
+	 on some hardware that has long erase times, to prevent long wait
+	 times at the beginning of the DFU process.
 
-	  - 0 OFF: do not write
+module = IMG_MANAGER
+module-str = image manager
+source "subsys/logging/Kconfig.template.log_config"
 
-	  - 1 ERROR: only write SYS_LOG_ERR
-
-	  - 2 WARNING: write SYS_LOG_WRN in addition to previous level
-
-	  - 3 INFO: write SYS_LOG_INF in addition to previous levels
-
-	  - 4 DEBUG: write SYS_LOG_DBG in addition to previous levels
-endmenu
+endif # IMG_MANAGER

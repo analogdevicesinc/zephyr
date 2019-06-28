@@ -6,20 +6,23 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define LOG_MODULE_NAME net_test
 #define NET_LOG_LEVEL CONFIG_NET_L2_ETHERNET_LOG_LEVEL
+
+#include <logging/log.h>
+LOG_MODULE_REGISTER(net_test, NET_LOG_LEVEL);
 
 #include <zephyr/types.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <string.h>
 #include <errno.h>
-#include <misc/printk.h>
+#include <sys/printk.h>
 #include <linker/sections.h>
 
 #include <ztest.h>
 
 #include <net/ethernet.h>
+#include <net/dummy.h>
 #include <net/buf.h>
 #include <net/net_ip.h>
 #include <net/ethernet_vlan.h>
@@ -102,15 +105,15 @@ static void eth_vlan_iface_init(struct net_if *iface)
 	ethernet_init(iface);
 }
 
-static int eth_tx(struct net_if *iface, struct net_pkt *pkt)
+static int eth_tx(struct device *dev, struct net_pkt *pkt)
 {
-	struct eth_context *context = net_if_get_device(iface)->driver_data;
+	struct eth_context *context = dev->driver_data;
 
 	zassert_equal_ptr(&eth_vlan_context, context,
 			  "Context pointers do not match (%p vs %p)",
 			  eth_vlan_context, context);
 
-	if (!pkt->frags) {
+	if (!pkt->buffer) {
 		DBG("No data to send!\n");
 		return -ENODATA;
 	}
@@ -132,8 +135,6 @@ static int eth_tx(struct net_if *iface, struct net_pkt *pkt)
 		k_sem_give(&wait_data);
 	}
 
-	net_pkt_unref(pkt);
-
 	return 0;
 }
 
@@ -144,9 +145,9 @@ static enum ethernet_hw_caps eth_capabilities(struct device *dev)
 
 static struct ethernet_api api_funcs = {
 	.iface_api.init = eth_vlan_iface_init,
-	.iface_api.send = eth_tx,
 
 	.get_capabilities = eth_capabilities,
+	.send = eth_tx,
 };
 
 static void generate_mac(u8_t *mac_addr)
@@ -171,7 +172,7 @@ static int eth_vlan_init(struct device *dev)
 
 ETH_NET_DEVICE_INIT(eth_vlan_test, "eth_vlan_test", eth_vlan_init,
 		    &eth_vlan_context, NULL, CONFIG_ETH_INIT_PRIORITY,
-		    &api_funcs, 1500);
+		    &api_funcs, NET_ETH_MTU);
 
 static int eth_init(struct device *dev)
 {
@@ -188,7 +189,8 @@ static int eth_init(struct device *dev)
  */
 NET_DEVICE_INIT(eth_test, "eth_test", eth_init, &eth_vlan_context,
 		NULL, CONFIG_ETH_INIT_PRIORITY, &api_funcs,
-		ETHERNET_L2, NET_L2_GET_CTX_TYPE(ETHERNET_L2), 1500);
+		ETHERNET_L2, NET_L2_GET_CTX_TYPE(ETHERNET_L2),
+		NET_ETH_MTU);
 
 struct net_if_test {
 	u8_t idx; /* not used for anything, just a dummy value */
@@ -216,7 +218,7 @@ static u8_t *net_iface_get_mac(struct device *dev)
 	}
 
 	data->ll_addr.addr = data->mac_addr;
-	data->ll_addr.len = 6;
+	data->ll_addr.len = 6U;
 
 	return data->mac_addr;
 }
@@ -229,18 +231,16 @@ static void net_iface_init(struct net_if *iface)
 			     NET_LINK_ETHERNET);
 }
 
-static int sender_iface(struct net_if *iface, struct net_pkt *pkt)
+static int sender_iface(struct device *dev, struct net_pkt *pkt)
 {
-	net_pkt_unref(pkt);
-
 	return 0;
 }
 
 struct net_if_test net_iface1_data;
 struct net_if_test net_iface2_data;
 
-static struct net_if_api net_iface_api = {
-	.init = net_iface_init,
+static struct dummy_api net_iface_api = {
+	.iface_api.init = net_iface_init,
 	.send = sender_iface,
 };
 
@@ -422,12 +422,12 @@ static void test_vlan_tci(void)
 	u8_t priority;
 	bool dei;
 
-	pkt = net_pkt_get_reserve_tx(0, K_FOREVER);
+	pkt = net_pkt_alloc(K_FOREVER);
 
 	tag = NET_VLAN_TAG_UNSPEC;
 	net_pkt_set_vlan_tag(pkt, tag);
 
-	priority = 0;
+	priority = 0U;
 	net_pkt_set_vlan_priority(pkt, priority);
 
 	zassert_equal(net_pkt_vlan_tag(pkt), NET_VLAN_TAG_UNSPEC,
@@ -441,7 +441,7 @@ static void test_vlan_tci(void)
 	/* TCI should be zero now */
 	zassert_equal(net_pkt_vlan_tci(pkt), 0, "invalid VLAN TCI");
 
-	priority = 1;
+	priority = 1U;
 	net_pkt_set_vlan_priority(pkt, priority);
 
 	zassert_equal(net_pkt_vlan_priority(pkt), priority,
@@ -480,14 +480,14 @@ static void test_vlan_tci(void)
 	zassert_equal(net_pkt_vlan_priority(pkt), priority,
 		      "invalid VLAN priority");
 
-	tag = 0;
+	tag = 0U;
 	net_pkt_set_vlan_tag(pkt, tag);
 	zassert_equal(net_pkt_vlan_tag(pkt), tag, "invalid VLAN tag");
 	zassert_equal(net_pkt_vlan_dei(pkt), dei, "invalid VLAN DEI");
 	zassert_equal(net_pkt_vlan_priority(pkt), priority,
 		      "invalid VLAN priority");
 
-	priority = 0;
+	priority = 0U;
 	net_pkt_set_vlan_priority(pkt, priority);
 	zassert_equal(net_pkt_vlan_tag(pkt), tag, "invalid VLAN tag");
 	zassert_equal(net_pkt_vlan_dei(pkt), dei, "invalid VLAN DEI");
@@ -496,9 +496,9 @@ static void test_vlan_tci(void)
 
 	zassert_equal(net_pkt_vlan_tci(pkt), 0, "invalid VLAN TCI");
 
-	tci = 0;
-	tag = 100;
-	priority = 3;
+	tci = 0U;
+	tag = 100U;
+	priority = 3U;
 
 	tci = net_eth_vlan_set_vid(tci, tag);
 	tci = net_eth_vlan_set_pcp(tci, priority);
@@ -506,6 +506,8 @@ static void test_vlan_tci(void)
 	zassert_equal(tag, net_eth_vlan_get_vid(tci), "Invalid VLAN tag");
 	zassert_equal(priority, net_eth_vlan_get_pcp(tci),
 		      "Invalid VLAN priority");
+
+	net_pkt_unref(pkt);
 }
 
 /* Enable two VLAN tags and verity that proper interfaces are enabled.
@@ -691,7 +693,7 @@ static bool add_neighbor(struct net_if *iface, struct in6_addr *addr)
 	llstorage.addr[4] = 0x05;
 	llstorage.addr[5] = 0x06;
 
-	lladdr.len = 6;
+	lladdr.len = 6U;
 	lladdr.addr = llstorage.addr;
 	lladdr.type = NET_LINK_ETHERNET;
 
@@ -711,9 +713,7 @@ static void test_vlan_send_data(void)
 	struct ethernet_context *eth_ctx; /* This is L2 context */
 	struct eth_context *ctx; /* This is interface context */
 	struct net_if *iface;
-	struct net_pkt *pkt;
-	struct net_buf *frag;
-	int ret, len;
+	int ret;
 	struct sockaddr_in6 dst_addr6 = {
 		.sin6_family = AF_INET6,
 		.sin6_port = htons(PORT),
@@ -751,29 +751,16 @@ static void test_vlan_send_data(void)
 	ret = net_eth_is_vlan_enabled(eth_ctx, iface);
 	zassert_equal(ret, true, "VLAN disabled for interface 1");
 
-	pkt = net_pkt_get_tx(udp_v6_ctx, K_FOREVER);
-	zassert_not_null(pkt, "Cannot get pkt");
-	frag = net_pkt_get_data(udp_v6_ctx, K_FOREVER);
-	zassert_not_null(frag, "Cannot get frag");
-	net_pkt_frag_add(pkt, frag);
-
-	/* VLAN tag will be automatically set by ethernet L2 driver
-	 * so we do not need to set it here.
-	 */
-
-	len = strlen(test_data);
-	memcpy(net_buf_add(frag, len), test_data, len);
-	net_pkt_set_appdatalen(pkt, len);
-
 	test_started = true;
 
 	ret = add_neighbor(iface, &dst_addr);
 	zassert_true(ret, "Cannot add neighbor");
 
-	ret = net_context_sendto(pkt, (struct sockaddr *)&dst_addr6,
+	ret = net_context_sendto(udp_v6_ctx, test_data, strlen(test_data),
+				 (struct sockaddr *)&dst_addr6,
 				 sizeof(struct sockaddr_in6),
-				 NULL, 0, NULL, NULL);
-	zassert_equal(ret, 0, "Send UDP pkt failed");
+				 NULL, K_NO_WAIT, NULL);
+	zassert_true(ret > 0, "Send UDP pkt failed");
 
 	if (k_sem_take(&wait_data, WAIT_TIME)) {
 		DBG("Timeout while waiting interface data\n");

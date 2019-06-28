@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 /dts-v1/;
 
 #include <nxp/nxp_kw41z.dtsi>
@@ -29,6 +31,7 @@
 		zephyr,sram = &sram0;
 		zephyr,flash = &flash0;
 		zephyr,console = &lpuart0;
+		zephyr,shell-uart = &lpuart0;
 	};
 
 	leds {
@@ -61,11 +64,11 @@
 };
 
 &adc0 {
-	status = "ok";
+	status = "okay";
 };
 
 &i2c1 {
-	status = "ok";
+	status = "okay";
 
 	fxos8700@1f {
 		compatible = "nxp,fxos8700";
@@ -76,6 +79,6 @@
 };
 
 &lpuart0 {
-	status = "ok";
+	status = "okay";
 	current-speed = <115200>;
 };

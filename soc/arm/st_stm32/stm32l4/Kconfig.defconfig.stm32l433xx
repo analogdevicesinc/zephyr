@@ -5,7 +5,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-if SOC_STM32L433XC
+if SOC_STM32L433XX
 
 config SOC
 	string
@@ -18,15 +18,11 @@ config NUM_IRQS
 if GPIO_STM32
 
 config GPIO_STM32_PORTD
-	def_bool y
+	default y
 
 config GPIO_STM32_PORTE
 	default y
 
-config GPIO_STM32_PORTH
-	default y
-
 endif # GPIO_STM32
 
-endif # SOC_STM32L433XC
-
+endif # SOC_STM32L433XX

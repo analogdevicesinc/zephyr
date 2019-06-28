@@ -5,9 +5,9 @@
  */
 
 #include <init.h>
-#include <board.h>
-#include <gpio.h>
-#include <misc/printk.h>
+#include "board.h"
+#include <drivers/gpio.h>
+#include <sys/printk.h>
 
 static int efr32_slwstk6061a_init(struct device *dev)
 {

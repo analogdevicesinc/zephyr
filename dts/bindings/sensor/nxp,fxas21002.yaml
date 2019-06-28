@@ -3,9 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: FXAS21002 3-axis gyroscope
-id: nxp,fxas21002
 version: 0.1
 
 description: >
@@ -21,10 +20,9 @@ properties:
     int1-gpios:
       type: compound
       category: optional
-      generation: define, use-prop-name
+      generation: define
 
     int2-gpios:
       type: compound
       category: optional
-      generation: define, use-prop-name
-...
+      generation: define

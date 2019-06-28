@@ -1,6 +1,5 @@
----
+
 title: Kinetis UART
-id: nxp,kinetis-uart
 version: 0.1
 
 description: >
@@ -14,21 +13,15 @@ properties:
       constraint: "nxp,kinetis-uart"
 
     reg:
-      type: array
-      description: mmio register space
-      generation: define
       category: required
 
     interrupts:
-      type: array
       category: required
-      description: required interrupts
-      generation: define
 
-    pinctrl-\d+:
-      type: array
+    hw-flow-control:
+      type: boolean
       category: optional
-      description: pinmux information for RX, TX, CTS, RTS
+      description: use hw flow control
       generation: define
 
     clocks:
@@ -36,4 +29,3 @@ properties:
       category: required
       description: Clock gate information
       generation: define
-...

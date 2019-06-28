@@ -18,8 +18,9 @@ if NET_BUF
 
 config NET_BUF_USER_DATA_SIZE
 	int "Size of user_data available in every network buffer"
+	default 8 if BT
 	default 4
-	range 4 65535 if BT
+	range 8 65535 if BT
 	range 0 65535
 	help
 	  Amount of memory reserved in each network buffer for user data. In
@@ -31,13 +32,11 @@ config NET_BUF_LOG
 	help
 	  Enable logs and checks for the generic network buffers.
 
-if NET_BUF_LOG
-
 module = NET_BUF
-module-dep = LOG
-module-str = Log level for network buffer handling
-module-help = Sets log level for network buffers.
-source "subsys/net/Kconfig.template.log_config.net"
+module-str = net_buf
+source "subsys/logging/Kconfig.template.log_config"
+
+if NET_BUF_LOG
 
 config NET_BUF_WARN_ALLOC_INTERVAL
 	int "Interval of Network buffer allocation warnings"

@@ -7,25 +7,25 @@
 #include <kernel.h>
 #include <device.h>
 #include <init.h>
-#include <pinmux.h>
-#include <sys_io.h>
+#include <drivers/pinmux.h>
+#include <sys/sys_io.h>
 
 #include <pinmux/stm32/pinmux_stm32.h>
 
 /* pin assignments for OLIMEXINO-STM32 board */
 static const struct pin_config pinconf[] = {
-#ifdef CONFIG_UART_STM32_PORT_1
+#ifdef CONFIG_UART_1
 	{STM32_PIN_PA9,  STM32F1_PINMUX_FUNC_PA9_USART1_TX},
 	{STM32_PIN_PA10, STM32F1_PINMUX_FUNC_PA10_USART1_RX},
-#endif	/* CONFIG_UART_STM32_PORT_2 */
-#ifdef CONFIG_UART_STM32_PORT_2
+#endif	/* CONFIG_UART_2 */
+#ifdef CONFIG_UART_2
 	{STM32_PIN_PA2, STM32F1_PINMUX_FUNC_PA2_USART2_TX},
 	{STM32_PIN_PA3, STM32F1_PINMUX_FUNC_PA3_USART2_RX},
-#endif	/* CONFIG_UART_STM32_PORT_2 */
-#ifdef CONFIG_UART_STM32_PORT_3
+#endif	/* CONFIG_UART_2 */
+#ifdef CONFIG_UART_3
 	{STM32_PIN_PB10, STM32F1_PINMUX_FUNC_PB10_USART3_TX},
 	{STM32_PIN_PB11, STM32F1_PINMUX_FUNC_PB11_USART3_RX},
-#endif	/* CONFIG_UART_STM32_PORT_3 */
+#endif	/* CONFIG_UART_3 */
 #ifdef CONFIG_I2C_2
 	{STM32_PIN_PB10, STM32F1_PINMUX_FUNC_PB10_I2C2_SCL},
 	{STM32_PIN_PB11, STM32F1_PINMUX_FUNC_PB11_I2C2_SDA},
@@ -45,10 +45,10 @@ static const struct pin_config pinconf[] = {
 #ifdef CONFIG_PWM_STM32_1
 	{STM32_PIN_PA8, STM32F1_PINMUX_FUNC_PA8_PWM1_CH1},
 #endif /* CONFIG_PWM_STM32_1 */
-#ifdef USB_DC_STM32
+#ifdef CONFIG_USB_DC_STM32
 	{STM32_PIN_PA11, STM32F1_PINMUX_FUNC_PA11_USB_DM},
 	{STM32_PIN_PA12, STM32F1_PINMUX_FUNC_PA12_USB_DP},
-#endif /* USB_DC_STM32 */
+#endif /* CONFIG_USB_DC_STM32 */
 };
 
 static int pinmux_stm32_init(struct device *port)

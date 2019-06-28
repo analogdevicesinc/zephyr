@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2016 Jean-Paul Etienne <fractalclone@gmail.com>
+ * Copyright (c) 2018 Foundries.io Ltd
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -11,15 +12,17 @@
 
 /* imports */
 GDATA(_sw_isr_table)
-GTEXT(__soc_save_context)
-GTEXT(__soc_restore_context)
 GTEXT(__soc_is_irq)
 GTEXT(__soc_handle_irq)
 GTEXT(_Fault)
+#ifdef CONFIG_RISCV_SOC_CONTEXT_SAVE
+GTEXT(__soc_save_context)
+GTEXT(__soc_restore_context)
+#endif /* CONFIG_RISCV_SOC_CONTEXT_SAVE */
 
 GTEXT(_k_neg_eagain)
 GTEXT(_is_next_thread_current)
-GTEXT(_get_next_ready_thread)
+GTEXT(z_get_next_ready_thread)
 
 #ifdef CONFIG_TRACING
 GTEXT(z_sys_trace_thread_switched_in)
@@ -30,33 +33,30 @@ GTEXT(z_sys_trace_isr_enter)
 GTEXT(_offload_routine)
 #endif
 
-#ifdef CONFIG_TIMESLICING
-GTEXT(_update_time_slice_before_swap)
-#endif
-
 /* exports */
 GTEXT(__irq_wrapper)
 
 /* use ABI name of registers for the sake of simplicity */
 
 /*
- * ISR is handled at both ARCH and SOC levels.
- * At the ARCH level, ISR handles basic context saving/restore of registers
- * onto/from the thread stack and calls corresponding IRQ function registered
- * at driver level.
-
- * At SOC level, ISR handles saving/restoring of SOC-specific registers
- * onto/from the thread stack (handled via __soc_save_context and
- * __soc_restore_context functions). SOC level save/restore context
- * is accounted for only if CONFIG_RISCV_SOC_CONTEXT_SAVE variable is set
+ * Generic architecture-level IRQ handling, along with callouts to
+ * SoC-specific routines.
  *
- * Moreover, given that RISC-V architecture does not provide a clear ISA
- * specification about interrupt handling, each RISC-V SOC handles it in
- * its own way. Hence, the generic RISC-V ISR handler expects the following
- * functions to be provided at the SOC level:
- * __soc_is_irq: to check if the exception is the result of an interrupt or not.
- * __soc_handle_irq: handle pending IRQ at SOC level (ex: clear pending IRQ in
- * SOC-specific IRQ register)
+ * Architecture level IRQ handling includes basic context save/restore
+ * of standard registers and calling ISRs registered at Zephyr's driver
+ * level.
+ *
+ * Since RISC-V does not completely prescribe IRQ handling behavior,
+ * implementations vary (some implementations also deviate from
+ * what standard behavior is defined). Hence, the arch level code expects
+ * the following functions to be provided at the SOC level:
+ *
+ *     - __soc_is_irq: decide if we're handling an interrupt or an exception
+ *     - __soc_handle_irq: handle SoC-specific details for a pending IRQ
+ *       (e.g. clear a pending bit in a SoC-specific register)
+ *
+ * If CONFIG_RISCV_SOC_CONTEXT_SAVE=y, calls to SoC-level context save/restore
+ * routines are also made here. For details, see the Kconfig help text.
  */
 
 /*
@@ -93,9 +93,6 @@ SECTION_FUNC(exception.entry, __irq_wrapper)
 	sw a6, __NANO_ESF_a6_OFFSET(sp)
 	sw a7, __NANO_ESF_a7_OFFSET(sp)
 
-#ifdef CONFIG_EXECUTION_BENCHMARKING
-	call read_timer_start_of_isr
-#endif
 	/* Save MEPC register */
 	csrr t0, mepc
 	sw t0, __NANO_ESF_mepc_OFFSET(sp)
@@ -106,8 +103,13 @@ SECTION_FUNC(exception.entry, __irq_wrapper)
 
 #ifdef CONFIG_RISCV_SOC_CONTEXT_SAVE
 	/* Handle context saving at SOC level. */
+	addi a0, sp, __NANO_ESF_soc_context_OFFSET
 	jal ra, __soc_save_context
 #endif /* CONFIG_RISCV_SOC_CONTEXT_SAVE */
+
+#ifdef CONFIG_EXECUTION_BENCHMARKING
+	call read_timer_start_of_isr
+#endif
 
 	/*
 	 * Check if exception is the result of an interrupt or not.
@@ -216,12 +218,12 @@ on_irq_stack:
 	beqz t1, call_irq
 
 	/*
-	 * Call _irq_do_offload to handle IRQ offloading.
+	 * Call z_irq_do_offload to handle IRQ offloading.
 	 * Set return address to on_thread_stack in order to jump there
-	 * upon returning from _irq_do_offload
+	 * upon returning from z_irq_do_offload
 	 */
 	la ra, on_thread_stack
-	tail _irq_do_offload
+	tail z_irq_do_offload
 
 call_irq:
 #ifdef CONFIG_TRACING
@@ -254,7 +256,13 @@ call_irq:
 	lw t1, 0x04(t0)
 
 #ifdef CONFIG_EXECUTION_BENCHMARKING
+	addi sp, sp, -16
+	sw a0, 0x00(sp)
+	sw t1, 0x04(sp)
 	call read_timer_end_of_isr
+	lw t1, 0x04(sp)
+	lw a0, 0x00(sp)
+	addi sp, sp, 16
 #endif
 	/* Call ISR function */
 	jalr ra, t1
@@ -273,7 +281,7 @@ on_thread_stack:
 	addi sp, t0, 0
 
 #ifdef CONFIG_STACK_SENTINEL
-	call _check_stack_sentinel
+	call z_check_stack_sentinel
 	la t1, _kernel
 #endif
 
@@ -296,9 +304,6 @@ on_thread_stack:
 #endif /* CONFIG_PREEMPT_ENABLED */
 
 reschedule:
-#if CONFIG_TIMESLICING
-	call _update_time_slice_before_swap
-#endif
 #if CONFIG_TRACING
 	call z_sys_trace_thread_switched_in
 #endif
@@ -327,7 +332,7 @@ reschedule:
 
 	/*
 	 * Save stack pointer of current thread and set the default return value
-	 * of _Swap to _k_neg_eagain for the thread.
+	 * of z_swap to _k_neg_eagain for the thread.
 	 */
 	sw sp, _thread_offset_to_sp(t1)
 	la t2, _k_neg_eagain
@@ -409,6 +414,7 @@ reschedule:
 no_reschedule:
 #ifdef CONFIG_RISCV_SOC_CONTEXT_SAVE
 	/* Restore context at SOC level */
+	addi a0, sp, __NANO_ESF_soc_context_OFFSET
 	jal ra, __soc_restore_context
 #endif /* CONFIG_RISCV_SOC_CONTEXT_SAVE */
 

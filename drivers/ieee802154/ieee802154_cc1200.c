@@ -7,7 +7,7 @@
  */
 
 #define LOG_MODULE_NAME ieee802154_cc1200
-#define LOG_LEVEL CONFIG_IEEE802154_LOG_LEVEL
+#define LOG_LEVEL CONFIG_IEEE802154_DRIVER_LOG_LEVEL
 
 #include <logging/log.h>
 LOG_MODULE_REGISTER(LOG_MODULE_NAME);
@@ -17,18 +17,17 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #include <kernel.h>
 #include <arch/cpu.h>
 
-#include <board.h>
 #include <device.h>
 #include <init.h>
 #include <net/net_if.h>
 #include <net/net_pkt.h>
 
-#include <misc/byteorder.h>
+#include <sys/byteorder.h>
 #include <string.h>
 #include <random/rand32.h>
 
-#include <spi.h>
-#include <gpio.h>
+#include <drivers/spi.h>
+#include <drivers/gpio.h>
 
 #include <net/ieee802154_radio.h>
 
@@ -51,7 +50,7 @@ static struct spi_cs_control cs_ctrl;
 /***********************
  * Debugging functions *
  **********************/
-static void _cc1200_print_status(u8_t status)
+static void cc1200_print_status(u8_t status)
 {
 	if (status == CC1200_STATUS_IDLE) {
 		LOG_DBG("Idling");
@@ -76,7 +75,7 @@ static void _cc1200_print_status(u8_t status)
  * Generic functions *
  ********************/
 
-bool _cc1200_access_reg(struct cc1200_context *ctx, bool read, u8_t addr,
+bool z_cc1200_access_reg(struct cc1200_context *ctx, bool read, u8_t addr,
 			void *data, size_t length, bool extended, bool burst)
 {
 	u8_t cmd_buf[2];
@@ -100,7 +99,7 @@ bool _cc1200_access_reg(struct cc1200_context *ctx, bool read, u8_t addr,
 		    burst ? "burst" : "single");
 	*/
 
-	cmd_buf[0] = 0;
+	cmd_buf[0] = 0U;
 
 	if (burst) {
 		cmd_buf[0] |= CC1200_ACCESS_BURST;
@@ -161,8 +160,8 @@ static u8_t get_status(struct cc1200_context *ctx)
 {
 	u8_t val;
 
-	if (_cc1200_access_reg(ctx, true, CC1200_INS_SNOP,
-			       &val, 1, false, false)) {
+	if (z_cc1200_access_reg(ctx, true, CC1200_INS_SNOP,
+				&val, 1, false, false)) {
 		/* See Section 3.1.2 */
 		return val & CC1200_STATUS_MASK;
 	}
@@ -240,7 +239,7 @@ static bool write_reg_freq(struct cc1200_context *ctx, u32_t freq)
 	freq_data[1] = (u8_t)((freq & 0x0000FF00) >> 8);
 	freq_data[2] = (u8_t)(freq & 0x000000FF);
 
-	return _cc1200_access_reg(ctx, false, CC1200_REG_FREQ2,
+	return z_cc1200_access_reg(ctx, false, CC1200_REG_FREQ2,
 				  freq_data, 3, true, true);
 }
 
@@ -277,13 +276,13 @@ static bool write_reg_freq(struct cc1200_context *ctx, u32_t freq)
 static u32_t rf_evaluate_freq_setting(struct cc1200_context *ctx, u32_t chan)
 {
 	u32_t xtal = CONFIG_IEEE802154_CC1200_XOSC;
-	u32_t mult_10 = 100000;
-	u32_t factor = 1;
-	u32_t freq = 0;
+	u32_t mult_10 = 100000U;
+	u32_t factor = 1U;
+	u32_t freq = 0U;
 	u32_t rf, lo_div;
 
 	rf = ctx->rf_settings->chan_center_freq0 +
-		((chan * (u32_t)ctx->rf_settings->channel_spacing) / 10);
+		((chan * (u32_t)ctx->rf_settings->channel_spacing) / 10U);
 	lo_div = get_lo_divider(ctx);
 
 	LOG_DBG("Calculating freq for %u KHz RF (%u)", rf, lo_div);
@@ -299,23 +298,23 @@ static u32_t rf_evaluate_freq_setting(struct cc1200_context *ctx, u32_t chan)
 		}
 
 		if (hz < 1000) {
-			freq_tmp = (hz * lo_div * 65536) / xtal;
+			freq_tmp = (hz * lo_div * 65536U) / xtal;
 		} else {
-			freq_tmp = ((hz * lo_div) / xtal) * 65536;
+			freq_tmp = ((hz * lo_div) / xtal) * 65536U;
 		}
 
 		rst = freq_tmp % factor;
 		freq_tmp /= factor;
 
-		if (factor > 1 && (rst/(factor/10)) > 5) {
+		if (factor > 1 && (rst/(factor/10U)) > 5) {
 			freq_tmp++;
 		}
 
 		freq += freq_tmp;
 
-		factor *= 10;
-		mult_10 /= 10;
-		xtal /= 10;
+		factor *= 10U;
+		mult_10 /= 10U;
+		xtal /= 10U;
 		rf -= hz;
 	}
 
@@ -330,13 +329,13 @@ rf_install_settings(struct device *dev,
 {
 	struct cc1200_context *cc1200 = dev->driver_data;
 
-	if (!_cc1200_access_reg(cc1200, false, CC1200_REG_SYNC3,
-				(void *)rf_settings->registers,
-				CC1200_RF_NON_EXT_SPACE_REGS, false, true) ||
-	    !_cc1200_access_reg(cc1200, false, CC1200_REG_IF_MIX_CFG,
-				(void *)rf_settings->registers +
-				CC1200_RF_NON_EXT_SPACE_REGS,
-				CC1200_RF_EXT_SPACE_REGS, true, true) ||
+	if (!z_cc1200_access_reg(cc1200, false, CC1200_REG_SYNC3,
+				 (void *)rf_settings->registers,
+				 CC1200_RF_NON_EXT_SPACE_REGS, false, true) ||
+	    !z_cc1200_access_reg(cc1200, false, CC1200_REG_IF_MIX_CFG,
+				 (void *)rf_settings->registers +
+				 CC1200_RF_NON_EXT_SPACE_REGS,
+				 CC1200_RF_EXT_SPACE_REGS, true, true) ||
 	    !write_reg_pkt_len(cc1200, 0xFF)) {
 		LOG_ERR("Could not install RF settings");
 		return false;
@@ -354,7 +353,7 @@ static int rf_calibrate(struct cc1200_context *ctx)
 		return -EIO;
 	}
 
-	k_busy_wait(5 * USEC_PER_MSEC);
+	k_busy_wait(USEC_PER_MSEC * 5U);
 
 	/* We need to re-enable RX as SCAL shuts off the freq synth */
 	if (!instruct_sidle(ctx) ||
@@ -364,9 +363,9 @@ static int rf_calibrate(struct cc1200_context *ctx)
 		return -EIO;
 	}
 
-	k_busy_wait(10 * USEC_PER_MSEC);
+	k_busy_wait(USEC_PER_MSEC * 10U);
 
-	_cc1200_print_status(get_status(ctx));
+	cc1200_print_status(get_status(ctx));
 
 	return 0;
 }
@@ -378,7 +377,7 @@ static int rf_calibrate(struct cc1200_context *ctx)
 static inline bool write_txfifo(struct cc1200_context *ctx,
 				void *data, size_t length)
 {
-	return _cc1200_access_reg(ctx, false,
+	return z_cc1200_access_reg(ctx, false,
 				  CC1200_REG_TXFIFO,
 				  data, length, false, true);
 }
@@ -390,7 +389,7 @@ static inline bool write_txfifo(struct cc1200_context *ctx,
 static inline bool read_rxfifo(struct cc1200_context *ctx,
 			       void *data, size_t length)
 {
-	return _cc1200_access_reg(ctx, true,
+	return z_cc1200_access_reg(ctx, true,
 				  CC1200_REG_RXFIFO,
 				  data, length, false, true);
 }
@@ -399,8 +398,8 @@ static inline u8_t get_packet_length(struct cc1200_context *ctx)
 {
 	u8_t len;
 
-	if (_cc1200_access_reg(ctx, true, CC1200_REG_RXFIFO,
-			       &len, 1, false, true)) {
+	if (z_cc1200_access_reg(ctx, true, CC1200_REG_RXFIFO,
+				&len, 1, false, true)) {
 		return len;
 	}
 
@@ -420,15 +419,15 @@ static inline bool verify_rxfifo_validity(struct cc1200_context *ctx,
 }
 
 static inline bool read_rxfifo_content(struct cc1200_context *ctx,
-				       struct net_buf *frag, u8_t len)
+				       struct net_buf *buf, u8_t len)
 {
 
-	if (!read_rxfifo(ctx, frag->data, len) ||
+	if (!read_rxfifo(ctx, buf->data, len) ||
 	    (get_status(ctx) == CC1200_STATUS_RX_FIFO_ERROR)) {
 		return false;
 	}
 
-	net_buf_add(frag, len);
+	net_buf_add(buf, len);
 
 	return true;
 }
@@ -454,7 +453,6 @@ static inline bool verify_crc(struct cc1200_context *ctx, struct net_pkt *pkt)
 static void cc1200_rx(struct device *dev)
 {
 	struct cc1200_context *cc1200 = dev->driver_data;
-	struct net_buf *pkt_frag;
 	struct net_pkt *pkt;
 	u8_t pkt_len;
 
@@ -474,21 +472,14 @@ static void cc1200_rx(struct device *dev)
 			goto flush;
 		}
 
-		pkt = net_pkt_get_reserve_rx(0, K_NO_WAIT);
+		pkt = net_pkt_alloc_with_buffer(cc1200->iface, pkt_len,
+						AF_UNSPEC, 0, K_NO_WAIT);
 		if (!pkt) {
 			LOG_ERR("No free pkt available");
 			goto flush;
 		}
 
-		pkt_frag = net_pkt_get_frag(pkt, K_NO_WAIT);
-		if (!pkt_frag) {
-			LOG_ERR("No free frag available");
-			goto flush;
-		}
-
-		net_pkt_frag_insert(pkt, pkt_frag);
-
-		if (!read_rxfifo_content(cc1200, pkt_frag, pkt_len)) {
+		if (!read_rxfifo_content(cc1200, pkt->buffer, pkt_len)) {
 			LOG_ERR("No content read");
 			goto flush;
 		}
@@ -511,7 +502,7 @@ static void cc1200_rx(struct device *dev)
 		}
 
 		net_analyze_stack("CC1200 Rx Fiber stack",
-				  K_THREAD_STACK_BUFFER(cc1200->rx_stack),
+				  Z_THREAD_STACK_BUFFER(cc1200->rx_stack),
 				  K_THREAD_STACK_SIZEOF(cc1200->rx_stack));
 		continue;
 flush:
@@ -609,8 +600,8 @@ static int cc1200_tx(struct device *dev,
 		     struct net_buf *frag)
 {
 	struct cc1200_context *cc1200 = dev->driver_data;
-	u8_t *frame = frag->data - net_pkt_ll_reserve(pkt);
-	u8_t len = net_pkt_ll_reserve(pkt) + frag->len;
+	u8_t *frame = frag->data;
+	u8_t len = frag->len;
 	bool status = false;
 
 	LOG_DBG("%p (%u)", frag, len);
@@ -651,7 +642,7 @@ static int cc1200_tx(struct device *dev,
 	}
 
 out:
-	_cc1200_print_status(get_status(cc1200));
+	cc1200_print_status(get_status(cc1200));
 
 	if (atomic_get(&cc1200->tx) == 1 &&
 	    read_reg_num_txbytes(cc1200) != 0) {
@@ -686,7 +677,7 @@ static int cc1200_start(struct device *dev)
 
 	enable_gpio0_interrupt(cc1200, true);
 
-	_cc1200_print_status(get_status(cc1200));
+	cc1200_print_status(get_status(cc1200));
 
 	return 0;
 }
@@ -745,8 +736,7 @@ static int configure_spi(struct device *dev)
 {
 	struct cc1200_context *cc1200 = dev->driver_data;
 
-	cc1200->spi = device_get_binding(
-			CONFIG_IEEE802154_CC1200_SPI_DRV_NAME);
+	cc1200->spi = device_get_binding(DT_IEEE802154_CC1200_SPI_DRV_NAME);
 	if (!cc1200->spi) {
 		LOG_ERR("Unable to get SPI device");
 		return -ENODEV;
@@ -754,25 +744,25 @@ static int configure_spi(struct device *dev)
 
 	if (IS_ENABLED(CONFIG_IEEE802154_CC1200_GPIO_SPI_CS)) {
 		cs_ctrl.gpio_dev = device_get_binding(
-			CONFIG_IEEE802154_CC1200_GPIO_SPI_CS_DRV_NAME);
+			DT_IEEE802154_CC1200_GPIO_SPI_CS_DRV_NAME);
 		if (!cs_ctrl.gpio_dev) {
 			LOG_ERR("Unable to get GPIO SPI CS device");
 			return -ENODEV;
 		}
 
-		cs_ctrl.gpio_pin = CONFIG_IEEE802154_CC1200_GPIO_SPI_CS_PIN;
-		cs_ctrl.delay = 0;
+		cs_ctrl.gpio_pin = DT_IEEE802154_CC1200_GPIO_SPI_CS_PIN;
+		cs_ctrl.delay = 0U;
 
 		cc1200->spi_cfg.cs = &cs_ctrl;
 
 		LOG_DBG("SPI GPIO CS configured on %s:%u",
-			    CONFIG_IEEE802154_CC1200_GPIO_SPI_CS_DRV_NAME,
-			    CONFIG_IEEE802154_CC1200_GPIO_SPI_CS_PIN);
+			    DT_IEEE802154_CC1200_GPIO_SPI_CS_DRV_NAME,
+			    DT_IEEE802154_CC1200_GPIO_SPI_CS_PIN);
 	}
 
 	cc1200->spi_cfg.operation = SPI_WORD_SET(8);
-	cc1200->spi_cfg.frequency = CONFIG_IEEE802154_CC1200_SPI_FREQ;
-	cc1200->spi_cfg.slave = CONFIG_IEEE802154_CC1200_SPI_SLAVE;
+	cc1200->spi_cfg.frequency = DT_IEEE802154_CC1200_SPI_FREQ;
+	cc1200->spi_cfg.slave = DT_IEEE802154_CC1200_SPI_SLAVE;
 
 	return 0;
 }
@@ -834,7 +824,6 @@ static struct cc1200_context cc1200_context_data;
 
 static struct ieee802154_radio_api cc1200_radio_api = {
 	.iface_api.init	= cc1200_iface_init,
-	.iface_api.send	= ieee802154_radio_send,
 
 	.get_capabilities	= cc1200_get_capabilities,
 	.cca			= cc1200_cca,

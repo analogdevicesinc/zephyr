@@ -9,7 +9,7 @@
 
 #include <zephyr/types.h>
 #include <device.h>
-#include <gpio.h>
+#include <drivers/gpio.h>
 
 /* ADT7420 registers */
 #define ADT7420_REG_TEMP_MSB		0x00 /* Temperature value MSB */
@@ -97,8 +97,5 @@ int adt7420_trigger_set(struct device *dev,
 int adt7420_init_interrupt(struct device *dev);
 #endif /* CONFIG_ADT7420_TRIGGER */
 
-#define SYS_LOG_DOMAIN "ADT7420"
-#define SYS_LOG_LEVEL CONFIG_SYS_LOG_SENSOR_LEVEL
-#include <logging/sys_log.h>
 
 #endif /* ZEPHYR_DRIVERS_SENSOR_ADT7420_ADT7420_H_ */

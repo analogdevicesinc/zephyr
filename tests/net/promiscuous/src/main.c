@@ -6,15 +6,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define LOG_MODULE_NAME net_test
 #define NET_LOG_LEVEL CONFIG_NET_IF_LOG_LEVEL
+
+#include <logging/log.h>
+LOG_MODULE_REGISTER(net_test, NET_LOG_LEVEL);
 
 #include <zephyr/types.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <string.h>
 #include <errno.h>
-#include <misc/printk.h>
+#include <sys/printk.h>
 
 #include <ztest.h>
 
@@ -86,12 +88,11 @@ static void eth_fake_iface_init(struct net_if *iface)
 	ethernet_init(iface);
 }
 
-static int eth_fake_send(struct net_if *iface,
+static int eth_fake_send(struct device *dev,
 			 struct net_pkt *pkt)
 {
-	ARG_UNUSED(iface);
-
-	net_pkt_unref(pkt);
+	ARG_UNUSED(dev);
+	ARG_UNUSED(pkt);
 
 	return 0;
 }
@@ -126,10 +127,10 @@ static int eth_fake_set_config(struct device *dev,
 
 static struct ethernet_api eth_fake_api_funcs = {
 	.iface_api.init = eth_fake_iface_init,
-	.iface_api.send = eth_fake_send,
 
 	.get_capabilities = eth_fake_get_capabilities,
 	.set_config = eth_fake_set_config,
+	.send = eth_fake_send,
 };
 
 static int eth_fake_init(struct device *dev)
@@ -142,10 +143,12 @@ static int eth_fake_init(struct device *dev)
 }
 
 ETH_NET_DEVICE_INIT(eth_fake1, "eth_fake1", eth_fake_init, &eth_fake_data1,
-		    NULL, CONFIG_ETH_INIT_PRIORITY, &eth_fake_api_funcs, 1500);
+		    NULL, CONFIG_ETH_INIT_PRIORITY, &eth_fake_api_funcs,
+		    NET_ETH_MTU);
 
 ETH_NET_DEVICE_INIT(eth_fake2, "eth_fake2", eth_fake_init, &eth_fake_data2,
-		    NULL, CONFIG_ETH_INIT_PRIORITY, &eth_fake_api_funcs, 1500);
+		    NULL, CONFIG_ETH_INIT_PRIORITY, &eth_fake_api_funcs,
+		    NET_ETH_MTU);
 
 #if NET_LOG_LEVEL >= LOG_LEVEL_DBG
 static const char *iface2str(struct net_if *iface)
@@ -344,10 +347,10 @@ static void _recv_data(struct net_if *iface, struct net_pkt **pkt)
 	static u8_t data[] = { 't', 'e', 's', 't', '\0' };
 	int ret;
 
-	*pkt = net_pkt_get_reserve_tx(0, K_FOREVER);
-	net_pkt_set_iface(*pkt, iface);
+	*pkt = net_pkt_rx_alloc_with_buffer(iface, sizeof(data),
+					    AF_UNSPEC, 0, K_FOREVER);
 
-	net_pkt_append_all(*pkt, sizeof(data), data, K_FOREVER);
+	net_pkt_write(*pkt, data, sizeof(data));
 
 	ret = net_recv_data(iface, *pkt);
 	zassert_equal(ret, 0, "Data receive failure");

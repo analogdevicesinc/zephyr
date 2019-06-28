@@ -6,6 +6,8 @@
 
 /dts-v1/;
 #include <st/l4/stm32l475Xg.dtsi>
+#include "arduino_r3_connector.dtsi"
+
 
 / {
 	model = "STMicroelectronics B-L475E-IOT01Ax board";
@@ -13,8 +15,10 @@
 
 	chosen {
 		zephyr,console = &usart1;
+		zephyr,shell-uart = &usart1;
 		zephyr,sram = &sram0;
 		zephyr,flash = &flash0;
+		zephyr,code-partition = &slot0_partition;
 	};
 
 	leds {
@@ -41,7 +45,7 @@
 		led0 = &green_led_2;
 		led1 = &green_led_1;
 		sw0 = &user_button;
-		bt = &bt0;
+		eswifi0 = &wifi0;
 	};
 };
 
@@ -49,23 +53,30 @@
 	current-speed = <115200>;
 	pinctrl-0 = <&usart1_pins_a>;
 	pinctrl-names = "default";
-	status = "ok";
+	status = "okay";
 };
 
 &usart2 {
 	current-speed = <115200>;
 	pinctrl-0 = <&usart2_pins_a>;
 	pinctrl-names = "default";
-	status = "ok";
+	status = "okay";
+};
+
+&uart4 {
+	current-speed = <115200>;
+	pinctrl-0 = <&uart4_pins_a>;
+	pinctrl-names = "default";
+	status = "okay";
 };
 
 &i2c1 {
-	status = "ok";
+	status = "okay";
 	clock-frequency = <I2C_BITRATE_FAST>;
 };
 
 &i2c2 {
-	status = "ok";
+	status = "okay";
 	clock-frequency = <I2C_BITRATE_FAST>;
 
 	lis3mdl-magn@1e {
@@ -89,6 +100,7 @@
 	lsm6dsl@6a {
 		compatible = "st,lsm6dsl";
 		reg = <0x6a>;
+		irq-gpios = <&gpiod 11 0>;
 		label = "LSM6DSL";
 	};
 
@@ -100,28 +112,39 @@
 };
 
 &spi1 {
-	status = "ok";
+	status = "okay";
 };
 
 &spi3 {
-	status = "ok";
+	status = "okay";
 
-	cs-gpios = <&gpiod 13 0>;
+	cs-gpios = <&gpiod 13 0>, <&gpioe 0 0>;
 
-	bt0: spbtle-rf@0 {
-		compatible = "st,spbtle-rf";
+	spbtle-rf@0 {
+		compatible = "zephyr,bt-hci-spi";
 		reg = <0>;
 		reset-gpios = <&gpioa 8 0>;
 		irq-gpios = <&gpioe 6 0>;
 		spi-max-frequency = <2000000>;
 		label = "SPBTLE-RF";
 	};
+
+	wifi0: ism43362@1 {
+		compatible = "inventek,eswifi";
+		spi-max-frequency = <2000000>;
+		reg = <1>;
+		resetn-gpios = <&gpioe 8 0>;
+		boot0-gpios = <&gpiob 12 0>;
+		wakeup-gpios = <&gpiob 13 0>;
+		data-gpios = <&gpioe 1 0>;
+		label = "ESWIFI0";
+	};
 };
 
 &flash0 {
 	/*
 	 * For more information, see:
-	 * http://docs.zephyrproject.org/latest/devices/dts/flash_partitions.html
+	 * http://docs.zephyrproject.org/latest/guides/dts/index.html#flash-partitions
 	 */
 	partitions {
 		compatible = "fixed-partitions";
@@ -151,19 +174,32 @@
 			label = "image-scratch";
 			reg = <0x000F8000 0x00006000>;
 		};
+
+		storage_partition: partition@fc000 {
+			label = "storage";
+			reg = <0x000fc000 0x00004000>;
+		};
 	};
 
 
 };
 
 &timers2 {
-	status = "ok";
+	status = "okay";
 
 	pwm {
-		status = "ok";
+		status = "okay";
 	};
 };
 
 &rtc {
-	status = "ok";
+	status = "okay";
+};
+
+&usbotg_fs {
+	status = "okay";
+};
+
+&iwdg {
+	status = "okay";
 };

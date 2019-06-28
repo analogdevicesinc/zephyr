@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 /dts-v1/;
 
 #include <nxp/nxp_kw40z.dtsi>
@@ -26,14 +28,14 @@
 };
 
 &adc0 {
-	status = "ok";
+	status = "okay";
 };
 
 &i2c1 {
-	status = "ok";
+	status = "okay";
 };
 
 &lpuart0 {
-	status = "ok";
+	status = "okay";
 	current-speed = <115200>;
 };

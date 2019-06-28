@@ -32,7 +32,7 @@ extern "C" {
  *    14      #PF         Page Fault
  *    17      #AC         Alignment Check
  */
-#define _EXC_ERROR_CODE_FAULTS	0x27d00
+#define _EXC_ERROR_CODE_FAULTS	0x27d00U
 
 
 /* NOTE: We currently do not have definitions for 16-bit segment, currently
@@ -108,18 +108,6 @@ struct __packed task_state_segment {
 	u8_t t:1;		/* Trap bit */
 	u16_t reserved_12:15;
 	u16_t iomap;
-};
-
-/* Section 3.4.2 of IA architecture SW developer manual, Vol 3. */
-struct __packed segment_selector {
-	union {
-		struct {
-			u8_t rpl:2;
-			u8_t table:1; /* 0=gdt 1=ldt */
-			u16_t index:13;
-		};
-		u16_t val;
-	};
 };
 
 #define SEG_SELECTOR(index, table, dpl) (index << 3 | table << 2 | dpl)
@@ -389,6 +377,8 @@ struct __packed far_ptr {
 extern struct pseudo_descriptor _gdt;
 #endif
 
+extern const struct pseudo_descriptor z_idt;
+
 /**
  * Properly set the segment descriptor segment and offset
  *
@@ -398,14 +388,14 @@ extern struct pseudo_descriptor _gdt;
  * @param offset Offset within segment
  * @param segment_selector Segment selector
  */
-static inline void _sd_set_seg_offset(struct segment_descriptor *sd,
+static inline void z_sd_set_seg_offset(struct segment_descriptor *sd,
 				      u16_t segment_selector,
 				      u32_t offset)
 {
-	sd->offset_low = offset & 0xFFFF;
-	sd->offset_hi = offset >> 16;
+	sd->offset_low = offset & 0xFFFFU;
+	sd->offset_hi = offset >> 16U;
 	sd->segment_selector = segment_selector;
-	sd->always_0_0 = 0;
+	sd->always_0_0 = 0U;
 }
 
 
@@ -417,14 +407,14 @@ static inline void _sd_set_seg_offset(struct segment_descriptor *sd,
  * @param offset offset of handler
  * @param dpl descriptor privilege level
  */
-static inline void _init_irq_gate(struct segment_descriptor *sd,
+static inline void z_init_irq_gate(struct segment_descriptor *sd,
 				  u16_t seg_selector, u32_t offset,
 				  u32_t dpl)
 {
-	_sd_set_seg_offset(sd, seg_selector, offset);
+	z_sd_set_seg_offset(sd, seg_selector, offset);
 	sd->dpl = dpl;
 	sd->descriptor_type = DT_TYPE_SYSTEM;
-	sd->present = 1;
+	sd->present = 1U;
 	sd->type = SEG_TYPE_IRQ_GATE;
 }
 
@@ -519,7 +509,7 @@ static inline void _set_gdt(const struct pseudo_descriptor *gdt)
  *
  * @param idt Pointer to IDT pseudo descriptor.
  */
-static inline void _set_idt(const struct pseudo_descriptor *idt)
+static inline void z_set_idt(const struct pseudo_descriptor *idt)
 {
 	__asm__ __volatile__ ("lidt %0" :: "m" (*idt));
 }
@@ -532,7 +522,7 @@ static inline void _set_idt(const struct pseudo_descriptor *idt)
  */
 static inline u16_t _get_cs(void)
 {
-	u16_t cs = 0;
+	u16_t cs = 0U;
 
 	__asm__ __volatile__ ("mov %%cs, %0" : "=r" (cs));
 	return cs;
@@ -546,7 +536,7 @@ static inline u16_t _get_cs(void)
  */
 static inline u16_t _get_ds(void)
 {
-	u16_t ds = 0;
+	u16_t ds = 0U;
 
 	__asm__ __volatile__ ("mov %%ds, %0" : "=r" (ds));
 	return ds;

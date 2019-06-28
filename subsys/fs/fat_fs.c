@@ -10,8 +10,8 @@
 #include <zephyr/types.h>
 #include <errno.h>
 #include <init.h>
-#include <fs.h>
-#include <misc/__assert.h>
+#include <fs/fs.h>
+#include <sys/__assert.h>
 #include <ff.h>
 
 #define FATFS_MAX_FILE_NAME 12 /* Uses 8.3 SFN */
@@ -101,6 +101,24 @@ static int fatfs_unlink(struct fs_mount_t *mountp, const char *path)
 
 	res = f_unlink(&path[1]);
 
+	return translate_error(res);
+}
+
+static int fatfs_rename(struct fs_mount_t *mountp, const char *from,
+			const char *to)
+{
+	FRESULT res;
+	FILINFO fno;
+
+	/* Check if 'to' path exists; remove it if it does */
+	res = f_stat(&to[1], &fno);
+	if (FR_OK == res) {
+		res = f_unlink(&to[1]);
+		if (FR_OK != res)
+			return translate_error(res);
+	}
+
+	res = f_rename(&from[1], &to[1]);
 	return translate_error(res);
 }
 
@@ -196,7 +214,7 @@ static int fatfs_truncate(struct fs_file_t *zfp, off_t length)
 		 * optimization.
 		 */
 		unsigned int bw;
-		u8_t c = 0;
+		u8_t c = 0U;
 
 		for (int i = cur_length; i < length; i++) {
 			res = f_write(zfp->filep, &c, 1, &bw);
@@ -336,6 +354,15 @@ static int fatfs_mount(struct fs_mount_t *mountp)
 
 }
 
+static int fatfs_unmount(struct fs_mount_t *mountp)
+{
+	FRESULT res;
+
+	res = f_mount(NULL, &mountp->mnt_point[1], 1);
+
+	return translate_error(res);
+}
+
 /* File system interface */
 static struct fs_file_system_t fatfs_fs = {
 	.open = fatfs_open,
@@ -350,7 +377,9 @@ static struct fs_file_system_t fatfs_fs = {
 	.readdir = fatfs_readdir,
 	.closedir = fatfs_closedir,
 	.mount = fatfs_mount,
+	.unmount = fatfs_unmount,
 	.unlink = fatfs_unlink,
+	.rename = fatfs_rename,
 	.mkdir = fatfs_mkdir,
 	.stat = fatfs_stat,
 	.statvfs = fatfs_statvfs,

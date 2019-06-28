@@ -3,9 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: NXP Kinetis USBD
-id: nxp,kinetis-usbd
 version: 0.1
 
 description: >
@@ -19,20 +18,7 @@ properties:
       constraint: "nxp,kinetis-usbd"
 
     reg:
-      type: array
-      description: mmio register space
-      generation: define
       category: required
 
     interrupts:
-      type: array
       category: required
-      description: required interrupts
-      generation: define
-
-    interrupt-names:
-      type: stringlist
-      category: optional
-      description: readable string describing the interrupts
-      generation: define
-...

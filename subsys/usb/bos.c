@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define SYS_LOG_LEVEL CONFIG_SYS_LOG_USB_DEVICE_LEVEL
-#define SYS_LOG_DOMAIN "usb/bos"
-#include <logging/sys_log.h>
+#define LOG_LEVEL CONFIG_USB_DEVICE_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_REGISTER(usb_bos);
 
 #include <zephyr.h>
 
@@ -49,13 +49,13 @@ void usb_bos_register_cap(struct usb_bos_platform_descriptor *desc)
 	/* Has effect only on first register */
 	hdr->wTotalLength = usb_bos_get_length();
 
-	hdr->bNumDeviceCaps += 1;
+	hdr->bNumDeviceCaps += 1U;
 }
 
 int usb_handle_bos(struct usb_setup_packet *setup,
 		   s32_t *len, u8_t **data)
 {
-	SYS_LOG_DBG("wValue 0x%x", setup->wValue);
+	LOG_DBG("wValue 0x%x", setup->wValue);
 
 	if (GET_DESC_TYPE(setup->wValue) == DESCRIPTOR_TYPE_BOS) {
 		*data = (u8_t *)usb_bos_get_header();

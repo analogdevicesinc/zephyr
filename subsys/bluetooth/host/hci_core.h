@@ -37,6 +37,7 @@ enum {
 
 	BT_DEV_ADVERTISING,
 	BT_DEV_ADVERTISING_NAME,
+	BT_DEV_ADVERTISING_CONNECTABLE,
 	BT_DEV_KEEP_ADVERTISING,
 	BT_DEV_SCANNING,
 	BT_DEV_EXPLICIT_SCAN,
@@ -171,7 +172,7 @@ struct bt_dev {
 
 	/* Local Name */
 #if defined(CONFIG_BT_DEVICE_NAME_DYNAMIC)
-	char			name[CONFIG_BT_DEVICE_NAME_MAX];
+	char			name[CONFIG_BT_DEVICE_NAME_MAX + 1];
 #endif
 };
 
@@ -188,16 +189,13 @@ bool bt_addr_le_is_bonded(u8_t id, const bt_addr_le_t *addr);
 
 int bt_send(struct net_buf *buf);
 
-u16_t bt_hci_get_cmd_opcode(struct net_buf *buf);
-
 /* Don't require everyone to include keys.h */
 struct bt_keys;
 void bt_id_add(struct bt_keys *keys);
 void bt_id_del(struct bt_keys *keys);
 
 int bt_setup_id_addr(void);
-
-void bt_dev_show_info(void);
+void bt_finalize_init(void);
 
 int bt_le_adv_start_internal(const struct bt_le_adv_param *param,
 			     const struct bt_data *ad, size_t ad_len,

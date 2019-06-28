@@ -8,14 +8,25 @@
 #include <zephyr.h>
 #include <init.h>
 #include <errno.h>
-#include <misc/mempool.h>
+#include <sys/math_extras.h>
+#include <sys/mempool.h>
 #include <string.h>
-#include <logging/sys_log.h>
+#include <app_memory/app_memdomain.h>
+
+#define LOG_LEVEL CONFIG_KERNEL_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_DECLARE(os);
 
 #if (CONFIG_MINIMAL_LIBC_MALLOC_ARENA_SIZE > 0)
-K_MUTEX_DEFINE(malloc_mutex);
-SYS_MEM_POOL_DEFINE(z_malloc_mem_pool, &malloc_mutex, 16,
-		    CONFIG_MINIMAL_LIBC_MALLOC_ARENA_SIZE, 1, 4, .data);
+#ifdef CONFIG_USERSPACE
+K_APPMEM_PARTITION_DEFINE(z_malloc_partition);
+#define POOL_SECTION K_APP_DMEM_SECTION(z_malloc_partition)
+#else
+#define POOL_SECTION .data
+#endif /* CONFIG_USERSPACE */
+
+SYS_MEM_POOL_DEFINE(z_malloc_mem_pool, NULL, 16,
+		    CONFIG_MINIMAL_LIBC_MALLOC_ARENA_SIZE, 1, 4, POOL_SECTION);
 
 void *malloc(size_t size)
 {
@@ -33,9 +44,6 @@ static int malloc_prepare(struct device *unused)
 {
 	ARG_UNUSED(unused);
 
-#ifdef CONFIG_USERSPACE
-	k_object_access_all_grant(&malloc_mutex);
-#endif
 	sys_mem_pool_init(&z_malloc_mem_pool);
 
 	return 0;
@@ -47,7 +55,7 @@ void *malloc(size_t size)
 {
 	ARG_UNUSED(size);
 
-	SYS_LOG_DBG("CONFIG_MINIMAL_LIBC_MALLOC_ARENA_SIZE is 0\n");
+	LOG_DBG("CONFIG_MINIMAL_LIBC_MALLOC_ARENA_SIZE is 0");
 	errno = ENOMEM;
 
 	return NULL;
@@ -59,23 +67,11 @@ void free(void *ptr)
 	sys_mem_pool_free(ptr);
 }
 
-static bool size_t_mul_overflow(size_t a, size_t b, size_t *res)
-{
-#if __SIZEOF_SIZE_T__ == 4
-	return __builtin_umul_overflow((unsigned int)a, (unsigned int)b,
-				       (unsigned int *)res);
-#else /* __SIZEOF_SIZE_T__ == 8 */
-	return __builtin_umulll_overflow((unsigned long long)a,
-					 (unsigned long long)b,
-					 (unsigned long long *)res);
-#endif
-}
-
 void *calloc(size_t nmemb, size_t size)
 {
 	void *ret;
 
-	if (size_t_mul_overflow(nmemb, size, &size)) {
+	if (size_mul_overflow(nmemb, size, &size)) {
 		errno = ENOMEM;
 		return NULL;
 	}
@@ -95,6 +91,10 @@ void *realloc(void *ptr, size_t requested_size)
 	size_t block_size, total_requested_size;
 	void *new_ptr;
 
+	if (ptr == NULL) {
+		return malloc(requested_size);
+	}
+
 	if (requested_size == 0) {
 		return NULL;
 	}
@@ -105,7 +105,7 @@ void *realloc(void *ptr, size_t requested_size)
 	/* Determine size of previously allocated block by its level.
 	 * Most likely a bit larger than the original allocation
 	 */
-	block_size = _ALIGN4(blk->pool->base.max_sz);
+	block_size = blk->pool->base.max_sz;
 	for (int i = 1; i <= blk->level; i++) {
 		block_size = _ALIGN4(block_size / 4);
 	}
@@ -133,7 +133,7 @@ void *realloc(void *ptr, size_t requested_size)
 
 void *reallocarray(void *ptr, size_t nmemb, size_t size)
 {
-	if (size_t_mul_overflow(nmemb, size, &size)) {
+	if (size_mul_overflow(nmemb, size, &size)) {
 		errno = ENOMEM;
 		return NULL;
 	}

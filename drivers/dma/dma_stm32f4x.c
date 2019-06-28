@@ -5,16 +5,19 @@
  *
  */
 
-#define SYS_LOG_LEVEL CONFIG_SYS_LOG_DMA_LEVEL
 
-#include <board.h>
 #include <device.h>
-#include <dma.h>
+#include <drivers/dma.h>
 #include <errno.h>
 #include <init.h>
-#include <logging/sys_log.h>
 #include <stdio.h>
+#include <soc.h>
 #include <string.h>
+#include <sys/util.h>
+
+#define LOG_LEVEL CONFIG_DMA_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_REGISTER(dma_stm32f4x);
 
 #include <clock_control/stm32_clock_control.h>
 
@@ -46,8 +49,8 @@ struct dma_stm32_stream {
 	struct device *dev;
 	struct dma_stm32_stream_reg regs;
 	bool busy;
-
-	void (*dma_callback)(struct device *dev, u32_t id,
+	void *callback_arg;
+	void (*dma_callback)(void *arg, u32_t id,
 			     int error_code);
 };
 
@@ -85,9 +88,6 @@ struct dma_stm32_config {
 
 /* Maximum data sent in single transfer (Bytes) */
 #define DMA_STM32_MAX_DATA_ITEMS		0xffff
-
-#define BITS_PER_LONG		32
-#define GENMASK(h, l) (((~0UL) << (l)) & (~0UL >> (BITS_PER_LONG - 1 - (h))))
 
 #define DMA_STM32_1_BASE	0x40026000
 #define DMA_STM32_2_BASE	0x40026400
@@ -166,7 +166,7 @@ struct dma_stm32_config {
 #define   DMA_STM32_SFCR_MASK		(DMA_STM32_SFCR_FEIE \
 					 | DMA_STM32_SFCR_DMDIS)
 
-#define SYS_LOG_U32			__attribute((__unused__)) u32_t
+#define LOG_U32			__attribute((__unused__)) u32_t
 
 static void dma_stm32_1_config(struct dma_stm32_device *ddata);
 static void dma_stm32_2_config(struct dma_stm32_device *ddata);
@@ -184,18 +184,18 @@ static void dma_stm32_write(struct dma_stm32_device *ddata,
 
 static void dma_stm32_dump_reg(struct dma_stm32_device *ddata, u32_t id)
 {
-	SYS_LOG_INF("Using stream: %d\n", id);
-	SYS_LOG_INF("SCR:   0x%x \t(config)\n",
+	LOG_INF("Using stream: %d\n", id);
+	LOG_INF("SCR:   0x%x \t(config)\n",
 		    dma_stm32_read(ddata, DMA_STM32_SCR(id)));
-	SYS_LOG_INF("SNDTR:  0x%x \t(length)\n",
+	LOG_INF("SNDTR:  0x%x \t(length)\n",
 		    dma_stm32_read(ddata, DMA_STM32_SNDTR(id)));
-	SYS_LOG_INF("SPAR:  0x%x \t(source)\n",
+	LOG_INF("SPAR:  0x%x \t(source)\n",
 		    dma_stm32_read(ddata, DMA_STM32_SPAR(id)));
-	SYS_LOG_INF("SM0AR: 0x%x \t(destination)\n",
+	LOG_INF("SM0AR: 0x%x \t(destination)\n",
 		    dma_stm32_read(ddata, DMA_STM32_SM0AR(id)));
-	SYS_LOG_INF("SM1AR: 0x%x \t(destination (double buffer mode))\n",
+	LOG_INF("SM1AR: 0x%x \t(destination (double buffer mode))\n",
 		    dma_stm32_read(ddata, DMA_STM32_SM1AR(id)));
-	SYS_LOG_INF("SFCR:  0x%x \t(fifo control)\n",
+	LOG_INF("SFCR:  0x%x \t(fifo control)\n",
 		    dma_stm32_read(ddata, DMA_STM32_SFCR(id)));
 }
 
@@ -210,13 +210,13 @@ static u32_t dma_stm32_irq_status(struct dma_stm32_device *ddata,
 		irqs = dma_stm32_read(ddata, DMA_STM32_LISR);
 	}
 
-	return (irqs >> (((id & 2) << 3) | ((id & 1) * 6)));
+	return (irqs >> (((id & 2) << 3) | ((id & 1) * 6U)));
 }
 
 static void dma_stm32_irq_clear(struct dma_stm32_device *ddata,
 				u32_t id, u32_t irqs)
 {
-	irqs = irqs << (((id & 2) << 3) | ((id & 1) * 6));
+	irqs = irqs << (((id & 2) << 3) | ((id & 1) * 6U));
 
 	if (id & 4) {
 		dma_stm32_write(ddata, DMA_STM32_HIFCR, irqs);
@@ -247,12 +247,12 @@ static void dma_stm32_irq_handler(void *arg, u32_t id)
 	if ((irqstatus & DMA_STM32_TCI) && (config & DMA_STM32_SCR_TCIE)) {
 		dma_stm32_irq_clear(ddata, id, DMA_STM32_TCI);
 
-		stream->dma_callback(stream->dev, id, 0);
+		stream->dma_callback(stream->callback_arg, id, 0);
 	} else {
-		SYS_LOG_ERR("Internal error: IRQ status: 0x%x\n", irqstatus);
+		LOG_ERR("Internal error: IRQ status: 0x%x\n", irqstatus);
 		dma_stm32_irq_clear(ddata, id, irqstatus);
 
-		stream->dma_callback(stream->dev, id, -EIO);
+		stream->dma_callback(stream->callback_arg, id, -EIO);
 	}
 }
 
@@ -277,7 +277,7 @@ static int dma_stm32_disable_stream(struct dma_stm32_device *ddata,
 		/* After trying for 5 seconds, give up */
 		k_sleep(K_SECONDS(5));
 		if (count++ > (5 * 1000) / 50) {
-			SYS_LOG_ERR("DMA error: Stream in use\n");
+			LOG_ERR("DMA error: Stream in use\n");
 			return -EBUSY;
 		}
 	}
@@ -319,7 +319,7 @@ static int dma_stm32_config_devcpy(struct device *dev, u32_t id,
 			DMA_STM32_SCR_MINC;
 		break;
 	default:
-		SYS_LOG_ERR("DMA error: Direction not supported: %d",
+		LOG_ERR("DMA error: Direction not supported: %d",
 			    direction);
 		return -EINVAL;
 	}
@@ -338,12 +338,21 @@ static int dma_stm32_config_devcpy(struct device *dev, u32_t id,
 	return 0;
 }
 
-static int dma_stm32_config_memcpy(struct device *dev, u32_t id)
+static int dma_stm32_config_memcpy(struct device *dev, u32_t id,
+				   struct dma_config *config)
 {
 	struct dma_stm32_device *ddata = dev->driver_data;
 	struct dma_stm32_stream_reg *regs = &ddata->stream[id].regs;
+	u32_t src_bus_width  = dma_width_index(config->source_data_size);
+	u32_t dst_bus_width  = dma_width_index(config->dest_data_size);
+	u32_t src_burst_size = dma_burst_index(config->source_burst_length);
+	u32_t dst_burst_size = dma_burst_index(config->dest_burst_length);
 
 	regs->scr = DMA_STM32_SCR_DIR(DMA_STM32_MEM_TO_MEM) |
+		DMA_STM32_SCR_PSIZE(src_bus_width) |
+		DMA_STM32_SCR_MSIZE(dst_bus_width) |
+		DMA_STM32_SCR_PBURST(src_burst_size) |
+		DMA_STM32_SCR_MBURST(dst_burst_size) |
 		DMA_STM32_SCR_MINC |		/* Memory increment mode */
 		DMA_STM32_SCR_PINC |		/* Peripheral increment mode */
 		DMA_STM32_SCR_TCIE |		/* Transfer comp IRQ enable */
@@ -364,7 +373,6 @@ static int dma_stm32_config(struct device *dev, u32_t id,
 	struct dma_stm32_stream_reg *regs = &ddata->stream[id].regs;
 	int ret;
 
-
 	if (id >= DMA_STM32_MAX_STREAMS) {
 		return -EINVAL;
 	}
@@ -374,14 +382,21 @@ static int dma_stm32_config(struct device *dev, u32_t id,
 	}
 
 	if (config->head_block->block_size > DMA_STM32_MAX_DATA_ITEMS) {
-		SYS_LOG_ERR("DMA error: Data size too big: %d\n",
+		LOG_ERR("DMA error: Data size too big: %d\n",
 		       config->head_block->block_size);
+		return -EINVAL;
+	}
+
+	if (MEMORY_TO_MEMORY == config->channel_direction && !ddata->mem2mem) {
+		LOG_ERR("DMA error: Memcopy not supported for device %s",
+			dev->config->name);
 		return -EINVAL;
 	}
 
 	stream->busy		= true;
 	stream->dma_callback	= config->dma_callback;
 	stream->direction	= config->channel_direction;
+	stream->callback_arg    = config->callback_arg;
 
 	if (stream->direction == MEMORY_TO_PERIPHERAL) {
 		regs->sm0ar = (u32_t)config->head_block->source_address;
@@ -392,7 +407,7 @@ static int dma_stm32_config(struct device *dev, u32_t id,
 	}
 
 	if (stream->direction == MEMORY_TO_MEMORY) {
-		ret = dma_stm32_config_memcpy(dev, id);
+		ret = dma_stm32_config_memcpy(dev, id, config);
 	} else {
 		ret = dma_stm32_config_devcpy(dev, id, config);
 	}
@@ -400,6 +415,37 @@ static int dma_stm32_config(struct device *dev, u32_t id,
 	regs->sndtr = config->head_block->block_size;
 
 	return ret;
+}
+
+static int dma_stm32_reload(struct device *dev, u32_t id,
+			    u32_t src, u32_t dst, size_t size)
+{
+	struct dma_stm32_device *ddata = dev->driver_data;
+	struct dma_stm32_stream_reg *regs = &ddata->stream[id].regs;
+	struct dma_stm32_stream *stream = &ddata->stream[id];
+
+	if (id >= DMA_STM32_MAX_STREAMS) {
+		return -EINVAL;
+	}
+
+	switch (stream->direction) {
+	case MEMORY_TO_PERIPHERAL:
+		regs->sm0ar = src;
+		regs->spar = dst;
+		break;
+
+	case MEMORY_TO_MEMORY:
+	case PERIPHERAL_TO_MEMORY:
+		regs->spar = src;
+		regs->sm0ar = dst;
+		break;
+
+	default:
+		return -EINVAL;
+	}
+
+	regs->sndtr = size;
+	return 0;
 }
 
 static int dma_stm32_start(struct device *dev, u32_t id)
@@ -462,8 +508,9 @@ static int dma_stm32_stop(struct device *dev, u32_t id)
 
 	/* Disable stream */
 	ret = dma_stm32_disable_stream(ddata, id);
-	if (ret)
+	if (ret) {
 		return ret;
+	}
 
 	/* Clear remanent IRQs from previous transfers */
 	irqstatus = dma_stm32_irq_status(ddata, id);
@@ -473,6 +520,22 @@ static int dma_stm32_stop(struct device *dev, u32_t id)
 
 	/* Finally, flag stream as free */
 	stream->busy = false;
+
+	return 0;
+}
+
+static int dma_stm32_get_status(struct device *dev, u32_t id,
+				struct dma_status *stat)
+{
+	struct dma_stm32_device *ddata = dev->driver_data;
+
+	if (id >= DMA_STM32_MAX_STREAMS || stat == NULL) {
+		return -EINVAL;
+	}
+
+	stat->dir = ddata->stream[id].direction;
+	stat->busy = ddata->stream[id].busy;
+	stat->pending_length = dma_stm32_read(ddata, DMA_STM32_SNDTR(id));
 
 	return 0;
 }
@@ -493,7 +556,11 @@ static int dma_stm32_init(struct device *dev)
 
 	__ASSERT_NO_MSG(ddata->clk);
 
-	clock_control_on(ddata->clk, (clock_control_subsys_t *) &cdata->pclken);
+	if (clock_control_on(ddata->clk,
+		(clock_control_subsys_t *) &cdata->pclken) != 0) {
+		LOG_ERR("Could not enable DMA clock\n");
+		return -EIO;
+	}
 
 	/* Set controller specific configuration */
 	cdata->config(ddata);
@@ -502,9 +569,11 @@ static int dma_stm32_init(struct device *dev)
 }
 
 static const struct dma_driver_api dma_funcs = {
+	.reload		 = dma_stm32_reload,
 	.config		 = dma_stm32_config,
 	.start		 = dma_stm32_start,
 	.stop		 = dma_stm32_stop,
+	.get_status 	 = dma_stm32_get_status,
 };
 
 const struct dma_stm32_config dma_stm32_1_cdata = {
@@ -541,6 +610,7 @@ static void dma_stm32_irq_7(void *arg) { dma_stm32_irq_handler(arg, 7); }
 static void dma_stm32_1_config(struct dma_stm32_device *ddata)
 {
 	ddata->base = DMA_STM32_1_BASE;
+	ddata->mem2mem = false;
 
 	IRQ_CONNECT(DMA1_Stream0_IRQn, DMA_STM32_IRQ_PRI,
 		    dma_stm32_irq_0, DEVICE_GET(dma_stm32_1), 0);

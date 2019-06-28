@@ -8,9 +8,8 @@
 #include <stdio.h>
 #include <zephyr/types.h>
 #include <string.h>
-#include <board.h>
-#include <uart.h>
-#include <misc/byteorder.h>
+#include <drivers/uart.h>
+#include <sys/byteorder.h>
 
 #define BUF_MAXSIZE	256
 #define SLEEP_TIME	500
@@ -25,7 +24,7 @@ static void msg_dump(const char *s, u8_t *data, unsigned len)
 	unsigned i;
 
 	printf("%s: ", s);
-	for (i = 0; i < len; i++) {
+	for (i = 0U; i < len; i++) {
 		printf("%02x ", data[i]);
 	}
 	printf("(%u bytes)\n", len);

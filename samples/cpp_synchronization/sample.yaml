@@ -1,8 +1,8 @@
 sample:
   name: Syncronisation (C++)
 tests:
-  test:
-    tags: apps
+  sample.cpp_syncronisation:
+    tags: cpp
     toolchain_exclude: issm
     arch_exclude: posix
     harness: console

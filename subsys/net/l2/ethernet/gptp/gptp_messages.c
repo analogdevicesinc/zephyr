@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define LOG_MODULE_NAME net_gptp_msg
-#define NET_LOG_LEVEL CONFIG_NET_GPTP_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_DECLARE(net_gptp, CONFIG_NET_GPTP_LOG_LEVEL);
 
 #include <net/net_if.h>
 
@@ -14,7 +14,7 @@
 #include "gptp_md.h"
 #include "gptp_private.h"
 
-#define NET_BUF_TIMEOUT MSEC(100)
+#define NET_BUF_TIMEOUT K_MSEC(100)
 
 static struct net_if_timestamp_cb sync_timestamp_cb;
 static struct net_if_timestamp_cb pdelay_response_timestamp_cb;
@@ -25,7 +25,7 @@ static const struct net_eth_addr gptp_multicast_eth_addr = {
 	{ 0x01, 0x80, 0xc2, 0x00, 0x00, 0x0e } };
 
 #define NET_GPTP_INFO(msg, pkt)						\
-	if (NET_LOG_LEVEL >= LOG_LEVEL_DBG) {				\
+	if (CONFIG_NET_GPTP_LOG_LEVEL >= LOG_LEVEL_DBG) {		\
 		struct gptp_hdr *hdr = GPTP_HDR(pkt);			\
 									\
 		if (hdr->message_type == GPTP_ANNOUNCE_MESSAGE) {	\
@@ -38,7 +38,7 @@ static const struct net_eth_addr gptp_multicast_eth_addr = {
 				sizeof(output));			\
 									\
 			NET_DBG("Sending %s seq %d pkt %p",		\
-				log_strdup(msg),			\
+				msg,					\
 				ntohs(hdr->sequence_id), pkt);		\
 									\
 			NET_DBG("  GM %d/%d/0x%x/%d/%s",\
@@ -49,10 +49,34 @@ static const struct net_eth_addr gptp_multicast_eth_addr = {
 				log_strdup(output));			\
 		} else {						\
 			NET_DBG("Sending %s seq %d pkt %p",		\
-				log_strdup(msg),			\
+				msg,					\
 				ntohs(hdr->sequence_id), pkt);		\
 		}							\
 	}
+
+struct gptp_hdr *gptp_get_hdr(struct net_pkt *pkt)
+{
+	struct net_buf *buf = pkt->frags;
+
+	NET_ASSERT(buf);
+
+	if (sizeof(struct gptp_hdr) <= buf->len) {
+		return (struct gptp_hdr *)buf->data;
+	}
+
+	/* Check if there is a link layer buf in the front and skip it
+	 * if needed.
+	 */
+	buf = buf->frags;
+	if (!buf) {
+		/* Do not return null here but let the caller failure
+		 * checks to fail the packet.
+		 */
+		return (struct gptp_hdr *)pkt->frags->data;
+	}
+
+	return (struct gptp_hdr *)buf->data;
+}
 
 static void gptp_sync_timestamp_callback(struct net_pkt *pkt)
 {
@@ -117,54 +141,43 @@ out:
 	}
 }
 
-static struct net_buf *setup_ethernet_frame(struct net_pkt *pkt,
-					    struct net_if *iface)
-{
-	int eth_len = sizeof(struct net_eth_hdr);
-	struct net_eth_hdr *eth;
-	struct net_buf *frag;
-
-#if defined(CONFIG_NET_GPTP_VLAN)
-	bool vlan_enabled;
-
-	vlan_enabled = net_eth_get_vlan_status(iface);
-	if (vlan_enabled) {
-		eth_len = sizeof(struct net_eth_vlan_hdr);
-	}
+#if defined(CONFIG_NET_DEBUG_NET_PKT_ALLOC)
+static struct net_pkt *setup_gptp_frame_debug(struct net_if *iface,
+					      size_t extra_header,
+					      const char *caller,
+					      int line)
+#define setup_gptp_frame(iface, extra_header)				\
+	setup_gptp_frame_debug(iface, extra_header, __func__, __LINE__)
+#else
+static struct net_pkt *setup_gptp_frame(struct net_if *iface,
+					size_t extra_header)
 #endif
+{
+	struct net_pkt *pkt;
 
-	frag = net_pkt_get_reserve_tx_data(eth_len, NET_BUF_TIMEOUT);
-	if (!frag) {
+#if defined(CONFIG_NET_DEBUG_NET_PKT_ALLOC)
+	pkt = net_pkt_alloc_with_buffer_debug(iface, sizeof(struct gptp_hdr) +
+					      extra_header, AF_UNSPEC, 0,
+					      NET_BUF_TIMEOUT, caller, line);
+#else
+	pkt = net_pkt_alloc_with_buffer(iface, sizeof(struct gptp_hdr) +
+					extra_header, AF_UNSPEC, 0,
+					NET_BUF_TIMEOUT);
+#endif
+	if (!pkt) {
 		return NULL;
 	}
 
-	net_pkt_frag_add(pkt, frag);
-	net_pkt_set_iface(pkt, iface);
-	net_pkt_set_family(pkt, AF_UNSPEC);
-	net_pkt_set_ll_reserve(pkt, eth_len);
+	net_buf_add(pkt->buffer, sizeof(struct gptp_hdr) + extra_header);
+	net_pkt_set_gptp(pkt, true);
 
-	eth = NET_ETH_HDR(pkt);
+	net_pkt_lladdr_src(pkt)->addr = net_if_get_link_addr(iface)->addr;
+	net_pkt_lladdr_src(pkt)->len = net_if_get_link_addr(iface)->len;
 
-#if defined(CONFIG_NET_GPTP_VLAN)
-	if (vlan_enabled) {
-		struct net_eth_vlan_hdr *hdr_vlan;
+	net_pkt_lladdr_dst(pkt)->addr = (u8_t *)&gptp_multicast_eth_addr;
+	net_pkt_lladdr_dst(pkt)->len = sizeof(struct net_eth_addr);
 
-		hdr_vlan = (struct net_eth_vlan_hdr *)eth;
-		hdr_vlan->vlan.tpid = htons(NET_ETH_PTYPE_VLAN);
-		hdr_vlan->vlan.tci = htons(net_eth_get_vlan_tag(iface));
-		hdr_vlan->type = htons(NET_ETH_PTYPE_PTP);
-	} else
-#endif
-	{
-		eth->type = htons(NET_ETH_PTYPE_PTP);
-	}
-
-	memcpy(eth->src.addr, net_if_get_link_addr(iface)->addr,
-	       sizeof(struct net_eth_addr));
-	memcpy(eth->dst.addr, &gptp_multicast_eth_addr,
-	       sizeof(struct net_eth_addr));
-
-	return frag;
+	return pkt;
 }
 
 struct net_pkt *gptp_prepare_sync(int port)
@@ -173,21 +186,16 @@ struct net_pkt *gptp_prepare_sync(int port)
 	struct gptp_sync *sync;
 	struct net_if *iface;
 	struct net_pkt *pkt;
-	struct net_buf *frag;
 	struct gptp_hdr *hdr;
 
 	NET_ASSERT((port >= GPTP_PORT_START) && (port <= GPTP_PORT_END));
 	iface = GPTP_PORT_IFACE(port);
 	NET_ASSERT(iface);
 
-	pkt = net_pkt_get_reserve_tx(0, NET_BUF_TIMEOUT);
+	pkt = setup_gptp_frame(iface, sizeof(struct gptp_sync));
 	if (!pkt) {
-		goto fail;
-	}
-
-	frag = setup_ethernet_frame(pkt, iface);
-	if (!frag) {
-		goto fail;
+		NET_DBG("Cannot get gPTP frame");
+		return NULL;
 	}
 
 	net_pkt_set_priority(pkt, NET_PRIORITY_CA);
@@ -205,7 +213,7 @@ struct net_pkt *gptp_prepare_sync(int port)
 	hdr->message_type = GPTP_SYNC_MESSAGE;
 	hdr->ptp_version = GPTP_VERSION;
 	hdr->sequence_id = htons(port_ds->sync_seq_id);
-	hdr->domain_number = 0;
+	hdr->domain_number = 0U;
 	hdr->correction_field = 0;
 	hdr->flags.octets[0] = GPTP_FLAG_TWO_STEP;
 	hdr->flags.octets[1] = GPTP_FLAG_PTP_TIMESCALE;
@@ -214,26 +222,17 @@ struct net_pkt *gptp_prepare_sync(int port)
 	hdr->control = GPTP_SYNC_CONTROL_VALUE;
 
 	/* Clear reserved fields. */
-	hdr->reserved0 = 0;
-	hdr->reserved1 = 0;
-	hdr->reserved2 = 0;
+	hdr->reserved0 = 0U;
+	hdr->reserved1 = 0U;
+	hdr->reserved2 = 0U;
 
 	/* PTP configuration. */
 	(void)memset(&sync->reserved, 0, sizeof(sync->reserved));
-
-	net_buf_add(frag, sizeof(struct gptp_hdr) + sizeof(struct gptp_sync));
 
 	/* Update sequence number. */
 	port_ds->sync_seq_id++;
 
 	return pkt;
-
-fail:
-	if (pkt) {
-		net_pkt_unref(pkt);
-	}
-
-	return NULL;
 }
 
 struct net_pkt *gptp_prepare_follow_up(int port, struct net_pkt *sync)
@@ -242,21 +241,16 @@ struct net_pkt *gptp_prepare_follow_up(int port, struct net_pkt *sync)
 	struct gptp_port_ds *port_ds;
 	struct net_if *iface;
 	struct net_pkt *pkt;
-	struct net_buf *frag;
 
 	NET_ASSERT(sync);
 	NET_ASSERT((port >= GPTP_PORT_START) && (port <= GPTP_PORT_END));
 	iface = GPTP_PORT_IFACE(port);
 	NET_ASSERT(iface);
 
-	pkt = net_pkt_get_reserve_tx(0, NET_BUF_TIMEOUT);
+	pkt = setup_gptp_frame(iface, sizeof(struct gptp_follow_up));
 	if (!pkt) {
-		goto fail;
-	}
-
-	frag = setup_ethernet_frame(pkt, iface);
-	if (!frag) {
-		goto fail;
+		NET_DBG("Cannot get gPTP frame");
+		return NULL;
 	}
 
 	net_pkt_set_priority(pkt, NET_PRIORITY_IC);
@@ -274,33 +268,23 @@ struct net_pkt *gptp_prepare_follow_up(int port, struct net_pkt *sync)
 	hdr->message_type = GPTP_FOLLOWUP_MESSAGE;
 	hdr->ptp_version = GPTP_VERSION;
 	hdr->sequence_id = sync_hdr->sequence_id;
-	hdr->domain_number = 0;
+	hdr->domain_number = 0U;
 	/* Store timestamp value in correction field. */
 	hdr->correction_field = gptp_timestamp_to_nsec(&sync->timestamp);
-	hdr->flags.octets[0] = 0;
+	hdr->flags.octets[0] = 0U;
 	hdr->flags.octets[1] = GPTP_FLAG_PTP_TIMESCALE;
 	hdr->message_length = htons(sizeof(struct gptp_hdr) +
 				    sizeof(struct gptp_follow_up));
 	hdr->control = GPTP_FUP_CONTROL_VALUE;
 
 	/* Clear reserved fields. */
-	hdr->reserved0 = 0;
-	hdr->reserved1 = 0;
-	hdr->reserved2 = 0;
+	hdr->reserved0 = 0U;
+	hdr->reserved1 = 0U;
+	hdr->reserved2 = 0U;
 
 	/* PTP configuration will be set by the MDSyncSend state machine. */
 
-	net_buf_add(frag, sizeof(struct gptp_hdr) +
-		    sizeof(struct gptp_follow_up));
-
 	return pkt;
-
-fail:
-	if (pkt) {
-		net_pkt_unref(pkt);
-	}
-
-	return NULL;
 }
 
 struct net_pkt *gptp_prepare_pdelay_req(int port)
@@ -309,21 +293,16 @@ struct net_pkt *gptp_prepare_pdelay_req(int port)
 	struct gptp_port_ds *port_ds;
 	struct net_if *iface;
 	struct net_pkt *pkt;
-	struct net_buf *frag;
 	struct gptp_hdr *hdr;
 
 	NET_ASSERT((port >= GPTP_PORT_START) && (port <= GPTP_PORT_END));
 	iface = GPTP_PORT_IFACE(port);
 	NET_ASSERT(iface);
 
-	pkt = net_pkt_get_reserve_tx(0, NET_BUF_TIMEOUT);
+	pkt = setup_gptp_frame(iface, sizeof(struct gptp_pdelay_req));
 	if (!pkt) {
-		goto fail;
-	}
-
-	frag = setup_ethernet_frame(pkt, iface);
-	if (!frag) {
-		goto fail;
+		NET_DBG("Cannot get gPTP frame");
+		return NULL;
 	}
 
 	net_pkt_set_priority(pkt, NET_PRIORITY_CA);
@@ -337,9 +316,9 @@ struct net_pkt *gptp_prepare_pdelay_req(int port)
 	hdr->message_type = GPTP_PATH_DELAY_REQ_MESSAGE;
 	hdr->ptp_version = GPTP_VERSION;
 	hdr->sequence_id = htons(port_ds->pdelay_req_seq_id);
-	hdr->domain_number = 0;
+	hdr->domain_number = 0U;
 	hdr->correction_field = 0;
-	hdr->flags.octets[0] = 0;
+	hdr->flags.octets[0] = 0U;
 	hdr->flags.octets[1] = GPTP_FLAG_PTP_TIMESCALE;
 
 	hdr->message_length = htons(sizeof(struct gptp_hdr) +
@@ -349,9 +328,9 @@ struct net_pkt *gptp_prepare_pdelay_req(int port)
 	hdr->log_msg_interval = port_ds->cur_log_pdelay_req_itv;
 
 	/* Clear reserved fields. */
-	hdr->reserved0 = 0;
-	hdr->reserved1 = 0;
-	hdr->reserved2 = 0;
+	hdr->reserved0 = 0U;
+	hdr->reserved1 = 0U;
+	hdr->reserved2 = 0U;
 
 	memcpy(hdr->port_id.clk_id,
 	       port_ds->port_id.clk_id, GPTP_CLOCK_ID_LEN);
@@ -360,20 +339,10 @@ struct net_pkt *gptp_prepare_pdelay_req(int port)
 	(void)memset(&req->reserved1, 0, sizeof(req->reserved1));
 	(void)memset(&req->reserved2, 0, sizeof(req->reserved2));
 
-	net_buf_add(frag, sizeof(struct gptp_hdr) +
-		    sizeof(struct gptp_pdelay_req));
-
 	/* Update sequence number. */
 	port_ds->pdelay_req_seq_id++;
 
 	return pkt;
-
-fail:
-	if (pkt) {
-		net_pkt_unref(pkt);
-	}
-
-	return NULL;
 }
 
 struct net_pkt *gptp_prepare_pdelay_resp(int port,
@@ -385,16 +354,11 @@ struct net_pkt *gptp_prepare_pdelay_resp(int port,
 	struct gptp_hdr *hdr, *query;
 	struct gptp_port_ds *port_ds;
 	struct net_pkt *pkt;
-	struct net_buf *frag;
 
-	pkt = net_pkt_get_reserve_tx(0, NET_BUF_TIMEOUT);
+	pkt = setup_gptp_frame(iface, sizeof(struct gptp_pdelay_resp));
 	if (!pkt) {
-		goto fail;
-	}
-
-	frag = setup_ethernet_frame(pkt, iface);
-	if (!frag) {
-		goto fail;
+		NET_DBG("Cannot get gPTP frame");
+		return NULL;
 	}
 
 	net_pkt_set_priority(pkt, NET_PRIORITY_CA);
@@ -424,32 +388,22 @@ struct net_pkt *gptp_prepare_pdelay_resp(int port,
 	hdr->log_msg_interval = GPTP_RESP_LOG_MSG_ITV;
 
 	/* Clear reserved fields. */
-	hdr->reserved0 = 0;
-	hdr->reserved1 = 0;
-	hdr->reserved2 = 0;
+	hdr->reserved0 = 0U;
+	hdr->reserved1 = 0U;
+	hdr->reserved2 = 0U;
 
 	memcpy(hdr->port_id.clk_id, port_ds->port_id.clk_id,
 	       GPTP_CLOCK_ID_LEN);
 
 	/* PTP configuration. */
-	pdelay_resp->req_receipt_ts_secs_high = 0;
-	pdelay_resp->req_receipt_ts_secs_low = 0;
-	pdelay_resp->req_receipt_ts_nsecs = 0;
+	pdelay_resp->req_receipt_ts_secs_high = 0U;
+	pdelay_resp->req_receipt_ts_secs_low = 0U;
+	pdelay_resp->req_receipt_ts_nsecs = 0U;
 
 	memcpy(&pdelay_resp->requesting_port_id,
 	       &query->port_id, sizeof(struct gptp_port_identity));
 
-	net_buf_add(frag, sizeof(struct gptp_hdr) +
-		    sizeof(struct gptp_pdelay_resp));
-
 	return pkt;
-
-fail:
-	if (pkt) {
-		net_pkt_unref(pkt);
-	}
-
-	return NULL;
 }
 
 struct net_pkt *gptp_prepare_pdelay_follow_up(int port,
@@ -461,16 +415,12 @@ struct net_pkt *gptp_prepare_pdelay_follow_up(int port,
 	struct gptp_hdr *hdr, *resp_hdr;
 	struct gptp_port_ds *port_ds;
 	struct net_pkt *pkt;
-	struct net_buf *frag;
 
-	pkt = net_pkt_get_reserve_tx(0, NET_BUF_TIMEOUT);
+	pkt = setup_gptp_frame(iface,
+			       sizeof(struct gptp_pdelay_resp_follow_up));
 	if (!pkt) {
-		goto fail;
-	}
-
-	frag = setup_ethernet_frame(pkt, iface);
-	if (!frag) {
-		goto fail;
+		NET_DBG("Cannot get gPTP frame");
+		return NULL;
 	}
 
 	net_pkt_set_priority(pkt, NET_PRIORITY_IC);
@@ -496,37 +446,27 @@ struct net_pkt *gptp_prepare_pdelay_follow_up(int port,
 	hdr->control = GPTP_OTHER_CONTROL_VALUE;
 	hdr->log_msg_interval = GPTP_RESP_LOG_MSG_ITV;
 
-	hdr->flags.octets[0] = 0;
+	hdr->flags.octets[0] = 0U;
 	hdr->flags.octets[1] = GPTP_FLAG_PTP_TIMESCALE;
 
 	/* Clear reserved fields. */
-	hdr->reserved0 = 0;
-	hdr->reserved1 = 0;
-	hdr->reserved2 = 0;
+	hdr->reserved0 = 0U;
+	hdr->reserved1 = 0U;
+	hdr->reserved2 = 0U;
 
 	memcpy(hdr->port_id.clk_id, port_ds->port_id.clk_id,
 	       GPTP_CLOCK_ID_LEN);
 
 	/* PTP configuration. */
-	follow_up->resp_orig_ts_secs_high = 0;
-	follow_up->resp_orig_ts_secs_low = 0;
-	follow_up->resp_orig_ts_nsecs = 0;
+	follow_up->resp_orig_ts_secs_high = 0U;
+	follow_up->resp_orig_ts_secs_low = 0U;
+	follow_up->resp_orig_ts_nsecs = 0U;
 
 	memcpy(&follow_up->requesting_port_id,
 	       &pdelay_resp->requesting_port_id,
 	       sizeof(struct gptp_port_identity));
 
-	net_buf_add(frag, sizeof(struct gptp_hdr) +
-		    sizeof(struct gptp_pdelay_resp_follow_up));
-
 	return pkt;
-
-fail:
-	if (pkt) {
-		net_pkt_unref(pkt);
-	}
-
-	return NULL;
 }
 
 struct net_pkt *gptp_prepare_announce(int port)
@@ -537,7 +477,6 @@ struct net_pkt *gptp_prepare_announce(int port)
 	struct gptp_announce *ann;
 	struct net_if *iface;
 	struct net_pkt *pkt;
-	struct net_buf *frag;
 	struct gptp_hdr *hdr;
 
 	NET_ASSERT((port >= GPTP_PORT_START) && (port <= GPTP_PORT_END));
@@ -546,14 +485,11 @@ struct net_pkt *gptp_prepare_announce(int port)
 	iface = GPTP_PORT_IFACE(port);
 	NET_ASSERT(iface);
 
-	pkt = net_pkt_get_reserve_tx(0, NET_BUF_TIMEOUT);
+	pkt = setup_gptp_frame(iface, sizeof(struct gptp_announce) - 8 +
+			       ntohs(global_ds->path_trace.len));
 	if (!pkt) {
-		goto fail;
-	}
-
-	frag = setup_ethernet_frame(pkt, iface);
-	if (!frag) {
-		goto fail;
+		NET_DBG("Cannot get gPTP frame");
+		return NULL;
 	}
 
 	net_pkt_set_priority(pkt, NET_PRIORITY_IC);
@@ -566,9 +502,9 @@ struct net_pkt *gptp_prepare_announce(int port)
 	hdr->transport_specific = GPTP_TRANSPORT_802_1_AS;
 	hdr->ptp_version = GPTP_VERSION;
 
-	hdr->domain_number = 0;
+	hdr->domain_number = 0U;
 	hdr->correction_field = 0;
-	hdr->flags.octets[0] = 0;
+	hdr->flags.octets[0] = 0U;
 
 	/* Copy leap61, leap59, current UTC offset valid, time traceable and
 	 * frequency traceable flags.
@@ -584,9 +520,9 @@ struct net_pkt *gptp_prepare_announce(int port)
 	hdr->log_msg_interval = port_ds->cur_log_announce_itv;
 
 	/* Clear reserved fields. */
-	hdr->reserved0 = 0;
-	hdr->reserved1 = 0;
-	hdr->reserved2 = 0;
+	hdr->reserved0 = 0U;
+	hdr->reserved1 = 0U;
+	hdr->reserved2 = 0U;
 
 	ann->cur_utc_offset = global_ds->current_utc_offset;
 	ann->time_source = global_ds->time_source;
@@ -622,30 +558,34 @@ struct net_pkt *gptp_prepare_announce(int port)
 
 	/* Clear reserved fields. */
 	(void)memset(ann->reserved1, 0, sizeof(ann->reserved1));
-	ann->reserved2 = 0;
+	ann->reserved2 = 0U;
 
 	hdr->message_length = htons(sizeof(struct gptp_hdr) +
 				    sizeof(struct gptp_announce) - 8 +
 				    ntohs(global_ds->path_trace.len));
 
-	net_buf_add(frag, sizeof(struct gptp_hdr) +
-		    sizeof(struct gptp_announce) - 8);
-
 	ann->tlv.len = global_ds->path_trace.len;
 
-	if (net_pkt_append(pkt, ntohs(global_ds->path_trace.len),
-			   &global_ds->path_trace.path_sequence[0][0],
-			   NET_BUF_TIMEOUT) <
-	    ntohs(global_ds->path_trace.len)) {
+	net_pkt_cursor_init(pkt);
+
+	/* setup_gptp_frame() already added all the length, so let's not
+	 * add up more with net_pkt_skip/write_new(), let's just overwrite
+	 */
+	net_pkt_set_overwrite(pkt, true);
+
+	if (net_pkt_skip(pkt, sizeof(struct gptp_hdr) +
+			 sizeof(struct gptp_announce) - 8) ||
+	    net_pkt_write(pkt, &global_ds->path_trace.path_sequence[0][0],
+			  ntohs(global_ds->path_trace.len))) {
 		goto fail;
 	}
+
+	net_pkt_set_overwrite(pkt, false);
 
 	return pkt;
 
 fail:
-	if (pkt) {
-		net_pkt_unref(pkt);
-	}
+	net_pkt_unref(pkt);
 
 	return NULL;
 }
@@ -665,7 +605,7 @@ void gptp_handle_sync(int port, struct net_pkt *pkt)
 	upstream_sync_itv = NSEC_PER_SEC * GPTP_POW2(hdr->log_msg_interval);
 
 	/* Convert ns to ms. */
-	duration = (upstream_sync_itv / 1000000);
+	duration = (upstream_sync_itv / 1000000U);
 
 	/* Start timeout timer. */
 	k_timer_start(&state->follow_up_discard_timer, duration, 0);

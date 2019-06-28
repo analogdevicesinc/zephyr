@@ -12,7 +12,7 @@ config BOARD
 
 if UART_CONSOLE
 
-config UART_STM32_PORT_1
+config UART_1
 	default y
 
 endif # UART_CONSOLE
@@ -36,5 +36,12 @@ config SPI_STM32_INTERRUPT
 	default y
 
 endif # SPI
+
+if CAN
+
+config CAN_1
+	default y
+
+endif # CAN
 
 endif # BOARD_STM32F072B_DISCO

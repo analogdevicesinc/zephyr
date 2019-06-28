@@ -7,11 +7,12 @@
 #include <zephyr.h>
 #include <device.h>
 #include <ztest.h>
-#include <misc/printk.h>
+#include <sys/printk.h>
 
 
 #define DUMMY_PORT_1    "dummy"
 #define DUMMY_PORT_2    "dummy_driver"
+#define BAD_DRIVER	"bad_driver"
 
 /**
  * @brief Test cases to verify device objects
@@ -46,6 +47,12 @@ void test_dummy_device(void)
 
 	device_busy_set(dev);
 	device_busy_clear(dev);
+
+	/* device_get_binding() returns false for device object
+	 * with failed init.
+	 */
+	dev = device_get_binding(BAD_DRIVER);
+	zassert_true((dev == NULL), NULL);
 }
 
 /**
@@ -115,7 +122,7 @@ static void build_suspend_device_list(void)
 void test_dummy_device_pm(void)
 {
 	struct device *dev;
-	int busy;
+	int busy, ret;
 
 	dev = device_get_binding(DUMMY_PORT_2);
 	zassert_false((dev == NULL), NULL);
@@ -124,7 +131,9 @@ void test_dummy_device_pm(void)
 	zassert_true((busy == 0), NULL);
 
 	/* Set device state to DEVICE_PM_ACTIVE_STATE */
-	device_set_power_state(dev, DEVICE_PM_ACTIVE_STATE);
+	ret = device_set_power_state(dev, DEVICE_PM_ACTIVE_STATE, NULL, NULL);
+	zassert_true((ret == 0), "Unable to set active state to device");
+
 	device_busy_set(dev);
 
 	busy = device_any_busy_check();
@@ -137,6 +146,11 @@ void test_dummy_device_pm(void)
 
 	busy = device_busy_check(dev);
 	zassert_true((busy == 0), NULL);
+
+	/* Set device state to DEVICE_PM_FORCE_SUSPEND_STATE */
+	ret = device_set_power_state(dev,
+			DEVICE_PM_FORCE_SUSPEND_STATE, NULL, NULL);
+	zassert_true((ret == 0), "Unable to force suspend device");
 
 	build_suspend_device_list();
 }
@@ -162,7 +176,7 @@ void test_main(void)
 			 ztest_unit_test(test_dummy_device_pm),
 			 ztest_unit_test(build_suspend_device_list),
 			 ztest_unit_test(test_dummy_device),
-			 ztest_unit_test(test_bogus_dynamic_name),
-			 ztest_unit_test(test_dynamic_name));
+			 ztest_user_unit_test(test_bogus_dynamic_name),
+			 ztest_user_unit_test(test_dynamic_name));
 	ztest_run_test_suite(device);
 }

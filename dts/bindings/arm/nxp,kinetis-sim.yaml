@@ -3,36 +3,39 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: Kinetis System Integration Module (SIM)
-id: nxp,kinetis-sim
 version: 0.1
 
 description: >
     This is a representation of the Kinetis SIM IP node
 
+inherits:
+    !include base.yaml
+
 properties:
     compatible:
-      type: string
-      category: required
-      description: compatible strings
       constraint: "nxp,kinetis-sim"
-      generation: define
 
     reg:
-      type: int
-      description: mmio register space
-      generation: define
       category: required
 
     label:
-      type: string
       category: required
-      description: Human readable string describing the device (used by Zephyr for API name)
+
+    clkout-source:
+      type: int
+      category: optional
+      description: clkout clock source
+      generation: define
+
+    clkout-divider:
+      type: int
+      category: optional
+      description: clkout divider
       generation: define
 
 "#cells":
   - name
   - offset
   - bits
-...

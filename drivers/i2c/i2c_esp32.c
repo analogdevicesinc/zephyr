@@ -12,10 +12,10 @@
 
 #include <soc.h>
 #include <errno.h>
-#include <gpio.h>
+#include <drivers/gpio.h>
 #include <gpio/gpio_esp32.h>
-#include <i2c.h>
-#include <misc/util.h>
+#include <drivers/i2c.h>
+#include <sys/util.h>
 #include <string.h>
 
 /* Number of entries in hardware command queue */
@@ -139,14 +139,15 @@ static int i2c_esp32_configure_speed(const struct i2c_esp32_config *config,
 		return -ENOTSUP;
 	}
 
-	period = (APB_CLK_FREQ / freq_hz) / 2;
+	period = (APB_CLK_FREQ / freq_hz);
+
+	period /= 2U; /* Set hold and setup times to 1/2th of period */
 
 	esp32_set_mask32(period << I2C_SCL_LOW_PERIOD_S,
 		   I2C_SCL_LOW_PERIOD_REG(config->index));
 	esp32_set_mask32(period << I2C_SCL_HIGH_PERIOD_S,
 		   I2C_SCL_HIGH_PERIOD_REG(config->index));
 
-	period /= 2; /* Set hold and setup times to 1/2th of period */
 	esp32_set_mask32(period << I2C_SCL_START_HOLD_TIME_S,
 		   I2C_SCL_START_HOLD_REG(config->index));
 	esp32_set_mask32(period << I2C_SCL_RSTART_SETUP_TIME_S,
@@ -156,7 +157,7 @@ static int i2c_esp32_configure_speed(const struct i2c_esp32_config *config,
 	esp32_set_mask32(period << I2C_SCL_STOP_SETUP_TIME_S,
 		   I2C_SCL_STOP_SETUP_REG(config->index));
 
-	period /= 2; /* Set sample and hold times to 1/4th of period */
+	period /= 2U; /* Set sample and hold times to 1/4th of period */
 	esp32_set_mask32(period << I2C_SDA_HOLD_TIME_S,
 		   I2C_SDA_HOLD_REG(config->index));
 	esp32_set_mask32(period << I2C_SDA_SAMPLE_TIME_S,
@@ -170,7 +171,7 @@ static int i2c_esp32_configure(struct device *dev, u32_t dev_config)
 	const struct i2c_esp32_config *config = dev->config->config_info;
 	struct i2c_esp32_data *data = dev->driver_data;
 	unsigned int key = irq_lock();
-	u32_t v = 0;
+	u32_t v = 0U;
 	int ret;
 
 	ret = i2c_esp32_configure_pins(config->pins.scl,
@@ -344,7 +345,7 @@ i2c_esp32_write_addr(struct device *dev,
 {
 	const struct i2c_esp32_config *config = dev->config->config_info;
 	struct i2c_esp32_data *data = dev->driver_data;
-	u32_t addr_len = 1;
+	u32_t addr_len = 1U;
 
 	i2c_esp32_reset_fifo(config);
 
@@ -388,7 +389,7 @@ static int i2c_esp32_read_msg(struct device *dev, u16_t addr,
 
 	for (; msg.len; cmd = (void *)I2C_COMD0_REG(config->index)) {
 		volatile struct i2c_esp32_cmd *wait_cmd = NULL;
-		u32_t to_read = min(I2C_ESP32_BUFFER_SIZE, msg.len - 1);
+		u32_t to_read = MIN(I2C_ESP32_BUFFER_SIZE, msg.len - 1);
 
 		/* Might be the last byte, in which case, `to_read` will
 		 * be 0 here.  See comment below.
@@ -404,7 +405,7 @@ static int i2c_esp32_read_msg(struct device *dev, u16_t addr,
 		 * slave device.  Divide the read command in two segments as
 		 * recommended by the ESP32 Technical Reference Manual.
 		 */
-		if (msg.len - to_read <= 1) {
+		if (msg.len - to_read <= 1U) {
 			/* Read the last byte and explicitly ask for an
 			 * acknowledgment.
 			 */
@@ -437,7 +438,7 @@ static int i2c_esp32_read_msg(struct device *dev, u16_t addr,
 			return ret;
 		}
 
-		for (i = 0; i < to_read; i++) {
+		for (i = 0U; i < to_read; i++) {
 			u32_t v = sys_read32(I2C_DATA_APB_REG(config->index));
 
 			*msg.buf++ = v & I2C_FIFO_RDATA;
@@ -464,12 +465,12 @@ static int i2c_esp32_write_msg(struct device *dev, u16_t addr,
 	cmd = i2c_esp32_write_addr(dev, cmd, &msg, addr);
 
 	for (; msg.len; cmd = (void *)I2C_COMD0_REG(config->index)) {
-		u32_t to_send = min(I2C_ESP32_BUFFER_SIZE, msg.len);
+		u32_t to_send = MIN(I2C_ESP32_BUFFER_SIZE, msg.len);
 		u32_t i;
 		int ret;
 
 		/* Copy data to TX fifo */
-		for (i = 0; i < to_send; i++) {
+		for (i = 0U; i < to_send; i++) {
 			sys_write32(*msg.buf++,
 				    I2C_DATA_APB_REG(config->index));
 		}
@@ -514,7 +515,7 @@ static int i2c_esp32_transfer(struct device *dev, struct i2c_msg *msgs,
 	addr &= BIT_MASK(data->dev_config & I2C_ADDR_10_BITS ? 10 : 7);
 	addr <<= 1;
 
-	for (i = 0; i < num_msgs; i++) {
+	for (i = 0U; i < num_msgs; i++) {
 		if ((msgs[i].flags & I2C_MSG_RW_MASK) == I2C_MSG_WRITE) {
 			ret = i2c_esp32_write_msg(dev, addr, msgs[i]);
 		} else {
@@ -589,9 +590,9 @@ static const struct i2c_esp32_config i2c_esp32_config_0 = {
 	},
 	.mode = {
 		.tx_lsb_first =
-			IS_ENABLED(CONFIG_ESP32_I2C_0_TX_LSB_FIRST),
+			IS_ENABLED(CONFIG_I2C_ESP32_0_TX_LSB_FIRST),
 		.rx_lsb_first =
-			IS_ENABLED(CONFIG_ESP32_I2C_0_RX_LSB_FIRST),
+			IS_ENABLED(CONFIG_I2C_ESP32_0_RX_LSB_FIRST),
 	},
 	.irq = {
 		.source = ETS_I2C_EXT0_INTR_SOURCE,
@@ -636,9 +637,9 @@ static const struct i2c_esp32_config i2c_esp32_config_1 = {
 	},
 	.mode = {
 		.tx_lsb_first =
-			IS_ENABLED(CONFIG_ESP32_I2C_1_TX_LSB_FIRST),
+			IS_ENABLED(CONFIG_I2C_ESP32_1_TX_LSB_FIRST),
 		.rx_lsb_first =
-			IS_ENABLED(CONFIG_ESP32_I2C_1_RX_LSB_FIRST),
+			IS_ENABLED(CONFIG_I2C_ESP32_1_RX_LSB_FIRST),
 	},
 	.irq = {
 		.source = ETS_I2C_EXT1_INTR_SOURCE,

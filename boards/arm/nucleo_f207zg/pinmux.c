@@ -7,21 +7,21 @@
 #include <kernel.h>
 #include <device.h>
 #include <init.h>
-#include <pinmux.h>
-#include <sys_io.h>
+#include <drivers/pinmux.h>
+#include <sys/sys_io.h>
 
 #include <pinmux/stm32/pinmux_stm32.h>
 
 /* pin assignments for NUCLEO-F207ZG board */
 static const struct pin_config pinconf[] = {
-#ifdef CONFIG_UART_STM32_PORT_3
+#ifdef CONFIG_UART_3
 	{STM32_PIN_PD8, STM32F2_PINMUX_FUNC_PD8_USART3_TX},
 	{STM32_PIN_PD9, STM32F2_PINMUX_FUNC_PD9_USART3_RX},
-#endif /* #ifdef CONFIG_UART_STM32_PORT_3 */
-#ifdef CONFIG_UART_STM32_PORT_6
+#endif /* #ifdef CONFIG_UART_3 */
+#ifdef CONFIG_UART_6
 	{STM32_PIN_PG14, STM32F2_PINMUX_FUNC_PG14_USART6_TX},
 	{STM32_PIN_PG9, STM32F2_PINMUX_FUNC_PG9_USART6_RX},
-#endif /* CONFIG_UART_STM32_PORT_6 */
+#endif /* CONFIG_UART_6 */
 #ifdef CONFIG_ETH_STM32_HAL
 	{STM32_PIN_PC1, STM32F2_PINMUX_FUNC_PC1_ETH},
 	{STM32_PIN_PC4, STM32F2_PINMUX_FUNC_PC4_ETH},
@@ -38,7 +38,10 @@ static const struct pin_config pinconf[] = {
 #ifdef CONFIG_USB_DC_STM32
 	{STM32_PIN_PA11, STM32F2_PINMUX_FUNC_PA11_OTG_FS_DM},
 	{STM32_PIN_PA12, STM32F2_PINMUX_FUNC_PA12_OTG_FS_DP},
-#endif	/* CONFIG_USB_DC_STM */
+#endif	/* CONFIG_USB_DC_STM32 */
+#ifdef CONFIG_ADC_1
+	{STM32_PIN_PA0, STM32F2_PINMUX_FUNC_PA0_ADC123_IN0},
+#endif /* CONFIG_ADC_1 */
 };
 
 static int pinmux_stm32_init(struct device *port)

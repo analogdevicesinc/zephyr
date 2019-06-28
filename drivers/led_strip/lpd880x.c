@@ -4,18 +4,33 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <led_strip.h>
+#include <drivers/led_strip.h>
 
 #include <errno.h>
 #include <string.h>
 
-#define SYS_LOG_LEVEL CONFIG_SYS_LOG_LED_STRIP_LEVEL
-#include <logging/sys_log.h>
+#ifdef DT_COLORWAY_LPD8806_0
+#define DT_INST_0_COLORWAY_LPD880X DT_INST_0_COLORWAY_LPD8806
+#define DT_INST_0_COLORWAY_LPD880X_BASE_ADDRESS DT_INST_0_COLORWAY_LPD8806_BASE_ADDRESS
+#define DT_INST_0_COLORWAY_LPD880X_BUS_NAME DT_INST_0_COLORWAY_LPD8806_BUS_NAME
+#define DT_INST_0_COLORWAY_LPD880X_LABEL DT_INST_0_COLORWAY_LPD8806_LABEL
+#define DT_INST_0_COLORWAY_LPD880X_SPI_MAX_FREQUENCY DT_INST_0_COLORWAY_LPD8806_SPI_MAX_FREQUENCY
+#else
+#define DT_INST_0_COLORWAY_LPD880X DT_INST_0_COLORWAY_LPD8803
+#define DT_INST_0_COLORWAY_LPD880X_BASE_ADDRESS DT_INST_0_COLORWAY_LPD8803_BASE_ADDRESS
+#define DT_INST_0_COLORWAY_LPD880X_BUS_NAME DT_INST_0_COLORWAY_LPD8803_BUS_NAME
+#define DT_INST_0_COLORWAY_LPD880X_LABEL DT_INST_0_COLORWAY_LPD8803_LABEL
+#define DT_INST_0_COLORWAY_LPD880X_SPI_MAX_FREQUENCY DT_INST_0_COLORWAY_LPD8803_SPI_MAX_FREQUENCY
+#endif
+
+#define LOG_LEVEL CONFIG_LED_STRIP_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_REGISTER(lpd880x);
 
 #include <zephyr.h>
 #include <device.h>
-#include <spi.h>
-#include <misc/util.h>
+#include <drivers/spi.h>
+#include <sys/util.h>
 
 /*
  * LPD880X SPI master configuration:
@@ -72,7 +87,7 @@ static int lpd880x_update(struct device *dev, void *data, size_t size)
 
 	rc = spi_write(drv_data->spi, &drv_data->config, &tx);
 	if (rc) {
-		SYS_LOG_ERR("can't update strip: %d", rc);
+		LOG_ERR("can't update strip: %d", rc);
 	}
 
 	return rc;
@@ -124,16 +139,16 @@ static int lpd880x_strip_init(struct device *dev)
 	struct lpd880x_data *data = dev->driver_data;
 	struct spi_config *config = &data->config;
 
-	data->spi = device_get_binding(CONFIG_LPD880X_STRIP_SPI_DEV_NAME);
+	data->spi = device_get_binding(DT_INST_0_COLORWAY_LPD880X_BUS_NAME);
 	if (!data->spi) {
-		SYS_LOG_ERR("SPI device %s not found",
-			    CONFIG_LPD880X_STRIP_SPI_DEV_NAME);
+		LOG_ERR("SPI device %s not found",
+			    DT_INST_0_COLORWAY_LPD880X_BUS_NAME);
 		return -ENODEV;
 	}
 
-	config->frequency = CONFIG_LPD880X_STRIP_SPI_BAUD_RATE;
+	config->frequency = DT_INST_0_COLORWAY_LPD880X_SPI_MAX_FREQUENCY;
 	config->operation = LPD880X_SPI_OPERATION;
-	config->slave = 0;	/* MOSI/CLK only; CS is not supported. */
+	config->slave = DT_INST_0_COLORWAY_LPD880X_BASE_ADDRESS; /* MOSI/CLK only; CS is not supported. */
 	config->cs = NULL;
 
 	return 0;
@@ -146,7 +161,7 @@ static const struct led_strip_driver_api lpd880x_strip_api = {
 	.update_channels = lpd880x_strip_update_channels,
 };
 
-DEVICE_AND_API_INIT(lpd880x_strip, CONFIG_LPD880X_STRIP_NAME,
+DEVICE_AND_API_INIT(lpd880x_strip, DT_INST_0_COLORWAY_LPD880X_LABEL,
 		    lpd880x_strip_init, &lpd880x_strip_data,
 		    NULL, POST_KERNEL, CONFIG_LED_STRIP_INIT_PRIORITY,
 		    &lpd880x_strip_api);

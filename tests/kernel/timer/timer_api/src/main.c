@@ -24,8 +24,18 @@ static void duration_stop(struct k_timer *timer);
 
 /** TESTPOINT: init timer via K_TIMER_DEFINE */
 K_TIMER_DEFINE(ktimer, duration_expire, duration_stop);
-static struct k_timer timer;
-static struct timer_data tdata;
+
+static struct k_timer duration_timer;
+static struct k_timer period0_timer;
+static struct k_timer expire_timer;
+static struct k_timer sync_timer;
+static struct k_timer periodicity_timer;
+static struct k_timer status_timer;
+static struct k_timer status_anytime_timer;
+static struct k_timer status_sync_timer;
+static struct k_timer remain_timer;
+
+static ZTEST_BMEM struct timer_data tdata;
 
 #define TIMER_ASSERT(exp, tmr)			 \
 	do {					 \
@@ -119,16 +129,15 @@ void test_timer_duration_period(void)
 {
 	init_timer_data();
 	/** TESTPOINT: init timer via k_timer_init */
-	k_timer_init(&timer, duration_expire, duration_stop);
-	k_timer_start(&timer, DURATION, PERIOD);
+	k_timer_start(&duration_timer, DURATION, PERIOD);
 	tdata.timestamp = k_uptime_get();
 	busy_wait_ms(DURATION + PERIOD * EXPIRE_TIMES + PERIOD / 2);
 	/** TESTPOINT: check expire and stop times */
-	TIMER_ASSERT(tdata.expire_cnt == EXPIRE_TIMES, &timer);
-	TIMER_ASSERT(tdata.stop_cnt == 1, &timer);
+	TIMER_ASSERT(tdata.expire_cnt == EXPIRE_TIMES, &duration_timer);
+	TIMER_ASSERT(tdata.stop_cnt == 1, &duration_timer);
 
 	/* cleanup environemtn */
-	k_timer_stop(&timer);
+	k_timer_stop(&duration_timer);
 }
 
 /**
@@ -150,17 +159,16 @@ void test_timer_period_0(void)
 {
 	init_timer_data();
 	/** TESTPOINT: set period 0 */
-	k_timer_init(&timer, period0_expire, NULL);
-	k_timer_start(&timer, DURATION, 0);
+	k_timer_start(&period0_timer, DURATION, 0);
 	tdata.timestamp = k_uptime_get();
 	busy_wait_ms(DURATION + 1);
 
 	/** TESTPOINT: ensure it is one-short timer */
-	TIMER_ASSERT(tdata.expire_cnt == 1, &timer);
-	TIMER_ASSERT(tdata.stop_cnt == 0, &timer);
+	TIMER_ASSERT(tdata.expire_cnt == 1, &period0_timer);
+	TIMER_ASSERT(tdata.stop_cnt == 0, &period0_timer);
 
 	/* cleanup environemtn */
-	k_timer_stop(&timer);
+	k_timer_stop(&period0_timer);
 }
 
 /**
@@ -182,18 +190,27 @@ void test_timer_expirefn_null(void)
 {
 	init_timer_data();
 	/** TESTPOINT: expire function NULL */
-	k_timer_init(&timer, NULL, duration_stop);
-	k_timer_start(&timer, DURATION, PERIOD);
+	k_timer_start(&expire_timer, DURATION, PERIOD);
 	busy_wait_ms(DURATION + PERIOD * EXPIRE_TIMES + PERIOD / 2);
 
-	k_timer_stop(&timer);
+	k_timer_stop(&expire_timer);
 	/** TESTPOINT: expire handler is not invoked */
-	TIMER_ASSERT(tdata.expire_cnt == 0, &timer);
+	TIMER_ASSERT(tdata.expire_cnt == 0, &expire_timer);
 	/** TESTPOINT: stop handler is invoked */
-	TIMER_ASSERT(tdata.stop_cnt == 1, &timer);
+	TIMER_ASSERT(tdata.stop_cnt == 1, &expire_timer);
 
 	/* cleanup environment */
-	k_timer_stop(&timer);
+	k_timer_stop(&expire_timer);
+}
+
+/* Wait for the next expiration of an OS timer tick, to synchronize
+ * test start
+ */
+static void tick_sync(void)
+{
+	k_timer_start(&sync_timer, 0, 1);
+	k_timer_status_sync(&sync_timer);
+	k_timer_stop(&sync_timer);
 }
 
 /**
@@ -217,31 +234,48 @@ void test_timer_periodicity(void)
 {
 	s64_t delta;
 
+	/* Start at a tick boundary, otherwise a tick expiring between
+	 * the unlocked (and unlockable) start/uptime/sync steps below
+	 * will throw off the math.
+	 */
+	tick_sync();
+
 	init_timer_data();
 	/** TESTPOINT: set duration 0 */
-	k_timer_init(&timer, NULL, NULL);
-	k_timer_start(&timer, 0, PERIOD);
+	k_timer_start(&periodicity_timer, 0, PERIOD);
 
-	/* clear the expiration that would have happenned due to
-	 * whatever duration that was set.
+	/* clear the expiration that would have happened due to
+	 * whatever duration that was set. Since timer is likely
+	 * to fire before call to k_timer_status_sync(), we have
+	 * to synchronize twice to ensure that the timestamp will
+	 * be fetched as soon as possible after timer firing.
 	 */
-	k_timer_status_sync(&timer);
+	k_timer_status_sync(&periodicity_timer);
+	k_timer_status_sync(&periodicity_timer);
 	tdata.timestamp = k_uptime_get();
 
 	for (int i = 0; i < EXPIRE_TIMES; i++) {
 		/** TESTPOINT: expired times returned by status sync */
-		TIMER_ASSERT(k_timer_status_sync(&timer) == 1, &timer);
+		TIMER_ASSERT(k_timer_status_sync(&periodicity_timer) == 1,
+			     &periodicity_timer);
 
 		delta = k_uptime_delta(&tdata.timestamp);
 
 		/** TESTPOINT: check if timer fired within 1ms of the
-		 *  expected period (firing time)
+		 *  expected period (firing time).
+		 *
+		 * Please note, that expected firing time is not the
+		 * one requested, as the kernel uses the ticks to manage
+		 * time. The actual perioid will be equal to [tick time]
+		 * multiplied by z_ms_to_ticks(PERIOD).
 		 */
-		TIMER_ASSERT(WITHIN_ERROR(delta, PERIOD, 1), &timer);
+		TIMER_ASSERT(WITHIN_ERROR(delta,
+				__ticks_to_ms(z_ms_to_ticks(PERIOD)), 1),
+				&periodicity_timer);
 	}
 
 	/* cleanup environment */
-	k_timer_stop(&timer);
+	k_timer_stop(&periodicity_timer);
 }
 
 /**
@@ -262,15 +296,15 @@ void test_timer_periodicity(void)
 void test_timer_status_get(void)
 {
 	init_timer_data();
-	k_timer_init(&timer, status_expire, status_stop);
-	k_timer_start(&timer, DURATION, PERIOD);
+	k_timer_start(&status_timer, DURATION, PERIOD);
 	/** TESTPOINT: status get upon timer starts */
-	TIMER_ASSERT(k_timer_status_get(&timer) == 0, &timer);
+	TIMER_ASSERT(k_timer_status_get(&status_timer) == 0, &status_timer);
 	/** TESTPOINT: remaining get upon timer starts */
-	TIMER_ASSERT(k_timer_remaining_get(&timer) >= DURATION / 2, &timer);
+	TIMER_ASSERT(k_timer_remaining_get(&status_timer) >= DURATION / 2,
+		     &status_timer);
 
 	/* cleanup environment */
-	k_timer_stop(&timer);
+	k_timer_stop(&status_timer);
 }
 
 /**
@@ -291,15 +325,15 @@ void test_timer_status_get(void)
 void test_timer_status_get_anytime(void)
 {
 	init_timer_data();
-	k_timer_init(&timer, NULL, NULL);
-	k_timer_start(&timer, DURATION, PERIOD);
+	k_timer_start(&status_anytime_timer, DURATION, PERIOD);
 	busy_wait_ms(DURATION + PERIOD * (EXPIRE_TIMES - 1) + PERIOD / 2);
 
 	/** TESTPOINT: status get at any time */
-	TIMER_ASSERT(k_timer_status_get(&timer) == EXPIRE_TIMES, &timer);
+	TIMER_ASSERT(k_timer_status_get(&status_anytime_timer) == EXPIRE_TIMES,
+		     &status_anytime_timer);
 
 	/* cleanup environment */
-	k_timer_stop(&timer);
+	k_timer_stop(&status_anytime_timer);
 }
 
 /**
@@ -321,20 +355,20 @@ void test_timer_status_get_anytime(void)
 void test_timer_status_sync(void)
 {
 	init_timer_data();
-	k_timer_init(&timer, duration_expire, duration_stop);
-	k_timer_start(&timer, DURATION, PERIOD);
+	k_timer_start(&status_sync_timer, DURATION, PERIOD);
 
 	for (int i = 0; i < EXPIRE_TIMES; i++) {
 		/** TESTPOINT: check timer not expire */
-		TIMER_ASSERT(tdata.expire_cnt == i, &timer);
+		TIMER_ASSERT(tdata.expire_cnt == i, &status_sync_timer);
 		/** TESTPOINT： expired times returned by status sync */
-		TIMER_ASSERT(k_timer_status_sync(&timer) == 1, &timer);
+		TIMER_ASSERT(k_timer_status_sync(&status_sync_timer) == 1,
+			     &status_sync_timer);
 		/** TESTPOINT: check timer not expire */
-		TIMER_ASSERT(tdata.expire_cnt == (i + 1), &timer);
+		TIMER_ASSERT(tdata.expire_cnt == (i + 1), &status_sync_timer);
 	}
 
 	/* cleanup environment */
-	k_timer_stop(&timer);
+	k_timer_stop(&status_sync_timer);
 }
 
 /**
@@ -396,13 +430,13 @@ K_TIMER_DEFINE(timer2, user_data_timer_handler, NULL);
 K_TIMER_DEFINE(timer3, user_data_timer_handler, NULL);
 K_TIMER_DEFINE(timer4, user_data_timer_handler, NULL);
 
-static struct k_timer *user_data_timer[5] = {
+static ZTEST_DMEM struct k_timer *user_data_timer[5] = {
 	&timer0, &timer1, &timer2, &timer3, &timer4
 };
 
 static const intptr_t user_data[5] = { 0x1337, 0xbabe, 0xd00d, 0xdeaf, 0xfade };
 
-static int user_data_correct[5] = { 0, 0, 0, 0, 0 };
+static ZTEST_BMEM int user_data_correct[5];
 
 static void user_data_timer_handler(struct k_timer *timer)
 {
@@ -465,18 +499,72 @@ void test_timer_user_data(void)
 	}
 }
 
+/**
+ * @brief Test accuracy of k_timer_remaining_get()
+ *
+ * Validate countdown of time to expiration
+ *
+ * Starts a timer, busy-waits for half the DURATION, then checks the
+ * remaining time to expiration and stops the timer. The remaining time
+ * should reflect the passage of at least the busy-wait interval.
+ *
+ * @ingroup kernel_timer_tests
+ *
+ * @see k_timer_init(), k_timer_start(), k_timer_stop(),
+ * k_timer_remaining_get()
+ */
+
+void test_timer_remaining_get(void)
+{
+	u32_t remaining;
+
+	init_timer_data();
+	k_timer_start(&remain_timer, DURATION, 0);
+	busy_wait_ms(DURATION / 2);
+	remaining = k_timer_remaining_get(&remain_timer);
+	k_timer_stop(&remain_timer);
+
+	/*
+	 * While the busy_wait_ms() works with the maximum possible resolution,
+	 * the k_timer api is limited by the system tick abstraction. As result
+	 * the value obtained through k_timer_remaining_get() could be larger
+	 * than actual remaining time with maximum error equal to one tick.
+	 */
+	zassert_true(remaining <= (DURATION / 2) + __ticks_to_ms(1), NULL);
+}
+
+static void timer_init(struct k_timer *timer, k_timer_expiry_t expiry_fn,
+		       k_timer_stop_t stop_fn)
+{
+	k_object_access_grant(timer, k_current_get());
+	k_timer_init(timer, expiry_fn, stop_fn);
+}
 
 void test_main(void)
 {
+	timer_init(&duration_timer, duration_expire, duration_stop);
+	timer_init(&period0_timer, period0_expire, NULL);
+	timer_init(&expire_timer, NULL, duration_stop);
+	timer_init(&sync_timer, NULL, NULL);
+	timer_init(&periodicity_timer, NULL, NULL);
+	timer_init(&status_timer, status_expire, status_stop);
+	timer_init(&status_anytime_timer, NULL, NULL);
+	timer_init(&status_sync_timer, duration_expire, duration_stop);
+	timer_init(&remain_timer, NULL, NULL);
+
+	k_thread_access_grant(k_current_get(), &ktimer, &timer0, &timer1,
+			      &timer2, &timer3, &timer4);
+
 	ztest_test_suite(timer_api,
-			 ztest_unit_test(test_timer_duration_period),
-			 ztest_unit_test(test_timer_period_0),
-			 ztest_unit_test(test_timer_expirefn_null),
-			 ztest_unit_test(test_timer_periodicity),
-			 ztest_unit_test(test_timer_status_get),
-			 ztest_unit_test(test_timer_status_get_anytime),
-			 ztest_unit_test(test_timer_status_sync),
-			 ztest_unit_test(test_timer_k_define),
-			 ztest_unit_test(test_timer_user_data));
+			 ztest_user_unit_test(test_timer_duration_period),
+			 ztest_user_unit_test(test_timer_period_0),
+			 ztest_user_unit_test(test_timer_expirefn_null),
+			 ztest_user_unit_test(test_timer_periodicity),
+			 ztest_user_unit_test(test_timer_status_get),
+			 ztest_user_unit_test(test_timer_status_get_anytime),
+			 ztest_user_unit_test(test_timer_status_sync),
+			 ztest_user_unit_test(test_timer_k_define),
+			 ztest_user_unit_test(test_timer_user_data),
+			 ztest_user_unit_test(test_timer_remaining_get));
 	ztest_run_test_suite(timer_api);
 }

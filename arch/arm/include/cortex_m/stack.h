@@ -24,7 +24,7 @@ extern "C" {
 
 #else
 
-#include "arch/arm/cortex_m/cmsis.h"
+#include <arch/arm/cortex_m/cmsis.h>
 
 extern K_THREAD_STACK_DEFINE(_interrupt_stack, CONFIG_ISR_STACK_SIZE);
 
@@ -37,15 +37,10 @@ extern K_THREAD_STACK_DEFINE(_interrupt_stack, CONFIG_ISR_STACK_SIZE);
  *
  * @return N/A
  */
-static ALWAYS_INLINE void _InterruptStackSetup(void)
+static ALWAYS_INLINE void z_InterruptStackSetup(void)
 {
-#ifdef CONFIG_MPU_REQUIRES_POWER_OF_TWO_ALIGNMENT
-	u32_t msp = (u32_t)(K_THREAD_STACK_BUFFER(_interrupt_stack) +
-			    CONFIG_ISR_STACK_SIZE - MPU_GUARD_ALIGN_AND_SIZE);
-#else
-	u32_t msp = (u32_t)(K_THREAD_STACK_BUFFER(_interrupt_stack) +
-			    CONFIG_ISR_STACK_SIZE);
-#endif
+	u32_t msp = (u32_t)(Z_THREAD_STACK_BUFFER(_interrupt_stack)) +
+			    K_THREAD_STACK_SIZEOF(_interrupt_stack);
 
 	__set_MSP(msp);
 #if defined(CONFIG_BUILTIN_STACK_GUARD)
@@ -55,6 +50,17 @@ static ALWAYS_INLINE void _InterruptStackSetup(void)
 #error "Built-in MSP limit checks not supported by HW"
 #endif
 #endif /* CONFIG_BUILTIN_STACK_GUARD */
+
+#if defined(CONFIG_STACK_ALIGN_DOUBLE_WORD)
+	/* Enforce double-word stack alignment on exception entry
+	 * for Cortex-M3 and Cortex-M4 (ARMv7-M) MCUs. For the rest
+	 * of ARM Cortex-M processors this setting is enforced by
+	 * default and it is not configurable.
+	 */
+#if defined(CONFIG_CPU_CORTEX_M3) || defined(CONFIG_CPU_CORTEX_M4)
+	SCB->CCR |= SCB_CCR_STKALIGN_Msk;
+#endif
+#endif /* CONFIG_STACK_ALIGN_DOUBLE_WORD */
 }
 
 #endif /* _ASMLANGUAGE */

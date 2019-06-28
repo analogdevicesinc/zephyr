@@ -1,0 +1,30 @@
+#
+# Copyright (c) 2018 Aurelien Jarno
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+title: Atmel SAM USBHS
+version: 0.1
+
+description: >
+    Atmel SAM Family USB (USBHS) in device mode
+
+inherits:
+    !include usb-ep.yaml
+
+properties:
+    compatible:
+      constraint: "atmel,sam-usbhs"
+
+    reg:
+      category: required
+
+    interrupts:
+      category: required
+
+    peripheral-id:
+      type: int
+      category: required
+      description: peripheral ID
+      generation: define

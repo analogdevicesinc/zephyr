@@ -1,31 +1,9 @@
 /*
  * Copyright (c) 2016, Freescale Semiconductor, Inc.
  * Copyright 2016-2017 NXP
+ * All rights reserved.
  *
- * Redistribution and use in source and binary forms, with or without modification,
- * are permitted provided that the following conditions are met:
- *
- * o Redistributions of source code must retain the above copyright notice, this list
- *   of conditions and the following disclaimer.
- *
- * o Redistributions in binary form must reproduce the above copyright notice, this
- *   list of conditions and the following disclaimer in the documentation and/or
- *   other materials provided with the distribution.
- *
- * o Neither the name of the copyright holder nor the names of its
- *   contributors may be used to endorse or promote products derived from this
- *   software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
- * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
- * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
- * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
- * ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
- * ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
  */
 
 #ifndef _FSL_PINT_H_
@@ -46,11 +24,14 @@
 
 /*! @name Driver version */
 /*@{*/
-#define FSL_PINT_DRIVER_VERSION (MAKE_VERSION(2, 0, 0)) /*!< Version 2.0.0 */
+#define FSL_PINT_DRIVER_VERSION (MAKE_VERSION(2, 0, 4)) /*!< Version 2.0.4 */
 /*@}*/
 
 /* Number of interrupt line supported by PINT */
 #define PINT_PIN_INT_COUNT 8U
+
+/* Number of interrupt line supported by SECURE PINT */
+#define SEC_PINT_PIN_INT_COUNT 2U
 
 /* Number of input sources supported by PINT */
 #define PINT_INPUT_COUNT 8U
@@ -110,6 +91,12 @@ typedef enum _pint_int
 #if (FSL_FEATURE_PINT_NUMBER_OF_CONNECTED_OUTPUTS > 7U)
     kPINT_PinInt7 = 7U, /*!< Pin Interrupt  7 */
 #endif
+#if (FSL_FEATURE_SECPINT_NUMBER_OF_CONNECTED_OUTPUTS > 0U)
+    kPINT_SecPinInt0 = 8U, /*!< Secure Pin Interrupt  0 */
+#endif
+#if (FSL_FEATURE_SECPINT_NUMBER_OF_CONNECTED_OUTPUTS > 1U)
+    kPINT_SecPinInt1 = 9U, /*!< Secure Pin Interrupt  1 */
+#endif
 } pint_pin_int_t;
 
 /*! @brief PINT Pattern Match bit slice input source type */
@@ -149,6 +136,12 @@ typedef enum _pint_pmatch_bslice
 #endif
 #if (FSL_FEATURE_PINT_NUMBER_OF_CONNECTED_OUTPUTS > 7U)
     kPINT_PatternMatchBSlice7 = 7U, /*!< Bit slice 7 */
+#endif
+#if (FSL_FEATURE_SECPINT_NUMBER_OF_CONNECTED_OUTPUTS > 0U)
+    kSECPINT_PatternMatchBSlice0 = 8U, /*!< Bit slice 0 */
+#endif
+#if (FSL_FEATURE_SECPINT_NUMBER_OF_CONNECTED_OUTPUTS > 1U)
+    kSECPINT_PatternMatchBSlice1 = 9U, /*!< Bit slice 1 */
 #endif
 } pint_pmatch_bslice_t;
 
@@ -558,6 +551,30 @@ void PINT_DisableCallback(PINT_Type *base);
  * @retval None.
  */
 void PINT_Deinit(PINT_Type *base);
+
+/*!
+ * @brief	enable callback by pin index.
+
+ * This function  enables callback by pin index instead of enabling all pins.
+ *
+ * @param base Base address of the peripheral.
+ * @param pinIdx pin index.
+ *
+ * @retval None.
+ */
+void PINT_EnableCallbackByIndex(PINT_Type *base, pint_pin_int_t pintIdx);
+
+/*!
+ * @brief disable callback by pin index.
+
+ * This function disables callback by pin index instead of disabling all pins.
+ *
+ * @param base Base address of the peripheral.
+ * @param pinIdx pin index.
+ *
+ * @retval None.
+ */
+void PINT_DisableCallbackByIndex(PINT_Type *base, pint_pin_int_t pintIdx);
 
 #ifdef __cplusplus
 }

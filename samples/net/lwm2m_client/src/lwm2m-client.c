@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2017 Linaro Limited
- * Copyright (c) 2017 Foundries.io
+ * Copyright (c) 2017-2019 Foundries.io
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -11,9 +11,9 @@
 #include <logging/log.h>
 LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
-#include <board.h>
 #include <zephyr.h>
-#include <gpio.h>
+#include <drivers/gpio.h>
+#include <drivers/sensor.h>
 #include <net/lwm2m.h>
 
 #define APP_BANNER "Run LWM2M client"
@@ -25,6 +25,15 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #if !defined(CONFIG_NET_CONFIG_PEER_IPV6_ADDR)
 #define CONFIG_NET_CONFIG_PEER_IPV6_ADDR ""
 #endif
+
+#if defined(CONFIG_NET_IPV6)
+#define SERVER_ADDR CONFIG_NET_CONFIG_PEER_IPV6_ADDR
+#elif defined(CONFIG_NET_IPV4)
+#define SERVER_ADDR CONFIG_NET_CONFIG_PEER_IPV4_ADDR
+#else
+#error LwM2M requires either IPV6 or IPV4 support
+#endif
+
 
 #define WAIT_TIME	K_SECONDS(10)
 #define CONNECT_TIME	K_SECONDS(10)
@@ -62,21 +71,8 @@ static u32_t led_state;
 
 static struct lwm2m_ctx client;
 
-#if defined(CONFIG_NET_APP_DTLS)
-#if !defined(CONFIG_NET_APP_TLS_STACK_SIZE)
-#define CONFIG_NET_APP_TLS_STACK_SIZE		30000
-#endif /* CONFIG_NET_APP_TLS_STACK_SIZE */
-
-#define HOSTNAME "localhost"   /* for cert verification if that is enabled */
-
-/* The result buf size is set to large enough so that we can receive max size
- * buf back. Note that mbedtls needs also be configured to have equal size
- * value for its buffer size. See MBEDTLS_SSL_MAX_CONTENT_LEN option in DTLS
- * config file.
- */
-#define RESULT_BUF_SIZE 1500
-
-NET_APP_TLS_POOL_DEFINE(dtls_pool, 10);
+#if defined(CONFIG_LWM2M_DTLS_SUPPORT)
+#define TLS_TAG			1
 
 /* "000102030405060708090a0b0c0d0e0f" */
 static unsigned char client_psk[] = {
@@ -85,35 +81,13 @@ static unsigned char client_psk[] = {
 };
 
 static const char client_psk_id[] = "Client_identity";
-
-static u8_t dtls_result[RESULT_BUF_SIZE];
-NET_STACK_DEFINE(NET_APP_DTLS, net_app_dtls_stack,
-		 CONFIG_NET_APP_TLS_STACK_SIZE, CONFIG_NET_APP_TLS_STACK_SIZE);
-#endif /* CONFIG_NET_APP_DTLS */
+#endif /* CONFIG_LWM2M_DTLS_SUPPORT */
 
 static struct k_sem quit_lock;
 
 #if defined(CONFIG_LWM2M_FIRMWARE_UPDATE_OBJ_SUPPORT)
 static u8_t firmware_buf[64];
 #endif
-
-#if defined(CONFIG_NET_CONTEXT_NET_PKT_POOL)
-NET_PKT_TX_SLAB_DEFINE(lwm2m_tx_udp, 5);
-NET_PKT_DATA_POOL_DEFINE(lwm2m_data_udp, 20);
-
-static struct k_mem_slab *tx_udp_slab(void)
-{
-	return &lwm2m_tx_udp;
-}
-
-static struct net_buf_pool *data_udp_pool(void)
-{
-	return &lwm2m_data_udp;
-}
-#else
-#define tx_udp_slab NULL
-#define data_udp_pool NULL
-#endif /* CONFIG_NET_CONTEXT_NET_PKT_POOL */
 
 /* TODO: Move to a pre write hook that can handle ret codes once available */
 static int led_on_off_cb(u16_t obj_inst_id, u8_t *data, u16_t data_len,
@@ -204,6 +178,32 @@ static int firmware_update_cb(u16_t obj_inst_id)
 }
 #endif
 
+
+static void *temperature_get_buf(u16_t obj_inst_id, size_t *data_len)
+{
+	/* Last read temperature value, will use 25.5C if no sensor available */
+	static struct float32_value v = { 25, 500000 };
+	struct device *dev = NULL;
+
+#if defined(CONFIG_FXOS8700_TEMP)
+	dev = device_get_binding(DT_INST_0_NXP_FXOS8700_LABEL);
+#endif
+
+	if (dev != NULL) {
+		if (sensor_sample_fetch(dev)) {
+			LOG_ERR("temperature data update failed");
+		}
+
+		sensor_channel_get(dev, SENSOR_CHAN_DIE_TEMP,
+				  (struct sensor_value *) &v);
+		LOG_DBG("LWM2M temperature set to %d.%d", v.val1, v.val2);
+	}
+
+	*data_len = sizeof(v);
+	return &v;
+}
+
+
 #if defined(CONFIG_LWM2M_FIRMWARE_UPDATE_OBJ_SUPPORT)
 static void *firmware_get_buf(u16_t obj_inst_id, size_t *data_len)
 {
@@ -221,11 +221,52 @@ static int firmware_block_received_cb(u16_t obj_inst_id,
 }
 #endif
 
+static int timer_digital_state_cb(u16_t obj_inst_id,
+				  u8_t *data, u16_t data_len,
+				  bool last_block, size_t total_size)
+{
+	bool *digital_state = (bool *)data;
+
+	if (*digital_state) {
+		LOG_INF("TIMER: ON");
+	} else {
+		LOG_INF("TIMER: OFF");
+	}
+
+	return 0;
+}
+
 static int lwm2m_setup(void)
 {
-	struct float32_value float_value;
+	int ret;
+	char *server_url;
+	u16_t server_url_len;
+	u8_t server_url_flags;
 
 	/* setup SECURITY object */
+
+	/* Server URL */
+	ret = lwm2m_engine_get_res_data("0/0/0",
+					(void **)&server_url, &server_url_len,
+					&server_url_flags);
+	if (ret < 0) {
+		return ret;
+	}
+
+	snprintk(server_url, server_url_len, "coap%s//%s%s%s",
+		 IS_ENABLED(CONFIG_LWM2M_DTLS_SUPPORT) ? "s:" : ":",
+		 strchr(SERVER_ADDR, ':') ? "[" : "", SERVER_ADDR,
+		 strchr(SERVER_ADDR, ':') ? "]" : "");
+
+	/* Security Mode */
+	lwm2m_engine_set_u8("0/0/2",
+			    IS_ENABLED(CONFIG_LWM2M_DTLS_SUPPORT) ? 0 : 3);
+#if defined(CONFIG_LWM2M_DTLS_SUPPORT)
+	lwm2m_engine_set_string("0/0/3", (char *)client_psk_id);
+	lwm2m_engine_set_opaque("0/0/5",
+				(void *)client_psk, sizeof(client_psk));
+#endif /* CONFIG_LWM2M_DTLS_SUPPORT */
+
 	/* setup SERVER object */
 
 	/* setup DEVICE object */
@@ -285,12 +326,8 @@ static int lwm2m_setup(void)
 #endif
 
 	/* setup TEMP SENSOR object */
-
 	lwm2m_engine_create_obj_inst("3303/0");
-	/* dummy temp data in C*/
-	float_value.val1 = 25;
-	float_value.val2 = 0;
-	lwm2m_engine_set_float32("3303/0/5700", &float_value);
+	lwm2m_engine_register_read_callback("3303/0/5700", temperature_get_buf);
 
 	/* IPSO: Light Control object */
 	if (init_led_device() == 0) {
@@ -298,6 +335,12 @@ static int lwm2m_setup(void)
 		lwm2m_engine_register_post_write_callback("3311/0/5850",
 				led_on_off_cb);
 	}
+
+	/* IPSO: Timer object */
+	lwm2m_engine_create_obj_inst("3340/0");
+	lwm2m_engine_register_post_write_callback("3340/0/5543",
+			timer_digital_state_cb);
+	lwm2m_engine_set_string("3340/0/5750", "Test timer");
 
 	return 0;
 }
@@ -311,12 +354,16 @@ static void rd_client_event(struct lwm2m_ctx *client,
 		/* do nothing */
 		break;
 
-	case LWM2M_RD_CLIENT_EVENT_BOOTSTRAP_FAILURE:
-		LOG_DBG("Bootstrap failure!");
+	case LWM2M_RD_CLIENT_EVENT_BOOTSTRAP_REG_FAILURE:
+		LOG_DBG("Bootstrap registration failure!");
 		break;
 
-	case LWM2M_RD_CLIENT_EVENT_BOOTSTRAP_COMPLETE:
-		LOG_DBG("Bootstrap complete");
+	case LWM2M_RD_CLIENT_EVENT_BOOTSTRAP_REG_COMPLETE:
+		LOG_DBG("Bootstrap registration complete");
+		break;
+
+	case LWM2M_RD_CLIENT_EVENT_BOOTSTRAP_TRANSFER_COMPLETE:
+		LOG_DBG("Bootstrap transfer complete");
 		break;
 
 	case LWM2M_RD_CLIENT_EVENT_REGISTRATION_FAILURE:
@@ -361,42 +408,11 @@ void main(void)
 	}
 
 	(void)memset(&client, 0x0, sizeof(client));
-	client.net_init_timeout = WAIT_TIME;
-	client.net_timeout = CONNECT_TIME;
-#if defined(CONFIG_NET_CONTEXT_NET_PKT_POOL)
-	client.tx_slab = tx_udp_slab;
-	client.data_pool = data_udp_pool;
+#if defined(CONFIG_LWM2M_DTLS_SUPPORT)
+	client.tls_tag = TLS_TAG;
 #endif
 
-#if defined(CONFIG_NET_APP_DTLS)
-	client.client_psk = client_psk;
-	client.client_psk_len = 16;
-	client.client_psk_id = (char *)client_psk_id;
-	client.client_psk_id_len = strlen(client_psk_id);
-	client.cert_host = HOSTNAME;
-	client.dtls_pool = &dtls_pool;
-	client.dtls_result_buf = dtls_result;
-	client.dtls_result_buf_len = RESULT_BUF_SIZE;
-	client.dtls_stack = net_app_dtls_stack;
-	client.dtls_stack_len = K_THREAD_STACK_SIZEOF(net_app_dtls_stack);
-#endif /* CONFIG_NET_APP_DTLS */
-
-#if defined(CONFIG_NET_IPV6)
-	ret = lwm2m_rd_client_start(&client, CONFIG_NET_CONFIG_PEER_IPV6_ADDR,
-				    CONFIG_LWM2M_PEER_PORT, CONFIG_BOARD,
-				    rd_client_event);
-#elif defined(CONFIG_NET_IPV4)
-	ret = lwm2m_rd_client_start(&client, CONFIG_NET_CONFIG_PEER_IPV4_ADDR,
-				    CONFIG_LWM2M_PEER_PORT, CONFIG_BOARD,
-				    rd_client_event);
-#else
-	LOG_ERR("LwM2M client requires IPv4 or IPv6.");
-	ret = -EPROTONOSUPPORT;
-#endif
-	if (ret < 0) {
-		LOG_ERR("LWM2M init LWM2M RD client error (%d)", ret);
-		return;
-	}
-
+	/* client.sec_obj_inst is 0 as a starting point */
+	lwm2m_rd_client_start(&client, CONFIG_BOARD, rd_client_event);
 	k_sem_take(&quit_lock, K_FOREVER);
 }

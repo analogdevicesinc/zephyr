@@ -8,9 +8,9 @@
 #include "adc_context.h"
 #include <nrfx_adc.h>
 
-#define SYS_LOG_DOMAIN "adc_nrfx_adc"
-#define SYS_LOG_LEVEL CONFIG_SYS_LOG_ADC_LEVEL
-#include <logging/sys_log.h>
+#define LOG_LEVEL CONFIG_ADC_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_REGISTER(adc_nrfx_adc);
 
 struct driver_data {
 	struct adc_context ctx;
@@ -40,12 +40,12 @@ static int adc_nrfx_channel_setup(struct device *dev,
 	}
 
 	if (channel_cfg->acquisition_time != ADC_ACQ_TIME_DEFAULT) {
-		SYS_LOG_ERR("Selected ADC acquisition time is not valid");
+		LOG_ERR("Selected ADC acquisition time is not valid");
 		return -EINVAL;
 	}
 
 	if (channel_cfg->differential) {
-		SYS_LOG_ERR("Differential channels are not supported");
+		LOG_ERR("Differential channels are not supported");
 		return -EINVAL;
 	}
 
@@ -60,7 +60,7 @@ static int adc_nrfx_channel_setup(struct device *dev,
 		config->scaling = NRF_ADC_CONFIG_SCALING_INPUT_FULL_SCALE;
 		break;
 	default:
-		SYS_LOG_ERR("Selected ADC gain is not valid");
+		LOG_ERR("Selected ADC gain is not valid");
 		return -EINVAL;
 	}
 
@@ -86,7 +86,7 @@ static int adc_nrfx_channel_setup(struct device *dev,
 		config->extref    = NRF_ADC_CONFIG_EXTREFSEL_AREF1;
 		break;
 	default:
-		SYS_LOG_ERR("Selected ADC reference is not valid");
+		LOG_ERR("Selected ADC reference is not valid");
 		return -EINVAL;
 	}
 
@@ -126,7 +126,7 @@ static int check_buffer_size(const struct adc_sequence *sequence,
 	}
 
 	if (sequence->buffer_size < needed_buffer_size) {
-		SYS_LOG_ERR("Provided buffer is too small (%u/%u)",
+		LOG_ERR("Provided buffer is too small (%u/%u)",
 				sequence->buffer_size, needed_buffer_size);
 		return -ENOMEM;
 	}
@@ -136,7 +136,7 @@ static int check_buffer_size(const struct adc_sequence *sequence,
 
 static int start_read(struct device *dev, const struct adc_sequence *sequence)
 {
-	int error = 0;
+	int error;
 	u32_t selected_channels = sequence->channels;
 	u8_t active_channels;
 	u8_t channel_id;
@@ -148,12 +148,12 @@ static int start_read(struct device *dev, const struct adc_sequence *sequence)
 	if (!selected_channels ||
 	    (selected_channels &
 			~BIT_MASK(CONFIG_ADC_NRFX_ADC_CHANNEL_COUNT))) {
-		SYS_LOG_ERR("Invalid selection of channels");
+		LOG_ERR("Invalid selection of channels");
 		return -EINVAL;
 	}
 
-	if (sequence->oversampling != 0) {
-		SYS_LOG_ERR("Oversampling is not supported");
+	if (sequence->oversampling != 0U) {
+		LOG_ERR("Oversampling is not supported");
 		return -EINVAL;
 	}
 
@@ -168,17 +168,17 @@ static int start_read(struct device *dev, const struct adc_sequence *sequence)
 		nrf_resolution = NRF_ADC_CONFIG_RES_10BIT;
 		break;
 	default:
-		SYS_LOG_ERR("ADC resolution value %d is not valid",
+		LOG_ERR("ADC resolution value %d is not valid",
 			    sequence->resolution);
 		return -EINVAL;
 	}
 
-	active_channels = 0;
+	active_channels = 0U;
 	nrfx_adc_all_channels_disable();
 
 	/* Enable the channels selected for the pointed sequence.
 	 */
-	channel_id = 0;
+	channel_id = 0U;
 	while (selected_channels) {
 		if (selected_channels & BIT(0)) {
 			/* The nrfx driver requires setting the resolution
@@ -203,11 +203,7 @@ static int start_read(struct device *dev, const struct adc_sequence *sequence)
 
 	adc_context_start_read(&m_data.ctx, sequence);
 
-	if (!error) {
-		error = adc_context_wait_for_completion(&m_data.ctx);
-		adc_context_release(&m_data.ctx, error);
-	}
-
+	error = adc_context_wait_for_completion(&m_data.ctx);
 	return error;
 }
 
@@ -215,8 +211,13 @@ static int start_read(struct device *dev, const struct adc_sequence *sequence)
 static int adc_nrfx_read(struct device *dev,
 			 const struct adc_sequence *sequence)
 {
+	int error;
+
 	adc_context_lock(&m_data.ctx, false, NULL);
-	return start_read(dev, sequence);
+	error = start_read(dev, sequence);
+	adc_context_release(&m_data.ctx, error);
+
+	return error;
 }
 
 #ifdef CONFIG_ADC_ASYNC
@@ -225,10 +226,15 @@ static int adc_nrfx_read_async(struct device *dev,
 			       const struct adc_sequence *sequence,
 			       struct k_poll_signal *async)
 {
+	int error;
+
 	adc_context_lock(&m_data.ctx, true, async);
-	return start_read(dev, sequence);
+	error = start_read(dev, sequence);
+	adc_context_release(&m_data.ctx, error);
+
+	return error;
 }
-#endif
+#endif /* CONFIG_ADC_ASYNC */
 
 DEVICE_DECLARE(adc_0);
 
@@ -248,12 +254,13 @@ static int init_adc(struct device *dev)
 	nrfx_err_t result = nrfx_adc_init(&config, event_handler);
 
 	if (result != NRFX_SUCCESS) {
-		SYS_LOG_ERR("Failed to initialize device: %s",
+		LOG_ERR("Failed to initialize device: %s",
 			    dev->config->name);
 		return -EBUSY;
 	}
 
-	IRQ_CONNECT(CONFIG_ADC_0_IRQ, CONFIG_ADC_0_IRQ_PRI,
+	IRQ_CONNECT(DT_NORDIC_NRF_ADC_ADC_0_IRQ_0,
+		    DT_NORDIC_NRF_ADC_ADC_0_IRQ_0_PRIORITY,
 		    nrfx_isr, nrfx_adc_irq_handler, 0);
 
 	adc_context_unlock_unconditionally(&m_data.ctx);
@@ -270,7 +277,7 @@ static const struct adc_driver_api adc_nrfx_driver_api = {
 };
 
 #ifdef CONFIG_ADC_0
-DEVICE_AND_API_INIT(adc_0, CONFIG_ADC_0_NAME,
+DEVICE_AND_API_INIT(adc_0, DT_NORDIC_NRF_ADC_ADC_0_LABEL,
 		    init_adc, NULL, NULL,
 		    POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
 		    &adc_nrfx_driver_api);

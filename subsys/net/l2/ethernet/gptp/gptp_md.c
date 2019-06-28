@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define LOG_MODULE_NAME net_gptp_md
-#define NET_LOG_LEVEL CONFIG_NET_GPTP_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_DECLARE(net_gptp, CONFIG_NET_GPTP_LOG_LEVEL);
 
 #include "gptp_messages.h"
 #include "gptp_md.h"
@@ -72,12 +72,12 @@ static void gptp_md_follow_up_prepare(struct net_pkt *pkt,
 	fup->tlv.org_id[0] = GPTP_FUP_TLV_ORG_ID_BYTE_0;
 	fup->tlv.org_id[1] = GPTP_FUP_TLV_ORG_ID_BYTE_1;
 	fup->tlv.org_id[2] = GPTP_FUP_TLV_ORG_ID_BYTE_2;
-	fup->tlv.org_sub_type[0] = 0;
-	fup->tlv.org_sub_type[1] = 0;
+	fup->tlv.org_sub_type[0] = 0U;
+	fup->tlv.org_sub_type[1] = 0U;
 	fup->tlv.org_sub_type[2] = GPTP_FUP_TLV_ORG_SUB_TYPE;
 
 	fup->tlv.cumulative_scaled_rate_offset =
-		(sync_send->rate_ratio - 1.0) * GPTP_POW2(41);
+		(sync_send->rate_ratio - 1.0) * GPTP_POW2_41;
 	fup->tlv.cumulative_scaled_rate_offset =
 		ntohl(fup->tlv.cumulative_scaled_rate_offset);
 	fup->tlv.gm_time_base_indicator =
@@ -140,7 +140,7 @@ static int gptp_set_md_sync_receive(int port,
 	sync_rcv->upstream_tx_time -= delay_asymmetry_rated;
 
 	sync_rcv->rate_ratio = ntohl(fup->tlv.cumulative_scaled_rate_offset);
-	sync_rcv->rate_ratio *= GPTP_POW2(-41);
+	sync_rcv->rate_ratio /= GPTP_POW2_41;
 	sync_rcv->rate_ratio += 1;
 
 	sync_rcv->gm_time_base_indicator =
@@ -166,7 +166,7 @@ static void gptp_md_pdelay_reset(int port)
 	port_ds = GPTP_PORT_DS(port);
 
 	if (state->lost_responses < port_ds->allowed_lost_responses) {
-		state->lost_responses += 1;
+		state->lost_responses += 1U;
 	} else {
 		port_ds->is_measuring_delay = false;
 		port_ds->as_capable = false;
@@ -191,11 +191,11 @@ static void gptp_md_pdelay_check_multiple_resp(int port)
 			 state->rcvd_pdelay_follow_up);
 		state->multiple_resp_count++;
 	} else {
-		state->multiple_resp_count = 0;
+		state->multiple_resp_count = 0U;
 	}
 
-	if (state->multiple_resp_count >= 3) {
-		state->multiple_resp_count = 0;
+	if (state->multiple_resp_count >= 3U) {
+		state->multiple_resp_count = 0U;
 		k_timer_stop(&state->pdelay_timer);
 		state->pdelay_timer_expired = false;
 
@@ -211,8 +211,8 @@ static void gptp_md_pdelay_check_multiple_resp(int port)
 
 static void gptp_md_compute_pdelay_rate_ratio(int port)
 {
-	u64_t ingress_tstamp = 0;
-	u64_t resp_evt_tstamp = 0;
+	u64_t ingress_tstamp = 0U;
+	u64_t resp_evt_tstamp = 0U;
 	struct gptp_pdelay_resp_follow_up *fup;
 	struct gptp_pdelay_req_state *state;
 	struct gptp_port_ds *port_ds;
@@ -254,15 +254,22 @@ static void gptp_md_compute_pdelay_rate_ratio(int port)
 
 		state->neighbor_rate_ratio_valid = false;
 	} else {
-		neighbor_rate_ratio =
-			(resp_evt_tstamp - state->ini_resp_evt_tstamp);
-		neighbor_rate_ratio /=
-			(ingress_tstamp - state->ini_resp_ingress_tstamp);
+		if (resp_evt_tstamp == state->ini_resp_evt_tstamp) {
+			state->neighbor_rate_ratio_valid = false;
+			neighbor_rate_ratio = 1.0;
+		} else {
+			neighbor_rate_ratio =
+				(resp_evt_tstamp - state->ini_resp_evt_tstamp);
+			neighbor_rate_ratio /=
+				(ingress_tstamp -
+				 state->ini_resp_ingress_tstamp);
 
-		/* Measure the ratio with the previously sent response. */
-		state->ini_resp_ingress_tstamp = ingress_tstamp;
-		state->ini_resp_evt_tstamp = resp_evt_tstamp;
-		state->neighbor_rate_ratio_valid = true;
+			/* Measure the ratio with the previously sent response.
+			 */
+			state->ini_resp_ingress_tstamp = ingress_tstamp;
+			state->ini_resp_evt_tstamp = resp_evt_tstamp;
+			state->neighbor_rate_ratio_valid = true;
+		}
 	}
 
 	port_ds->neighbor_rate_ratio = neighbor_rate_ratio;
@@ -271,14 +278,14 @@ static void gptp_md_compute_pdelay_rate_ratio(int port)
 
 static void gptp_md_compute_prop_time(int port)
 {
-	u64_t t1_ns = 0, t2_ns = 0, t3_ns = 0, t4_ns = 0;
+	u64_t t1_ns = 0U, t2_ns = 0U, t3_ns = 0U, t4_ns = 0U;
 	struct gptp_pdelay_resp_follow_up *fup;
 	struct gptp_pdelay_req_state *state;
 	struct gptp_pdelay_resp *resp;
 	struct gptp_port_ds *port_ds;
 	struct gptp_hdr *hdr;
 	struct net_pkt *pkt;
-	double prop_time;
+	double prop_time, turn_around;
 
 	state = &GPTP_PORT_STATE(port)->pdelay_req;
 	port_ds = GPTP_PORT_DS(port);
@@ -320,9 +327,22 @@ static void gptp_md_compute_prop_time(int port)
 		t3_ns += (ntohll(hdr->correction_field) >> 16);
 	}
 
-	prop_time = (t4_ns - t1_ns);
-	prop_time *= port_ds->neighbor_rate_ratio;
-	prop_time -= (t3_ns - t2_ns);
+	prop_time = t4_ns - t1_ns;
+
+	turn_around = t3_ns - t2_ns;
+
+	/* Adjusting the turn-around time for peer to local clock rate
+	 * difference. The check is implemented the same way as how Avnu/gptp
+	 * daemon is doing it. This comment is also found in their source
+	 * for the magic values "TODO: Are these .998 and 1.002 specifically
+	 * defined in the standard?"
+	 */
+	if (port_ds->neighbor_rate_ratio > .998 &&
+	    port_ds->neighbor_rate_ratio < 1.002) {
+		turn_around *= port_ds->neighbor_rate_ratio;
+	}
+
+	prop_time -= turn_around;
 	prop_time /= 2;
 
 	port_ds->neighbor_prop_delay = prop_time;
@@ -352,9 +372,12 @@ static void gptp_md_pdelay_compute(int port)
 
 	if (port_ds->compute_neighbor_prop_delay) {
 		gptp_md_compute_prop_time(port);
+
+		NET_DBG("Neighbor prop delay %d",
+			(s32_t)port_ds->neighbor_prop_delay);
 	}
 
-	state->lost_responses = 0;
+	state->lost_responses = 0U;
 	port_ds->is_measuring_delay = true;
 
 	pkt = state->rcvd_pdelay_follow_up_ptr;
@@ -417,8 +440,10 @@ static void gptp_md_pdelay_req_timeout(struct k_timer *timer)
 		if (timer == &state->pdelay_timer) {
 			state->pdelay_timer_expired = true;
 
-			GPTP_STATS_INC(port,
-				       pdelay_allowed_lost_resp_exceed_count);
+			if (state->rcvd_pdelay_resp == 0U) {
+				GPTP_STATS_INC(port,
+					pdelay_allowed_lost_resp_exceed_count);
+			}
 		}
 	}
 }
@@ -434,10 +459,10 @@ static void gptp_md_start_pdelay_req(int port)
 	port_ds->neighbor_rate_ratio = 1.0;
 	port_ds->is_measuring_delay = false;
 	port_ds->as_capable = false;
-	state->lost_responses = 0;
-	state->rcvd_pdelay_resp = 0;
-	state->rcvd_pdelay_follow_up = 0;
-	state->multiple_resp_count = 0;
+	state->lost_responses = 0U;
+	state->rcvd_pdelay_resp = 0U;
+	state->rcvd_pdelay_follow_up = 0U;
+	state->multiple_resp_count = 0U;
 }
 
 static void gptp_md_follow_up_receipt_timeout(struct k_timer *timer)
@@ -467,17 +492,17 @@ static void gptp_md_init_pdelay_req_state_machine(int port)
 
 	state->neighbor_rate_ratio_valid = false;
 	state->init_pdelay_compute = true;
-	state->rcvd_pdelay_resp = 0;
-	state->rcvd_pdelay_follow_up = 0;
+	state->rcvd_pdelay_resp = 0U;
+	state->rcvd_pdelay_follow_up = 0U;
 	state->pdelay_timer_expired = false;
 
 	state->rcvd_pdelay_resp_ptr = NULL;
 	state->rcvd_pdelay_follow_up_ptr = NULL;
 	state->tx_pdelay_req_ptr = NULL;
 
-	state->ini_resp_evt_tstamp = 0;
-	state->ini_resp_ingress_tstamp = 0;
-	state->lost_responses = 0;
+	state->ini_resp_evt_tstamp = 0U;
+	state->ini_resp_ingress_tstamp = 0U;
+	state->lost_responses = 0U;
 }
 
 static void gptp_md_init_pdelay_resp_state_machine(int port)
@@ -504,7 +529,7 @@ static void gptp_md_init_sync_rcv_state_machine(int port)
 	state->rcvd_follow_up_ptr = NULL;
 
 	state->follow_up_timeout_expired = false;
-	state->follow_up_receipt_timeout = 0;
+	state->follow_up_receipt_timeout = 0U;
 
 	state->state = GPTP_SYNC_RCV_DISCARD;
 }
@@ -623,7 +648,7 @@ static void gptp_md_pdelay_req_state_machine(int port)
 	case GPTP_PDELAY_REQ_WAIT_RESP:
 		if (state->pdelay_timer_expired) {
 			state->state = GPTP_PDELAY_REQ_RESET;
-		} else if (state->rcvd_pdelay_resp != 0) {
+		} else if (state->rcvd_pdelay_resp != 0U) {
 			pkt = state->rcvd_pdelay_resp_ptr;
 			if (!gptp_handle_pdelay_resp(port, pkt)) {
 				state->state = GPTP_PDELAY_REQ_WAIT_FOLLOW_UP;
@@ -637,7 +662,7 @@ static void gptp_md_pdelay_req_state_machine(int port)
 	case GPTP_PDELAY_REQ_WAIT_FOLLOW_UP:
 		if (state->pdelay_timer_expired) {
 			state->state = GPTP_PDELAY_REQ_RESET;
-		} else if (state->rcvd_pdelay_follow_up != 0) {
+		} else if (state->rcvd_pdelay_follow_up != 0U) {
 			pkt = state->rcvd_pdelay_follow_up_ptr;
 			if (!gptp_handle_pdelay_follow_up(port, pkt)) {
 				gptp_md_pdelay_compute(port);
@@ -653,8 +678,8 @@ static void gptp_md_pdelay_req_state_machine(int port)
 		if (state->pdelay_timer_expired) {
 			gptp_md_pdelay_check_multiple_resp(port);
 
-			state->rcvd_pdelay_resp = 0;
-			state->rcvd_pdelay_follow_up = 0;
+			state->rcvd_pdelay_resp = 0U;
+			state->rcvd_pdelay_follow_up = 0U;
 		}
 
 		break;

@@ -2,8 +2,9 @@ sample:
   description: BSD Sockets big HTTP download example
   name: big_http_download
 tests:
-  test:
-    platform_exclude: esp32
+  sample.net.sockets.big_http_download:
+    filter: TOOLCHAIN_HAS_NEWLIB == 1
     harness: net
     min_ram: 32
-    tags: net
+    min_flash: 128
+    tags: net socket

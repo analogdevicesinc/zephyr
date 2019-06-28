@@ -28,6 +28,8 @@ enum net_request_wifi_cmd {
 	NET_REQUEST_WIFI_CMD_SCAN = 1,
 	NET_REQUEST_WIFI_CMD_CONNECT,
 	NET_REQUEST_WIFI_CMD_DISCONNECT,
+	NET_REQUEST_WIFI_CMD_AP_ENABLE,
+	NET_REQUEST_WIFI_CMD_AP_DISABLE,
 };
 
 #define NET_REQUEST_WIFI_SCAN					\
@@ -44,6 +46,16 @@ NET_MGMT_DEFINE_REQUEST_HANDLER(NET_REQUEST_WIFI_CONNECT);
 	(_NET_WIFI_BASE | NET_REQUEST_WIFI_CMD_DISCONNECT)
 
 NET_MGMT_DEFINE_REQUEST_HANDLER(NET_REQUEST_WIFI_DISCONNECT);
+
+#define NET_REQUEST_WIFI_AP_ENABLE				\
+	(_NET_WIFI_BASE | NET_REQUEST_WIFI_CMD_AP_ENABLE)
+
+NET_MGMT_DEFINE_REQUEST_HANDLER(NET_REQUEST_WIFI_AP_ENABLE);
+
+#define NET_REQUEST_WIFI_AP_DISABLE				\
+	(_NET_WIFI_BASE | NET_REQUEST_WIFI_CMD_AP_DISABLE)
+
+NET_MGMT_DEFINE_REQUEST_HANDLER(NET_REQUEST_WIFI_AP_DISABLE);
 
 enum net_event_wifi_cmd {
 	NET_EVENT_WIFI_CMD_SCAN_RESULT = 1,
@@ -92,8 +104,6 @@ struct wifi_status {
 	int status;
 };
 
-#ifdef CONFIG_WIFI_OFFLOAD
-
 #include <net/net_if.h>
 
 typedef void (*scan_result_cb_t)(struct net_if *iface, int status,
@@ -116,7 +126,12 @@ struct net_wifi_mgmt_offload {
 	int (*connect)(struct device *dev,
 		       struct wifi_connect_req_params *params);
 	int (*disconnect)(struct device *dev);
+	int (*ap_enable)(struct device *dev,
+			 struct wifi_connect_req_params *params);
+	int (*ap_disable)(struct device *dev);
 };
+
+#ifdef CONFIG_WIFI_OFFLOAD
 
 void wifi_mgmt_raise_connect_result_event(struct net_if *iface, int status);
 void wifi_mgmt_raise_disconnect_result_event(struct net_if *iface, int status);

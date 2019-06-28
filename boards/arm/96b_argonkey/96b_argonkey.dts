@@ -5,7 +5,7 @@
  */
 
 /dts-v1/;
-#include <st/f4/stm32f412cg.dtsi>
+#include <st/f4/stm32f412Xg.dtsi>
 
 / {
 	model = "Tocoding Argonkey 96boards";
@@ -13,6 +13,7 @@
 
 	chosen {
 		zephyr,console = &usart1;
+		zephyr,shell-uart = &usart1;
 		zephyr,sram = &sram0;
 		zephyr,flash = &flash0;
 	};
@@ -48,15 +49,19 @@
 	current-speed = <115200>;
 	pinctrl-0 = <&usart1_pins_b>;
 	pinctrl-names = "default";
-	status = "ok";
+	status = "okay";
+};
+
+&spi1 {
+	status = "okay";
 };
 
 &spi2 {
-	status = "ok";
+	status = "okay";
 
 	/* ST Microelectronics LSM6DSL accel/gyro sensor */
 	lsm6dsl@1 {
-		compatible = "st,lsm6dsl-spi";
+		compatible = "st,lsm6dsl";
 		reg = <1>;
 		spi-max-frequency = <1000000>;
 		irq-gpios = <&gpiob 1 0>;
@@ -64,19 +69,30 @@
 	};
 };
 
+&i2s5 {
+	status = "okay";
+
+	mp34dt05@0 {
+		compatible = "st,mpxxdtyy";
+		reg = <0>;
+		label = "MP34DT05";
+	};
+};
+
 &i2c1 {
-	status = "ok";
+	status = "okay";
 	clock-frequency = <I2C_BITRATE_FAST>;
 };
 
 &i2c2 {
-	status = "ok";
+	status = "okay";
 	clock-frequency = <I2C_BITRATE_FAST>;
 
 	hts221@5f {
 		compatible = "st,hts221";
 		reg = <0x5f>;
 		label = "HTS221";
+		drdy-gpios = <&gpioa 2 GPIO_INT_ACTIVE_LOW>;
 	};
 
 	lps22hb-press@5d {
@@ -93,8 +109,8 @@
 };
 
 &i2c3 {
-	status = "ok";
-	clock-frequency = <I2C_BITRATE_STANDARD>;
+	status = "okay";
+	clock-frequency = <I2C_BITRATE_FAST>;
 
 	lp3943@60 {
 		compatible = "ti,lp3943";
@@ -104,5 +120,5 @@
 };
 
 &rtc {
-	status = "ok";
+	status = "okay";
 };

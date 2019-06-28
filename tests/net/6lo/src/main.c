@@ -6,8 +6,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define LOG_MODULE_NAME net_test
-#define NET_LOG_LEVEL CONFIG_NET_6LO_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_REGISTER(net_test, CONFIG_NET_6LO_LOG_LEVEL);
 
 #include <zephyr.h>
 #include <ztest.h>
@@ -23,6 +23,7 @@
 #include <net/net_core.h>
 #include <net/net_pkt.h>
 #include <net/net_ip.h>
+#include <net/dummy.h>
 
 #include <tc_util.h>
 
@@ -108,8 +109,6 @@ u8_t dst_mac[8] = { 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0xbb, 0xaa };
 
 /* 6CO contexts */
 static struct net_icmpv6_nd_opt_6co ctx1 = {
-	.type = 0x22,
-	.len = 0x02,
 	.context_len = 0x40,
 	.flag = 0x11,
 	.reserved = 0,
@@ -122,8 +121,6 @@ static struct net_icmpv6_nd_opt_6co ctx1 = {
 		      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 } } }
 
 static struct net_icmpv6_nd_opt_6co ctx2 = {
-	.type = 0x22,
-	.len = 0x03,
 	.context_len = 0x80,
 	.flag = 0x12,
 	.reserved = 0,
@@ -201,14 +198,13 @@ static void net_6lo_iface_init(struct net_if *iface)
 	net_if_set_link_addr(iface, src_mac, 8, NET_LINK_IEEE802154);
 }
 
-static int tester_send(struct net_if *iface, struct net_pkt *pkt)
+static int tester_send(struct device *dev, struct net_pkt *pkt)
 {
-	net_pkt_unref(pkt);
-	return NET_OK;
+	return 0;
 }
 
-static struct net_if_api net_6lo_if_api = {
-	.init = net_6lo_iface_init,
+static struct dummy_api net_6lo_if_api = {
+	.iface_api.init = net_6lo_iface_init,
 	.send = tester_send,
 };
 
@@ -222,8 +218,8 @@ static bool compare_data(struct net_pkt *pkt, struct net_6lo_data *data)
 	struct net_buf *frag;
 	u8_t bytes;
 	u8_t compare;
-	u8_t pos = 0;
-	u8_t offset = 0;
+	u8_t pos = 0U;
+	u8_t offset = 0U;
 	int remaining = data->small ? SIZE_OF_SMALL_DATA : SIZE_OF_LARGE_DATA;
 
 	if (data->nh_udp) {
@@ -298,7 +294,7 @@ static bool compare_data(struct net_pkt *pkt, struct net_6lo_data *data)
 		pos += compare;
 		remaining -= compare;
 		frag = frag->frags;
-		offset = 0;
+		offset = 0U;
 	}
 
 	return true;
@@ -312,19 +308,18 @@ static struct net_pkt *create_pkt(struct net_6lo_data *data)
 	u16_t len;
 	int remaining;
 
-	pkt = net_pkt_get_reserve_tx(0, K_FOREVER);
+	pkt = net_pkt_alloc_on_iface(net_if_get_default(), K_FOREVER);
 	if (!pkt) {
 		return NULL;
 	}
 
-	net_pkt_set_iface(pkt, net_if_get_default());
 	net_pkt_set_ip_hdr_len(pkt, NET_IPV6H_LEN);
 
 	net_pkt_lladdr_src(pkt)->addr = src_mac;
-	net_pkt_lladdr_src(pkt)->len = 8;
+	net_pkt_lladdr_src(pkt)->len = 8U;
 
 	net_pkt_lladdr_dst(pkt)->addr = dst_mac;
-	net_pkt_lladdr_dst(pkt)->len = 8;
+	net_pkt_lladdr_dst(pkt)->len = 8U;
 
 	frag = net_pkt_get_frag(pkt, K_FOREVER);
 	if (!frag) {
@@ -344,7 +339,7 @@ static struct net_pkt *create_pkt(struct net_6lo_data *data)
 		net_buf_add(frag, NET_IPV6H_LEN);
 	}
 
-	pos = 0;
+	pos = 0U;
 	remaining = data->small ? SIZE_OF_SMALL_DATA : SIZE_OF_LARGE_DATA;
 
 	if (data->nh_udp) {
@@ -863,16 +858,16 @@ static void test_6lo(struct net_6lo_data *data)
 #if DEBUG > 0
 	TC_PRINT("length before compression %zu\n",
 		 net_pkt_get_len(pkt));
-	net_hexdump_frags("before-compression", pkt, false);
+	net_pkt_hexdump(pkt, "before-compression");
 #endif
 
-	zassert_true(net_6lo_compress(pkt, data->iphc, NULL),
+	zassert_true((net_6lo_compress(pkt, data->iphc) >= 0),
 		     "compression failed");
 
 #if DEBUG > 0
 	TC_PRINT("length after compression %zu\n",
 		 net_pkt_get_len(pkt));
-	net_hexdump_frags("after-compression", pkt, false);
+	net_pkt_hexdump(pkt, "after-compression");
 #endif
 
 	zassert_true(net_6lo_uncompress(pkt),
@@ -880,7 +875,7 @@ static void test_6lo(struct net_6lo_data *data)
 #if DEBUG > 0
 	TC_PRINT("length after uncompression %zu\n",
 	       net_pkt_get_len(pkt));
-	net_hexdump_frags("after-uncompression", pkt, false);
+	net_pkt_hexdump(pkt, "after-uncompression");
 #endif
 
 	zassert_true(compare_data(pkt, data), NULL);

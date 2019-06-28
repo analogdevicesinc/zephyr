@@ -13,6 +13,7 @@
 
 	chosen {
 		zephyr,console = &usart1;
+		zephyr,shell-uart = &usart1;
 		zephyr,sram = &sram0;
 		zephyr,flash = &flash0;
 	};
@@ -36,7 +37,7 @@
 			label = "User LD6";
 		};
 		green_led_7: led_7 {
-			gpios = <&gpiod 11 GPIO_INT_ACTIVE_HIGH>;
+			gpios = <&gpioe 11 GPIO_INT_ACTIVE_HIGH>;
 			label = "User LD7";
 		};
 		orange_led_8: led_8 {
@@ -63,6 +64,7 @@
 
 	aliases {
 		led0 = &green_led_6;
+		led1 = &green_led_7;
 		sw0 = &user_button;
 	};
 };
@@ -71,38 +73,69 @@
 	current-speed = <115200>;
 	pinctrl-0 = <&usart1_pins_d>;
 	pinctrl-names = "default";
-	status = "ok";
+	status = "okay";
 };
 
 &usart2 {
 	current-speed = <115200>;
 	pinctrl-0 = <&usart2_pins_a>;
 	pinctrl-names = "default";
-	status = "ok";
+	status = "okay";
 };
 
 &i2c1 {
-	status = "ok";
+	status = "okay";
 	clock-frequency = <I2C_BITRATE_FAST>;
+
+	lsm303dlhc-magn@1e {
+		compatible = "st,lsm303dlhc-magn";
+		reg = <0x1e>;
+		label = "LSM303DLHC-MAGN";
+	};
+
+	lsm303dlhc-accel@19 {
+		compatible = "st,lis2dh", "st,lsm303dlhc-accel";
+		reg = <0x19>;
+		irq-gpios = <&gpioe 4 0>, <&gpioe 5 0>;
+		label = "LSM303DLHC-ACCEL";
+	};
 };
 
 &i2c2 {
-	status = "ok";
+	status = "okay";
 	clock-frequency = <I2C_BITRATE_FAST>;
 };
 
 &spi1 {
-	status = "ok";
+	status = "okay";
 };
 
 &spi2 {
-	status = "ok";
+	status = "okay";
 };
 
 &usb {
-	status = "ok";
+	status = "okay";
 };
 
 &rtc {
-	status = "ok";
+	status = "okay";
+};
+
+&flash0 {
+	/*
+	 * For more information, see:
+	 * http://docs.zephyrproject.org/latest/guides/dts/index.html#flash-partitions
+	 */
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		/* Set 6Kb of storage at the end of the 256Kb of flash */
+		storage_partition: partition@3e800 {
+			label = "storage";
+			reg = <0x0003e800 0x00001800>;
+		};
+	};
 };

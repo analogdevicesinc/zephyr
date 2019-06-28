@@ -12,8 +12,8 @@
 #define ZEPHYR_DRIVERS_SENSOR_LPS22HB_LPS22HB_H_
 
 #include <stdint.h>
-#include <i2c.h>
-#include <misc/util.h>
+#include <drivers/i2c.h>
+#include <sys/util.h>
 
 #define LPS22HB_REG_WHO_AM_I                    0x0F
 #define LPS22HB_VAL_WHO_AM_I                    0xB1
@@ -164,7 +164,4 @@ struct lps22hb_data {
 	s16_t sample_temp;
 };
 
-#define SYS_LOG_DOMAIN "LPS22HB"
-#define SYS_LOG_LEVEL CONFIG_SYS_LOG_SENSOR_LEVEL
-#include <logging/sys_log.h>
 #endif /* ZEPHYR_DRIVERS_SENSOR_LPS22HB_LPS22HB_H_ */

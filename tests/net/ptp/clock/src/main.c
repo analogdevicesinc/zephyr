@@ -6,15 +6,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define LOG_MODULE_NAME net_test
 #define NET_LOG_LEVEL CONFIG_NET_L2_ETHERNET_LOG_LEVEL
+
+#include <logging/log.h>
+LOG_MODULE_REGISTER(net_test, NET_LOG_LEVEL);
 
 #include <zephyr/types.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <string.h>
 #include <errno.h>
-#include <misc/printk.h>
+#include <sys/printk.h>
 #include <linker/sections.h>
 
 #include <ztest.h>
@@ -58,6 +60,7 @@ static struct in6_addr ll_addr = { { { 0xfe, 0x80, 0x43, 0xb8, 0, 0, 0, 0,
 /* Keep track of all ethernet interfaces */
 static struct net_if *eth_interfaces[MAX_NUM_INTERFACES];
 
+static ZTEST_BMEM int ptp_clocks[MAX_NUM_INTERFACES - 1];
 static int ptp_interface[MAX_NUM_INTERFACES - 1];
 static int non_ptp_interface;
 static bool test_failed;
@@ -91,9 +94,9 @@ static void eth_iface_init(struct net_if *iface)
 	ethernet_init(iface);
 }
 
-static int eth_tx(struct net_if *iface, struct net_pkt *pkt)
+static int eth_tx(struct device *dev, struct net_pkt *pkt)
 {
-	struct eth_context *context = net_if_get_device(iface)->driver_data;
+	struct eth_context *context = dev->driver_data;
 
 	if (&eth_context_1 != context && &eth_context_2 != context) {
 		zassert_true(false, "Context pointers do not match\n");
@@ -105,11 +108,9 @@ static int eth_tx(struct net_if *iface, struct net_pkt *pkt)
 	}
 
 	if (test_started) {
-
 		k_sem_give(&wait_data);
 	}
 
-	net_pkt_unref(pkt);
 
 	return 0;
 }
@@ -128,10 +129,10 @@ static struct device *eth_get_ptp_clock(struct device *dev)
 
 static struct ethernet_api api_funcs = {
 	.iface_api.init = eth_iface_init,
-	.iface_api.send = eth_tx,
 
 	.get_capabilities = eth_capabilities,
 	.get_ptp_clock = eth_get_ptp_clock,
+	.send = eth_tx,
 };
 
 static void generate_mac(u8_t *mac_addr)
@@ -155,13 +156,16 @@ static int eth_init(struct device *dev)
 }
 
 ETH_NET_DEVICE_INIT(eth_test_1, "eth_test_1", eth_init, &eth_context_1, NULL,
-		    CONFIG_ETH_INIT_PRIORITY, &api_funcs, 1500);
+		    CONFIG_ETH_INIT_PRIORITY, &api_funcs,
+		    NET_ETH_MTU);
 
 ETH_NET_DEVICE_INIT(eth_test_2, "eth_test_2", eth_init, &eth_context_2, NULL,
-		    CONFIG_ETH_INIT_PRIORITY, &api_funcs, 1500);
+		    CONFIG_ETH_INIT_PRIORITY, &api_funcs,
+		    NET_ETH_MTU);
 
 ETH_NET_DEVICE_INIT(eth_test_3, "eth_test_3", eth_init, &eth_context_3, NULL,
-		    CONFIG_ETH_INIT_PRIORITY, &api_funcs, 1500);
+		    CONFIG_ETH_INIT_PRIORITY, &api_funcs,
+		    NET_ETH_MTU);
 
 static u64_t timestamp_to_nsec(struct net_ptp_time *ts)
 {
@@ -172,29 +176,40 @@ static u64_t timestamp_to_nsec(struct net_ptp_time *ts)
 	return (ts->second * NSEC_PER_SEC) + ts->nanosecond;
 }
 
+struct ptp_context {
+	struct eth_context *eth_context;
+};
+
 static int my_ptp_clock_set(struct device *dev, struct net_ptp_time *tm)
 {
-	struct eth_context *ctx = dev->driver_data;
+	struct ptp_context *ptp_ctx = dev->driver_data;
+	struct eth_context *eth_ctx = ptp_ctx->eth_context;
 
-	memcpy(&ctx->time, tm, sizeof(struct net_ptp_time));
+	if (&eth_context_1 != eth_ctx && &eth_context_2 != eth_ctx) {
+		zassert_true(false, "Context pointers do not match\n");
+	}
+
+	memcpy(&eth_ctx->time, tm, sizeof(struct net_ptp_time));
 
 	return 0;
 }
 
 static int my_ptp_clock_get(struct device *dev, struct net_ptp_time *tm)
 {
-	struct eth_context *ctx = dev->driver_data;
+	struct ptp_context *ptp_ctx = dev->driver_data;
+	struct eth_context *eth_ctx = ptp_ctx->eth_context;
 
-	memcpy(tm, &ctx->time, sizeof(struct net_ptp_time));
+	memcpy(tm, &eth_ctx->time, sizeof(struct net_ptp_time));
 
 	return 0;
 }
 
 static int my_ptp_clock_adjust(struct device *dev, int increment)
 {
-	struct eth_context *ctx = dev->driver_data;
+	struct ptp_context *ptp_ctx = dev->driver_data;
+	struct eth_context *eth_ctx = ptp_ctx->eth_context;
 
-	ctx->time.nanosecond += increment;
+	eth_ctx->time.nanosecond += increment;
 
 	return 0;
 }
@@ -203,10 +218,6 @@ static int my_ptp_clock_rate_adjust(struct device *dev, float ratio)
 {
 	return 0;
 }
-
-struct ptp_context {
-	struct eth_context *eth_context;
-};
 
 static struct ptp_context ptp_test_1_context;
 static struct ptp_context ptp_test_2_context;
@@ -288,7 +299,9 @@ static void iface_cb(struct net_if *iface, void *user_data)
 		if (!clk) {
 			non_ptp_interface = ud->eth_if_count;
 		} else {
-			ptp_interface[ptp_iface_idx++] = ud->eth_if_count;
+			ptp_interface[ptp_iface_idx] = ud->eth_if_count;
+			ptp_clocks[ptp_iface_idx] = net_if_get_by_iface(iface);
+			ptp_iface_idx++;
 		}
 
 		eth_interfaces[ud->eth_if_count++] = iface;
@@ -381,6 +394,7 @@ static void address_setup(void)
 
 static void test_ptp_clock_interfaces(void)
 {
+	struct device *clk_by_index;
 	struct device *clk;
 	int idx;
 
@@ -397,6 +411,11 @@ static void test_ptp_clock_interfaces(void)
 	clk = net_eth_get_ptp_clock(eth_interfaces[non_ptp_interface]);
 	zassert_is_null(clk, "Clock found for interface %p\n",
 			eth_interfaces[non_ptp_interface]);
+
+	clk_by_index = net_eth_get_ptp_clock_by_index(ptp_clocks[0]);
+	zassert_not_null(clk_by_index,
+			 "Clock not found for interface index %d\n",
+			 ptp_clocks[0]);
 }
 
 static void test_ptp_clock_iface(int idx)
@@ -445,14 +464,107 @@ static void test_ptp_clock_iface_2(void)
 	test_ptp_clock_iface(ptp_interface[1]);
 }
 
+static ZTEST_BMEM struct device *clk0;
+static ZTEST_BMEM struct device *clk1;
+
+static void test_ptp_clock_get_by_index(void)
+{
+	struct device *clk, *clk_by_index;
+	int idx;
+
+	idx = ptp_interface[0];
+
+	clk = net_eth_get_ptp_clock(eth_interfaces[idx]);
+	zassert_not_null(clk, "PTP 0 not found");
+
+	clk0 = clk;
+
+	clk_by_index = net_eth_get_ptp_clock_by_index(ptp_clocks[0]);
+	zassert_not_null(clk_by_index, "PTP 0 not found");
+
+	zassert_equal(clk, clk_by_index, "Interface index %d invalid", idx);
+
+	idx = ptp_interface[1];
+
+	clk = net_eth_get_ptp_clock(eth_interfaces[idx]);
+	zassert_not_null(clk, "PTP 1 not found");
+
+	clk1 = clk;
+
+	clk_by_index = net_eth_get_ptp_clock_by_index(ptp_clocks[1]);
+	zassert_not_null(clk_by_index, "PTP 1 not found");
+
+	zassert_equal(clk, clk_by_index, "Interface index %d invalid", idx);
+}
+
+static void test_ptp_clock_get_by_index_user(void)
+{
+	struct device *clk_by_index;
+
+	clk_by_index = net_eth_get_ptp_clock_by_index(ptp_clocks[0]);
+	zassert_not_null(clk_by_index, "PTP 0 not found");
+	zassert_equal(clk0, clk_by_index, "Invalid PTP clock 0");
+
+	clk_by_index = net_eth_get_ptp_clock_by_index(ptp_clocks[1]);
+	zassert_not_null(clk_by_index, "PTP 1 not found");
+	zassert_equal(clk1, clk_by_index, "Invalid PTP clock 1");
+}
+
+static ZTEST_BMEM struct net_ptp_time tm;
+static ZTEST_BMEM struct net_ptp_time empty;
+
+static void test_ptp_clock_get_by_xxx(const char *who)
+{
+	struct device *clk_by_index;
+	int ret;
+
+	clk_by_index = net_eth_get_ptp_clock_by_index(ptp_clocks[0]);
+	zassert_not_null(clk_by_index, "PTP 0 not found (%s)", who);
+	zassert_equal(clk0, clk_by_index, "Invalid PTP clock 0 (%s)", who);
+
+	(void)memset(&tm, 0, sizeof(tm));
+	ptp_clock_get(clk_by_index, &tm);
+
+	ret = memcmp(&tm, &empty, sizeof(tm));
+	zassert_not_equal(ret, 0, "ptp_clock_get() failed in %s mode", who);
+}
+
+static void test_ptp_clock_get_kernel(void)
+{
+	struct device *clk;
+
+	/* Make sure that this function is really run in kernel mode by
+	 * calling a function that will not work in user mode.
+	 */
+	clk = net_eth_get_ptp_clock(eth_interfaces[0]);
+
+	test_ptp_clock_get_by_xxx("kernel");
+}
+
+static void test_ptp_clock_get_user(void)
+{
+	test_ptp_clock_get_by_xxx("user");
+}
+
 void test_main(void)
 {
+	struct device *clk;
+
+	clk = device_get_binding(PTP_CLOCK_NAME);
+	if (clk != NULL) {
+		k_object_access_grant(clk, k_current_get());
+	}
+
 	ztest_test_suite(ptp_clock_test,
 			 ztest_unit_test(check_interfaces),
 			 ztest_unit_test(address_setup),
 			 ztest_unit_test(test_ptp_clock_interfaces),
 			 ztest_unit_test(test_ptp_clock_iface_1),
-			 ztest_unit_test(test_ptp_clock_iface_2)
+			 ztest_unit_test(test_ptp_clock_iface_2),
+			 ztest_unit_test(test_ptp_clock_get_by_index),
+			 ztest_user_unit_test(test_ptp_clock_get_by_index_user),
+			 ztest_unit_test(test_ptp_clock_get_kernel),
+			 ztest_user_unit_test(test_ptp_clock_get_user)
 			 );
 
 	ztest_run_test_suite(ptp_clock_test);

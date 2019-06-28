@@ -3,9 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: ARM SBCon two-wire serial bus interface
-id: arm,versatile-i2c
 version: 0.1
 
 description: >
@@ -19,9 +18,4 @@ properties:
       constraint: "arm,versatile-i2c"
 
     reg:
-      type: array
-      description: mmio register space
-      generation: define
       category: required
-
-...

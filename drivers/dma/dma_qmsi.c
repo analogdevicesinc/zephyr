@@ -8,10 +8,10 @@
 
 #include <stdio.h>
 #include <kernel.h>
-#include <board.h>
+#include <soc.h>
 #include <device.h>
 #include <init.h>
-#include <dma.h>
+#include <drivers/dma.h>
 
 #include "qm_dma.h"
 #include "qm_isr.h"
@@ -41,7 +41,7 @@ struct dma_qmsi_driver_data {
 	u32_t device_power_state;
 	qm_dma_context_t saved_ctx;
 #endif
-	void (*dma_user_callback[QM_DMA_CHANNEL_NUM])(struct device *dev,
+	void (*dma_user_callback[QM_DMA_CHANNEL_NUM])(void *arg,
 						      u32_t channel_id,
 						      int error_code);
 };
@@ -60,7 +60,8 @@ static void dma_drv_callback(void *callback_context, u32_t len,
 	channel = context->index;
 	data = context->dev->driver_data;
 
-	data->dma_user_callback[channel](context->dev, channel, error_code);
+	data->dma_user_callback[channel](data->callback_data[channel],
+			channel, error_code);
 }
 
 static int width_index(u32_t num_bytes, u32_t *index)
@@ -132,10 +133,10 @@ static int dma_qmsi_chan_config(struct device *dev, u32_t channel,
 	struct dma_qmsi_driver_data *data = dev->driver_data;
 	qm_dma_transfer_t qmsi_transfer_cfg = { 0 };
 	qm_dma_channel_config_t qmsi_cfg = { 0 };
-	u32_t temp = 0;
+	u32_t temp = 0U;
 	int ret = 0;
 
-	if (config->block_count != 1) {
+	if (config->block_count != 1U) {
 		return -ENOTSUP;
 	}
 
@@ -171,6 +172,7 @@ static int dma_qmsi_chan_config(struct device *dev, u32_t channel,
 	/* TODO: add support for using other DMA transfer types. */
 	qmsi_cfg.transfer_type = QM_DMA_TYPE_SINGLE;
 
+	data->callback_data[channel] = config->callback_arg;
 	data->dma_user_callback[channel] = config->dma_callback;
 
 	dma_context[channel].index = channel;
@@ -277,19 +279,24 @@ static int dma_resume_device(struct device *dev)
 }
 
 static int dma_qmsi_device_ctrl(struct device *dev, u32_t ctrl_command,
-				void *context)
+				void *context, device_pm_cb cb, void *arg)
 {
+	int ret = 0;
+
 	if (ctrl_command == DEVICE_PM_SET_POWER_STATE) {
 		if (*((u32_t *)context) == DEVICE_PM_SUSPEND_STATE) {
-			return dma_suspend_device(dev);
+			ret = dma_suspend_device(dev);
 		} else if (*((u32_t *)context) == DEVICE_PM_ACTIVE_STATE) {
-			return dma_resume_device(dev);
+			ret = dma_resume_device(dev);
 		}
 	} else if (ctrl_command == DEVICE_PM_GET_POWER_STATE) {
 		*((u32_t *)context) = dma_qmsi_get_power_state(dev);
 	}
 
-	return 0;
+	if (cb) {
+		cb(dev, ret, context, arg);
+	}
+	return ret;
 }
 #endif
 

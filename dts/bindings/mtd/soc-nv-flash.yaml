@@ -1,24 +1,19 @@
----
+
 title: Flash base node description
-id: soc-nv-flash
 version: 0.1
 
 description: >
     This binding gives a base FLASH description
 
+inherits:
+    !include base.yaml
+
 properties:
     compatible:
-      type: string
-      category: required
-      description: compatible strings
       constraint: "soc-nv-flash"
-      generation: define
 
     label:
-      type: string
       category: optional
-      description: Human readable string describing the device (used by Zephyr for API name)
-      generation: define
 
     erase-block-size:
      type: int
@@ -33,8 +28,3 @@ properties:
      generation: define
      category: optional
      label: alignment
-
-base_label: FLASH
-use-property-label: yes
-
-...

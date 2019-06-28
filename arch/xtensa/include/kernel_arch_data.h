@@ -33,8 +33,8 @@ extern "C" {
 #include <kernel.h>            /* public kernel API */
 #include <kernel_internal.h>
 #include <zephyr/types.h>
-#include <misc/dlist.h>
-#include <misc/util.h>
+#include <sys/dlist.h>
+#include <sys/util.h>
 
 /* Bitmask definitions for the struct k_thread->flags bit field */
 
@@ -47,16 +47,11 @@ extern "C" {
 
 typedef struct __esf __esf_t;
 
-struct _kernel_arch {
-};
-
-typedef struct _kernel_arch _kernel_arch_t;
-
 #endif /*! _ASMLANGUAGE && ! __ASSEMBLER__ */
 
 #ifdef CONFIG_USE_SWITCH
 void xtensa_switch(void *switch_to, void **switched_from);
-#define _arch_switch xtensa_switch
+#define z_arch_switch xtensa_switch
 #endif
 
 /* stacks */

@@ -3,9 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: STM32 SPI FIFO
-id: st,stm32-spi-fifo
 version: 0.1
 
 description: >
@@ -20,21 +19,7 @@ properties:
       constraint: "st,stm32-spi-fifo"
 
     reg:
-      type: array
-      description: mmio register space
-      generation: define
       category: required
 
     interrupts:
-      type: array
       category: required
-      description: required interrupts
-      generation: define
-
-    interrupt-names:
-      type: stringlist
-      category: optional
-      description: readable string describing the interrupts
-      generation: define
-
-...

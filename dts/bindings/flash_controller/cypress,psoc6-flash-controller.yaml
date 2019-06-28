@@ -3,9 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: Cypress Flash Controller
-id: cypress,psoc6-flash-controller
 version: 0.1
 
 description: >
@@ -17,5 +16,3 @@ inherits:
 properties:
     compatible:
       constraint: "cypress,psoc6-flash-controller"
-
-...

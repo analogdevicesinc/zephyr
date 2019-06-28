@@ -12,8 +12,8 @@
 #define ZEPHYR_DRIVERS_SENSOR_LPS25HB_LPS25HB_H_
 
 #include <zephyr/types.h>
-#include <i2c.h>
-#include <misc/util.h>
+#include <drivers/i2c.h>
+#include <sys/util.h>
 
 #define LPS25HB_REG_WHO_AM_I                    0x0F
 #define LPS25HB_VAL_WHO_AM_I                    0xBD
@@ -158,7 +158,4 @@ struct lps25hb_data {
 	s16_t sample_temp;
 };
 
-#define SYS_LOG_DOMAIN "LPS25HB"
-#define SYS_LOG_LEVEL CONFIG_SYS_LOG_SENSOR_LEVEL
-#include <logging/sys_log.h>
 #endif /* ZEPHYR_DRIVERS_SENSOR_LPS25HB_LPS25HB_H_ */

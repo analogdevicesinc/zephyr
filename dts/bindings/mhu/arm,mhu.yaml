@@ -1,0 +1,27 @@
+#
+# Copyright (c) 2019, Linaro Limited
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+title: ARM MHU
+version: 0.1
+
+description: >
+    This binding gives a base representation of the ARM MHU
+
+inherits:
+    !include base.yaml
+
+properties:
+    compatible:
+      constraint: "arm,mhu"
+
+    reg:
+      category: required
+
+    interrupts:
+      category: required
+
+    label:
+      category: required

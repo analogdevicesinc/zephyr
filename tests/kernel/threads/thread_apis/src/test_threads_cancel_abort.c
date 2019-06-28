@@ -6,10 +6,11 @@
 
 #include <ztest.h>
 
-#define STACK_SIZE (256 + CONFIG_TEST_EXTRA_STACKSIZE)
+#define STACK_SIZE (512 + CONFIG_TEST_EXTRA_STACKSIZE)
+
 K_THREAD_STACK_EXTERN(tstack);
 extern struct k_thread tdata;
-static int execute_flag;
+static ZTEST_BMEM int execute_flag;
 
 K_SEM_DEFINE(sync_sema, 0, 1);
 #define BLOCK_SIZE 64
@@ -101,7 +102,7 @@ void test_threads_abort_repeat(void)
 	k_thread_abort(tid);
 	k_sleep(100);
 	k_thread_abort(tid);
-	/* If no fault occured till now. The test case passed. */
+	/* If no fault occurred till now. The test case passed. */
 	ztest_test_pass();
 }
 

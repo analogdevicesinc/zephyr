@@ -34,8 +34,8 @@ extern "C" {
 #include <kernel.h>
 #include <kernel_internal.h>
 #include <zephyr/types.h>
-#include <misc/util.h>
-#include <misc/dlist.h>
+#include <sys/util.h>
+#include <sys/dlist.h>
 #endif
 
 /* stacks */
@@ -46,12 +46,6 @@ extern "C" {
 #define STACK_ROUND_DOWN(x) ROUND_DOWN(x, STACK_ALIGN_SIZE)
 
 #ifndef _ASMLANGUAGE
-
-struct _kernel_arch {
-	/* nothing for now */
-};
-
-typedef struct _kernel_arch _kernel_arch_t;
 
 extern K_THREAD_STACK_DEFINE(_interrupt_stack, CONFIG_ISR_STACK_SIZE);
 

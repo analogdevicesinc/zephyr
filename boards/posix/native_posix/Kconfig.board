@@ -1,7 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
 
 config BOARD_NATIVE_POSIX
 	bool "Native POSIX"
 	depends on SOC_POSIX
+	select HAS_DTS
 	select NATIVE_POSIX_TIMER
 	select NATIVE_POSIX_CONSOLE
 	help

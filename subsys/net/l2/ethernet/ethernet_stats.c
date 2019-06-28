@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define LOG_MODULE_NAME net_ethernet_stats
+#include <logging/log.h>
+LOG_MODULE_REGISTER(net_ethernet_stats, CONFIG_NET_L2_ETHERNET_LOG_LEVEL);
 
 #include <kernel.h>
 #include <string.h>
@@ -30,7 +31,7 @@ static int eth_stats_get(u32_t mgmt_request, struct net_if *iface,
 		}
 
 		eth = net_if_get_device(iface)->driver_api;
-		if (eth->get_stats == NULL) {
+		if (eth == NULL || eth->get_stats == NULL) {
 			return -ENOENT;
 		}
 

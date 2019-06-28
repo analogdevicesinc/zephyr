@@ -3,9 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: NXP MCR20A 802.15.4 Wireless Transceiver
-id: nxp,mcr20a
 version: 0.1
 
 description: >
@@ -21,10 +20,9 @@ properties:
     irqb-gpios:
       type: compound
       category: required
-      generation: define, use-prop-name
+      generation: define
 
     reset-gpios:
       type: compound
       category: required
-      generation: define, use-prop-name
-...
+      generation: define

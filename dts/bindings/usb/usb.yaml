@@ -3,24 +3,31 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: USB Base Structure
-id: USB
 version: 0.1
 
 description: >
     This binding gives the base structures for all USB devices
 
+inherits:
+    !include base.yaml
+
 properties:
-    compatible:
+    maximum-speed:
       type: string
-      category: required
-      description: compatible strings
+      category: optional
+      description: Configures USB controllers to work up to a specific
+                   speed. Valid arguments are "super-speed", "high-speed",
+                   "full-speed" and "low-speed". If this is not passed
+                   via DT, USB controllers should use their maximum
+                   hardware capability.
       generation: define
+      enum:
+         - "low-speed"
+         - "full-speed"
+         - "high-speed"
+         - "super-speed"
 
     label:
-      type: string
       category: required
-      description: Human readable string describing the device (used by Zephyr for API name)
-      generation: define
-...

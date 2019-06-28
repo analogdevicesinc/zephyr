@@ -4,18 +4,19 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <led_strip.h>
+#include <drivers/led_strip.h>
 
 #include <string.h>
 
-#define SYS_LOG_LEVEL CONFIG_SYS_LOG_LED_STRIP_LEVEL
-#include <logging/sys_log.h>
+#define LOG_LEVEL CONFIG_LED_STRIP_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_REGISTER(ws2812b_sw);
 
 #include <zephyr.h>
-#include <board.h>
-#include <gpio.h>
+#include <soc.h>
+#include <drivers/gpio.h>
 #include <device.h>
-#include <clock_control.h>
+#include <drivers/clock_control.h>
 
 #define BLOCKING ((void *)1)
 
@@ -29,11 +30,11 @@ static int send_buf(u8_t *buf, size_t len)
 	/* Initilization of i is strictly not needed, but it avoids an
 	 * uninitialized warning with the inline assembly.
 	 */
-	u32_t i = 0;
+	u32_t i = 0U;
 
-	clock = device_get_binding(CONFIG_CLOCK_CONTROL_NRF5_M16SRC_DRV_NAME);
+	clock = device_get_binding(DT_INST_0_NORDIC_NRF_CLOCK_LABEL "_16M");
 	if (!clock) {
-		SYS_LOG_ERR("Unable to get HF clock");
+		LOG_ERR("Unable to get HF clock");
 		return -EIO;
 	}
 
@@ -119,7 +120,7 @@ static int ws2812b_sw_update_rgb(struct device *dev, struct led_rgb *pixels,
 static int ws2812b_sw_update_channels(struct device *dev, u8_t *channels,
 				      size_t num_channels)
 {
-	SYS_LOG_ERR("update_channels not implemented");
+	LOG_ERR("update_channels not implemented");
 	return -ENOSYS;
 }
 
@@ -129,7 +130,7 @@ static int ws2812b_sw_init(struct device *dev)
 
 	gpio = device_get_binding(CONFIG_WS2812B_SW_GPIO_NAME);
 	if (!gpio) {
-		SYS_LOG_ERR("Unable to find %s", CONFIG_WS2812B_SW_GPIO_NAME);
+		LOG_ERR("Unable to find %s", CONFIG_WS2812B_SW_GPIO_NAME);
 		return -ENODEV;
 	}
 

@@ -4,13 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define LOG_MODULE_NAME net_ieee802154_csma
-#define NET_LOG_LEVEL CONFIG_NET_L2_IEEE802154_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_REGISTER(net_ieee802154_csma, CONFIG_NET_L2_IEEE802154_LOG_LEVEL);
 
 #include <net/net_core.h>
 #include <net/net_if.h>
 
-#include <misc/util.h>
+#include <sys/util.h>
 
 #include <stdlib.h>
 #include <errno.h>
@@ -19,9 +19,9 @@
 #include "ieee802154_utils.h"
 #include "ieee802154_radio_utils.h"
 
-static inline int csma_ca_tx_fragment(struct net_if *iface,
-				      struct net_pkt *pkt,
-				      struct net_buf *frag)
+static inline int csma_ca_radio_send(struct net_if *iface,
+				     struct net_pkt *pkt,
+				     struct net_buf *frag)
 {
 	const u8_t max_bo = CONFIG_NET_L2_IEEE802154_RADIO_CSMA_CA_MAX_BO;
 	const u8_t max_be = CONFIG_NET_L2_IEEE802154_RADIO_CSMA_CA_MAX_BE;
@@ -29,7 +29,7 @@ static inline int csma_ca_tx_fragment(struct net_if *iface,
 	struct ieee802154_context *ctx = net_if_l2_data(iface);
 	bool ack_required = prepare_for_ack(ctx, pkt, frag);
 	u8_t be = CONFIG_NET_L2_IEEE802154_RADIO_CSMA_CA_MIN_BE;
-	u8_t nb = 0;
+	u8_t nb = 0U;
 	int ret = -EIO;
 
 	NET_DBG("frag %p", frag);
@@ -41,7 +41,7 @@ loop:
 		if (be) {
 			u8_t bo_n = sys_rand32_get() & ((1 << be) - 1);
 
-			k_busy_wait(bo_n * 20);
+			k_busy_wait(bo_n * 20U);
 		}
 
 		while (1) {
@@ -49,7 +49,7 @@ loop:
 				break;
 			}
 
-			be = min(be + 1, max_be);
+			be = MIN(be + 1, max_be);
 			nb++;
 
 			if (nb > max_bo) {
@@ -69,13 +69,6 @@ loop:
 	}
 
 	return ret;
-}
-
-static int csma_ca_radio_send(struct net_if *iface, struct net_pkt *pkt)
-{
-	NET_DBG("pkt %p (frags %p)", pkt, pkt->frags);
-
-	return tx_packet_fragments(iface, pkt, csma_ca_tx_fragment);
 }
 
 static enum net_verdict csma_ca_radio_handle_ack(struct net_if *iface,

@@ -16,10 +16,8 @@
  * rest should not be triggered until the kernel is ready to handle them.
  */
 
-#include <board.h>
 #include <toolchain.h>
 #include <linker/sections.h>
-#include <drivers/system_timer.h>
 #include "vector_table.h"
 
 _ASM_FILE_PROLOGUE
@@ -68,8 +66,9 @@ SECTION_SUBSEC_FUNC(exc_vector_table,_vector_table_section,_vector_table)
 #endif /* CONFIG_ARMV6_M_ARMV8_M_BASELINE */
     .word __reserved
     .word __pendsv
-#if defined(CONFIG_CORTEX_M_SYSTICK)
-    .word _timer_int_handler
+#if defined(CONFIG_SYS_CLOCK_EXISTS)
+    .word z_clock_isr
 #else
     .word __reserved
 #endif
+

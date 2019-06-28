@@ -7,8 +7,8 @@
 #include <zephyr.h>
 #include <stdio.h>
 #include <device.h>
-#include <sensor.h>
-#include <misc/printk.h>
+#include <drivers/sensor.h>
+#include <sys/printk.h>
 
 #define MAX_TEST_TIME	15000
 #define SLEEPTIME	300
@@ -417,7 +417,7 @@ void main(void)
 #endif
 
 	printk("IMU: Binding...\n");
-	bmi160 = device_get_binding(CONFIG_BMI160_NAME);
+	bmi160 = device_get_binding(DT_INST_0_BOSCH_BMI160_LABEL);
 	if (!bmi160) {
 		printk("Gyro: Device not found.\n");
 		return;

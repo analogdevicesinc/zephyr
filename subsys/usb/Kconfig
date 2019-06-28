@@ -14,24 +14,11 @@ menuconfig USB_DEVICE_STACK
 
 if USB_DEVICE_STACK
 
-config SYS_LOG_USB_DEVICE_LEVEL
-	int "Sets log level for the USB device stack"
-	default 0
-	depends on SYS_LOG
-	help
-	  This option sets log level for the USB device stack.
+module = USB_DEVICE
+module-str = usb device
+source "subsys/logging/Kconfig.template.log_config"
 
-	  Levels are:
-
-	  - 0 OFF, do not write
-
-	  - 1 ERROR, only write SYS_LOG_ERR
-
-	  - 2 WARNING, write SYS_LOG_WRN in addition to previous level
-
-	  - 3 INFO, write SYS_LOG_INF in addition to previous levels
-
-	  - 4 DEBUG, write SYS_LOG_DBG in addition to previous levels
+source "samples/subsys/usb/usb_pid.Kconfig"
 
 config USB_DEVICE_VID
 	hex "USB Vendor ID"
@@ -41,7 +28,7 @@ config USB_DEVICE_VID
 
 config USB_DEVICE_PID
 	hex "USB Product ID"
-	default 0x100
+	default 0x0100
 	help
 	  USB device product ID. MUST be configured by vendor.
 
@@ -59,6 +46,7 @@ config USB_DEVICE_PRODUCT
 
 config USB_DEVICE_SN
 	string "USB serial number"
+	default "ABCDEF012345" if USB_MASS_STORAGE
 	default "0.01"
 	help
 	  USB device SerialNumber string. MUST be configured by vendor.
@@ -69,17 +57,50 @@ config USB_COMPOSITE_DEVICE
 	help
 	  Enable composite USB device driver.
 
-config USB_COMPOSITE_BUFFER_SIZE
-	int "Set buffer size for Class Handler"
-	depends on USB_COMPOSITE_DEVICE
+config USB_REQUEST_BUFFER_SIZE
+	int "Set buffer size for Standard, Class and Vendor request handlers"
+	range 256 65536 if USB_DEVICE_NETWORK_RNDIS
+	range 8 65536
 	default 256 if USB_DEVICE_NETWORK_RNDIS
 	default 64
+
+config USB_DEVICE_SOF
+	bool "Enable Start of Frame processing in events"
+
+config USB_DEVICE_REMOTE_WAKEUP
+	bool "Enable support for remote wakeup"
+	help
+	  This option requires USBD peripheral driver to also support remote wakeup.
 
 config USB_DEVICE_BOS
 	bool "Enable USB Binary Device Object Store (BOS)"
 
 config USB_DEVICE_OS_DESC
 	bool "Enable MS OS Descriptors support"
+
+menuconfig USB_VBUS_GPIO
+	bool "Control VBUS via GPIO pin"
+	depends on GPIO
+	help
+	  The USB VBUS signal is connected via a GPIO pin.
+
+if USB_VBUS_GPIO
+
+config USB_VBUS_GPIO_DEV_NAME
+	string "GPIO Device"
+	default "GPIO_0"
+	help
+	  The device name of the GPIO device to which the USB_VBUS_EN signal is
+	  connected.
+
+config USB_VBUS_GPIO_PIN_NUM
+	int "GPIO pin number"
+	default 0
+	help
+	  The number of the GPIO pin to which the USB_VBUS_EN signal is
+	  connected.
+
+endif # USB_VBUS_GPIO
 
 source "subsys/usb/class/Kconfig"
 

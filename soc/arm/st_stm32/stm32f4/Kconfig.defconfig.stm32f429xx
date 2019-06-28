@@ -5,7 +5,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-if SOC_STM32F429XI
+if SOC_STM32F429XX
 
 config SOC
 	string
@@ -37,8 +37,8 @@ endif # GPIO_STM32
 if ENTROPY_GENERATOR
 
 config ENTROPY_STM32_RNG
-	def_bool y
+	default y
 
 endif # ENTROPY_GENERATOR
 
-endif # SOC_STM32F429XI
+endif # SOC_STM32F429XX

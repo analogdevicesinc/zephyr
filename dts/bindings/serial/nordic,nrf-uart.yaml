@@ -1,6 +1,5 @@
----
+
 title: Nordic UART
-id: nordic,nrf-uart
 version: 0.1
 
 description: >
@@ -14,16 +13,10 @@ properties:
       constraint: "nordic,nrf-uart"
 
     reg:
-      type: array
-      description: mmio register space
-      generation: define
       category: required
 
     interrupts:
-      type: array
       category: required
-      description: required interrupts
-      generation: define
 
     tx-pin:
       type: int
@@ -48,4 +41,3 @@ properties:
       description: CTS pin
       generation: define
       category: optional
-...

@@ -50,6 +50,7 @@ config CPU_CORTEX_M23
 	select CPU_CORTEX_M
 	# Omit prompt to signify "hidden" option
 	select ARMV8_M_BASELINE
+	select ARMV8_M_SE if CPU_HAS_TEE
 	help
 	  This option signifies the use of a Cortex-M23 CPU
 
@@ -58,6 +59,7 @@ config CPU_CORTEX_M33
 	select CPU_CORTEX_M
 	# Omit prompt to signify "hidden" option
 	select ARMV8_M_MAINLINE
+	select ARMV8_M_SE if CPU_HAS_TEE
 	select ARMV7_M_ARMV8_M_FP if CPU_HAS_FPU
 	help
 	  This option signifies the use of a Cortex-M33 CPU
@@ -100,6 +102,12 @@ config ISA_THUMB2
 	  to prolong battery-life or to enrich the product feature set. Thumb-2
 	  technology is featured in the  processor, and in all ARMv7
 	  architecture-based processors.
+
+config CPU_CORTEX_M_HAS_SYSTICK
+	bool
+	# Omit prompt to signify "hidden" option
+	help
+	  This option is enabled when the CPU implements the SysTick timer.
 
 config CPU_CORTEX_M_HAS_BASEPRI
 	bool
@@ -205,6 +213,7 @@ config ARMV7_M_ARMV8_M_MAINLINE
 	select CPU_CORTEX_M_HAS_BASEPRI
 	select CPU_CORTEX_M_HAS_VTOR
 	select CPU_CORTEX_M_HAS_PROGRAMMABLE_FAULT_PRIOS
+	select CPU_CORTEX_M_HAS_SYSTICK
 	help
 	  This option signifies the use of an ARMv7-M processor
 	  implementation, or the use of a backwards-compatible
@@ -261,7 +270,6 @@ config ARMV8_M_DSP
 	  implementation supporting the DSP Extension.
 
 menu "ARM Cortex-M options"
-	depends on CPU_CORTEX_M
 
 config LDREX_STREX_AVAILABLE
 	bool
@@ -280,7 +288,10 @@ config STACK_ALIGN_DOUBLE_WORD
 	default y
 	help
 	  This is needed to conform to AAPCS, the procedure call standard for
-	  the ARM. It wastes stack space.
+	  the ARM. It wastes stack space. The option also enforces alignment
+	  of stack upon exception entry on Cortex-M3 and Cortex-M4 (ARMv7-M).
+	  Note that for ARMv6-M, ARMv8-M, and Cortex-M7 MCUs stack alignment
+	  on exception entry is enabled by default and it is not configurable.
 
 config RUNTIME_NMI
 	bool "Attach an NMI handler at runtime"
@@ -308,6 +319,7 @@ config FAULT_DUMP
 
 config XIP
 	default y
+
 endmenu
 
 menu "ARM Cortex-M0/M0+/M3/M4/M7/M23/M33 options"
@@ -347,7 +359,7 @@ config SW_VECTOR_RELAY
 config PLATFORM_SPECIFIC_INIT
 	bool "Enable platform (SOC) specific startup hook"
 	help
-	  The platform specific initialization code (_PlatformInit) is executed
+	  The platform specific initialization code (z_platform_init) is executed
 	  at the beginning of the startup code (__start).
 
 endmenu

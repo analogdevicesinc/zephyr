@@ -1,6 +1,5 @@
----
+
 title: Nordic NVMC
-id: nordic,nrf52-flash-controller
 version: 0.1
 
 description: >
@@ -11,6 +10,4 @@ inherits:
 
 properties:
     compatible:
-      constraint: "nrf,nrf52-flash-controller"
-
-...
+      constraint: "nordic,nrf52-flash-controller"

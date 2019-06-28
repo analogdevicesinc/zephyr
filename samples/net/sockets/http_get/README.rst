@@ -13,12 +13,12 @@ portable to both POSIX and Zephyr. As such, it is kept minimal and
 supports only IPv4.
 
 The source code for this sample application can be found at:
-:file:`samples/net/sockets/http_get`.
+:zephyr_file:`samples/net/sockets/http_get`.
 
 Requirements
 ************
 
-- :ref:`networking_with_qemu`
+- :ref:`networking_with_host`
 - or, a board with hardware networking
 - NAT/routing should be set up to allow connections to the Internet
 - DNS server should be available on the host to resolve domain names
@@ -59,7 +59,7 @@ Enable TLS support in the sample by building the project with the
    :compact:
 
 An alternative way is to specify ``-DOVERLAY_CONFIG=overlay-tls.conf`` when
-running cmake.
+running ``west build`` or ``cmake``.
 
 The certificate used by the sample can be found in the sample's ``src``
 directory. The certificate was selected to enable access to the default website

@@ -18,14 +18,12 @@
 extern "C" {
 #endif
 
-#if defined(CONFIG_NET_GPTP)
-
 #include <net/net_pkt.h>
 #include <net/ethernet.h>
 #include <net/gptp.h>
 
 /* Helpers to access gPTP messages. */
-#define GPTP_HDR(pkt) ((struct gptp_hdr *)net_pkt_ip_data(pkt))
+#define GPTP_HDR(pkt) gptp_get_hdr(pkt)
 #define GPTP_ANNOUNCE(pkt) ((struct gptp_announce *)gptp_data(pkt))
 #define GPTP_SIGNALING(pkt) ((struct gptp_signaling *)gptp_data(pkt))
 #define GPTP_SYNC(pkt) ((struct gptp_sync *)gptp_data(pkt))
@@ -48,7 +46,7 @@ extern "C" {
 #define GPTP_VALID_LEN(pkt, len) \
 	(len > (NET_ETH_MINIMAL_FRAME_SIZE - GPTP_L2_HDR_LEN(pkt)))
 #define GPTP_L2_HDR_LEN(pkt) \
-	((int)GPTP_HDR(pkt) - (int)NET_ETH_HDR(pkt))
+	((long)GPTP_HDR(pkt) - (long)NET_ETH_HDR(pkt))
 
 #define GPTP_SYNC_LEN \
 	(sizeof(struct gptp_hdr) + sizeof(struct gptp_sync))
@@ -320,7 +318,7 @@ struct gptp_signaling {
  */
 static inline u8_t *gptp_data(struct net_pkt *pkt)
 {
-	return &pkt->frags->data[sizeof(struct gptp_hdr)];
+	return (u8_t *)GPTP_HDR(pkt) + sizeof(struct gptp_hdr);
 }
 
 /* Functions to prepare messages. */
@@ -491,8 +489,6 @@ void gptp_send_pdelay_resp(int port, struct net_pkt *pkt,
  */
 void gptp_send_pdelay_follow_up(int port, struct net_pkt *pkt,
 				struct net_ptp_time *tresp);
-
-#endif /* CONFIG_NET_GPTP */
 
 #ifdef __cplusplus
 }

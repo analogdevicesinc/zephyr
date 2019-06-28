@@ -8,128 +8,206 @@ from extract.globals import *
 from extract.directive import DTDirective
 
 from extract.default import default
-from extract.reg import reg
 
 ##
 # @brief Manage flash directives.
 #
 class DTFlash(DTDirective):
-
     def __init__(self):
-        # Node of the flash
-        self._flash_node = None
+        self._area_id = 0
 
-    def _extract_partition(self, node_address, yaml, prop, def_label):
+    def extract_partition(self, node_path):
+        self._add_partition_index_entries(node_path)
+        self._add_partition_label_entries(node_path)
+
+    def _add_partition_index_entries(self, node_path):
+        # Adds DT_FLASH_AREA_<index>_... entries, to the '# DT_FLASH_AREA'
+        # section
+
         prop_def = {}
         prop_alias = {}
-        node = reduced[node_address]
+        node = reduced[node_path]
 
-        partition_name = node['props']['label']
-        partition_sectors = node['props']['reg']
+        # Index-based partition ID
+        area_id = self._area_id
+        self._area_id += 1
 
-        label_prefix = ["FLASH_AREA", partition_name]
-        label = self.get_label_string(label_prefix + ["LABEL",])
-        prop_def[label] = '"{}"'.format(partition_name)
+        # Extract a per partition dev name. Something like
+        #
+        #   #define DT_FLASH_AREA_1_DEV "FLASH_CTRL"
+        prop_def["DT_FLASH_AREA_{}_DEV".format(area_id)] = \
+            '"' + reduced[controller_path(node_path)]['props']['label'] + '"'
 
-        index = 0
-        while index < len(partition_sectors):
-            sector_index = int(index/2)
-            sector_start_offset = partition_sectors[index]
-            sector_size = partition_sectors[index + 1]
-            label = self.get_label_string(
-                label_prefix + ["OFFSET", str(sector_index)])
-            prop_def[label] = "{}".format(sector_start_offset)
-            label = self.get_label_string(
-                label_prefix + ["SIZE", str(sector_index)])
-            prop_def[label] = "{}".format(sector_size)
-            index += 2
-        # alias sector 0
-        label = self.get_label_string(label_prefix + ["OFFSET",])
-        prop_alias[label] = self.get_label_string(
-            label_prefix + ["OFFSET", '0'])
-        label = self.get_label_string(label_prefix + ["SIZE",])
-        prop_alias[label] = self.get_label_string(
-            label_prefix + ["SIZE", '0'])
+        partition_label = str_to_label(node['props']['label'])
+        prop_def["DT_FLASH_AREA_{}_LABEL".format(area_id)] = partition_label
+        prop_def["DT_FLASH_AREA_{}_ID".format(partition_label)] = area_id
 
-        insert_defs(node_address, prop_def, prop_alias)
+        reg = node['props']['reg']
+        for i in range(len(reg)//2):
+            prop_def["DT_FLASH_AREA_{}_OFFSET_{}".format(area_id, i)] = reg[2*i]
+            prop_def["DT_FLASH_AREA_{}_SIZE_{}".format(area_id, i)] = reg[2*i + 1]
 
-    def _extract_flash(self, node_address, yaml, prop, def_label):
-        load_defs = {}
+        # Number of flash areas defined
+        prop_def["DT_FLASH_AREA_NUM"] = self._area_id
 
-        if node_address == 'dummy-flash':
-            # We will add addr/size of 0 for systems with no flash controller
-            # This is what they already do in the Kconfig options anyway
-            load_defs = {
-                'CONFIG_FLASH_BASE_ADDRESS': 0,
-                'CONFIG_FLASH_SIZE': 0
-            }
-            insert_defs(node_address, load_defs, {})
-            self._flash_base_address = 0
+        # Alias sector 0
+        prop_alias[
+            "DT_FLASH_AREA_{}_OFFSET".format(area_id)
+        ] = "DT_FLASH_AREA_{}_OFFSET_0".format(area_id)
+        prop_alias[
+            "DT_FLASH_AREA_{}_SIZE".format(area_id)
+        ] = "DT_FLASH_AREA_{}_SIZE_0".format(area_id)
+
+        insert_defs("DT_FLASH_AREA", prop_def, prop_alias)
+
+    def _add_partition_label_entries(self, node_path):
+        # Adds DT_FLASH_AREA_<label>_... entries, to the '# partition@...'
+        # section
+
+        prop_def = {}
+        prop_alias = {}
+        node = reduced[node_path]
+
+        partition_label = str_to_label(node['props']['label'])
+
+        label = "DT_FLASH_AREA_{}_LABEL".format(partition_label)
+        prop_def[label] = '"' + node['props']['label'] + '"'
+        add_legacy_alias(prop_alias, label)
+
+        label = "DT_FLASH_AREA_{}_READ_ONLY".format(partition_label)
+        prop_def[label] = 1 if 'read-only' in node['props'] else 0
+        add_legacy_alias(prop_alias, label)
+
+        reg = node['props']['reg']
+        for i in range(len(reg)//2):
+            label = "DT_FLASH_AREA_{}_OFFSET_{}".format(partition_label, i)
+            prop_def[label] = reg[2*i]
+            add_legacy_alias(prop_alias, label)
+
+            label = "DT_FLASH_AREA_{}_SIZE_{}".format(partition_label, i)
+            prop_def[label] = reg[2*i + 1]
+            add_legacy_alias(prop_alias, label)
+
+        # Alias sector 0
+
+        label = "DT_FLASH_AREA_{}_OFFSET".format(partition_label)
+        prop_alias[label] = "DT_FLASH_AREA_{}_OFFSET_0".format(partition_label)
+        add_legacy_alias(prop_alias, label)
+
+        label = "DT_FLASH_AREA_{}_SIZE".format(partition_label)
+        prop_alias[label] = "DT_FLASH_AREA_{}_SIZE_0".format(partition_label)
+        add_legacy_alias(prop_alias, label)
+
+        insert_defs(node_path, prop_def, prop_alias)
+
+    def extract_flash(self):
+        node_path = chosen.get('zephyr,flash')
+        if not node_path:
+            # Add addr/size 0 for systems with no flash controller. This is
+            # what they already do in the Kconfig options anyway.
+            insert_defs('dummy-flash',
+                        {'DT_FLASH_BASE_ADDRESS': 0, 'DT_FLASH_SIZE': 0},
+                        {})
             return
 
-        self._flash_node = reduced[node_address]
+        flash_node = reduced[node_path]
+        orig_node_addr = node_path
 
-        flash_props = ["label", "write-block-size", "erase-block-size"]
-        for prop in flash_props:
-            if prop in self._flash_node['props']:
-                default.extract(node_address, None, prop, def_label)
-        insert_defs(node_address, load_defs, {})
+        nr_address_cells, nr_size_cells = get_addr_size_cells(node_path)
+        # if the nr_size_cells is 0, assume a SPI flash, need to look at parent
+        # for addr/size info, and the second reg property (assume first is mmio
+        # register for the controller itself)
+        is_spi_flash = nr_size_cells == 0
+        if is_spi_flash:
+            node_path = get_parent_path(node_path)
+            nr_address_cells, nr_size_cells = get_addr_size_cells(node_path)
 
-        #for address in reduced:
-        #    if address.startswith(node_address) and 'partition@' in address:
-        #        self._extract_partition(address, yaml, 'partition', None, def_label)
+        reg = reduced[node_path]['props']['reg']
+        if type(reg) is not list: reg = [reg]
+        props = list(reg)
 
-    def _extract_code_partition(self, node_address, yaml, prop, def_label):
-        load_defs = {}
+        num_reg_elem = len(props)/(nr_address_cells + nr_size_cells)
 
-        if node_address == 'dummy-flash':
-            node = None
+        # if we found a spi flash, but don't have mmio direct access support
+        # which we determin by the spi controller node only have on reg element
+        # (ie for the controller itself and no region for the MMIO flash access)
+        if num_reg_elem == 1 and is_spi_flash:
+            node_path = orig_node_addr
         else:
-            node = reduced[node_address]
-            if self._flash_node is None:
-                # No flash node scanned before-
-                raise Exception(
-                    "Code partition '{}' {} without flash definition."
-                        .format(prop, node_address))
+            # We assume the last reg property is the one we want
+            while props:
+                addr = 0
+                size = 0
 
-        if node and node is not self._flash_node:
+                for x in range(nr_address_cells):
+                    addr += props.pop(0) << (32 * (nr_address_cells - x - 1))
+                for x in range(nr_size_cells):
+                    size += props.pop(0) << (32 * (nr_size_cells - x - 1))
+
+            addr += translate_addr(addr, node_path, nr_address_cells,
+                                   nr_size_cells)
+
+            insert_defs(node_path,
+                        {'DT_FLASH_BASE_ADDRESS': hex(addr),
+                         'DT_FLASH_SIZE': size//1024},
+                        {})
+
+        for prop in 'write-block-size', 'erase-block-size':
+            if prop in flash_node['props']:
+                default.extract(node_path, prop, None, 'DT_FLASH')
+
+                # Add an non-DT prefix alias for compatiability
+                prop_alias = {}
+                label_post = '_' + str_to_label(prop)
+                prop_alias['FLASH' + label_post] = 'DT_FLASH' + label_post
+                insert_defs(node_path, {}, prop_alias)
+
+
+    def extract_code_partition(self):
+        node_path = chosen.get('zephyr,code-partition')
+        if not node_path:
+            # Fall back on zephyr,flash if zephyr,code-partition isn't set.
+            # node_path will be 'dummy-flash' if neither is set.
+            node_path = chosen.get('zephyr,flash', 'dummy-flash')
+
+        node = reduced.get(node_path)
+
+        if node and node is not reduced.get(chosen.get('zephyr,flash')):
             # only compute the load offset if the code partition
             # is not the same as the flash base address
             load_offset = node['props']['reg'][0]
-            load_defs['CONFIG_FLASH_LOAD_OFFSET'] = load_offset
             load_size = node['props']['reg'][1]
-            load_defs['CONFIG_FLASH_LOAD_SIZE'] = load_size
         else:
-            load_defs['CONFIG_FLASH_LOAD_OFFSET'] = 0
-            load_defs['CONFIG_FLASH_LOAD_SIZE'] = 0
+            load_offset = 0
+            load_size = 0
 
-        insert_defs(node_address, load_defs, {})
+        insert_defs(node_path,
+                    {'DT_CODE_PARTITION_OFFSET': load_offset,
+                     'DT_CODE_PARTITION_SIZE': load_size},
+                    {})
 
-    ##
-    # @brief Extract flash
+
+def controller_path(partition_path):
+    # Returns the DT path to the flash controller for the
+    # partition at 'partition_path'.
     #
-    # @param node_address Address of node owning the
-    #                     flash definition.
-    # @param yaml YAML definition for the owning node.
-    # @param prop compatible property name
-    # @param def_label Define label string of node owning the
-    #                  compatible definition.
+    # For now assume node_path is something like
+    # /flash-controller@4001E000/flash@0/partitions/partition@fc000. First, we
+    # go up two levels to get the flash and check its compat.
     #
-    def extract(self, node_address, yaml, prop, def_label):
+    # The flash controller might be the flash itself (for cases like NOR
+    # flashes). For the case of 'soc-nv-flash', we assume its the parent of the
+    # flash node.
+    controller_path = '/' + '/'.join(partition_path.split('/')[1:-2])
+    if get_compat(controller_path) == "soc-nv-flash":
+        return '/' + '/'.join(partition_path.split('/')[1:-3])
+    return controller_path
 
-        if prop == 'zephyr,flash':
-            # indicator for flash
-            self._extract_flash(node_address, yaml, prop, def_label)
-        elif prop == 'zephyr,code-partition':
-            # indicator for code_partition
-            self._extract_code_partition(node_address, yaml, prop, def_label)
-        elif prop == 'reg':
-            # indicator for partition
-            self._extract_partition(node_address, yaml, prop, def_label)
-        else:
-            raise Exception(
-                "DTFlash.extract called with unexpected directive ({})."
-                    .format(prop))
+
+def add_legacy_alias(prop_alias, label):
+    prop_alias[label.lstrip('DT_')] = label
+
+
 ##
 # @brief Management information for flash.
 flash = DTFlash()

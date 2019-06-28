@@ -13,6 +13,7 @@
 
 	chosen {
 		zephyr,console = &usart6;
+		zephyr,shell-uart = &usart6;
 		zephyr,sram = &sram0;
 		zephyr,flash = &flash0;
 	};
@@ -49,31 +50,39 @@
 	};
 };
 
+arduino_i2c: &i2c2 {};
+arduino_spi: &spi1 {};
+arduino_serial: &usart2 {};
+
 &usart2 {
 	current-speed = <115200>;
 	pinctrl-names = "default";
-	status = "ok";
+	status = "okay";
 };
 
 &usart6 {
 	current-speed = <115200>;
 	pinctrl-names = "default";
-	status = "ok";
+	status = "okay";
 };
 
 
 &i2c1 {
-	status = "ok";
+	status = "okay";
 };
 
 &i2c2 {
-	status = "ok";
+	status = "okay";
 };
 
 &i2c3 {
-	status = "ok";
+	status = "okay";
+};
+
+&spi1 {
+	status = "okay";
 };
 
 &usbotg_fs {
-	status = "ok";
+	status = "okay";
 };

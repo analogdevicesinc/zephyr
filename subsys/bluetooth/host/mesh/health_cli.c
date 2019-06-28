@@ -11,14 +11,15 @@
 #include <errno.h>
 #include <stdbool.h>
 #include <zephyr/types.h>
-#include <misc/util.h>
-#include <misc/byteorder.h>
+#include <sys/util.h>
+#include <sys/byteorder.h>
 
 #include <bluetooth/bluetooth.h>
 #include <bluetooth/conn.h>
 #include <bluetooth/mesh.h>
 
 #define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_MESH_DEBUG_MODEL)
+#define LOG_MODULE_NAME bt_mesh_health_cli
 #include "common/log.h"
 
 #include "net.h"
@@ -190,7 +191,7 @@ static int cli_prepare(void *param, u32_t op)
 
 static void cli_reset(void)
 {
-	health_cli->op_pending = 0;
+	health_cli->op_pending = 0U;
 	health_cli->op_param = NULL;
 }
 

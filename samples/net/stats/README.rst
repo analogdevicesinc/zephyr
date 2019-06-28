@@ -10,18 +10,18 @@ This sample shows how to query (and display) network statistics from a user
 application.
 
 The source code for this sample application can be found at:
-:file:`samples/net/stats`.
+:zephyr_file:`samples/net/stats`.
 
 Requirements
 ************
 
-- :ref:`networking_with_qemu`
+- :ref:`networking_with_host`
 
 Building and Running
 ********************
 
-A good way to run this sample application is with QEMU as described in
-:ref:`networking_with_qemu`.
+A good way to run this sample application is with QEMU or native_posix board
+as described in :ref:`networking_with_host`.
 
 Follow these steps to build the network statistics sample application:
 

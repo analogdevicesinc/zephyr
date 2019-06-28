@@ -1,20 +1,17 @@
----
+
 title: CAN Base Structure
-id: can
 version: 0.1
 
 description: >
     This binding gives the base structures for all CAN devices
 
+inherits:
+    !include base.yaml
+
 child:
     bus: can
 
 properties:
-    compatible:
-      type: string
-      category: required
-      description: compatible strings
-      generation: define
     "#address-cells":
       type: int
       category: required
@@ -24,10 +21,7 @@ properties:
       category: required
       description: should be 0.
     label:
-      type: string
       category: required
-      description: Human readable string describing the device (used by Zephyr for API name)
-      generation: define
     bus-speed:
       type: int
       category: required
@@ -38,19 +32,18 @@ properties:
       category: required
       description: Resynchronization jump width (ISO 11898-1)
       generation: define
-    prop_seg_phase_seg1:
+    prop-seg:
       type: int
       category: required
-      description: Time quantums of phase buffer 1 segment + propagation segment (ISO 11898-1)
+      description: Time quantums of propagation segment (ISO 11898-1)
       generation: define
-    phase_seg2:
+    phase-seg1:
+      type: int
+      category: required
+      description: Time quantums of phase buffer 1 segment (ISO 11898-1)
+      generation: define
+    phase-seg2:
       type: int
       category: required
       description: Time quantums of phase buffer 2 segment (ISO 11898-1)
       generation: define
-    pinctrl-\d+:
-      type: array
-      category: optional
-      description: pinmux information for RX, TX
-      generation: structure
-...

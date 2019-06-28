@@ -1,3 +1,6 @@
+/* Copyright (c) 2018 SiFive, Inc. */
+/* SPDX-License-Identifier: Apache-2.0 */
+
 /dts-v1/;
 
 #include <riscv32-fe310.dtsi>
@@ -13,31 +16,34 @@
 
 	chosen {
 		zephyr,console = &uart0;
+		zephyr,shell-uart = &uart0;
+		zephyr,sram = &dtim;
+		zephyr,flash = &flash0;
 	};
 
 	leds {
-		compatible = "gpio-leds";
+		compatible = "pwm-leds";
 		led0: led_0 {
-			gpios = <&gpio0 19 0>;
+			pwms = <&pwm1 1 0>;
 			label = "Green LED";
 		};
 		led1: led_1 {
-			gpios = <&gpio0 21 0>;
+			pwms = <&pwm1 2 0>;
 			label = "Blue LED";
 		};
 		led2: led_2 {
-			gpios = <&gpio0 22 0>;
+			pwms = <&pwm1 3 0>;
 			label = "Red LED";
 		};
 	};
 };
 
 &gpio0 {
-	status = "ok";
+	status = "okay";
 };
 
 &uart0 {
-	status = "ok";
+	status = "okay";
 	current-speed = <115200>;
 	clock-frequency = <16000000>;
 };
@@ -47,6 +53,39 @@
 };
 
 &spi0 {
-	status = "ok";
+	status = "okay";
+	clock-frequency = <16000000>;
+
+	reg = <0x10014000 0x1000 0x20400000 0xc00000>;
+	flash0: flash@0 {
+		compatible = "issi,is25lp128", "jedec,spi-nor";
+		jedec-id = <0x96 0x60 0x18>;
+		reg = <0>;
+	};
+};
+
+&spi1 {
+	status = "okay";
+	clock-frequency = <16000000>;
+};
+
+&spi2 {
+	status = "okay";
+	clock-frequency = <16000000>;
+};
+
+&pwm0 {
+	status = "okay";
+	clock-frequency = <16000000>;
+};
+
+&pwm1 {
+	status = "okay";
+	clock-frequency = <16000000>;
+};
+
+&pwm2 {
+	status = "okay";
+	clock-frequency = <16000000>;
 };
 

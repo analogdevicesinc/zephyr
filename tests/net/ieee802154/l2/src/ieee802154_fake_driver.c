@@ -4,11 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <logging/log.h>
+LOG_MODULE_REGISTER(net_ieee802154_fake_driver, LOG_LEVEL_DBG);
+
 #include <zephyr.h>
 
 #include <net/net_core.h>
-#define NET_LOG_ENABLED 1
-#define NET_SYS_LOG_LEVEL 4
 #include "net_private.h"
 
 #include <net/net_pkt.h>
@@ -43,22 +44,19 @@ static int fake_set_txpower(struct device *dev, s16_t dbm)
 	return 0;
 }
 
-static inline void insert_frag_dummy_way(struct net_pkt *pkt)
+static inline void insert_frag(struct net_pkt *pkt, struct net_buf *frag)
 {
-	if (current_pkt->frags) {
-		struct net_buf *frag, *prev_frag = NULL;
+	struct net_buf *new_frag;
 
-		frag = current_pkt->frags;
-		while (frag) {
-			prev_frag = frag;
-
-			frag = frag->frags;
-		}
-
-		prev_frag->frags = net_buf_ref(pkt->frags);
-	} else {
-		current_pkt->frags = net_buf_ref(pkt->frags);
+	new_frag = net_pkt_get_frag(pkt, K_SECONDS(1));
+	if (!new_frag) {
+		return;
 	}
+
+	memcpy(new_frag->data, frag->data, frag->len);
+	net_buf_add(new_frag, frag->len);
+
+	net_pkt_frag_add(current_pkt, new_frag);
 }
 
 static int fake_tx(struct device *dev,
@@ -72,9 +70,7 @@ static int fake_tx(struct device *dev,
 		return 0;
 	}
 
-	net_pkt_set_ll_reserve(current_pkt, net_pkt_ll_reserve(pkt));
-
-	insert_frag_dummy_way(pkt);
+	insert_frag(pkt, frag);
 
 	k_sem_give(&driver_lock);
 
@@ -104,8 +100,8 @@ static void fake_iface_init(struct net_if *iface)
 	net_if_set_link_addr(iface, mac, 8, NET_LINK_IEEE802154);
 
 	ctx->pan_id = 0xabcd;
-	ctx->channel = 26;
-	ctx->sequence = 62;
+	ctx->channel = 26U;
+	ctx->sequence = 62U;
 
 	NET_INFO("FAKE ieee802154 iface initialized\n");
 }
@@ -119,7 +115,6 @@ static int fake_init(struct device *dev)
 
 static struct ieee802154_radio_api fake_radio_api = {
 	.iface_api.init	= fake_iface_init,
-	.iface_api.send	= ieee802154_radio_send,
 
 	.get_capabilities	= fake_get_capabilities,
 	.cca			= fake_cca,

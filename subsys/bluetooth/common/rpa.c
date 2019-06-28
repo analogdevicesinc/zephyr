@@ -14,10 +14,10 @@
 #include <stddef.h>
 #include <errno.h>
 #include <string.h>
-#include <atomic.h>
-#include <misc/util.h>
-#include <misc/byteorder.h>
-#include <misc/stack.h>
+#include <sys/atomic.h>
+#include <sys/util.h>
+#include <sys/byteorder.h>
+#include <debug/stack.h>
 
 #include <tinycrypt/constants.h>
 #include <tinycrypt/aes.h>
@@ -25,6 +25,7 @@
 #include <tinycrypt/cmac_mode.h>
 
 #define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_DEBUG_RPA)
+#define LOG_MODULE_NAME bt_rpa
 #include "common/log.h"
 
 static int ah(const u8_t irk[16], const u8_t r[3], u8_t out[3])

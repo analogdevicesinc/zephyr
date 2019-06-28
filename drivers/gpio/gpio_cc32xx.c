@@ -6,10 +6,10 @@
 #include <errno.h>
 
 #include <device.h>
-#include <gpio.h>
+#include <drivers/gpio.h>
 #include <init.h>
 #include <kernel.h>
-#include <sys_io.h>
+#include <sys/sys_io.h>
 
 /* Driverlib includes */
 #include <inc/hw_types.h>
@@ -24,12 +24,6 @@
 #include <driverlib/interrupt.h>
 
 #include "gpio_utils.h"
-
-/* Note: Zephyr uses exception numbers, vs the IRQ #s used by the CC32XX SDK */
-#define EXCEPTION_GPIOA0  0  /* (INT_GPIOA0 - 16) = (16-16) */
-#define EXCEPTION_GPIOA1  1  /* (INT_GPIOA1 - 16) = (17-16) */
-#define EXCEPTION_GPIOA2  2  /* (INT_GPIOA2 - 16) = (18-16) */
-#define EXCEPTION_GPIOA3  3  /* (INT_GPIOA3 - 16) = (19-16) */
 
 struct gpio_cc32xx_config {
 	/* base address of GPIO port */
@@ -135,9 +129,7 @@ static int gpio_cc32xx_manage_callback(struct device *dev,
 {
 	struct gpio_cc32xx_data *data = DEV_DATA(dev);
 
-	_gpio_manage_callback(&data->callbacks, callback, set);
-
-	return 0;
+	return gpio_manage_callback(&data->callbacks, callback, set);
 }
 
 
@@ -164,7 +156,7 @@ static int gpio_cc32xx_disable_callback(struct device *dev,
 	if (access_op == GPIO_ACCESS_BY_PIN) {
 		data->pin_callback_enables &= ~(1 << pin);
 	} else {
-		data->pin_callback_enables = 0;
+		data->pin_callback_enables = 0U;
 	}
 
 	return 0;
@@ -187,7 +179,7 @@ static void gpio_cc32xx_port_isr(void *arg)
 	MAP_GPIOIntClear(config->port_base, int_status);
 
 	/* Call the registered callbacks */
-	_gpio_fire_callbacks(&data->callbacks, (struct device *)dev,
+	gpio_fire_callbacks(&data->callbacks, (struct device *)dev,
 			     enabled_int);
 
 	/* Re-enable the interrupts */
@@ -206,8 +198,8 @@ static const struct gpio_driver_api api_funcs = {
 
 #ifdef CONFIG_GPIO_CC32XX_A0
 static const struct gpio_cc32xx_config gpio_cc32xx_a0_config = {
-	.port_base = GPIOA0_BASE,
-	.irq_num = INT_GPIOA0,
+	.port_base = DT_GPIO_CC32XX_A0_BASE_ADDRESS,
+	.irq_num = DT_GPIO_CC32XX_A0_IRQ+16,
 };
 
 static struct device DEVICE_NAME_GET(gpio_cc32xx_a0);
@@ -217,16 +209,16 @@ static int gpio_cc32xx_a0_init(struct device *dev)
 {
 	ARG_UNUSED(dev);
 
-	IRQ_CONNECT(EXCEPTION_GPIOA0, CONFIG_GPIO_CC32XX_A0_IRQ_PRI,
+	IRQ_CONNECT(DT_GPIO_CC32XX_A0_IRQ, DT_GPIO_CC32XX_A0_IRQ_PRI,
 		    gpio_cc32xx_port_isr, DEVICE_GET(gpio_cc32xx_a0), 0);
 
-	MAP_IntPendClear(INT_GPIOA0);
-	irq_enable(EXCEPTION_GPIOA0);
+	MAP_IntPendClear(DT_GPIO_CC32XX_A0_IRQ+16);
+	irq_enable(DT_GPIO_CC32XX_A0_IRQ);
 
 	return 0;
 }
 
-DEVICE_AND_API_INIT(gpio_cc32xx_a0, CONFIG_GPIO_CC32XX_A0_NAME,
+DEVICE_AND_API_INIT(gpio_cc32xx_a0, DT_GPIO_CC32XX_A0_NAME,
 		    &gpio_cc32xx_a0_init, &gpio_cc32xx_a0_data,
 		    &gpio_cc32xx_a0_config,
 		    POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
@@ -236,8 +228,8 @@ DEVICE_AND_API_INIT(gpio_cc32xx_a0, CONFIG_GPIO_CC32XX_A0_NAME,
 
 #ifdef CONFIG_GPIO_CC32XX_A1
 static const struct gpio_cc32xx_config gpio_cc32xx_a1_config = {
-	.port_base = GPIOA1_BASE,
-	.irq_num = INT_GPIOA1,
+	.port_base = DT_GPIO_CC32XX_A1_BASE_ADDRESS,
+	.irq_num = DT_GPIO_CC32XX_A1_IRQ+16,
 };
 
 static struct device DEVICE_NAME_GET(gpio_cc32xx_a1);
@@ -247,16 +239,16 @@ static int gpio_cc32xx_a1_init(struct device *dev)
 {
 	ARG_UNUSED(dev);
 
-	IRQ_CONNECT(EXCEPTION_GPIOA1, CONFIG_GPIO_CC32XX_A1_IRQ_PRI,
+	IRQ_CONNECT(DT_GPIO_CC32XX_A1_IRQ, DT_GPIO_CC32XX_A1_IRQ_PRI,
 		    gpio_cc32xx_port_isr, DEVICE_GET(gpio_cc32xx_a1), 0);
 
-	MAP_IntPendClear(INT_GPIOA1);
-	irq_enable(EXCEPTION_GPIOA1);
+	MAP_IntPendClear(DT_GPIO_CC32XX_A1_IRQ+16);
+	irq_enable(DT_GPIO_CC32XX_A1_IRQ);
 
 	return 0;
 }
 
-DEVICE_AND_API_INIT(gpio_cc32xx_a1, CONFIG_GPIO_CC32XX_A1_NAME,
+DEVICE_AND_API_INIT(gpio_cc32xx_a1, DT_GPIO_CC32XX_A1_NAME,
 		    &gpio_cc32xx_a1_init, &gpio_cc32xx_a1_data,
 		    &gpio_cc32xx_a1_config,
 		    POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
@@ -266,8 +258,8 @@ DEVICE_AND_API_INIT(gpio_cc32xx_a1, CONFIG_GPIO_CC32XX_A1_NAME,
 
 #ifdef CONFIG_GPIO_CC32XX_A2
 static const struct gpio_cc32xx_config gpio_cc32xx_a2_config = {
-	.port_base = GPIOA2_BASE,
-	.irq_num = INT_GPIOA2,
+	.port_base = DT_GPIO_CC32XX_A2_BASE_ADDRESS,
+	.irq_num = DT_GPIO_CC32XX_A2_IRQ+16,
 };
 
 static struct device DEVICE_NAME_GET(gpio_cc32xx_a2);
@@ -277,16 +269,16 @@ static int gpio_cc32xx_a2_init(struct device *dev)
 {
 	ARG_UNUSED(dev);
 
-	IRQ_CONNECT(EXCEPTION_GPIOA2, CONFIG_GPIO_CC32XX_A2_IRQ_PRI,
+	IRQ_CONNECT(DT_GPIO_CC32XX_A2_IRQ, DT_GPIO_CC32XX_A2_IRQ_PRI,
 		    gpio_cc32xx_port_isr, DEVICE_GET(gpio_cc32xx_a2), 0);
 
-	MAP_IntPendClear(INT_GPIOA2);
-	irq_enable(EXCEPTION_GPIOA2);
+	MAP_IntPendClear(DT_GPIO_CC32XX_A2_IRQ+16);
+	irq_enable(DT_GPIO_CC32XX_A2_IRQ);
 
 	return 0;
 }
 
-DEVICE_AND_API_INIT(gpio_cc32xx_a2, CONFIG_GPIO_CC32XX_A2_NAME,
+DEVICE_AND_API_INIT(gpio_cc32xx_a2, DT_GPIO_CC32XX_A2_NAME,
 		    &gpio_cc32xx_a2_init, &gpio_cc32xx_a2_data,
 		    &gpio_cc32xx_a2_config,
 		    POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
@@ -296,8 +288,8 @@ DEVICE_AND_API_INIT(gpio_cc32xx_a2, CONFIG_GPIO_CC32XX_A2_NAME,
 
 #ifdef CONFIG_GPIO_CC32XX_A3
 static const struct gpio_cc32xx_config gpio_cc32xx_a3_config = {
-	.port_base = GPIOA3_BASE,
-	.irq_num = INT_GPIOA3,
+	.port_base = DT_GPIO_CC32XX_A3_BASE_ADDRESS,
+	.irq_num = DT_GPIO_CC32XX_A3_IRQ+16,
 };
 
 static struct device DEVICE_NAME_GET(gpio_cc32xx_a3);
@@ -307,16 +299,16 @@ static int gpio_cc32xx_a3_init(struct device *dev)
 {
 	ARG_UNUSED(dev);
 
-	IRQ_CONNECT(EXCEPTION_GPIOA3, CONFIG_GPIO_CC32XX_A3_IRQ_PRI,
+	IRQ_CONNECT(DT_GPIO_CC32XX_A3_IRQ, DT_GPIO_CC32XX_A3_IRQ_PRI,
 		    gpio_cc32xx_port_isr, DEVICE_GET(gpio_cc32xx_a3), 0);
 
-	MAP_IntPendClear(INT_GPIOA3);
-	irq_enable(EXCEPTION_GPIOA3);
+	MAP_IntPendClear(DT_GPIO_CC32XX_A3_IRQ+16);
+	irq_enable(DT_GPIO_CC32XX_A3_IRQ);
 
 	return 0;
 }
 
-DEVICE_AND_API_INIT(gpio_cc32xx_a3, CONFIG_GPIO_CC32XX_A3_NAME,
+DEVICE_AND_API_INIT(gpio_cc32xx_a3, DT_GPIO_CC32XX_A3_NAME,
 		    &gpio_cc32xx_a3_init, &gpio_cc32xx_a3_data,
 		    &gpio_cc32xx_a3_config,
 		    POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,

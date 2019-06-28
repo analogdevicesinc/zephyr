@@ -13,14 +13,19 @@
 #ifndef ZEPHYR_INCLUDE_NET_ETHERNET_H_
 #define ZEPHYR_INCLUDE_NET_ETHERNET_H_
 
+#include <kernel.h>
 #include <zephyr/types.h>
 #include <stdbool.h>
-#include <atomic.h>
+#include <sys/atomic.h>
 
 #include <net/net_ip.h>
 #include <net/net_pkt.h>
+
+#if defined(CONFIG_NET_LLDP)
 #include <net/lldp.h>
-#include <misc/util.h>
+#endif
+
+#include <sys/util.h>
 #include <net/net_if.h>
 #include <net/ethernet_vlan.h>
 
@@ -35,11 +40,13 @@ extern "C" {
  * @{
  */
 
+/** @cond INTERNAL_HIDDEN */
+
 struct net_eth_addr {
 	u8_t addr[6];
 };
 
-#define NET_ETH_HDR(pkt) ((struct net_eth_hdr *)net_pkt_ll(pkt))
+#define NET_ETH_HDR(pkt) ((struct net_eth_hdr *)net_pkt_data(pkt))
 
 #define NET_ETH_PTYPE_ARP		0x0806
 #define NET_ETH_PTYPE_IP		0x0800
@@ -47,9 +54,33 @@ struct net_eth_addr {
 #define NET_ETH_PTYPE_VLAN		0x8100
 #define NET_ETH_PTYPE_PTP		0x88f7
 #define NET_ETH_PTYPE_LLDP		0x88cc
+#define NET_ETH_PTYPE_ALL               0x0003 /* from linux/if_ether.h */
+
+#if !defined(ETH_P_ALL)
+#define ETH_P_ALL	NET_ETH_PTYPE_ALL
+#endif
+#if !defined(ETH_P_IP)
+#define ETH_P_IP	NET_ETH_PTYPE_IP
+#endif
+#if !defined(ETH_P_ARP)
+#define ETH_P_ARP	NET_ETH_PTYPE_ARP
+#endif
+#if !defined(ETH_P_IPV6)
+#define ETH_P_IPV6	NET_ETH_PTYPE_IPV6
+#endif
+#if !defined(ETH_P_8021Q)
+#define ETH_P_8021Q	NET_ETH_PTYPE_VLAN
+#endif
 
 #define NET_ETH_MINIMAL_FRAME_SIZE	60
+#define NET_ETH_MTU			1500
+#define NET_ETH_MAX_FRAME_SIZE	(NET_ETH_MTU + sizeof(struct net_eth_hdr))
 
+#define NET_ETH_VLAN_HDR_SIZE	4
+
+/** @endcond */
+
+/** Ethernet hardware capabilities */
 enum ethernet_hw_caps {
 	/** TX Checksum offloading supported */
 	ETHERNET_HW_TX_CHKSUM_OFFLOAD	= BIT(0),
@@ -92,7 +123,12 @@ enum ethernet_hw_caps {
 
 	/** Link Layer Discovery Protocol supported */
 	ETHERNET_LLDP			= BIT(13),
+
+	/** VLAN Tag stripping */
+	ETHERNET_HW_VLAN_TAG_STRIP	= BIT(14),
 };
+
+/** @cond INTERNAL_HIDDEN */
 
 enum ethernet_config_type {
 	ETHERNET_CONFIG_TYPE_AUTO_NEG,
@@ -113,6 +149,8 @@ enum ethernet_qav_param_type {
 	ETHERNET_QAV_PARAM_TYPE_STATUS,
 };
 
+/** @endcond */
+
 struct ethernet_qav_param {
 	/** ID of the priority queue to use */
 	int queue_id;
@@ -132,10 +170,14 @@ struct ethernet_qav_param {
 	};
 };
 
+/** @cond INTERNAL_HIDDEN */
+
 enum ethernet_filter_type {
 	ETHERNET_FILTER_TYPE_SRC_MAC_ADDRESS,
 	ETHERNET_FILTER_TYPE_DST_MAC_ADDRESS,
 };
+
+/** @endcond */
 
 struct ethernet_filter {
 	/** Type of filter */
@@ -146,8 +188,8 @@ struct ethernet_filter {
 	bool set;
 };
 
+/** @cond INTERNAL_HIDDEN */
 struct ethernet_config {
-/** @cond ignore */
 	union {
 		bool auto_negotiation;
 		bool full_duplex;
@@ -167,8 +209,8 @@ struct ethernet_config {
 
 		struct ethernet_filter filter;
 	};
-/* @endcond */
 };
+/** @endcond */
 
 struct ethernet_api {
 	/**
@@ -218,8 +260,12 @@ struct ethernet_api {
 	/** Return ptp_clock device that is tied to this ethernet device */
 	struct device *(*get_ptp_clock)(struct device *dev);
 #endif /* CONFIG_PTP_CLOCK */
+
+	/** Send a network packet */
+	int (*send)(struct device *dev, struct net_pkt *pkt);
 };
 
+/** @cond INTERNAL_HIDDEN */
 struct net_eth_hdr {
 	struct net_eth_addr dst;
 	struct net_eth_addr src;
@@ -242,13 +288,21 @@ struct ethernet_vlan {
 #define NET_VLAN_MAX_COUNT 1
 #endif
 
+/** @endcond */
+
 #if defined(CONFIG_NET_LLDP)
 struct ethernet_lldp {
 	/** Used for track timers */
 	sys_snode_t node;
 
-	/** LLDP information element related to this network interface. */
+	/** LLDP Data Unit mandatory TLVs for the interface. */
 	const struct net_lldpdu *lldpdu;
+
+	/** LLDP Data Unit optional TLVs for the interface */
+	const u8_t *optional_du;
+
+	/** Length of the optional Data Unit TLVs */
+	size_t optional_len;
 
 	/** Network interface that has LLDP supported. */
 	struct net_if *iface;
@@ -320,8 +374,6 @@ struct ethernet_context {
 	bool is_init;
 };
 
-#define ETHERNET_L2_CTX_TYPE	struct ethernet_context
-
 /**
  * @brief Initialize Ethernet L2 stack for a given interface
  *
@@ -329,7 +381,10 @@ struct ethernet_context {
  */
 void ethernet_init(struct net_if *iface);
 
-#if defined(CONFIG_NET_VLAN)
+/** @cond INTERNAL_HIDDEN */
+
+#define ETHERNET_L2_CTX_TYPE	struct ethernet_context
+
 /* Separate header for VLAN as some of device interfaces might not
  * support VLAN.
  */
@@ -343,7 +398,6 @@ struct net_eth_vlan_hdr {
 	u16_t type;
 } __packed;
 
-#endif /* CONFIG_NET_VLAN */
 
 static inline bool net_eth_is_addr_broadcast(struct net_eth_addr *addr)
 {
@@ -353,6 +407,20 @@ static inline bool net_eth_is_addr_broadcast(struct net_eth_addr *addr)
 	    addr->addr[3] == 0xff &&
 	    addr->addr[4] == 0xff &&
 	    addr->addr[5] == 0xff) {
+		return true;
+	}
+
+	return false;
+}
+
+static inline bool net_eth_is_addr_unspecified(struct net_eth_addr *addr)
+{
+	if (addr->addr[0] == 0x00 &&
+	    addr->addr[1] == 0x00 &&
+	    addr->addr[2] == 0x00 &&
+	    addr->addr[3] == 0x00 &&
+	    addr->addr[4] == 0x00 &&
+	    addr->addr[5] == 0x00) {
 		return true;
 	}
 
@@ -397,6 +465,8 @@ static inline bool net_eth_is_addr_lldp_multicast(struct net_eth_addr *addr)
 
 const struct net_eth_addr *net_eth_broadcast_addr(void);
 
+/** @endcond */
+
 /**
  * @brief Convert IPv6 multicast address to Ethernet address.
  *
@@ -417,16 +487,15 @@ static inline
 enum ethernet_hw_caps net_eth_get_hw_capabilities(struct net_if *iface)
 {
 	const struct ethernet_api *eth =
-		net_if_get_device(iface)->driver_api;
+		(struct ethernet_api *)net_if_get_device(iface)->driver_api;
 
 	if (!eth->get_capabilities) {
-		return 0;
+		return (enum ethernet_hw_caps)0;
 	}
 
 	return eth->get_capabilities(net_if_get_device(iface));
 }
 
-#if defined(CONFIG_NET_VLAN)
 /**
  * @brief Add VLAN tag to the interface.
  *
@@ -435,7 +504,14 @@ enum ethernet_hw_caps net_eth_get_hw_capabilities(struct net_if *iface)
  *
  * @return 0 if ok, <0 if error
  */
+#if defined(CONFIG_NET_VLAN)
 int net_eth_vlan_enable(struct net_if *iface, u16_t tag);
+#else
+static inline int net_eth_vlan_enable(struct net_if *iface, u16_t tag)
+{
+	return -EINVAL;
+}
+#endif
 
 /**
  * @brief Remove VLAN tag from the interface.
@@ -445,7 +521,14 @@ int net_eth_vlan_enable(struct net_if *iface, u16_t tag);
  *
  * @return 0 if ok, <0 if error
  */
+#if defined(CONFIG_NET_VLAN)
 int net_eth_vlan_disable(struct net_if *iface, u16_t tag);
+#else
+static inline int net_eth_vlan_disable(struct net_if *iface, u16_t tag)
+{
+	return -EINVAL;
+}
+#endif
 
 /**
  * @brief Return VLAN tag specified to network interface
@@ -455,7 +538,14 @@ int net_eth_vlan_disable(struct net_if *iface, u16_t tag);
  * @return VLAN tag for this interface or NET_VLAN_TAG_UNSPEC if VLAN
  * is not configured for that interface.
  */
+#if defined(CONFIG_NET_VLAN)
 u16_t net_eth_get_vlan_tag(struct net_if *iface);
+#else
+static inline u16_t net_eth_get_vlan_tag(struct net_if *iface)
+{
+	return NET_VLAN_TAG_UNSPEC;
+}
+#endif
 
 /**
  * @brief Return network interface related to this VLAN tag
@@ -467,7 +557,15 @@ u16_t net_eth_get_vlan_tag(struct net_if *iface);
  * @return Network interface related to this tag or NULL if no such interface
  * exists.
  */
+#if defined(CONFIG_NET_VLAN)
 struct net_if *net_eth_get_vlan_iface(struct net_if *iface, u16_t tag);
+#else
+static inline
+struct net_if *net_eth_get_vlan_iface(struct net_if *iface, u16_t tag)
+{
+	return NULL;
+}
+#endif
 
 /**
  * @brief Check if VLAN is enabled for a specific network interface.
@@ -477,8 +575,16 @@ struct net_if *net_eth_get_vlan_iface(struct net_if *iface, u16_t tag);
  *
  * @return True if VLAN is enabled for this network interface, false if not.
  */
+#if defined(CONFIG_NET_VLAN)
 bool net_eth_is_vlan_enabled(struct ethernet_context *ctx,
 			     struct net_if *iface);
+#else
+static inline bool net_eth_is_vlan_enabled(struct ethernet_context *ctx,
+					   struct net_if *iface)
+{
+	return false;
+}
+#endif
 
 /**
  * @brief Get VLAN status for a given network interface (enabled or not).
@@ -487,8 +593,33 @@ bool net_eth_is_vlan_enabled(struct ethernet_context *ctx,
  *
  * @return True if VLAN is enabled for this network interface, false if not.
  */
+#if defined(CONFIG_NET_VLAN)
 bool net_eth_get_vlan_status(struct net_if *iface);
+#else
+static inline bool net_eth_get_vlan_status(struct net_if *iface)
+{
+	return false;
+}
+#endif
 
+/**
+ * @def ETH_NET_DEVICE_INIT
+ *
+ * @brief Create an Ethernet network interface and bind it to network device.
+ *
+ * @param dev_name Network device name.
+ * @param drv_name The name this instance of the driver exposes to
+ * the system.
+ * @param init_fn Address to the init function of the driver.
+ * @param data Pointer to the device's configuration data.
+ * @param cfg_info The address to the structure containing the
+ * configuration information for this instance of the driver.
+ * @param prio The initialization level at which configuration occurs.
+ * @param api Provides an initial pointer to the API function struct
+ * used by the driver. Can be NULL.
+ * @param mtu Maximum transfer unit in bytes for this network interface.
+ */
+#if defined(CONFIG_NET_VLAN)
 #define ETH_NET_DEVICE_INIT(dev_name, drv_name, init_fn,		 \
 			    data, cfg_info, prio, api, mtu)		 \
 	DEVICE_AND_API_INIT(dev_name, drv_name, init_fn, data,		 \
@@ -504,49 +635,7 @@ bool net_eth_get_vlan_status(struct net_if *iface);
 			data, cfg_info, prio, api, ETHERNET_L2,		\
 			NET_L2_GET_CTX_TYPE(ETHERNET_L2), mtu)
 
-static inline int net_eth_vlan_enable(struct net_if *iface, u16_t vlan_tag)
-{
-	return -EINVAL;
-}
-
-static inline int net_eth_vlan_disable(struct net_if *iface, u16_t vlan_tag)
-{
-	return -EINVAL;
-}
-
-static inline u16_t net_eth_get_vlan_tag(struct net_if *iface)
-{
-	return NET_VLAN_TAG_UNSPEC;
-}
-
-static inline
-struct net_if *net_eth_get_vlan_iface(struct net_if *iface, u16_t tag)
-{
-	return NULL;
-}
-
-static inline bool net_eth_get_vlan_status(struct net_if *iface)
-{
-	return false;
-}
 #endif /* CONFIG_NET_VLAN */
-
-/**
- * @brief Fill ethernet header in network packet.
- *
- * @param ctx Ethernet context
- * @param pkt Network packet
- * @param ptype Upper level protocol type (in network byte order)
- * @param src Source ethernet address
- * @param dst Destination ethernet address
- *
- * @return Pointer to ethernet header struct inside net_buf.
- */
-struct net_eth_hdr *net_eth_fill_header(struct ethernet_context *ctx,
-					struct net_pkt *pkt,
-					u32_t ptype,
-					u8_t *src,
-					u8_t *dst);
 
 /**
  * @brief Inform ethernet L2 driver that ethernet carrier is detected.
@@ -583,9 +672,28 @@ int net_eth_promisc_mode(struct net_if *iface, bool enable);
  * @return Pointer to PTP clock if found, NULL if not found or if this
  * ethernet interface does not support PTP.
  */
+#if defined(CONFIG_PTP_CLOCK)
 struct device *net_eth_get_ptp_clock(struct net_if *iface);
+#else
+static inline struct device *net_eth_get_ptp_clock(struct net_if *iface)
+{
+	ARG_UNUSED(iface);
 
-#if defined(CONFIG_NET_GPTP)
+	return NULL;
+}
+#endif
+
+/**
+ * @brief Return PTP clock that is tied to this ethernet network interface
+ * index.
+ *
+ * @param index Network interface index
+ *
+ * @return Pointer to PTP clock if found, NULL if not found or if this
+ * ethernet interface index does not support PTP.
+ */
+__syscall struct device *net_eth_get_ptp_clock_by_index(int index);
+
 /**
  * @brief Return gPTP port number attached to this interface.
  *
@@ -593,15 +701,8 @@ struct device *net_eth_get_ptp_clock(struct net_if *iface);
  *
  * @return Port number, no such port if < 0
  */
+#if defined(CONFIG_NET_GPTP)
 int net_eth_get_ptp_port(struct net_if *iface);
-
-/**
- * @brief Set gPTP port number attached to this interface.
- *
- * @param iface Network interface
- * @param port Port number to set
- */
-void net_eth_set_ptp_port(struct net_if *iface, int port);
 #else
 static inline int net_eth_get_ptp_port(struct net_if *iface)
 {
@@ -611,42 +712,17 @@ static inline int net_eth_get_ptp_port(struct net_if *iface)
 }
 #endif /* CONFIG_NET_GPTP */
 
-struct net_lldpdu;
-
 /**
- * @brief Set LLDP protocol data unit (LLDPDU) for the network interface.
+ * @brief Set gPTP port number attached to this interface.
  *
  * @param iface Network interface
- * @param lldpdu LLDPDU pointer
- *
- * @return <0 if error, index in lldp array if iface is found there
+ * @param port Port number to set
  */
-#if defined(CONFIG_NET_LLDP)
-int net_eth_set_lldpdu(struct net_if *iface, const struct net_lldpdu *lldpdu);
-#else
-static inline int net_eth_set_lldpdu(struct net_if *iface,
-				     const struct net_lldpdu *lldpdu)
-{
-	ARG_UNUSED(iface);
-	ARG_UNUSED(lldpdu);
+#if defined(CONFIG_NET_GPTP)
+void net_eth_set_ptp_port(struct net_if *iface, int port);
+#endif /* CONFIG_NET_GPTP */
 
-	return -ENOTSUP;
-}
-#endif
-
-/**
- * @brief Unset LLDP protocol data unit (LLDPDU) for the network interface.
- *
- * @param iface Network interface
- */
-#if defined(CONFIG_NET_LLDP)
-void net_eth_unset_lldpdu(struct net_if *iface);
-#else
-static inline void net_eth_unset_lldpdu(struct net_if *iface)
-{
-	ARG_UNUSED(iface);
-}
-#endif
+#include <syscalls/ethernet.h>
 
 #ifdef __cplusplus
 }

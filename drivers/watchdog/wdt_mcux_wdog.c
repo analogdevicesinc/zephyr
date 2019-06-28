@@ -5,12 +5,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <watchdog.h>
-#include <clock_control.h>
+#include <drivers/watchdog.h>
+#include <drivers/clock_control.h>
 #include <fsl_wdog.h>
 
-#define SYS_LOG_LEVEL CONFIG_SYS_LOG_WDT_LEVEL
-#include <logging/sys_log.h>
+#define LOG_LEVEL CONFIG_WDT_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_REGISTER(wdt_mcux_wdog);
 
 #define MIN_TIMEOUT 4
 
@@ -34,18 +35,18 @@ static int mcux_wdog_setup(struct device *dev, u8_t options)
 	WDOG_Type *base = config->base;
 
 	if (!data->timeout_valid) {
-		SYS_LOG_ERR("No valid timeouts installed");
+		LOG_ERR("No valid timeouts installed");
 		return -EINVAL;
 	}
 
 	data->wdog_config.workMode.enableStop =
-		(options & WDT_OPT_PAUSE_IN_SLEEP) == 0;
+		(options & WDT_OPT_PAUSE_IN_SLEEP) == 0U;
 
 	data->wdog_config.workMode.enableDebug =
-		(options & WDT_OPT_PAUSE_HALTED_BY_DBG) == 0;
+		(options & WDT_OPT_PAUSE_HALTED_BY_DBG) == 0U;
 
 	WDOG_Init(base, &data->wdog_config);
-	SYS_LOG_DBG("Setup the watchdog");
+	LOG_DBG("Setup the watchdog");
 
 	return 0;
 }
@@ -58,7 +59,7 @@ static int mcux_wdog_disable(struct device *dev)
 
 	WDOG_Deinit(base);
 	data->timeout_valid = false;
-	SYS_LOG_DBG("Disabled the watchdog");
+	LOG_DBG("Disabled the watchdog");
 
 	return 0;
 }
@@ -72,7 +73,7 @@ static int mcux_wdog_install_timeout(struct device *dev,
 	u32_t clock_freq;
 
 	if (data->timeout_valid) {
-		SYS_LOG_ERR("No more timeouts can be installed");
+		LOG_ERR("No more timeouts can be installed");
 		return -ENOMEM;
 	}
 
@@ -88,12 +89,12 @@ static int mcux_wdog_install_timeout(struct device *dev,
 
 	WDOG_GetDefaultConfig(&data->wdog_config);
 
-	data->wdog_config.timeoutValue = clock_freq * cfg->window.max / 1000;
+	data->wdog_config.timeoutValue = clock_freq * cfg->window.max / 1000U;
 
 	if (cfg->window.min) {
 		data->wdog_config.enableWindowMode = true;
 		data->wdog_config.windowValue =
-			clock_freq * cfg->window.min / 1000;
+			clock_freq * cfg->window.min / 1000U;
 	} else {
 		data->wdog_config.enableWindowMode = false;
 		data->wdog_config.windowValue = 0;
@@ -101,7 +102,7 @@ static int mcux_wdog_install_timeout(struct device *dev,
 
 	if ((data->wdog_config.timeoutValue < MIN_TIMEOUT) ||
 	    (data->wdog_config.timeoutValue < data->wdog_config.windowValue)) {
-		SYS_LOG_ERR("Invalid timeout");
+		LOG_ERR("Invalid timeout");
 		return -EINVAL;
 	}
 
@@ -119,12 +120,12 @@ static int mcux_wdog_feed(struct device *dev, int channel_id)
 	WDOG_Type *base = config->base;
 
 	if (channel_id != 0) {
-		SYS_LOG_ERR("Invalid channel id");
+		LOG_ERR("Invalid channel id");
 		return -EINVAL;
 	}
 
 	WDOG_Refresh(base);
-	SYS_LOG_DBG("Fed the watchdog");
+	LOG_DBG("Fed the watchdog");
 
 	return 0;
 }
@@ -164,9 +165,9 @@ static const struct wdt_driver_api mcux_wdog_api = {
 static void mcux_wdog_config_func_0(struct device *dev);
 
 static const struct mcux_wdog_config mcux_wdog_config_0 = {
-	.base = (WDOG_Type *) CONFIG_WDT_0_BASE_ADDRESS,
-	.clock_name = CONFIG_WDT_0_CLOCK_NAME,
-	.clock_subsys = (clock_control_subsys_t) CONFIG_WDT_0_CLOCK_SUBSYS,
+	.base = (WDOG_Type *) DT_WDT_0_BASE_ADDRESS,
+	.clock_name = DT_WDT_0_CLOCK_NAME,
+	.clock_subsys = (clock_control_subsys_t) DT_WDT_0_CLOCK_SUBSYS,
 	.irq_config_func = mcux_wdog_config_func_0,
 };
 
@@ -179,8 +180,8 @@ DEVICE_AND_API_INIT(mcux_wdog_0, CONFIG_WDT_0_NAME, &mcux_wdog_init,
 
 static void mcux_wdog_config_func_0(struct device *dev)
 {
-	IRQ_CONNECT(CONFIG_WDT_0_IRQ, CONFIG_WDT_0_IRQ_PRI,
+	IRQ_CONNECT(DT_WDT_0_IRQ, DT_WDT_0_IRQ_PRI,
 		    mcux_wdog_isr, DEVICE_GET(mcux_wdog_0), 0);
 
-	irq_enable(CONFIG_WDT_0_IRQ);
+	irq_enable(DT_WDT_0_IRQ);
 }

@@ -9,9 +9,8 @@
 #include <zephyr.h>
 #include <device.h>
 #include <init.h>
-#include <board.h>
-#include <misc/util.h>
-#include <misc/byteorder.h>
+#include <sys/util.h>
+#include <sys/byteorder.h>
 
 #include <errno.h>
 #include <stddef.h>
@@ -30,6 +29,7 @@
 #include <bluetooth/hci_driver.h>
 
 #define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_DEBUG_HCI_DRIVER)
+#define LOG_MODULE_NAME bt_driver
 #include "common/log.h"
 
 #define BTPROTO_HCI      1
@@ -47,8 +47,8 @@ struct sockaddr_hci {
 #define H4_SCO           0x03
 #define H4_EVT           0x04
 
-static BT_STACK_NOINIT(rx_thread_stack,
-		       CONFIG_ARCH_POSIX_RECOMMENDED_STACK_SIZE);
+static K_THREAD_STACK_DEFINE(rx_thread_stack,
+			     CONFIG_ARCH_POSIX_RECOMMENDED_STACK_SIZE);
 static struct k_thread rx_thread_data;
 
 static int uc_fd = -1;
@@ -213,7 +213,7 @@ static const struct bt_hci_driver drv = {
 	.send		= uc_send,
 };
 
-static int _bt_uc_init(struct device *unused)
+static int bt_uc_init(struct device *unused)
 {
 	ARG_UNUSED(unused);
 
@@ -222,7 +222,7 @@ static int _bt_uc_init(struct device *unused)
 	return 0;
 }
 
-SYS_INIT(_bt_uc_init, POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE);
+SYS_INIT(bt_uc_init, POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE);
 
 static void cmd_bt_dev_found(char *argv, int offset)
 {

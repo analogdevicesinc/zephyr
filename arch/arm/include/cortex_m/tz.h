@@ -167,6 +167,23 @@ void tz_nonsecure_exception_prio_config(int secure_boost);
  */
 void tz_nbanked_exception_target_state_set(int secure_state);
 
+#if defined(CONFIG_ARMV7_M_ARMV8_M_FP)
+/**
+ * @brief Allow Non-Secure firmware to access the FPU
+ *
+ * Function allows the Non-Secure firmware to access the Floating Point Unit.
+ *
+ * Relevant for ARMv8-M MCUs supporting the Floating Point Extension.
+ *
+ * Note:
+ *
+ * This function shall only be called from Secure state.
+ *
+ * @return N/A
+ */
+void tz_nonsecure_fpu_access_enable(void);
+#endif /* CONFIG_ARMV7_M_ARMV8_M_FP */
+
 /**
  *
  * @brief Configure SAU
@@ -214,7 +231,7 @@ void tz_sau_configure(int enable, int allns);
  */
 u32_t tz_sau_number_of_regions_get(void);
 
-#if defined(CONFIG_ARM_SAU)
+#if defined(CONFIG_CPU_HAS_ARM_SAU)
 /**
  *
  * @brief SAU Region configuration
@@ -250,7 +267,7 @@ typedef struct {
  */
 int tz_sau_region_configure(tz_sau_conf_t *p_sau_conf);
 
-#endif /* CONFIG_ARM_SAU */
+#endif /* CONFIG_CPU_HAS_ARM_SAU */
 
 /**
  * @brief Non-Secure function type
@@ -265,9 +282,6 @@ int tz_sau_region_configure(tz_sau_conf_t *p_sau_conf);
  * separate executable files.
  */
 typedef void __attribute__((cmse_nonsecure_call)) (*tz_ns_func_ptr_t) (void);
-
-/* Required for C99 compilation */
-#define typeof  __typeof__
 
 #if defined(CONFIG_ARM_FIRMWARE_HAS_SECURE_ENTRY_FUNCS)
 /**

@@ -1,6 +1,8 @@
-cmake_minimum_required(VERSION 3.8.2)
+# SPDX-License-Identifier: Apache-2.0
+
+cmake_minimum_required(VERSION 3.13.1)
 include($ENV{ZEPHYR_BASE}/cmake/app/boilerplate.cmake NO_POLICY_SCOPE)
-project(NONE)
+project(fp_sharing)
 
 # Some boards are significantly slower than others resulting in the test
 # output being in the range of every few seconds to every few minutes. To

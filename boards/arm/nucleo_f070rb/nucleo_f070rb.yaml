@@ -7,10 +7,13 @@ flash: 128
 toolchain:
   - zephyr
   - gnuarmemb
+  - xtools
 supported:
+  - arduino_i2c
   - gpio
   - i2c
   - spi
+  - watchdog
 testing:
   ignore_tags:
     - net

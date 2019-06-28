@@ -12,7 +12,8 @@
 #include <zephyr/types.h>
 #include <stdbool.h>
 #include <string.h>
-#include <misc/util.h>
+#include <sys/util.h>
+#include <net/buf.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -29,11 +30,14 @@ extern "C" {
 /* Special own address types for LL privacy (used in adv & scan parameters) */
 #define BT_HCI_OWN_ADDR_RPA_OR_PUBLIC  0x02
 #define BT_HCI_OWN_ADDR_RPA_OR_RANDOM  0x03
+#define BT_HCI_OWN_ADDR_RPA_MASK       0x02
 
+/** Bluetooth Device Address */
 typedef struct {
 	u8_t  val[6];
 } bt_addr_t;
 
+/** Bluetooth LE Device Address */
 typedef struct {
 	u8_t      type;
 	bt_addr_t a;
@@ -95,6 +99,9 @@ static inline bool bt_addr_le_is_identity(const bt_addr_le_t *addr)
 	return BT_ADDR_IS_STATIC(&addr->a);
 }
 
+#define BT_ENC_KEY_SIZE_MIN                     0x07
+#define BT_ENC_KEY_SIZE_MAX                     0x10
+
 /* HCI Error Codes */
 #define BT_HCI_ERR_SUCCESS                      0x00
 #define BT_HCI_ERR_UNKNOWN_CMD                  0x01
@@ -145,13 +152,19 @@ static inline bool bt_addr_le_is_identity(const bt_addr_le_t *addr)
 #define BT_DATA_NAME_SHORTENED          0x08 /* Shortened name */
 #define BT_DATA_NAME_COMPLETE           0x09 /* Complete name */
 #define BT_DATA_TX_POWER                0x0a /* Tx Power */
+#define BT_DATA_SM_TK_VALUE             0x10 /* Security Manager TK Value */
+#define BT_DATA_SM_OOB_FLAGS            0x11 /* Security Manager OOB Flags */
 #define BT_DATA_SOLICIT16               0x14 /* Solicit UUIDs, 16-bit */
 #define BT_DATA_SOLICIT128              0x15 /* Solicit UUIDs, 128-bit */
 #define BT_DATA_SVC_DATA16              0x16 /* Service data, 16-bit UUID */
 #define BT_DATA_GAP_APPEARANCE          0x19 /* GAP appearance */
+#define BT_DATA_LE_BT_DEVICE_ADDRESS    0x1b /* LE Bluetooth Device Address */
+#define BT_DATA_LE_ROLE                 0x1c /* LE Role */
 #define BT_DATA_SOLICIT32               0x1f /* Solicit UUIDs, 32-bit */
 #define BT_DATA_SVC_DATA32              0x20 /* Service data, 32-bit UUID */
 #define BT_DATA_SVC_DATA128             0x21 /* Service data, 128-bit UUID */
+#define BT_DATA_LE_SC_CONFIRM_VALUE     0x22 /* LE SC Confirmation Value */
+#define BT_DATA_LE_SC_RANDOM_VALUE      0x23 /* LE SC Random Value */
 #define BT_DATA_URI                     0x24 /* URI */
 #define BT_DATA_MESH_PROV               0x29 /* Mesh Provisioning PDU */
 #define BT_DATA_MESH_MESSAGE            0x2a /* Mesh Networking PDU */
@@ -330,6 +343,9 @@ struct bt_hci_cmd_hdr {
 
 /* Construct OpCode from OGF and OCF */
 #define BT_OP(ogf, ocf)                         ((ocf) | ((ogf) << 10))
+
+/* Invalid opcode */
+#define BT_OP_NOP				0x0000
 
 /* Obtain OGF from OpCode */
 #define BT_OGF(opcode)                          (((opcode) >> 10) & BIT_MASK(6))
@@ -632,6 +648,7 @@ struct bt_hci_rp_write_auth_payload_timeout {
 #define BT_HCI_VERSION_4_1                      7
 #define BT_HCI_VERSION_4_2                      8
 #define BT_HCI_VERSION_5_0                      9
+#define BT_HCI_VERSION_5_1                      10
 
 #define BT_HCI_OP_READ_LOCAL_VERSION_INFO       BT_OP(BT_OGF_INFO, 0x0001)
 struct bt_hci_rp_read_local_version_info {
@@ -1897,6 +1914,28 @@ int bt_hci_cmd_send(u16_t opcode, struct net_buf *buf);
   */
 int bt_hci_cmd_send_sync(u16_t opcode, struct net_buf *buf,
 			 struct net_buf **rsp);
+
+/** @typedef bt_hci_vnd_evt_cb_t
+  * @brief Callback type for vendor handling of HCI Vendor-Specific Events.
+  *
+  * A function of this type is registered with bt_hci_register_vnd_evt_cb()
+  * and will be called for any HCI Vendor-Specific Event.
+  *
+  * @param buf Buffer containing event parameters.
+  *
+  * @return true if the function handles the event or false to defer the
+  *         handling of this event back to the stack.
+  */
+typedef bool bt_hci_vnd_evt_cb_t(struct net_buf_simple *buf);
+
+/** Register user callback for HCI Vendor-Specific Events
+  *
+  * @param cb Callback to be called when the stack receives a
+  *           HCI Vendor-Specific Event.
+  *
+  * @return 0 on success or negative error value on failure.
+  */
+int bt_hci_register_vnd_evt_cb(bt_hci_vnd_evt_cb_t cb);
 
 #ifdef __cplusplus
 }

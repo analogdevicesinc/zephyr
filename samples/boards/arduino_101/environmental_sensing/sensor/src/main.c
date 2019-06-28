@@ -5,11 +5,11 @@
  */
 
 #include <device.h>
-#include <ipm.h>
+#include <drivers/ipm.h>
 #include <ipm/ipm_quark_se.h>
-#include <misc/printk.h>
-#include <misc/util.h>
-#include <sensor.h>
+#include <sys/printk.h>
+#include <sys/util.h>
+#include <drivers/sensor.h>
 #include <zephyr.h>
 
 #ifdef CONFIG_GROVE_LCD_RGB
@@ -46,7 +46,7 @@ void main(void)
 	}
 
 
-	for (i = 0; i < ARRAY_SIZE(info); i++) {
+	for (i = 0U; i < ARRAY_SIZE(info); i++) {
 		dev[i] = device_get_binding(info[i].dev_name);
 		if (dev[i] == NULL) {
 			printk("Failed to get \"%s\" device\n", info[i].dev_name);
@@ -71,7 +71,7 @@ void main(void)
 
 	while (1) {
 		/* fetch sensor samples */
-		for (i = 0; i < ARRAY_SIZE(info); i++) {
+		for (i = 0U; i < ARRAY_SIZE(info); i++) {
 			rc = sensor_sample_fetch(dev[i]);
 			if (rc) {
 				printk("Failed to fetch sample for device %s (%d)\n",
@@ -80,7 +80,7 @@ void main(void)
 		}
 
 		/* send sensor data to x86 core via IPM */
-		for (i = 0; i < ARRAY_SIZE(info); i++) {
+		for (i = 0U; i < ARRAY_SIZE(info); i++) {
 			rc = sensor_channel_get(dev[i], info[i].chan, &val[i]);
 			if (rc) {
 				printk("Failed to get data for device %s (%d)\n",

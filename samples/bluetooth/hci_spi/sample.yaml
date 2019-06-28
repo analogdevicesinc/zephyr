@@ -3,8 +3,8 @@ sample:
     via SPI.
   name: Bluetooth HCI SPI
 tests:
-  test:
+  sample.bluetooth.hci_spi:
     harness: bluetooth
     platform_whitelist: 96b_carbon_nrf51 nrf51_pca10028
-    tags: samples bluetooth spi
+    tags: bluetooth spi
     depends_on: spi

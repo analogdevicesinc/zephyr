@@ -1,4 +1,6 @@
-set(BOARD_FLASH_RUNNER esp32)
+# SPDX-License-Identifier: Apache-2.0
+
+board_set_flasher_ifnset(esp32)
 
 if(NOT DEFINED ESP_IDF_PATH)
   if(DEFINED ENV{ESP_IDF_PATH})

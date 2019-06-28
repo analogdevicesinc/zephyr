@@ -9,10 +9,10 @@
 #include <zephyr.h>
 #include <string.h>
 #include <errno.h>
-#include <atomic.h>
-#include <misc/byteorder.h>
-#include <misc/util.h>
-#include <misc/stack.h>
+#include <sys/atomic.h>
+#include <sys/byteorder.h>
+#include <sys/util.h>
+#include <debug/stack.h>
 
 #include <bluetooth/hci.h>
 #include <bluetooth/bluetooth.h>
@@ -21,7 +21,9 @@
 #include <bluetooth/l2cap.h>
 
 #define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_DEBUG_RFCOMM)
-/* FIXME: #include "common/log.h" */
+#define LOG_MODULE_NAME bt_rfcomm
+#include "common/log.h"
+
 #include <bluetooth/rfcomm.h>
 
 #include "hci_core.h"
@@ -400,7 +402,7 @@ static void rfcomm_connected(struct bt_l2cap_chan *chan)
 	BT_DBG("Session %p", session);
 
 	/* Need to include UIH header and FCS*/
-	session->mtu = min(session->br_chan.rx.mtu,
+	session->mtu = MIN(session->br_chan.rx.mtu,
 			   session->br_chan.tx.mtu) -
 			   BT_RFCOMM_HDR_SIZE + BT_RFCOMM_FCS_SIZE;
 
@@ -478,7 +480,7 @@ static struct bt_rfcomm_dlc *rfcomm_dlc_accept(struct bt_rfcomm_session *session
 	}
 
 	rfcomm_dlc_init(dlc, session, dlci, BT_RFCOMM_ROLE_ACCEPTOR);
-	dlc->mtu = min(dlc->mtu, session->mtu);
+	dlc->mtu = MIN(dlc->mtu, session->mtu);
 
 	return dlc;
 }
@@ -755,6 +757,7 @@ static void rfcomm_dlc_connected(struct bt_rfcomm_dlc *dlc)
 			K_THREAD_STACK_SIZEOF(dlc->stack),
 			rfcomm_dlc_tx_thread, dlc, NULL, NULL, K_PRIO_COOP(7),
 			0, K_NO_WAIT);
+	k_thread_name_set(&dlc->tx_thread, "BT DLC");
 
 	if (dlc->ops && dlc->ops->connected) {
 		dlc->ops->connected(dlc);
@@ -915,12 +918,12 @@ static int rfcomm_send_pn(struct bt_rfcomm_dlc *dlc, u8_t cr)
 		/* If PN comes in already opened dlc or cfc not supported
 		 * these should be 0
 		 */
-		pn->credits = 0;
-		pn->flow_ctrl = 0;
+		pn->credits = 0U;
+		pn->flow_ctrl = 0U;
 	}
-	pn->max_retrans = 0;
-	pn->ack_timer = 0;
-	pn->priority = 0;
+	pn->max_retrans = 0U;
+	pn->ack_timer = 0U;
+	pn->priority = 0U;
 
 	fcs = rfcomm_calc_fcs(BT_RFCOMM_FCS_LEN_UIH, buf->data);
 	net_buf_add_u8(buf, fcs);
@@ -960,7 +963,7 @@ static int rfcomm_dlc_start(struct bt_rfcomm_dlc *dlc)
 	result = rfcomm_dlc_security(dlc);
 	switch (result) {
 	case RFCOMM_SECURITY_PASSED:
-		dlc->mtu = min(dlc->mtu, dlc->session->mtu);
+		dlc->mtu = MIN(dlc->mtu, dlc->session->mtu);
 		dlc->state = BT_RFCOMM_STATE_CONFIG;
 		rfcomm_send_pn(dlc, BT_RFCOMM_MSG_CMD_CR);
 		break;
@@ -1129,7 +1132,7 @@ static void rfcomm_handle_rpn(struct bt_rfcomm_session *session,
 		return;
 	}
 
-	if (value_len != 1) {
+	if (value_len != 1U) {
 		return;
 	}
 
@@ -1179,7 +1182,7 @@ static void rfcomm_handle_pn(struct bt_rfcomm_session *session,
 
 		BT_DBG("Incoming connection accepted dlc %p", dlc);
 
-		dlc->mtu = min(dlc->mtu, sys_le16_to_cpu(pn->mtu));
+		dlc->mtu = MIN(dlc->mtu, sys_le16_to_cpu(pn->mtu));
 
 		if (pn->flow_ctrl == BT_RFCOMM_PN_CFC_CMD) {
 			if (session->cfc == BT_RFCOMM_CFC_UNKNOWN) {
@@ -1203,14 +1206,14 @@ static void rfcomm_handle_pn(struct bt_rfcomm_session *session,
 				rfcomm_dlc_close(dlc);
 				return;
 			}
-			dlc->mtu = min(dlc->mtu, sys_le16_to_cpu(pn->mtu));
+			dlc->mtu = MIN(dlc->mtu, sys_le16_to_cpu(pn->mtu));
 			rfcomm_send_pn(dlc, BT_RFCOMM_MSG_RESP_CR);
 		} else {
 			if (dlc->state != BT_RFCOMM_STATE_CONFIG) {
 				return;
 			}
 
-			dlc->mtu = min(dlc->mtu, sys_le16_to_cpu(pn->mtu));
+			dlc->mtu = MIN(dlc->mtu, sys_le16_to_cpu(pn->mtu));
 			if (pn->flow_ctrl == BT_RFCOMM_PN_CFC_RESP) {
 				if (session->cfc == BT_RFCOMM_CFC_UNKNOWN) {
 					session->cfc = BT_RFCOMM_CFC_SUPPORTED;
@@ -1259,16 +1262,20 @@ static void rfcomm_handle_disc(struct bt_rfcomm_session *session, u8_t dlci)
 static void rfcomm_handle_msg(struct bt_rfcomm_session *session,
 			      struct net_buf *buf)
 {
-	struct bt_rfcomm_msg_hdr *hdr = (void *)buf->data;
+	struct bt_rfcomm_msg_hdr *hdr;
 	u8_t msg_type, len, cr;
 
+	if (buf->len < sizeof(*hdr)) {
+		BT_ERR("Too small RFCOMM message");
+		return;
+	}
+
+	hdr = net_buf_pull_mem(buf, sizeof(*hdr));
 	msg_type = BT_RFCOMM_GET_MSG_TYPE(hdr->type);
 	cr = BT_RFCOMM_GET_MSG_CR(hdr->type);
 	len = BT_RFCOMM_GET_LEN(hdr->len);
 
 	BT_DBG("msg type %x cr %x", msg_type, cr);
-
-	net_buf_pull(buf, sizeof(*hdr));
 
 	switch (msg_type) {
 	case BT_RFCOMM_PN:
@@ -1531,7 +1538,7 @@ static void rfcomm_encrypt_change(struct bt_l2cap_chan *chan,
 			rfcomm_send_ua(session, dlc->dlci);
 			rfcomm_dlc_connected(dlc);
 		} else {
-			dlc->mtu = min(dlc->mtu, session->mtu);
+			dlc->mtu = MIN(dlc->mtu, session->mtu);
 			dlc->state = BT_RFCOMM_STATE_CONFIG;
 			rfcomm_send_pn(dlc, BT_RFCOMM_MSG_CMD_CR);
 		}

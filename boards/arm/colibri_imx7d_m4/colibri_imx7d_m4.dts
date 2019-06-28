@@ -20,14 +20,14 @@
 		sw0    = &user_switch_1;
 		i2c-4  = &i2c4;
 		pwm-1  = &pwm1;
+		mu-b   = &mub;
 	};
 
 	chosen {
-#if defined(CONFIG_XIP)
 		zephyr,flash = &tcml_code;
-#endif
 		zephyr,sram = &tcmu_sys;
 		zephyr,console = &uart2;
+		zephyr,shell-uart = &uart2;
 	};
 
 	leds {
@@ -48,23 +48,27 @@
 };
 
 &uart2 {
-	status = "ok";
+	status = "okay";
 	current-speed = <115200>;
 	modem-mode = <64>;
 };
 
 &gpio1 {
-	status = "ok";
+	status = "okay";
 };
 
 &gpio2 {
-	status = "ok";
+	status = "okay";
 };
 
 &i2c4 {
-	status = "ok";
+	status = "okay";
 };
 
 &pwm1 {
-	status = "ok";
+	status = "okay";
+};
+
+&mub {
+	status = "okay";
 };

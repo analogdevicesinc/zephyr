@@ -6,9 +6,9 @@
 
 #include <kernel.h>
 #include <string.h>
-#include <i2s.h>
+#include <drivers/i2s.h>
 
-int _impl_i2s_buf_read(struct device *dev, void *buf, size_t *size)
+int z_impl_i2s_buf_read(struct device *dev, void *buf, size_t *size)
 {
 	void *mem_block;
 	int ret;
@@ -20,13 +20,13 @@ int _impl_i2s_buf_read(struct device *dev, void *buf, size_t *size)
 			i2s_config_get((struct device *)dev, I2S_DIR_RX);
 
 		memcpy(buf, mem_block, *size);
-		k_mem_slab_free(rx_cfg->mem_slab, mem_block);
+		k_mem_slab_free(rx_cfg->mem_slab, &mem_block);
 	}
 
 	return ret;
 }
 
-int _impl_i2s_buf_write(struct device *dev, void *buf, size_t size)
+int z_impl_i2s_buf_write(struct device *dev, void *buf, size_t size)
 {
 	int ret;
 	struct i2s_config *tx_cfg;
@@ -48,5 +48,10 @@ int _impl_i2s_buf_write(struct device *dev, void *buf, size_t size)
 
 	memcpy(mem_block, (void *)buf, size);
 
-	return i2s_write((struct device *)dev, mem_block, size);
+	ret = i2s_write((struct device *)dev, mem_block, size);
+	if (ret != 0) {
+		k_mem_slab_free(tx_cfg->mem_slab, &mem_block);
+	}
+
+	return ret;
 }

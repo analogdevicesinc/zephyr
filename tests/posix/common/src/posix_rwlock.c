@@ -8,7 +8,7 @@
 #include <pthread.h>
 
 #define N_THR 3
-#define STACKSZ 1024
+#define STACKSZ (1024 + CONFIG_TEST_EXTRA_STACKSIZE)
 
 K_THREAD_STACK_ARRAY_DEFINE(stack, N_THR, STACKSZ);
 pthread_rwlock_t rwlock;
@@ -16,13 +16,13 @@ pthread_rwlock_t rwlock;
 static void *thread_top(void *p1)
 {
 	pthread_t pthread;
-	u32_t policy, ret = 0;
+	u32_t policy, ret = 0U;
 	struct sched_param param;
 
 	pthread = (pthread_t) pthread_self();
 	pthread_getschedparam(pthread, &policy, &param);
 	printk("Thread %d scheduling policy = %d & priority %d started\n",
-	       (s32_t) p1, policy, param.priority);
+	       (s32_t) p1, policy, param.sched_priority);
 
 	ret = pthread_rwlock_tryrdlock(&rwlock);
 	if (ret) {
@@ -38,7 +38,7 @@ static void *thread_top(void *p1)
 
 	printk("Thread %d acquiring WR lock\n", (s32_t) p1);
 	ret = pthread_rwlock_trywrlock(&rwlock);
-	if (ret != 0) {
+	if (ret != 0U) {
 		zassert_false(pthread_rwlock_wrlock(&rwlock),
 			      "Failed to acquire WR lock");
 	}
@@ -84,7 +84,7 @@ void test_posix_rw_lock(void)
 			      "Unable to create pthread object attrib");
 
 		/* Setting scheduling priority */
-		schedparam.priority = i + 1;
+		schedparam.sched_priority = i + 1;
 		pthread_attr_setschedparam(&attr[i], &schedparam);
 
 		/* Setting stack */

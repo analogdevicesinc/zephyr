@@ -17,7 +17,7 @@
 #include <arch/arc/v2/aux_regs.h>
 #include <toolchain/common.h>
 #include <irq.h>
-#include <misc/util.h>
+#include <sys/util.h>
 #include <sw_isr_table.h>
 
 #ifdef __cplusplus
@@ -26,25 +26,25 @@ extern "C" {
 
 #ifdef _ASMLANGUAGE
 GTEXT(_irq_exit);
-GTEXT(_arch_irq_enable)
-GTEXT(_arch_irq_disable)
+GTEXT(z_arch_irq_enable)
+GTEXT(z_arch_irq_disable)
 #else
 
-extern void _arch_irq_enable(unsigned int irq);
-extern void _arch_irq_disable(unsigned int irq);
+extern void z_arch_irq_enable(unsigned int irq);
+extern void z_arch_irq_disable(unsigned int irq);
 
 extern void _irq_exit(void);
-extern void _irq_priority_set(unsigned int irq, unsigned int prio,
+extern void z_irq_priority_set(unsigned int irq, unsigned int prio,
 			      u32_t flags);
 extern void _isr_wrapper(void);
-extern void _irq_spurious(void *unused);
+extern void z_irq_spurious(void *unused);
 
 /**
  * Configure a static interrupt.
  *
  * All arguments must be computable by the compiler at build time.
  *
- * _ISR_DECLARE will populate the .intList section with the interrupt's
+ * Z_ISR_DECLARE will populate the .intList section with the interrupt's
  * parameters, which will then be used by gen_irq_tables.py to create
  * the vector table and the software ISR table. This is all done at
  * build-time.
@@ -60,10 +60,10 @@ extern void _irq_spurious(void *unused);
  *
  * @return The vector assigned to this interrupt
  */
-#define _ARCH_IRQ_CONNECT(irq_p, priority_p, isr_p, isr_param_p, flags_p) \
+#define Z_ARCH_IRQ_CONNECT(irq_p, priority_p, isr_p, isr_param_p, flags_p) \
 ({ \
-	_ISR_DECLARE(irq_p, 0, isr_p, isr_param_p); \
-	_irq_priority_set(irq_p, priority_p, flags_p); \
+	Z_ISR_DECLARE(irq_p, 0, isr_p, isr_param_p); \
+	z_irq_priority_set(irq_p, priority_p, flags_p); \
 	irq_p; \
 })
 
@@ -101,7 +101,7 @@ extern void _irq_spurious(void *unused);
  * "interrupt disable state" prior to the call.
  */
 
-static ALWAYS_INLINE unsigned int _arch_irq_lock(void)
+static ALWAYS_INLINE unsigned int z_arch_irq_lock(void)
 {
 	unsigned int key;
 
@@ -122,9 +122,22 @@ static ALWAYS_INLINE unsigned int _arch_irq_lock(void)
  * @return N/A
  */
 
-static ALWAYS_INLINE void _arch_irq_unlock(unsigned int key)
+static ALWAYS_INLINE void z_arch_irq_unlock(unsigned int key)
 {
 	__asm__ volatile("seti %0" : : "ir"(key) : "memory");
+}
+
+/**
+ * Returns true if interrupts were unlocked prior to the
+ * z_arch_irq_lock() call that produced the key argument.
+ */
+static ALWAYS_INLINE bool z_arch_irq_unlocked(unsigned int key)
+{
+	/* ARC irq lock uses instruction "clri r0",
+	 * r0 ==  {26’d0, 1’b1, STATUS32.IE, STATUS32.E[3:0] }
+	 * bit4 is used to record IE (Interrupt Enable) bit
+	 */
+	return (key & 0x10)  ==  0x10;
 }
 
 #endif /* _ASMLANGUAGE */

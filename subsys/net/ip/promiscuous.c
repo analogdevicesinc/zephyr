@@ -12,8 +12,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define LOG_MODULE_NAME net_promisc
-#define NET_LOG_LEVEL CONFIG_NET_PROMISC_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_REGISTER(net_promisc, CONFIG_NET_PROMISC_LOG_LEVEL);
 
 #include <kernel.h>
 #include <errno.h>
@@ -70,7 +70,7 @@ int net_promisc_mode_off(struct net_if *iface)
 		net_if_unset_promisc(iface);
 
 		prev = atomic_dec(&enabled);
-		if (!prev) {
+		if (prev == 1) {
 			atomic_clear(&enabled);
 
 			flush_queue();

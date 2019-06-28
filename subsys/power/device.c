@@ -11,7 +11,8 @@
 #include <device.h>
 #include "policy/pm_policy.h"
 
-#define LOG_LEVEL CONFIG_PM_LOG_LEVEL /* From power module Kconfig */
+#if defined(CONFIG_SYS_POWER_MANAGEMENT)
+#define LOG_LEVEL CONFIG_SYS_PM_LOG_LEVEL /* From power module Kconfig */
 #include <logging/log.h>
 LOG_MODULE_DECLARE(power);
 
@@ -21,13 +22,13 @@ LOG_MODULE_DECLARE(power);
  * to build the device list based on devices power
  * and clock domain dependencies.
  */
-#ifdef CONFIG_SOC_SERIES_NRF52X
+#if defined(CONFIG_SOC_SERIES_NRF52X) || defined(CONFIG_SOC_SERIES_NRF51X)
 #define MAX_PM_DEVICES	15
 #define NUM_CORE_DEVICES	4
 #define MAX_DEV_NAME_LEN	16
 static const char core_devices[NUM_CORE_DEVICES][MAX_DEV_NAME_LEN] = {
-	"clk_k32src",
-	"clk_m16src",
+	"CLOCK_32K",
+	"CLOCK_16M",
 	"sys_clock",
 	"UART_0",
 };
@@ -53,10 +54,29 @@ int sys_pm_suspend_devices(void)
 		 * and set the device states accordingly.
 		 */
 		device_retval[i] = device_set_power_state(&pm_device_list[idx],
-						DEVICE_PM_SUSPEND_STATE);
+						DEVICE_PM_SUSPEND_STATE,
+						NULL, NULL);
 		if (device_retval[i]) {
 			LOG_ERR("%s suspend operation failed\n",
 					pm_device_list[idx].config->name);
+			return device_retval[i];
+		}
+	}
+
+	return 0;
+}
+
+int sys_pm_force_suspend_devices(void)
+{
+	for (int i = device_count - 1; i >= 0; i--) {
+		int idx = device_ordered_list[i];
+
+		device_retval[i] = device_set_power_state(&pm_device_list[idx],
+					DEVICE_PM_FORCE_SUSPEND_STATE,
+					NULL, NULL);
+		if (device_retval[i]) {
+			LOG_ERR("%s force suspend operation failed\n",
+				pm_device_list[idx].config->name);
 			return device_retval[i];
 		}
 	}
@@ -73,7 +93,7 @@ void sys_pm_resume_devices(void)
 			int idx = device_ordered_list[i];
 
 			device_set_power_state(&pm_device_list[idx],
-						DEVICE_PM_ACTIVE_STATE);
+					DEVICE_PM_ACTIVE_STATE, NULL, NULL);
 		}
 	}
 }
@@ -112,3 +132,4 @@ void sys_pm_create_device_list(void)
 		}
 	}
 }
+#endif /* defined(CONFIG_SYS_POWER_MANAGEMENT) */

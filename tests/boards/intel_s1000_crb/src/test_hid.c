@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define SYS_LOG_LEVEL 4
-#define SYS_LOG_DOMAIN "main"
-#include <logging/sys_log.h>
+#define LOG_LEVEL CONFIG_LOG_DEFAULT_LEVEL
+#include <logging/log.h>
+LOG_MODULE_DECLARE(main);
 
 #include <zephyr.h>
 
@@ -61,7 +61,7 @@ static const u8_t hid_report_desc[] = {
 int debug_cb(struct usb_setup_packet *setup, s32_t *len,
 	     u8_t **data)
 {
-	SYS_LOG_DBG("Debug callback");
+	LOG_DBG("Debug callback");
 
 	return -ENOTSUP;
 }
@@ -69,7 +69,7 @@ int debug_cb(struct usb_setup_packet *setup, s32_t *len,
 int set_idle_cb(struct usb_setup_packet *setup, s32_t *len,
 		u8_t **data)
 {
-	SYS_LOG_DBG("Set Idle callback");
+	LOG_DBG("Set Idle callback");
 
 	/* TODO: Do something */
 
@@ -79,7 +79,7 @@ int set_idle_cb(struct usb_setup_packet *setup, s32_t *len,
 int get_report_cb(struct usb_setup_packet *setup, s32_t *len,
 		  u8_t **data)
 {
-	SYS_LOG_DBG("Get report callback");
+	LOG_DBG("Get report callback");
 
 	/* TODO: Do something */
 
@@ -98,13 +98,21 @@ static struct hid_ops ops = {
 void hid_thread(void)
 {
 	u8_t report_1[2] = { REPORT_ID_1, 0x00 };
+	struct device *hid_dev;
 	int ret, wrote;
 
-	SYS_LOG_DBG("Starting application");
+	LOG_DBG("Starting application");
 
-	usb_hid_register_device(hid_report_desc, sizeof(hid_report_desc), &ops);
+	hid_dev = device_get_binding("HID_0");
+	if (hid_dev == NULL) {
+		LOG_ERR("Cannot get USB HID Device");
+		return;
+	}
 
-	usb_hid_init();
+	usb_hid_register_device(hid_dev, hid_report_desc,
+				sizeof(hid_report_desc), &ops);
+
+	usb_hid_init(hid_dev);
 
 	while (true) {
 
@@ -112,8 +120,9 @@ void hid_thread(void)
 
 		report_1[1]++;
 
-		ret = hid_int_ep_write(report_1, sizeof(report_1), &wrote);
-		SYS_LOG_DBG("Wrote %d bytes with ret %d", wrote, ret);
+		ret = hid_int_ep_write(hid_dev, report_1, sizeof(report_1),
+				       &wrote);
+		LOG_DBG("Wrote %d bytes with ret %d", wrote, ret);
 	}
 }
 

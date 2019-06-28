@@ -4,12 +4,12 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-menu "Disk"
-
-config DISK_ACCESS
-	bool "Enable Disk Interface"
+menuconfig DISK_ACCESS
+	bool "Disk Interface"
 	help
 	  Enable disk access over a supported media backend like FLASH or RAM
+
+if DISK_ACCESS
 
 config DISK_ACCESS_MAX_VOLUMES
 	int "Maximum Disk Interfaces"
@@ -17,20 +17,9 @@ config DISK_ACCESS_MAX_VOLUMES
 	help
 	  Maximum number of disk access interfaces supported
 
-config SYS_LOG_DISK_LEVEL
-	int "Disk log level"
-	depends on SYS_LOG
-	default 0
-	help
-	  Sets log level for Disk drivers.
-	  Levels are:
-	  - 0 OFF, do not write
-	  - 1 ERROR, only write SYS_LOG_ERR
-	  - 2 WARNING, write SYS_LOG_WRN in addition to previous level
-	  - 3 INFO, write SYS_LOG_INF in addition to previous levels
-	  - 4 DEBUG, write SYS_LOG_DBG in addition to previous levels
-
-if DISK_ACCESS
+module = DISK
+module-str = disk
+source "subsys/logging/Kconfig.template.log_config"
 
 config DISK_ACCESS_RAM
 	bool "RAM Disk"
@@ -39,15 +28,13 @@ config DISK_ACCESS_RAM
 	  This option can be used to test the file
 	  system.
 
-config DISK_ACCESS_FLASH
-	bool "Flash"
-	select FLASH
-	help
-	  Flash device is used for the file system.
-
-endif # DISK_ACCESS
-
 if DISK_ACCESS_RAM
+
+config DISK_RAM_VOLUME_SIZE
+	int "RAM Disk size in kilobytes"
+	default 96
+	help
+	  Size of the RAM Disk.
 
 config DISK_RAM_VOLUME_NAME
 	string "RAM Disk mount point or drive name"
@@ -56,6 +43,12 @@ config DISK_RAM_VOLUME_NAME
 	  Disk name as per file system naming guidelines.
 
 endif # DISK_ACCESS_RAM
+
+config DISK_ACCESS_FLASH
+	bool "Flash"
+	select FLASH
+	help
+	  Flash device is used for the file system.
 
 if DISK_ACCESS_FLASH
 
@@ -99,4 +92,19 @@ config DISK_VOLUME_SIZE
 	  This is the file system volume size in bytes.
 
 endif # DISK_ACCESS_FLASH
-endmenu
+
+config DISK_ACCESS_SDHC
+	bool "SDHC card over SPI"
+	select SPI
+	select FLASH
+	help
+	  File system on a SDHC card accessed over SPI.
+
+config DISK_SDHC_VOLUME_NAME
+	string "SDHC Disk mount point or drive name"
+	default "SDHC"
+	depends on DISK_ACCESS_SDHC
+	help
+	  Disk name as per file system naming guidelines.
+
+endif # DISK_ACCESS

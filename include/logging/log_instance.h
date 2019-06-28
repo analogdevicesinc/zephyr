@@ -16,11 +16,25 @@ extern "C" {
 struct log_source_const_data {
 	const char *name;
 	u8_t level;
+#ifdef CONFIG_NIOS2
+	/* Workaround alert! Dummy data to ensure that structure is >8 bytes.
+	 * Nios2 uses global pointer register for structures <=8 bytes and
+	 * apparently does not handle well variables placed in custom sections.
+	 */
+	u32_t dummy;
+#endif
 };
 
 /** @brief Dynamic data associated with the source of log messages. */
 struct log_source_dynamic_data {
 	u32_t filters;
+#ifdef CONFIG_NIOS2
+	/* Workaround alert! Dummy data to ensure that structure is >8 bytes.
+	 * Nios2 uses global pointer register for structures <=8 bytes and
+	 * apparently does not handle well variables placed in custom sections.
+	 */
+	u32_t dummy[2];
+#endif
 };
 
 /** @brief Creates name of variable and section for constant log data.
@@ -29,7 +43,7 @@ struct log_source_dynamic_data {
  */
 #define LOG_ITEM_CONST_DATA(_name) UTIL_CAT(log_const_, _name)
 
-#define _LOG_CONST_ITEM_REGISTER(_name, _str_name, _level)		     \
+#define Z_LOG_CONST_ITEM_REGISTER(_name, _str_name, _level)		     \
 	const struct log_source_const_data LOG_ITEM_CONST_DATA(_name)	     \
 	__attribute__ ((section("." STRINGIFY(LOG_ITEM_CONST_DATA(_name))))) \
 	__attribute__((used)) = {					     \
@@ -64,7 +78,7 @@ struct log_source_dynamic_data {
 	struct log_source_dynamic_data *_name
 
 #define LOG_INSTANCE_REGISTER(_module_name, _inst_name, _level)		   \
-	_LOG_CONST_ITEM_REGISTER(					   \
+	Z_LOG_CONST_ITEM_REGISTER(					   \
 		LOG_INSTANCE_FULL_NAME(_module_name, _inst_name),	   \
 		STRINGIFY(_module_name._inst_name),			   \
 		_level);						   \
@@ -85,7 +99,7 @@ struct log_source_dynamic_data {
 	const struct log_source_const_data *_name
 
 #define LOG_INSTANCE_REGISTER(_module_name, _inst_name, _level)	  \
-	_LOG_CONST_ITEM_REGISTER(				  \
+	Z_LOG_CONST_ITEM_REGISTER(				  \
 		LOG_INSTANCE_FULL_NAME(_module_name, _inst_name), \
 		STRINGIFY(_module_name._inst_name),		  \
 		_level)

@@ -1,6 +1,5 @@
----
+
 title: TI MSP432P4XX UART
-id: ti,msp432p4xx-uart
 version: 0.1
 
 description: >
@@ -14,14 +13,7 @@ properties:
       constraint: "ti,msp432p4xx-uart"
 
     reg:
-      type: array
-      description: mmio register space
-      generation: define
       category: required
 
     interrupts:
-      type: array
       category: required
-      description: required interrupts
-      generation: define
-...

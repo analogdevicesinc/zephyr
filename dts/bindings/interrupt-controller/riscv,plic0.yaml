@@ -3,27 +3,22 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: RISC-V PLIC
-id: riscv,plic0
 version: 0.1
 
 description: >
     This binding describes the RISC-V Platform-Local Interrupt Controller
 
+inherits:
+    !include base.yaml
+
 properties:
   compatible:
-      category: required
-      type: string
-      description: compatible strings
       constraint: "riscv,plic0"
-      generation: define
 
   reg:
       category: required
-      type: int
-      description: mmio register space
-      generation: define
 
   riscv,max-priority:
       type: int
@@ -31,8 +26,5 @@ properties:
       category: required
       generation: define
 
-base_label: PLIC
-
 "#cells":
   - irq
-...

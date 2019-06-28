@@ -28,19 +28,26 @@ extern "C" {
 #define _ARC_V2_AUX_IRQ_CTRL_32_REGS 16
 
 
-#define _ARC_V2_DEF_IRQ_LEVEL (CONFIG_NUM_IRQ_PRIO_LEVELS-1)
+#define _ARC_V2_DEF_IRQ_LEVEL (CONFIG_NUM_IRQ_PRIO_LEVELS - 1)
 #define _ARC_V2_WAKE_IRQ_LEVEL _ARC_V2_DEF_IRQ_LEVEL
+
+/*
+ * INIT_IRQ_LOCK_KEY is init interrupt level setting of a thread.
+ * It's configured by seti instruction when a thread starts to run
+ *, i.e., z_thread_entry_wrapper and z_user_thread_entry_wrapper
+ */
+#define _ARC_V2_INIT_IRQ_LOCK_KEY (0x10 | _ARC_V2_DEF_IRQ_LEVEL)
 
 #ifndef _ASMLANGUAGE
 
 extern K_THREAD_STACK_DEFINE(_interrupt_stack, CONFIG_ISR_STACK_SIZE);
 
 /*
- * _irq_setup
+ * z_irq_setup
  *
  * Configures interrupt handling parameters
  */
-static ALWAYS_INLINE void _irq_setup(void)
+static ALWAYS_INLINE void z_irq_setup(void)
 {
 	u32_t aux_irq_ctrl_value = (
 		_ARC_V2_AUX_IRQ_CTRL_LOOP_REGS | /* save lp_xxx registers */
@@ -52,10 +59,10 @@ static ALWAYS_INLINE void _irq_setup(void)
 	);
 
 	k_cpu_sleep_mode = _ARC_V2_WAKE_IRQ_LEVEL;
-	_arc_v2_aux_reg_write(_ARC_V2_AUX_IRQ_CTRL, aux_irq_ctrl_value);
+	z_arc_v2_aux_reg_write(_ARC_V2_AUX_IRQ_CTRL, aux_irq_ctrl_value);
 
 	_kernel.irq_stack =
-		K_THREAD_STACK_BUFFER(_interrupt_stack) + CONFIG_ISR_STACK_SIZE;
+		Z_THREAD_STACK_BUFFER(_interrupt_stack) + CONFIG_ISR_STACK_SIZE;
 }
 
 #endif /* _ASMLANGUAGE */

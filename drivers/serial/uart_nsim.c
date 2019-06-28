@@ -9,13 +9,12 @@
 #include <kernel.h>
 #include <arch/cpu.h>
 #include <linker/sections.h>
-#include <misc/__assert.h>
+#include <sys/__assert.h>
 #include <zephyr/types.h>
-#include <misc/util.h>
+#include <sys/util.h>
 #include <string.h>
-#include <board.h>
 #include <init.h>
-#include <uart.h>
+#include <drivers/uart.h>
 
 /*
  * for nsimdrv, "nsim_mem-dev=uart0,base=0xf0000000,irq=24" is
@@ -77,8 +76,6 @@ static int uart_nsim_init(struct device *dev)
 {
 	ARG_UNUSED(dev);
 
-	dev->driver_api = &uart_nsim_driver_api;
-
 	return 0;
 }
 
@@ -88,17 +85,15 @@ static int uart_nsim_init(struct device *dev)
  * @param dev UART device struct
  * @param c character to output
  */
-unsigned char uart_nsim_poll_out(struct device *dev, unsigned char c)
+static void uart_nsim_poll_out(struct device *dev, unsigned char c)
 {
 	u32_t regs = DEV_CFG(dev)->regs;
 	/* wait for transmitter to ready to accept a character */
 
-	while (!(UART_GET_STATUS(regs) & TXEMPTY))
-		;
+	while (!(UART_GET_STATUS(regs) & TXEMPTY)) {
+	}
 
 	UART_SET_DATA(regs, c);
-
-	return c;
 }
 
 static int uart_nsim_poll_in(struct device *dev, unsigned char *c)
@@ -113,9 +108,10 @@ static const struct uart_driver_api uart_nsim_driver_api = {
 };
 
 static struct uart_device_config uart_nsim_dev_cfg_0 = {
-	.regs = CONFIG_UART_NSIM_PORT_0_BASE_ADDR,
+	.regs = DT_INST_0_SNPS_NSIM_UART_BASE_ADDRESS,
 };
 
-DEVICE_INIT(uart_nsim0, CONFIG_UART_NSIM_PORT_0_NAME, &uart_nsim_init,
+DEVICE_AND_API_INIT(uart_nsim0, DT_INST_0_SNPS_NSIM_UART_LABEL, &uart_nsim_init,
 			NULL, &uart_nsim_dev_cfg_0,
-			PRE_KERNEL_1, CONFIG_KERNEL_INIT_PRIORITY_DEVICE);
+			PRE_KERNEL_1, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
+			&uart_nsim_driver_api);

@@ -14,11 +14,8 @@ menuconfig PINMUX
 
 if PINMUX
 
-source "drivers/pinmux/dev/Kconfig"
-
 config PINMUX_NAME
 	string "Pinmux driver name"
-	depends on PINMUX
 	default "PINMUX"
 	help
 	  The name of the pinmux driver.
@@ -26,7 +23,6 @@ config PINMUX_NAME
 config PINMUX_INIT_PRIORITY
 	int "Init priority"
 	default 45
-	depends on PINMUX
 	help
 	  Pinmux driver initialization priority.
 	  Pinmux driver almost certainly should be initialized before the
@@ -39,7 +35,7 @@ config PINMUX_INIT_PRIORITY
 
 config PINMUX_QMSI
 	bool "Enable QMSI pinmux dev driver"
-	depends on PINMUX && QMSI
+	depends on QMSI
 	help
 	  Enables the pinmux dev driver for QMSI supported boards.
 
@@ -53,10 +49,18 @@ source "drivers/pinmux/Kconfig.beetle"
 
 source "drivers/pinmux/Kconfig.sifive"
 
+source "drivers/pinmux/Kconfig.cc13xx_cc26xx"
+
 source "drivers/pinmux/Kconfig.cc2650"
 
 source "drivers/pinmux/Kconfig.esp32"
 
 source "drivers/pinmux/Kconfig.sam0"
+
+source "drivers/pinmux/Kconfig.intel_s1000"
+
+source "drivers/pinmux/Kconfig.rv32m1"
+
+source "drivers/pinmux/Kconfig.xec"
 
 endif # PINMUX

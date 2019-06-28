@@ -1,11 +1,16 @@
+# SPDX-License-Identifier: Apache-2.0
+
 zephyr_sources(                         sys_clock_init.c)
 zephyr_sources_ifdef(CONFIG_HPET_TIMER  hpet.c)
 zephyr_sources_ifdef(CONFIG_ARCV2_TIMER arcv2_timer0.c)
 zephyr_sources_if_kconfig(              loapic_timer.c)
+zephyr_sources_if_kconfig(              apic_timer.c)
 zephyr_sources_ifdef(CONFIG_ALTERA_AVALON_TIMER altera_avalon_timer_hal.c)
 zephyr_sources_if_kconfig(              nrf_rtc_timer.c)
-zephyr_sources_if_kconfig(              pulpino_timer.c)
 zephyr_sources_if_kconfig(              riscv_machine_timer.c)
+zephyr_sources_if_kconfig(              rv32m1_lptmr_timer.c)
 zephyr_sources_if_kconfig(              cortex_m_systick.c)
 zephyr_sources_ifdef(CONFIG_XTENSA_TIMER xtensa_sys_timer.c)
 zephyr_sources_if_kconfig(              native_posix_timer.c)
+zephyr_sources_if_kconfig(              sam0_rtc_timer.c)
+zephyr_sources_if_kconfig(              litex_timer.c)

@@ -14,6 +14,7 @@
 #define _LINKER
 #define _ASMLANGUAGE
 
+#include <generated_dts_board.h>
 #include <autoconf.h>
 #include <linker/sections.h>
 #include <linker/linker-defs.h>
@@ -64,6 +65,9 @@ PROVIDE(_memmap_reset_vector = 0x40000400);
 
 SECTIONS
 {
+
+#include <linker/rel-sections.ld>
+
   /* RTC fast memory holds RTC wake stub code,
      including from any source file named rtc_wake_stub*.c
   */
@@ -166,7 +170,6 @@ SECTIONS
     *(.gnu.linkonce.s2.*)
     KEEP(*(.jcr))
     *(.dram1 .dram1.*)
-    KEEP(*(SW_ISR_TABLE))
     _data_end = ABSOLUTE(.);
     . = ALIGN(4);
   } GROUP_LINK_IN(RAMABLE_REGION)
@@ -229,6 +232,17 @@ SECTIONS
     _bss_end = ABSOLUTE(.);
   } GROUP_LINK_IN(RAMABLE_REGION)
 
+
+   SECTION_DATA_PROLOGUE(_APP_NOINIT_SECTION_NAME, (NOLOAD),)
+   {
+     . = ALIGN (8);
+     *(.app_noinit)
+     *("app_noinit.*")
+     . = ALIGN (8);
+    _app_end = ABSOLUTE(.);
+  } GROUP_LINK_IN(RAMABLE_REGION)
+
+
   SECTION_DATA_PROLOGUE(_NOINIT_SECTION_NAME, (NOLOAD),)
   {
     . = ALIGN (8);
@@ -241,4 +255,12 @@ SECTIONS
 #ifdef CONFIG_GEN_ISR_TABLES
 #include <linker/intlist.ld>
 #endif
+
+#include <linker/debug-sections.ld>
+
+  SECTION_PROLOGUE(.xtensa.info, 0,)
+  {
+    *(.xtensa.info)
+  }
+
 }

@@ -50,17 +50,17 @@
  * 0x38 - RF Core SMI command link in
  */
 
-#include <misc/__assert.h>
-#include <misc/util.h>
+#include <sys/__assert.h>
+#include <sys/util.h>
 #include <toolchain.h>
 #include <device.h>
-#include <pinmux.h>
+#include <drivers/pinmux.h>
 #include <soc.h>
-#include <sys_io.h>
+#include <sys/sys_io.h>
 
 
 #define IOCFG_REG(Func) \
-	REG_ADDR(TI_CC2650_PINMUX_40081000_BASE_ADDRESS, \
+	REG_ADDR(DT_TI_CC2650_PINMUX_40081000_BASE_ADDRESS, \
 		 CC2650_IOC_IOCFG0 + 0x4 * Func)
 
 static int pinmux_cc2650_init(struct device *dev)
@@ -122,7 +122,7 @@ static int pinmux_cc2650_input(struct device *dev, u32_t pin,
 		 "I/O mode is invalid");
 
 	const u32_t iocfg = IOCFG_REG(pin);
-	const u32_t gpio_doe = TI_CC2650_GPIO_40022000_BASE_ADDRESS +
+	const u32_t gpio_doe = DT_TI_CC2650_GPIO_40022000_BASE_ADDRESS +
 			       CC2650_GPIO_DOE31_0;
 	u32_t iocfg_conf = sys_read32(iocfg);
 	u32_t gpio_doe_conf = sys_read32(gpio_doe);

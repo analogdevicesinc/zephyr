@@ -6,30 +6,20 @@ DNS Resolve Application
 Overview
 ********
 
-The DNS resolver sample application implements a basic DNS resolver according
-to RFC 1035. Supported DNS answers are IPv4/IPv6 addresses and CNAME.
+This application will setup IP address for the device, and then
+try to resolve various hostnames according to how the user has
+configured the system.
 
-If a CNAME is received, the DNS resolver will create another DNS query.
-The number of additional queries is controlled by the
-DNS_RESOLVER_ADDITIONAL_QUERIES Kconfig variable.
-
-The multicast DNS (mDNS) client resolver support can be enabled by setting
-:option:`CONFIG_MDNS_RESOLVER` Kconfig option.
-See https://tools.ietf.org/html/rfc6762 for more details about mDNS.
-
-The link-local multicast name resolution (LLMNR) client resolver support can be
-enabled by setting the :option:`CONFIG_LLMNR_RESOLVER` Kconfig option.
-See https://tools.ietf.org/html/rfc4795 for more details about LLMNR.
-
-For more information about DNS configuration variables, see:
-:file:`subsys/net/lib/dns/Kconfig`. The DNS resolver API can be found at
-:file:`include/net/dns_resolve.h`. The sample code can be found at:
-:file:`samples/net/dns_resolve`.
+- If IPv4 is enabled, then A record for ``www.zephyrproject.org`` is
+  resolved.
+- If IPv6 is enabled, then AAAA record for ``www.zephyrproject.org`` is
+  resolved.
+- If mDNS is enabled, then ``zephyr.local`` name is resolved.
 
 Requirements
 ************
 
-- :ref:`networking_with_qemu`
+- :ref:`networking_with_host`
 
 - screen terminal emulator or equivalent.
 
@@ -164,43 +154,3 @@ Use 'dmesg' to find the right USB device.
 
 Once the binary is loaded into the FRDM board, press the RESET button.
 
-Arduino 101
-===========
-
-Open a terminal window and type:
-
-.. zephyr-app-commands::
-   :zephyr-app: samples/net/dns_resolve
-   :board: arduino_101
-   :goals: build
-   :compact:
-
-To load the binary in the development board follow the steps
-in :ref:`arduino_101`.
-
-Open a terminal window and type:
-
-.. code-block:: console
-
-    $ screen /dev/ttyUSB0 115200
-
-
-Use 'dmesg' to find the right USB device.
-
-Once the binary is loaded into the Arduino 101 board, press the RESET button.
-
-The ENC28J60 module is an Ethernet device with SPI interface.
-The following pins must be connected from the ENC28J60 device to the
-Arduino 101 board:
-
-===========    ===================================
-Arduino 101    ENC28J60 (pin numbers on the board)
-===========    ===================================
-D13            SCK  (1)
-D12            SO   (3)
-D11            SI   (2)
-D10            CS   (7)
-D04            INT  (5)
-3.3V           VCC  (10)
-GDN            GND  (9)
-===========    ===================================

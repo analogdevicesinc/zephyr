@@ -11,14 +11,15 @@
 #include <errno.h>
 #include <stdbool.h>
 #include <zephyr/types.h>
-#include <misc/util.h>
-#include <misc/byteorder.h>
+#include <sys/util.h>
+#include <sys/byteorder.h>
 
 #include <bluetooth/bluetooth.h>
 #include <bluetooth/conn.h>
 #include <bluetooth/mesh.h>
 
 #define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_MESH_DEBUG_MODEL)
+#define LOG_MODULE_NAME bt_mesh_cfg_cli
 #include "common/log.h"
 
 #include "net.h"
@@ -54,7 +55,7 @@ static void comp_data_status(struct bt_mesh_model *model,
 	param = cli->op_param;
 
 	*(param->status) = net_buf_simple_pull_u8(buf);
-	to_copy  = min(net_buf_simple_tailroom(param->comp), buf->len);
+	to_copy  = MIN(net_buf_simple_tailroom(param->comp), buf->len);
 	net_buf_simple_add_mem(param->comp, buf->data, to_copy);
 
 	k_sem_give(&cli->op_sync);
@@ -244,7 +245,7 @@ static void mod_app_status(struct bt_mesh_model *model,
 	elem_addr = net_buf_simple_pull_le16(buf);
 	mod_app_idx = net_buf_simple_pull_le16(buf);
 
-	if (buf->len >= 4) {
+	if (buf->len >= 4U) {
 		cid = net_buf_simple_pull_le16(buf);
 	} else {
 		cid = CID_NVAL;
@@ -372,7 +373,7 @@ static void mod_sub_status(struct bt_mesh_model *model,
 	elem_addr = net_buf_simple_pull_le16(buf);
 	sub_addr = net_buf_simple_pull_le16(buf);
 
-	if (buf->len >= 4) {
+	if (buf->len >= 4U) {
 		cid = net_buf_simple_pull_le16(buf);
 	} else {
 		cid = CID_NVAL;
@@ -506,7 +507,7 @@ static int cli_prepare(void *param, u32_t op)
 
 static void cli_reset(void)
 {
-	cli->op_pending = 0;
+	cli->op_pending = 0U;
 	cli->op_param = NULL;
 }
 

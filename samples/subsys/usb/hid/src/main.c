@@ -1,12 +1,9 @@
 /*
- * Copyright (c) 2016 Intel Corporation.
+ * Copyright (c) 2016-2018 Intel Corporation.
+ * Copyright (c) 2018 Nordic Semiconductor ASA
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-
-#define SYS_LOG_LEVEL 4
-#define SYS_LOG_DOMAIN "main"
-#include <logging/sys_log.h>
 
 #include <zephyr.h>
 #include <init.h>
@@ -14,8 +11,17 @@
 #include <usb/usb_device.h>
 #include <usb/class/usb_hid.h>
 
+#define LOG_LEVEL LOG_LEVEL_DBG
+LOG_MODULE_REGISTER(main);
+
 #define REPORT_ID_1	0x01
 #define REPORT_ID_2	0x02
+
+static struct k_delayed_work delayed_report_send;
+
+static struct device *hdev;
+
+#define REPORT_TIMEOUT K_SECONDS(2)
 
 /* Some HID sample Report Descriptor */
 static const u8_t hid_report_desc[] = {
@@ -53,73 +59,82 @@ static const u8_t hid_report_desc[] = {
 	HID_MI_COLLECTION_END,
 };
 
-int debug_cb(struct usb_setup_packet *setup, s32_t *len,
-	     u8_t **data)
+static void send_report(struct k_work *work)
 {
-	SYS_LOG_DBG("Debug callback");
+	static u8_t report_1[2] = { REPORT_ID_1, 0x00 };
+	int ret, wrote;
 
-	return -ENOTSUP;
+	ret = hid_int_ep_write(hdev, report_1, sizeof(report_1), &wrote);
+
+	LOG_DBG("Wrote %d bytes with ret %d", wrote, ret);
+
+	/* Increment reported data */
+	report_1[1]++;
 }
 
-int set_idle_cb(struct usb_setup_packet *setup, s32_t *len,
-		u8_t **data)
+static void in_ready_cb(void)
 {
-	SYS_LOG_DBG("Set Idle callback");
-
-	/* TODO: Do something */
-
-	return 0;
+	k_delayed_work_submit(&delayed_report_send, REPORT_TIMEOUT);
 }
 
-int get_report_cb(struct usb_setup_packet *setup, s32_t *len,
-		  u8_t **data)
+static void status_cb(enum usb_dc_status_code status, const u8_t *param)
 {
-	SYS_LOG_DBG("Get report callback");
+	switch (status) {
+	case USB_DC_CONFIGURED:
+		in_ready_cb();
+		break;
+	case USB_DC_SOF:
+		break;
+	default:
+		LOG_DBG("status %u unhandled", status);
+		break;
+	}
+}
 
-	/* TODO: Do something */
+static void idle_cb(u16_t report_id)
+{
+	static u8_t report_1[2] = { 0x00, 0xEB };
+	int ret, wrote;
 
-	return 0;
+	ret = hid_int_ep_write(hdev, report_1, sizeof(report_1), &wrote);
+
+	LOG_DBG("Idle callback: wrote %d bytes with ret %d", wrote, ret);
+}
+
+static void protocol_cb(u8_t protocol)
+{
+	LOG_DBG("New protocol: %s", protocol == HID_PROTOCOL_BOOT ?
+		"boot" : "report");
 }
 
 static const struct hid_ops ops = {
-	.get_report = get_report_cb,
-	.get_idle = debug_cb,
-	.get_protocol = debug_cb,
-	.set_report = debug_cb,
-	.set_idle = set_idle_cb,
-	.set_protocol = debug_cb,
+	.int_in_ready = in_ready_cb,
+	.status_cb = status_cb,
+	.on_idle = idle_cb,
+	.protocol_change = protocol_cb,
 };
 
 void main(void)
 {
-	u8_t report_1[2] = { REPORT_ID_1, 0x00 };
+	LOG_DBG("Starting application");
 
-	SYS_LOG_DBG("Starting application");
-
-#ifndef CONFIG_USB_COMPOSITE_DEVICE
-	usb_hid_register_device(hid_report_desc, sizeof(hid_report_desc), &ops);
-	usb_hid_init();
-#endif
-
-	while (true) {
-		int ret, wrote;
-
-		k_sleep(K_SECONDS(2));
-
-		report_1[1]++;
-
-		ret = hid_int_ep_write(report_1, sizeof(report_1), &wrote);
-		SYS_LOG_DBG("Wrote %d bytes with ret %d", wrote, ret);
-	}
+	k_delayed_work_init(&delayed_report_send, send_report);
 }
 
-#ifdef CONFIG_USB_COMPOSITE_DEVICE
 static int composite_pre_init(struct device *dev)
 {
-	usb_hid_register_device(hid_report_desc, sizeof(hid_report_desc), &ops);
+	hdev = device_get_binding("HID_0");
+	if (hdev == NULL) {
+		LOG_ERR("Cannot get USB HID Device");
+		return -ENODEV;
+	}
 
-	return usb_hid_init();
+	LOG_DBG("HID Device: dev %p", hdev);
+
+	usb_hid_register_device(hdev, hid_report_desc, sizeof(hid_report_desc),
+				&ops);
+
+	return usb_hid_init(hdev);
 }
 
 SYS_INIT(composite_pre_init, APPLICATION, CONFIG_KERNEL_INIT_PRIORITY_DEVICE);
-#endif

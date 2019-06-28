@@ -14,7 +14,7 @@
 
 #include <zephyr.h>
 #include <ztest.h>
-#include <i2s.h>
+#include <drivers/i2s.h>
 
 #define I2S_DEV_NAME "I2S_0"
 #define NUM_BLOCKS 20
@@ -46,8 +46,8 @@ static s16_t data_r[SAMPLE_NO] = {
 
 #define BLOCK_SIZE (2 * sizeof(data_l))
 
-K_MEM_SLAB_DEFINE(rx_0_mem_slab, BLOCK_SIZE, NUM_BLOCKS, 1);
-K_MEM_SLAB_DEFINE(tx_0_mem_slab, BLOCK_SIZE, NUM_BLOCKS, 1);
+K_MEM_SLAB_DEFINE(rx_0_mem_slab, BLOCK_SIZE, NUM_BLOCKS, 32);
+K_MEM_SLAB_DEFINE(tx_0_mem_slab, BLOCK_SIZE, NUM_BLOCKS, 32);
 
 static void fill_buf(s16_t *tx_block, int att)
 {
@@ -92,8 +92,8 @@ void test_i2s_tx_transfer_configure(void)
 
 	/* Configure */
 
-	i2s_cfg.word_size = 16;
-	i2s_cfg.channels = 2;
+	i2s_cfg.word_size = 16U;
+	i2s_cfg.channels = 2U;
 	i2s_cfg.format = I2S_FMT_DATA_FORMAT_I2S;
 	i2s_cfg.options = I2S_OPT_FRAME_CLK_SLAVE | I2S_OPT_BIT_CLK_SLAVE;
 	i2s_cfg.frame_clk_freq = FRAME_CLK_FREQ;
@@ -118,8 +118,8 @@ void test_i2s_rx_transfer_configure(void)
 
 	/* Configure */
 
-	i2s_cfg.word_size = 16;
-	i2s_cfg.channels = 2;
+	i2s_cfg.word_size = 16U;
+	i2s_cfg.channels = 2U;
 	i2s_cfg.format = I2S_FMT_DATA_FORMAT_I2S;
 	i2s_cfg.options = I2S_OPT_FRAME_CLK_SLAVE | I2S_OPT_BIT_CLK_SLAVE;
 	i2s_cfg.frame_clk_freq = FRAME_CLK_FREQ;

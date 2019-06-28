@@ -6,10 +6,10 @@
 
 #include <zephyr.h>
 
-#include <misc/printk.h>
+#include <sys/printk.h>
 
 #include <device.h>
-#include <i2c.h>
+#include <drivers/i2c.h>
 
 /**
  * @file Sample app using the TI INA219 through I2C.
@@ -45,12 +45,12 @@ int read_reg16(struct device *i2c_dev, u8_t reg_addr,
 
 	/* Send the address to read */
 	msgs[0].buf = &wr_addr;
-	msgs[0].len = 1;
+	msgs[0].len = 1U;
 	msgs[0].flags = I2C_MSG_WRITE;
 
 	/* Read from device. RESTART as neededm and STOP after this. */
 	msgs[1].buf = data;
-	msgs[1].len = 2;
+	msgs[1].len = 2U;
 	msgs[1].flags = I2C_MSG_READ | I2C_MSG_RESTART | I2C_MSG_STOP;
 
 	return i2c_transfer(i2c_dev, &msgs[0], 2, I2C_SLV_ADDR);
@@ -69,12 +69,12 @@ int write_reg16(struct device *i2c_dev, u8_t reg_addr,
 
 	/* Send the address to read */
 	msgs[0].buf = &wr_addr;
-	msgs[0].len = 1;
+	msgs[0].len = 1U;
 	msgs[0].flags = I2C_MSG_WRITE;
 
 	/* Read from device. RESTART as neededm and STOP after this. */
 	msgs[1].buf = data;
-	msgs[1].len = 2;
+	msgs[1].len = 2U;
 	msgs[1].flags = I2C_MSG_WRITE | I2C_MSG_STOP;
 
 	return i2c_transfer(i2c_dev, &msgs[0], 2, I2C_SLV_ADDR);
@@ -92,7 +92,7 @@ void main(void)
 		return;
 	}
 
-	/* Configurate the chip using default values */
+	/* Configure the chip using default values */
 	data[0] = 0x03;
 	data[1] = 0x99;
 	write_reg16(i2c_dev, 0x00, data);
@@ -106,13 +106,13 @@ void main(void)
 	read_reg16(i2c_dev, 0x02, data);
 	bus_volt = (data[0] << 8) | data[1];
 	bus_volt >>= 3; /* 3 LSBs are not data */
-	bus_volt *= 4; /* each LSB is 4 mV */
+	bus_volt *= 4U; /* each LSB is 4 mV */
 	printk("Bus Voltage: %d mV\n", bus_volt);
 
 	/* Read shunt voltage */
 	read_reg16(i2c_dev, 0x01, data);
 	shunt_volt = (data[0] << 8) | data[1];
-	shunt_volt *= 10; /* to uV since each LSB is 0.01 mV */
+	shunt_volt *= 10U; /* to uV since each LSB is 0.01 mV */
 	printk("Shunt Voltage: %d uV\n", shunt_volt);
 
 	/* Read current */

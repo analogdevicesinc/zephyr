@@ -1,6 +1,8 @@
-cmake_minimum_required(VERSION 3.8.2)
+# SPDX-License-Identifier: Apache-2.0
+
+cmake_minimum_required(VERSION 3.13.1)
 include($ENV{ZEPHYR_BASE}/cmake/app/boilerplate.cmake NO_POLICY_SCOPE)
-project(NONE)
+project(gen_inc_file)
 
 FILE(GLOB app_sources src/*.c)
 target_sources(app PRIVATE ${app_sources})
@@ -12,3 +14,5 @@ set(source_file src/file.bin)
 
 generate_inc_file_for_target(app ${source_file} ${gen_dir}/file.bin.inc)
 generate_inc_file_for_target(app ${source_file} ${gen_dir}/file.bin.gz.inc --gzip)
+generate_inc_file_for_target(app ${source_file} ${gen_dir}/file.bin.mtime.gz.inc
+  --gzip --gzip-mtime=42)

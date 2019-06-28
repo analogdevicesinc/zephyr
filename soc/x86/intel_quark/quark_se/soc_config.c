@@ -9,12 +9,11 @@
 #include <device.h>
 #include <init.h>
 
-#include "board.h"
 #include <kernel.h>
 #include <arch/cpu.h>
 
 #if CONFIG_IPM_QUARK_SE
-#include <ipm.h>
+#include <drivers/ipm.h>
 #include <ipm/ipm_quark_se.h>
 
 static int x86_quark_se_ipm_init(void)

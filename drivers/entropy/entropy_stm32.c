@@ -6,15 +6,15 @@
 
 #include <kernel.h>
 #include <device.h>
-#include <entropy.h>
+#include <drivers/entropy.h>
 #include <random/rand32.h>
 #include <init.h>
-#include <misc/__assert.h>
-#include <misc/util.h>
+#include <sys/__assert.h>
+#include <sys/util.h>
 #include <errno.h>
 #include <soc.h>
-#include <misc/printk.h>
-#include <clock_control.h>
+#include <sys/printk.h>
+#include <drivers/clock_control.h>
 #include <clock_control/stm32_clock_control.h>
 
 #if !defined(CONFIG_SOC_SERIES_STM32L4X) && !defined(CONFIG_SOC_SERIES_STM32F4X) && !defined(CONFIG_SOC_SERIES_STM32F7X)
@@ -151,6 +151,7 @@ static int entropy_stm32_rng_init(struct device *dev)
 {
 	struct entropy_stm32_rng_dev_data *dev_data;
 	struct entropy_stm32_rng_dev_cfg *dev_cfg;
+	int res;
 
 	__ASSERT_NO_MSG(dev != NULL);
 
@@ -186,8 +187,9 @@ static int entropy_stm32_rng_init(struct device *dev)
 	dev_data->clock = device_get_binding(STM32_CLOCK_CONTROL_NAME);
 	__ASSERT_NO_MSG(dev_data->clock != NULL);
 
-	clock_control_on(dev_data->clock,
+	res = clock_control_on(dev_data->clock,
 		(clock_control_subsys_t *)&dev_cfg->pclken);
+	__ASSERT_NO_MSG(res == 0);
 
 	LL_RNG_Enable(dev_data->rng);
 

@@ -43,19 +43,12 @@ GEN_OFFSET_SYM(tPreempCoprocReg, cpStack);
 /* Xtensa-specific _thread_arch_t structure member offsets */
 GEN_OFFSET_SYM(_thread_arch_t, flags);
 
-#ifdef CONFIG_THREAD_CUSTOM_DATA
-GEN_OFFSET_SYM(_thread_arch_t, custom_data);
-#endif
-
 /* Xtensa-specific ESF structure member offsets */
 GEN_OFFSET_SYM(__esf_t, sp);
 GEN_OFFSET_SYM(__esf_t, pc);
 
 /* size of the entire __esf_t structure */
 GEN_ABSOLUTE_SYM(____esf_t_SIZEOF, sizeof(__esf_t));
-
-/* size of the entire preempt registers structure */
-GEN_ABSOLUTE_SYM(__tPreempt_SIZEOF, sizeof(_caller_saved_t));
 
 /* size of the struct k_thread structure without save area for coproc regs */
 GEN_ABSOLUTE_SYM(_K_THREAD_NO_FLOAT_SIZEOF,

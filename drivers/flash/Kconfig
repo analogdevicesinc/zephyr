@@ -25,52 +25,37 @@ menuconfig FLASH
 	help
 	  Enable support for the flash hardware.
 
+if FLASH
+
+module = FLASH
+module-str = flash
+source "subsys/logging/Kconfig.template.log_config"
+
+config FLASH_SHELL
+	bool "Enable Flash shell"
+	depends on FLASH_PAGE_LAYOUT
+	help
+	  Enable the flash shell with flash related commands such as test,
+	  write, read and erase.
+
 config FLASH_PAGE_LAYOUT
 	bool "API for retrieving the layout of pages"
-	depends on FLASH && FLASH_HAS_PAGE_LAYOUT
+	depends on FLASH_HAS_PAGE_LAYOUT
+	default y
 	help
 	  Enables API for retrieving the layout of flash memory pages.
 
-config SOC_FLASH_NRF
-	bool "Nordic Semiconductor nRF flash driver"
-	depends on FLASH && SOC_FAMILY_NRF
-	select FLASH_HAS_PAGE_LAYOUT
-	select FLASH_HAS_DRIVER_ENABLED
-	help
-	  Enables Nordic Semiconductor nRF flash driver.
+source "drivers/flash/Kconfig.nrf"
 
-config SOC_FLASH_NRF_RADIO_SYNC
-	bool "Nordic nRFx flash driver synchronized with radio"
-	depends on SOC_FLASH_NRF && BT_CTLR
-	default y
-	help
-	  Enable synchronization between flash memory driver and radio.
+source "drivers/flash/Kconfig.mcux"
 
-config SOC_FLASH_MCUX
-	bool "MCUX flash shim driver"
-	depends on FLASH && HAS_MCUX
-	select FLASH_HAS_PAGE_LAYOUT
-	select FLASH_HAS_DRIVER_ENABLED
-	help
-	  Enables the MCUX flash shim driver.
-	  WARNING: This driver will disable the system interrupts for
-	  the duration of the flash erase/write operations. This will
-	  have an impact on the overall system performance - whether
-	  this is acceptable or not will depend on the use case.
+source "drivers/flash/Kconfig.nios2_qspi"
 
-config SOC_FLASH_NIOS2_QSPI
-	bool "Nios-II QSPI flash driver"
-	depends on FLASH && HAS_ALTERA_HAL
-	select FLASH_HAS_DRIVER_ENABLED
-	help
-	  Enables the Nios-II QSPI flash driver.
+source "drivers/flash/Kconfig.gecko"
 
-config SOC_FLASH_NIOS2_QSPI_DEV_NAME
-	string "Nios-II QSPI flash device name"
-	depends on SOC_FLASH_NIOS2_QSPI
-	default "NIOS2_QSPI_FLASH"
-	help
-	  Specify the device name for the QSPI flash driver.
+source "drivers/flash/Kconfig.native_posix"
+
+source "drivers/flash/Kconfig.nor"
 
 source "drivers/flash/Kconfig.qmsi"
 
@@ -78,4 +63,12 @@ source "drivers/flash/Kconfig.stm32"
 
 source "drivers/flash/Kconfig.sam0"
 
+source "drivers/flash/Kconfig.sam"
+
 source "drivers/flash/Kconfig.w25qxxdv"
+
+source "drivers/flash/Kconfig.simulator"
+
+source "drivers/flash/Kconfig.rv32m1"
+
+endif # FLASH

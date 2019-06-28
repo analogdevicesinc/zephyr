@@ -40,7 +40,12 @@
   #define SKIP_TO_KINETIS_FLASH_CONFIG
 #endif
 
+#if !defined(CONFIG_XIP) && (CONFIG_FLASH_SIZE == 0)
+#define ROM_ADDR RAM_ADDR
+#else
 #define ROM_ADDR (CONFIG_FLASH_BASE_ADDRESS + CONFIG_FLASH_LOAD_OFFSET)
+#endif
+
 #ifdef CONFIG_TI_CCFG_PRESENT
   #define CCFG_SIZE 88
   #define ROM_SIZE (CONFIG_FLASH_SIZE*1K - CONFIG_FLASH_LOAD_OFFSET - \
@@ -68,17 +73,39 @@
 	#define RAM_ADDR CONFIG_SRAM_BASE_ADDRESS
 #endif
 
+/* Set alignment to CONFIG_ARM_MPU_REGION_MIN_ALIGN_AND_SIZE
+ * to make linker section alignment comply with MPU granularity.
+ */
+#if defined(CONFIG_ARM_MPU_REGION_MIN_ALIGN_AND_SIZE)
+_region_min_align = CONFIG_ARM_MPU_REGION_MIN_ALIGN_AND_SIZE;
+#else
+/* If building without MPU support, use default 4-byte alignment. */
+_region_min_align = 4;
+#endif
+
+#if defined(CONFIG_MPU_REQUIRES_POWER_OF_TWO_ALIGNMENT)
+#define MPU_ALIGN(region_size) \
+    . = ALIGN(_region_min_align); \
+    . = ALIGN( 1 << LOG2CEIL(region_size))
+#else
+#define MPU_ALIGN(region_size) \
+    . = ALIGN(_region_min_align)
+#endif
+
 MEMORY
     {
     FLASH                 (rx) : ORIGIN = ROM_ADDR, LENGTH = ROM_SIZE
 #ifdef CONFIG_TI_CCFG_PRESENT
     FLASH_CCFG            (rwx): ORIGIN = CCFG_ADDR, LENGTH = CCFG_SIZE
 #endif
-#ifdef CONFIG_CCM_BASE_ADDRESS
-    CCM                   (rw) : ORIGIN = CONFIG_CCM_BASE_ADDRESS, LENGTH = CONFIG_CCM_SIZE * 1K
+#ifdef DT_CCM_BASE_ADDRESS
+    CCM                   (rw) : ORIGIN = DT_CCM_BASE_ADDRESS, LENGTH = DT_CCM_SIZE * 1K
 #endif
     SRAM                  (wx) : ORIGIN = RAM_ADDR, LENGTH = RAM_SIZE
-
+#ifdef CONFIG_BT_STM32_IPM
+    SRAM1                 (rw) : ORIGIN = RAM1_ADDR, LENGTH = RAM1_SIZE
+    SRAM2                 (rw) : ORIGIN = RAM2_ADDR, LENGTH = RAM2_SIZE
+#endif
     /* Used by and documented in include/linker/intlist.ld */
     IDT_LIST  (wx)      : ORIGIN = (RAM_ADDR + RAM_SIZE), LENGTH = 2K
     }
@@ -87,6 +114,23 @@ ENTRY(CONFIG_KERNEL_ENTRY)
 
 SECTIONS
     {
+
+#include <linker/rel-sections.ld>
+
+    /*
+     * .plt and .iplt are here according to 'arm-zephyr-elf-ld --verbose',
+     * before text section.
+     */
+    /DISCARD/ :
+	{
+	*(.plt)
+	}
+
+    /DISCARD/ :
+	{
+	*(.iplt)
+	}
+
     GROUP_START(ROMABLE_REGION)
 
 	_image_rom_start = ROM_ADDR;
@@ -99,6 +143,17 @@ SECTIONS
 	KEEP(*(.dbghdr))
 	KEEP(*(".dbghdr.*"))
 #endif
+
+#ifdef CONFIG_NXP_IMX_RT_BOOT_HEADER
+	KEEP(*(.boot_hdr.conf))
+	. = CONFIG_IMAGE_VECTOR_TABLE_OFFSET;
+	KEEP(*(.boot_hdr.ivt))
+	KEEP(*(.boot_hdr.data))
+#ifdef CONFIG_DEVICE_CONFIGURATION_DATA
+	KEEP(*(.boot_hdr.dcd_data))
+#endif
+#endif
+
 	. = CONFIG_TEXT_SECTION_OFFSET;
 
 #if defined(CONFIG_SW_VECTOR_RELAY)
@@ -114,6 +169,8 @@ SECTIONS
 
 	KEEP(*(IRQ_VECTOR_TABLE))
 
+	KEEP(*(.vectors))
+
 	KEEP(*(.openocd_dbg))
 	KEEP(*(".openocd_dbg.*"))
 
@@ -122,14 +179,27 @@ SECTIONS
 	KEEP(*(.kinetis_flash_config))
 	KEEP(*(".kinetis_flash_config.*"))
 
-#ifdef CONFIG_GEN_SW_ISR_TABLE
-	KEEP(*(SW_ISR_TABLE))
-#endif
 	_vector_end = .;
+	} GROUP_LINK_IN(ROMABLE_REGION)
+
+#ifdef CONFIG_CODE_DATA_RELOCATION
+
+#include <linker_relocate.ld>
+
+#endif /* CONFIG_CODE_DATA_RELOCATION */
+
+    SECTION_PROLOGUE(_TEXT_SECTION_NAME_2,,)
+	{
 	_image_text_start = .;
 	*(.text)
 	*(".text.*")
 	*(.gnu.linkonce.t.*)
+
+	/*
+	 * These are here according to 'arm-zephyr-elf-ld --verbose',
+	 * after .gnu.linkonce.t.*
+	 */
+	*(.glue_7t) *(.glue_7) *(.vfp11_veneer) *(.v4_bx)
 
 #include <linker/priv_stacks-text.ld>
 #include <linker/kobject-text.ld>
@@ -137,6 +207,16 @@ SECTIONS
 	} GROUP_LINK_IN(ROMABLE_REGION)
 
 	_image_text_end = .;
+
+#if defined (CONFIG_CPLUSPLUS)
+	SECTION_PROLOGUE(.ARM.extab,,)
+	{
+	/*
+	 * .ARM.extab section containing exception unwinding information.
+	 */
+	*(.ARM.extab* .gnu.linkonce.armextab.*)
+	} GROUP_LINK_IN(ROMABLE_REGION)
+#endif
 
 	SECTION_PROLOGUE(.ARM.exidx,,)
 	{
@@ -163,6 +243,14 @@ SECTIONS
 	*(".rodata.*")
 	*(.gnu.linkonce.r.*)
 
+/* Located in generated directory. This file is populated by the
+ * zephyr_linker_sources() Cmake function.
+ */
+#include <snippets-rodata.ld>
+#ifdef CONFIG_SOC_RODATA_LD
+#include <soc-rodata.ld>
+#endif
+
 #ifdef CONFIG_CUSTOM_RODATA_LD
 /* Located in project source directory */
 #include <custom-rodata.ld>
@@ -184,23 +272,8 @@ SECTIONS
 	. = ALIGN(4);
 	} GROUP_LINK_IN(ROMABLE_REGION)
 
-#if defined CONFIG_ARM_FIRMWARE_HAS_SECURE_ENTRY_FUNCS
-#if CONFIG_ARM_NSC_REGION_BASE_ADDRESS != 0
-       SECTION_PROLOGUE(.gnu.sgstubs,CONFIG_ARM_NSC_REGION_BASE_ADDRESS,)
-#else
-       SECTION_PROLOGUE(.gnu.sgstubs,,)
-#endif /* CONFIG_ARM_NSC_REGION_BASE_ADDRESS != 0 */
-       {
-       . = ALIGN(4);
-       __sg_start = .;
-       *(.gnu*)
-       . = ALIGN(4);
-       __sg_end = .;
-       __sg_size = __sg_end - __sg_start;
-       } GROUP_LINK_IN(ROMABLE_REGION)
-#endif /* CONFIG_ARM_FIRMWARE_HAS_SECURE_ENTRY_FUNCS */
-
 	_image_rodata_end = .;
+	MPU_ALIGN(_image_rodata_end -_image_rom_start);
 	_image_rom_end = .;
 
     GROUP_END(ROMABLE_REGION)
@@ -213,8 +286,25 @@ SECTIONS
     } > FLASH_CCFG
 #endif
 
+    /*
+     * These are here according to 'arm-zephyr-elf-ld --verbose',
+     * before data section.
+     */
+    /DISCARD/ : {
+	*(.got.plt)
+	*(.igot.plt)
+	*(.got)
+	*(.igot)
+	}
+
     GROUP_START(RAMABLE_REGION)
 
+	. = RAM_ADDR;
+	/* Align the start of image SRAM with the
+	 * minimum granularity required by MPU.
+	 */
+	. = ALIGN(_region_min_align);
+	_image_ram_start = .;
 
 #if defined(CONFIG_SOC_SERIES_STM32F0X) && !defined(CONFIG_IS_BOOTLOADER)
     /* Must be first in ramable region */
@@ -226,77 +316,20 @@ SECTIONS
 	} GROUP_DATA_LINK_IN(RAMABLE_REGION, RAMABLE_REGION)
 #endif
 
-#if defined(CONFIG_SW_VECTOR_RELAY)
-	/* Reserved 4 bytes to save vector table base address */
-	SECTION_PROLOGUE(.vt_pointer,(NOLOAD),)
-	{
-		*(.vt_pointer_section)
-		*(".vt_pointer_section.*")
-	}
-#endif
+/* Located in generated directory. This file is populated by the
+ * zephyr_linker_sources() Cmake function.
+ */
+#include <snippets-ram-sections.ld>
 
-#include <app_data_alignment.ld>
+#if defined(CONFIG_USERSPACE)
+#define APP_SHARED_ALIGN . = ALIGN(_region_min_align);
+#define SMEM_PARTITION_ALIGN MPU_ALIGN
 
-#if defined(CONFIG_APP_SHARED_MEM)
-#if defined(CONFIG_MPU_REQUIRES_POWER_OF_TWO_ALIGNMENT)
-#define APP_SHARED_ALIGN . = ALIGN(4);
-		#include <app_smem.ld>
-#else
-	SECTION_PROLOGUE(_APP_SMEM_SECTION_NAME, (OPTIONAL),)
-	{
-		. = ALIGN(4);
-		_image_ram_start = .;
-		_app_smem_start = .;
-		APP_SMEM_SECTION()
-		_app_smem_end = .;
-		. = ALIGN(4);
-	} GROUP_DATA_LINK_IN(RAMABLE_REGION, ROMABLE_REGION)
-#endif  /* CONFIG_MPU_REQUIRES_POWER_OF_TWO_ALIGNMENT */
+#include <app_smem.ld>
 
 	_app_smem_size = _app_smem_end - _app_smem_start;
 	_app_smem_rom_start = LOADADDR(_APP_SMEM_SECTION_NAME);
-#endif  /* CONFIG_APP_SHARED_MEM */
-
-#ifdef CONFIG_APPLICATION_MEMORY
-	SECTION_DATA_PROLOGUE(_APP_DATA_SECTION_NAME, (OPTIONAL),)
-	{
-
-		__app_ram_start = .;
-		__app_data_ram_start = .;
-		APP_INPUT_SECTION(.data)
-		APP_INPUT_SECTION(".data.*")
-		__app_data_ram_end = .;
-	} GROUP_DATA_LINK_IN(RAMABLE_REGION, ROMABLE_REGION)
-
-	__app_data_rom_start = LOADADDR(_APP_DATA_SECTION_NAME);
-
-	SECTION_PROLOGUE(_APP_BSS_SECTION_NAME, (NOLOAD OPTIONAL),)
-	{
-		__app_bss_start = .;
-		APP_INPUT_SECTION(.bss)
-		APP_INPUT_SECTION(".bss.*")
-		APP_INPUT_SECTION(COMMON)
-		__app_bss_end = .;
-	} GROUP_DATA_LINK_IN(RAMABLE_REGION, RAMABLE_REGION)
-
-	__app_bss_num_words = (__app_bss_end - __app_bss_start) >> 2;
-
-	SECTION_PROLOGUE(_APP_NOINIT_SECTION_NAME, (NOLOAD OPTIONAL),)
-	{
-		APP_INPUT_SECTION(.noinit)
-		APP_INPUT_SECTION(".noinit.*")
-	} GROUP_DATA_LINK_IN(RAMABLE_REGION, RAMABLE_REGION)
-
-	__app_last_address_used = .;
-
-	/* Pad out application ram area to make MPU friendly */
-	SECTION_PROLOGUE(app_pad, (NOLOAD OPTIONAL),)
-	{
-		. = ALIGN(_app_data_align);
-	} GROUP_DATA_LINK_IN(RAMABLE_REGION, RAMABLE_REGION)
-	__app_ram_end = .;
-	__app_ram_size = __app_ram_end - __app_ram_start;
-#endif /* CONFIG_APPLICATION_MEMORY */
+#endif  /* CONFIG_USERSPACE */
 
     SECTION_DATA_PROLOGUE(_BSS_SECTION_NAME,(NOLOAD),)
 	{
@@ -308,10 +341,14 @@ SECTIONS
 	__bss_start = .;
 	__kernel_ram_start = .;
 
-	KERNEL_INPUT_SECTION(.bss)
-	KERNEL_INPUT_SECTION(".bss.*")
-	KERNEL_INPUT_SECTION(COMMON)
+	*(.bss)
+	*(".bss.*")
+	*(COMMON)
 	*(".kernel_bss.*")
+
+#ifdef CONFIG_CODE_DATA_RELOCATION
+#include <linker_sram_bss_relocate.ld>
+#endif
 
         /*
          * As memory is cleared in words only, it is simpler to ensure the BSS
@@ -326,22 +363,42 @@ SECTIONS
          * This section is used for non-initialized objects that
          * will not be cleared during the boot process.
          */
-        KERNEL_INPUT_SECTION(.noinit)
-        KERNEL_INPUT_SECTION(".noinit.*")
+        *(.noinit)
+        *(".noinit.*")
 	*(".kernel_noinit.*")
+
+/* Located in generated directory. This file is populated by the
+ * zephyr_linker_sources() Cmake function.
+ */
+#include <snippets-noinit.ld>
+#ifdef CONFIG_SOC_NOINIT_LD
+#include <soc-noinit.ld>
+#endif
 
         } GROUP_LINK_IN(RAMABLE_REGION)
 
     SECTION_DATA_PROLOGUE(_DATA_SECTION_NAME,,)
 	{
 	__data_ram_start = .;
-	KERNEL_INPUT_SECTION(.data)
-	KERNEL_INPUT_SECTION(".data.*")
+	*(.data)
+	*(".data.*")
 	*(".kernel.*")
+
+/* Located in generated directory. This file is populated by the
+ * zephyr_linker_sources() Cmake function.
+ */
+#include <snippets-rwdata.ld>
+#ifdef CONFIG_SOC_RWDATA_LD
+#include <soc-rwdata.ld>
+#endif
 
 #ifdef CONFIG_CUSTOM_RWDATA_LD
 /* Located in project source directory */
 #include <custom-rwdata.ld>
+#endif
+
+#ifdef CONFIG_CODE_DATA_RELOCATION
+#include <linker_sram_data_relocate.ld>
 #endif
 
 	} GROUP_DATA_LINK_IN(RAMABLE_REGION, ROMABLE_REGION)
@@ -351,6 +408,8 @@ SECTIONS
 #include <linker/common-ram.ld>
 #include <linker/priv_stacks.ld>
 #include <linker/kobject.ld>
+
+#include <linker/priv_stacks-noinit.ld>
 
     __data_ram_end = .;
 
@@ -365,52 +424,69 @@ SECTIONS
 
     GROUP_END(RAMABLE_REGION)
 
-#ifdef CONFIG_CCM_BASE_ADDRESS
-
-    GROUP_START(CCM)
-
-	SECTION_PROLOGUE(_CCM_BSS_SECTION_NAME, (NOLOAD OPTIONAL),SUBALIGN(4))
-	{
-		__ccm_start = .;
-		__ccm_bss_start = .;
-		*(.ccm_bss)
-		*(".ccm_bss.*")
-	} GROUP_LINK_IN(CCM)
-
-	__ccm_bss_end = .;
-
-	SECTION_PROLOGUE(_CCM_NOINIT_SECTION_NAME, (NOLOAD OPTIONAL),SUBALIGN(4))
-	{
-		__ccm_noinit_start = .;
-		*(.ccm_noinit)
-		*(".ccm_noinit.*")
-	} GROUP_LINK_IN(CCM)
-
-	__ccm_noinit_end = .;
-
-	SECTION_PROLOGUE(_CCM_DATA_SECTION_NAME, (OPTIONAL),SUBALIGN(4))
-	{
-		__ccm_data_start = .;
-		*(.ccm_data)
-		*(".ccm_data.*")
-	} GROUP_LINK_IN(CCM AT> ROMABLE_REGION)
-
-	__ccm_data_end = .;
-	__ccm_end = .;
-
-	__ccm_data_rom_start = LOADADDR(_CCM_DATA_SECTION_NAME);
-
-    GROUP_END(CCM)
-
-#endif /* CONFIG_CCM_BASE_ADDRESS */
-
 #ifdef CONFIG_CUSTOM_SECTIONS_LD
 /* Located in project source directory */
 #include <custom-sections.ld>
 #endif
 
-#ifdef CONFIG_GEN_ISR_TABLES
-#include <linker/intlist.ld>
+/* Located in generated directory. This file is populated by the
+ * zephyr_linker_sources() Cmake function.
+ */
+#include <snippets-sections.ld>
+
+#include <linker/debug-sections.ld>
+
+    SECTION_PROLOGUE(.ARM.attributes, 0,)
+	{
+	KEEP(*(.ARM.attributes))
+	KEEP(*(.gnu.attributes))
+	}
+
+#if defined(CONFIG_ARM_FIRMWARE_HAS_SECURE_ENTRY_FUNCS)
+#if CONFIG_ARM_NSC_REGION_BASE_ADDRESS != 0
+	#define NSC_ALIGN . = ABSOLUTE(CONFIG_ARM_NSC_REGION_BASE_ADDRESS)
+#elif defined(CONFIG_CPU_HAS_NRF_IDAU)
+	/* The nRF9160 needs the NSC region to be at the end of a 32 kB region. */
+	#define NSC_ALIGN . = ALIGN(0x8000) - (1 << LOG2CEIL(__sg_size))
+#else
+	#define NSC_ALIGN . = ALIGN(4)
 #endif
+
+#ifdef CONFIG_CPU_HAS_NRF_IDAU
+	#define NSC_ALIGN_END . = ALIGN(0x8000)
+#else
+	#define NSC_ALIGN_END . = ALIGN(4)
+#endif
+
+SECTION_PROLOGUE(.gnu.sgstubs,,)
+{
+	NSC_ALIGN;
+	__sg_start = .;
+	/* No input section necessary, since the Secure Entry Veneers are
+	   automatically placed after the .gnu.sgstubs output section. */
+} GROUP_LINK_IN(ROMABLE_REGION)
+__sg_end = .;
+__sg_size = __sg_end - __sg_start;
+NSC_ALIGN_END;
+__nsc_size = . - __sg_start;
+
+#ifdef CONFIG_CPU_HAS_NRF_IDAU
+	ASSERT(1 << LOG2CEIL(0x8000 - (__sg_start % 0x8000))
+			 == (0x8000 - (__sg_start % 0x8000))
+		&& (0x8000 - (__sg_start % 0x8000)) >= 32
+		&& (0x8000 - (__sg_start % 0x8000)) <= 4096,
+		"The Non-Secure Callable region size must be a power of 2 \
+between 32 and 4096 bytes.")
+#endif
+#endif /* CONFIG_ARM_FIRMWARE_HAS_SECURE_ENTRY_FUNCS */
+
+/* Must be last in romable region */
+SECTION_PROLOGUE(.last_section,(NOLOAD),)
+{
+} GROUP_LINK_IN(ROMABLE_REGION)
+
+/* To provide the image size as a const expression,
+ * calculate this value here. */
+_flash_used = LOADADDR(.last_section) - _image_rom_start;
 
     }

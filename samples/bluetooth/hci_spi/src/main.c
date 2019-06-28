@@ -11,14 +11,14 @@
 #include <stdio.h>
 
 #include <zephyr.h>
-#include <misc/byteorder.h>
-#include <logging/sys_log.h>
-#include <misc/stack.h>
+#include <sys/byteorder.h>
+#include <logging/log.h>
+#include <debug/stack.h>
 
 #include <device.h>
 #include <init.h>
-#include <gpio.h>
-#include <spi.h>
+#include <drivers/gpio.h>
+#include <drivers/spi.h>
 
 #include <net/buf.h>
 #include <bluetooth/bluetooth.h>
@@ -27,7 +27,8 @@
 #include <bluetooth/buf.h>
 #include <bluetooth/hci_raw.h>
 
-#include "common/log.h"
+#define LOG_MODULE_NAME hci_spi
+LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
 #define HCI_CMD                 0x01
 #define HCI_ACL                 0x02
@@ -47,9 +48,7 @@
 #define PACKET_TYPE             0
 #define EVT_BLUE_INITIALIZED    0x01
 
-#define SPI_HCI_DEV_NAME        CONFIG_BT_CTLR_TO_HOST_SPI_DEV_NAME
-#define GPIO_IRQ_DEV_NAME       CONFIG_BT_CTLR_TO_HOST_SPI_IRQ_DEV_NAME
-#define GPIO_IRQ_PIN            CONFIG_BT_CTLR_TO_HOST_SPI_IRQ_PIN
+#define GPIO_IRQ_PIN            DT_INST_0_ZEPHYR_BT_HCI_SPI_SLAVE_IRQ_GPIOS_PIN
 
 /* Needs to be aligned with the SPI master buffer size */
 #define SPI_MAX_MSG_LEN         255
@@ -95,10 +94,10 @@ NET_BUF_POOL_DEFINE(acl_tx_pool, TX_BUF_COUNT, BT_BUF_ACL_SIZE,
 
 static struct device *spi_hci_dev;
 static struct spi_config spi_cfg = {
-	.operation = SPI_WORD_SET(8),
+	.operation = SPI_WORD_SET(8) | SPI_OP_MODE_SLAVE,
 };
 static struct device *gpio_dev;
-static BT_STACK_NOINIT(bt_tx_thread_stack, CONFIG_BT_HCI_TX_STACK_SIZE);
+static K_THREAD_STACK_DEFINE(bt_tx_thread_stack, CONFIG_BT_HCI_TX_STACK_SIZE);
 static struct k_thread bt_tx_thread_data;
 
 static K_SEM_DEFINE(sem_spi_rx, 0, 1);
@@ -106,14 +105,12 @@ static K_SEM_DEFINE(sem_spi_tx, 0, 1);
 
 static inline int spi_send(struct net_buf *buf)
 {
+	u8_t header_master[5] = { 0 };
+	u8_t header_slave[5] = { READY_NOW, SANITY_CHECK,
+				 0x00, 0x00, 0x00 };
 	int ret;
 
-	txmsg[0] = READY_NOW;
-	txmsg[1] = SANITY_CHECK;
-	txmsg[2] = 0x00;
-
-	SYS_LOG_DBG("buf %p type %u len %u", buf, bt_buf_get_type(buf),
-		    buf->len);
+	LOG_DBG("buf %p type %u len %u", buf, bt_buf_get_type(buf), buf->len);
 
 	switch (bt_buf_get_type(buf)) {
 	case BT_BUF_ACL_IN:
@@ -123,42 +120,40 @@ static inline int spi_send(struct net_buf *buf)
 		net_buf_push_u8(buf, HCI_EVT);
 		break;
 	default:
-		SYS_LOG_ERR("Unknown type %u", bt_buf_get_type(buf));
+		LOG_ERR("Unknown type %u", bt_buf_get_type(buf));
 		net_buf_unref(buf);
 		return -EINVAL;
 	}
 
 	if (buf->len > SPI_MAX_MSG_LEN) {
-		SYS_LOG_ERR("TX message too long");
+		LOG_ERR("TX message too long");
 		net_buf_unref(buf);
 		return -EINVAL;
 	}
-
-	txmsg[STATUS_HEADER_TOREAD] = buf->len;
-	txmsg[4] = 0x00;
-
-	tx.buf = txmsg;
-	tx.len = 5;
-	rx.buf = rxmsg;
-	rx.len = 5;
+	header_slave[STATUS_HEADER_TOREAD] = buf->len;
 
 	gpio_pin_write(gpio_dev, GPIO_IRQ_PIN, 1);
 
 	/* Coordinate transfer lock with the spi rx thread */
 	k_sem_take(&sem_spi_tx, K_FOREVER);
+
+	tx.buf = header_slave;
+	tx.len = 5;
+	rx.buf = header_master;
+	rx.len = 5;
 	do {
 		ret = spi_transceive(spi_hci_dev, &spi_cfg, &tx_bufs, &rx_bufs);
 		if (ret < 0) {
-			SYS_LOG_ERR("SPI transceive error: %d", ret);
+			LOG_ERR("SPI transceive error: %d", ret);
 		}
-	} while (rxmsg[STATUS_HEADER_READY] != SPI_READ);
+	} while (header_master[STATUS_HEADER_READY] != SPI_READ);
 
 	tx.buf = buf->data;
 	tx.len = buf->len;
 
 	ret = spi_write(spi_hci_dev, &spi_cfg, &tx_bufs);
 	if (ret < 0) {
-		SYS_LOG_ERR("SPI transceive error: %d", ret);
+		LOG_ERR("SPI transceive error: %d", ret);
 	}
 	net_buf_unref(buf);
 
@@ -194,7 +189,7 @@ static void bt_tx_thread(void *p1, void *p2, void *p3)
 			ret = spi_transceive(spi_hci_dev, &spi_cfg,
 					     &tx_bufs, &rx_bufs);
 			if (ret < 0) {
-				SYS_LOG_ERR("SPI transceive error: %d", ret);
+				LOG_ERR("SPI transceive error: %d", ret);
 			}
 		} while ((header_master[STATUS_HEADER_READY] != SPI_READ) &&
 			 (header_master[STATUS_HEADER_READY] != SPI_WRITE));
@@ -215,7 +210,7 @@ static void bt_tx_thread(void *p1, void *p2, void *p3)
 		ret = spi_transceive(spi_hci_dev, &spi_cfg,
 				     &tx_bufs, &rx_bufs);
 		if (ret < 0) {
-			SYS_LOG_ERR("SPI transceive error: %d", ret);
+			LOG_ERR("SPI transceive error: %d", ret);
 			continue;
 		}
 
@@ -231,7 +226,7 @@ static void bt_tx_thread(void *p1, void *p2, void *p3)
 				net_buf_add_mem(buf, &rxmsg[4],
 						cmd_hdr.param_len);
 			} else {
-				SYS_LOG_ERR("No available command buffers!");
+				LOG_ERR("No available command buffers!");
 				continue;
 			}
 			break;
@@ -246,21 +241,21 @@ static void bt_tx_thread(void *p1, void *p2, void *p3)
 				net_buf_add_mem(buf, &rxmsg[5],
 						sys_le16_to_cpu(acl_hdr.len));
 			} else {
-				SYS_LOG_ERR("No available ACL buffers!");
+				LOG_ERR("No available ACL buffers!");
 				continue;
 			}
 			break;
 		default:
-			SYS_LOG_ERR("Unknown BT HCI buf type");
+			LOG_ERR("Unknown BT HCI buf type");
 			continue;
 		}
 
-		SYS_LOG_DBG("buf %p type %u len %u",
-			    buf, bt_buf_get_type(buf), buf->len);
+		LOG_DBG("buf %p type %u len %u",
+			buf, bt_buf_get_type(buf), buf->len);
 
 		ret = bt_send(buf);
 		if (ret) {
-			SYS_LOG_ERR("Unable to send (ret %d)", ret);
+			LOG_ERR("Unable to send (ret %d)", ret);
 			net_buf_unref(buf);
 		}
 
@@ -275,14 +270,15 @@ static int hci_spi_init(struct device *unused)
 {
 	ARG_UNUSED(unused);
 
-	SYS_LOG_DBG("");
+	LOG_DBG("");
 
-	spi_hci_dev = device_get_binding(SPI_HCI_DEV_NAME);
+	spi_hci_dev = device_get_binding(DT_INST_0_ZEPHYR_BT_HCI_SPI_SLAVE_BUS_NAME);
 	if (!spi_hci_dev) {
 		return -EINVAL;
 	}
 
-	gpio_dev = device_get_binding(GPIO_IRQ_DEV_NAME);
+	gpio_dev = device_get_binding(
+		DT_INST_0_ZEPHYR_BT_HCI_SPI_SLAVE_IRQ_GPIOS_CONTROLLER);
 	if (!gpio_dev) {
 		return -EINVAL;
 	}
@@ -303,11 +299,11 @@ void main(void)
 	k_tid_t tx_id;
 	int err;
 
-	SYS_LOG_DBG("Start");
+	LOG_DBG("Start");
 
 	err = bt_enable_raw(&rx_queue);
 	if (err) {
-		SYS_LOG_ERR("bt_enable_raw: %d; aborting", err);
+		LOG_ERR("bt_enable_raw: %d; aborting", err);
 		return;
 	}
 
@@ -322,11 +318,11 @@ void main(void)
 	bt_buf_set_type(buf, BT_BUF_EVT);
 	evt_hdr = net_buf_add(buf, sizeof(*evt_hdr));
 	evt_hdr->evt = BT_HCI_EVT_VENDOR;
-	evt_hdr->len = 2;
+	evt_hdr->len = 2U;
 	net_buf_add_le16(buf, EVT_BLUE_INITIALIZED);
 	err = spi_send(buf);
 	if (err) {
-		SYS_LOG_ERR("can't send initialization event; aborting");
+		LOG_ERR("can't send initialization event; aborting");
 		k_thread_abort(tx_id);
 		return;
 	}
@@ -335,7 +331,7 @@ void main(void)
 		buf = net_buf_get(&rx_queue, K_FOREVER);
 		err = spi_send(buf);
 		if (err) {
-			SYS_LOG_ERR("Failed to send");
+			LOG_ERR("Failed to send");
 		}
 	}
 }

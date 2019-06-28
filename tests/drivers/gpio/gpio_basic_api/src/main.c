@@ -35,12 +35,6 @@
  *
  * 1. PIN_OUT is GPIO_SS_2
  * 2. PIN_IN is GPIO_SS_3
- *
- * quark_d2000_crb - x86
- * --------------------
- *
- * 1. PIN_OUT is GPIO_8
- * 2. PIN_IN is GPIO_9
  */
 
 #include "test_gpio.h"
@@ -53,6 +47,7 @@ void test_main(void)
 			 ztest_unit_test(test_gpio_callback_edge_low),
 			 ztest_unit_test(test_gpio_callback_level_high),
 			 ztest_unit_test(test_gpio_callback_add_remove),
+			 ztest_unit_test(test_gpio_callback_self_remove),
 			 ztest_unit_test(test_gpio_callback_enable_disable),
 			 ztest_unit_test(test_gpio_callback_level_low));
 	ztest_run_test_suite(gpio_basic_test);

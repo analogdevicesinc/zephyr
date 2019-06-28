@@ -14,11 +14,11 @@
 #ifndef ZEPHYR_INCLUDE_ARCH_ARM_CORTEX_M_CMSIS_H_
 #define ZEPHYR_INCLUDE_ARCH_ARM_CORTEX_M_CMSIS_H_
 
+#include <soc.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-#include <soc.h>
 
 /* CP10 Access Bits */
 #define CPACR_CP10_Pos          20U
@@ -84,12 +84,12 @@ typedef enum {
 #ifndef __MPU_PRESENT
 #define __MPU_PRESENT             0U
 #endif
-#define __NVIC_PRIO_BITS               CONFIG_NUM_IRQ_PRIO_BITS
+#define __NVIC_PRIO_BITS               DT_NUM_IRQ_PRIO_BITS
 #define __Vendor_SysTickConfig         0 /* Default to standard SysTick */
 #endif /* __NVIC_PRIO_BITS */
 
-#if __NVIC_PRIO_BITS != CONFIG_NUM_IRQ_PRIO_BITS
-#error "CONFIG_NUM_IRQ_PRIO_BITS and __NVIC_PRIO_BITS are not set to the same value"
+#if __NVIC_PRIO_BITS != DT_NUM_IRQ_PRIO_BITS
+#error "DT_NUM_IRQ_PRIO_BITS and __NVIC_PRIO_BITS are not set to the same value"
 #endif
 
 #if defined(CONFIG_CPU_CORTEX_M0)

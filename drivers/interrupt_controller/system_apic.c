@@ -10,13 +10,12 @@
  *
  */
 
-#include <misc/__assert.h>
-#include "board.h"
+#include <sys/__assert.h>
 #include <kernel.h>
 #include <arch/cpu.h>
-#include <drivers/ioapic.h>
-#include <drivers/loapic.h>
-#include <drivers/sysapic.h>
+#include <drivers/interrupt_controller/ioapic.h>
+#include <drivers/interrupt_controller/loapic.h>
+#include <drivers/interrupt_controller/sysapic.h>
 #include <irq.h>
 
 #define IS_IOAPIC_IRQ(irq)  (irq < LOAPIC_IRQ_BASE)
@@ -50,9 +49,9 @@ void __irq_controller_irq_config(unsigned int vector, unsigned int irq,
 	__ASSERT(irq <= HARDWARE_IRQ_LIMIT, "invalid irq line");
 
 	if (IS_IOAPIC_IRQ(irq)) {
-		_ioapic_irq_set(irq, vector, flags);
+		z_ioapic_irq_set(irq, vector, flags);
 	} else {
-		_loapic_int_vec_set(irq - LOAPIC_IRQ_BASE, vector);
+		z_loapic_int_vec_set(irq - LOAPIC_IRQ_BASE, vector);
 	}
 }
 
@@ -73,12 +72,12 @@ void __irq_controller_irq_config(unsigned int vector, unsigned int irq,
  *
  * @return N/A
  */
-void _arch_irq_enable(unsigned int irq)
+void z_arch_irq_enable(unsigned int irq)
 {
 	if (IS_IOAPIC_IRQ(irq)) {
-		_ioapic_irq_enable(irq);
+		z_ioapic_irq_enable(irq);
 	} else {
-		_loapic_irq_enable(irq - LOAPIC_IRQ_BASE);
+		z_loapic_irq_enable(irq - LOAPIC_IRQ_BASE);
 	}
 }
 
@@ -93,12 +92,12 @@ void _arch_irq_enable(unsigned int irq)
  *
  * @return N/A
  */
-void _arch_irq_disable(unsigned int irq)
+void z_arch_irq_disable(unsigned int irq)
 {
 	if (IS_IOAPIC_IRQ(irq)) {
-		_ioapic_irq_disable(irq);
+		z_ioapic_irq_disable(irq);
 	} else {
-		_loapic_irq_disable(irq - LOAPIC_IRQ_BASE);
+		z_loapic_irq_disable(irq - LOAPIC_IRQ_BASE);
 	}
 }
 

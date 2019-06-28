@@ -8,27 +8,27 @@
 #include <errno.h>
 #include <string.h>
 
-#define SYS_LOG_LEVEL SYS_LOG_LEVEL_DEBUG
-#include <logging/sys_log.h>
+#define LOG_LEVEL 4
+#include <logging/log.h>
+LOG_MODULE_REGISTER(main);
 
 #include <zephyr.h>
-#include <led_strip.h>
+#include <drivers/led_strip.h>
 #include <device.h>
-#include <spi.h>
-#include <misc/util.h>
+#include <drivers/spi.h>
+#include <sys/util.h>
 
 /*
  * Number of RGB LEDs in the LED strip, adjust as needed.
  */
 #if defined(CONFIG_WS2812_STRIP)
 #define STRIP_NUM_LEDS 12
-#define STRIP_DEV_NAME CONFIG_WS2812_STRIP_NAME
+#define STRIP_DEV_NAME DT_INST_0_WORLDSEMI_WS2812_LABEL
 #else
 #define STRIP_NUM_LEDS 24
 #define STRIP_DEV_NAME CONFIG_WS2812B_SW_NAME
 #endif
 
-#define SPI_DEV_NAME "ws2812_spi"
 #define DELAY_TIME K_MSEC(40)
 
 static const struct led_rgb colors[] = {
@@ -60,26 +60,12 @@ void main(void)
 {
 	struct device *strip;
 	size_t i, time;
-#if defined(CONFIG_SPI)
-	struct device *spi;
-
-	/* Double-check the configuration. */
-	spi = device_get_binding(SPI_DEV_NAME);
-	if (spi) {
-		SYS_LOG_INF("Found SPI device %s", SPI_DEV_NAME);
-	} else {
-		SYS_LOG_ERR("SPI device not found; you must choose a SPI "
-			    "device and configure its name to %s",
-			    SPI_DEV_NAME);
-		return;
-	}
-#endif
 
 	strip = device_get_binding(STRIP_DEV_NAME);
 	if (strip) {
-		SYS_LOG_INF("Found LED strip device %s", STRIP_DEV_NAME);
+		LOG_INF("Found LED strip device %s", STRIP_DEV_NAME);
 	} else {
-		SYS_LOG_ERR("LED strip device %s not found", STRIP_DEV_NAME);
+		LOG_ERR("LED strip device %s not found", STRIP_DEV_NAME);
 		return;
 	}
 
@@ -89,7 +75,7 @@ void main(void)
 	 * beginning. This has the effect of moving it around in a
 	 * circle in the case of rings of pixels.
 	 */
-	SYS_LOG_INF("Displaying pattern on strip");
+	LOG_INF("Displaying pattern on strip");
 	time = 0;
 	while (1) {
 		for (i = 0; i < STRIP_NUM_LEDS; i++) {

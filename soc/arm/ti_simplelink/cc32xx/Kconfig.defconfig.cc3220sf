@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+
 # Kconfig.defconfig.cc3220sf - TI SimpleLink CC3220SF SoC
 #
 
@@ -28,7 +30,7 @@ config BOOTLOADER_SRAM_SIZE
 if GPIO
 
 config GPIO_CC32XX
-	def_bool y
+	default y
 
 config GPIO_CC32XX_A0
 	default n
@@ -43,5 +45,12 @@ config GPIO_CC32XX_A3
 	default n
 
 endif # GPIO
+
+if !XIP
+config FLASH_SIZE
+	default 0
+config FLASH_BASE_ADDRESS
+	default 0
+endif
 
 endif # SOC_CC3220SF

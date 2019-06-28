@@ -108,6 +108,14 @@ void tz_nonsecure_system_reset_req_block(int block)
 		| aircr_payload;
 }
 
+#if defined(CONFIG_ARMV7_M_ARMV8_M_FP)
+void tz_nonsecure_fpu_access_enable(void)
+{
+	SCB->NSACR |=
+		(1UL << SCB_NSACR_CP10_Pos) | (1UL << SCB_NSACR_CP11_Pos);
+}
+#endif /* CONFIG_ARMV7_M_ARMV8_M_FP */
+
 void tz_sau_configure(int enable, int allns)
 {
 	if (enable) {
@@ -127,7 +135,7 @@ u32_t tz_sau_number_of_regions_get(void)
 	return SAU->TYPE & SAU_TYPE_SREGION_Msk;
 }
 
-#if defined (CONFIG_ARM_SAU)
+#if defined(CONFIG_CPU_HAS_ARM_SAU)
 #if defined (__SAUREGION_PRESENT) && (__SAUREGION_PRESENT == 1U)
 int tz_sau_region_configure_enable(tz_sau_conf_t *p_sau_conf)
 {
@@ -155,4 +163,4 @@ int tz_sau_region_configure_enable(tz_sau_conf_t *p_sau_conf)
 #else
 #error "ARM SAU not implemented"
 #endif
-#endif /* CONFIG_ARM_SAU */
+#endif /* CONFIG_CPU_HAS_ARM_SAU */

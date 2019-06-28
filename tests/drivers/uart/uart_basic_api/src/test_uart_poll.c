@@ -22,8 +22,8 @@ static int test_poll_in(void)
 
 	/* Verify uart_poll_in() */
 	while (1) {
-		while (uart_poll_in(uart_dev, &recv_char) < 0)
-			;
+		while (uart_poll_in(uart_dev, &recv_char) < 0) {
+		}
 
 		TC_PRINT("%c", recv_char);
 
@@ -38,7 +38,6 @@ static int test_poll_in(void)
 static int test_poll_out(void)
 {
 	int i;
-	unsigned char sent_char;
 	struct device *uart_dev = device_get_binding(UART_DEVICE_NAME);
 
 	if (!uart_dev) {
@@ -48,13 +47,7 @@ static int test_poll_out(void)
 
 	/* Verify uart_poll_out() */
 	for (i = 0; i < strlen(poll_data); i++) {
-		sent_char = uart_poll_out(uart_dev, poll_data[i]);
-
-		if (sent_char != poll_data[i]) {
-			TC_PRINT("expect send %c, actaul send %c\n",
-						poll_data[i], sent_char);
-			return TC_FAIL;
-		}
+		uart_poll_out(uart_dev, poll_data[i]);
 	}
 
 	return TC_PASS;

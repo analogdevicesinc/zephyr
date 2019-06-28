@@ -8,14 +8,18 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <sensor.h>
+#include <drivers/sensor.h>
 #include <kernel.h>
 #include <device.h>
 #include <init.h>
-#include <misc/byteorder.h>
-#include <misc/__assert.h>
+#include <sys/byteorder.h>
+#include <sys/__assert.h>
+#include <logging/log.h>
 
 #include "lsm6ds0.h"
+
+#define LOG_LEVEL CONFIG_SENSOR_LOG_LEVEL
+LOG_MODULE_REGISTER(LSM6DS0);
 
 static inline int lsm6ds0_reboot(struct device *dev)
 {
@@ -29,7 +33,7 @@ static inline int lsm6ds0_reboot(struct device *dev)
 		return -EIO;
 	}
 
-	k_busy_wait(50 * USEC_PER_MSEC);
+	k_busy_wait(USEC_PER_MSEC * 50U);
 
 	return 0;
 }
@@ -136,7 +140,7 @@ static int lsm6ds0_sample_fetch_accel(struct device *dev)
 
 	if (i2c_burst_read(data->i2c_master, config->i2c_slave_addr,
 			   LSM6DS0_REG_OUT_X_L_XL, buf, sizeof(buf)) < 0) {
-		SYS_LOG_DBG("failed to read sample");
+		LOG_DBG("failed to read sample");
 		return -EIO;
 	}
 
@@ -164,7 +168,7 @@ static int lsm6ds0_sample_fetch_gyro(struct device *dev)
 
 	if (i2c_burst_read(data->i2c_master, config->i2c_slave_addr,
 			   LSM6DS0_REG_OUT_X_L_G, buf, sizeof(buf)) < 0) {
-		SYS_LOG_DBG("failed to read sample");
+		LOG_DBG("failed to read sample");
 		return -EIO;
 	}
 
@@ -193,7 +197,7 @@ static int lsm6ds0_sample_fetch_temp(struct device *dev)
 
 	if (i2c_burst_read(data->i2c_master, config->i2c_slave_addr,
 			   LSM6DS0_REG_OUT_TEMP_L, buf, sizeof(buf)) < 0) {
-		SYS_LOG_DBG("failed to read sample");
+		LOG_DBG("failed to read sample");
 		return -EIO;
 	}
 
@@ -406,56 +410,56 @@ static int lsm6ds0_init_chip(struct device *dev)
 	u8_t chip_id;
 
 	if (lsm6ds0_reboot(dev) < 0) {
-		SYS_LOG_DBG("failed to reboot device");
+		LOG_DBG("failed to reboot device");
 		return -EIO;
 	}
 
 	if (i2c_reg_read_byte(data->i2c_master, config->i2c_slave_addr,
 			      LSM6DS0_REG_WHO_AM_I, &chip_id) < 0) {
-		SYS_LOG_DBG("failed reading chip id");
+		LOG_DBG("failed reading chip id");
 		return -EIO;
 	}
 	if (chip_id != LSM6DS0_VAL_WHO_AM_I) {
-		SYS_LOG_DBG("invalid chip id 0x%x", chip_id);
+		LOG_DBG("invalid chip id 0x%x", chip_id);
 		return -EIO;
 	}
-	SYS_LOG_DBG("chip id 0x%x", chip_id);
+	LOG_DBG("chip id 0x%x", chip_id);
 
 	if (lsm6ds0_accel_axis_ctrl(dev, LSM6DS0_ACCEL_ENABLE_X_AXIS,
 				    LSM6DS0_ACCEL_ENABLE_Y_AXIS,
 				    LSM6DS0_ACCEL_ENABLE_Z_AXIS) < 0) {
-		SYS_LOG_DBG("failed to set accelerometer axis");
+		LOG_DBG("failed to set accelerometer axis");
 		return -EIO;
 	}
 
 	if (lsm6ds0_accel_set_fs_raw(dev, LSM6DS0_DEFAULT_ACCEL_FULLSCALE)
 				     < 0) {
-		SYS_LOG_DBG("failed to set accelerometer full-scale");
+		LOG_DBG("failed to set accelerometer full-scale");
 		return -EIO;
 	}
 
 	if (lsm6ds0_accel_set_odr_raw(dev, LSM6DS0_DEFAULT_ACCEL_SAMPLING_RATE)
 				      < 0) {
-		SYS_LOG_DBG("failed to set accelerometer sampling rate");
+		LOG_DBG("failed to set accelerometer sampling rate");
 		return -EIO;
 	}
 
 	if (lsm6ds0_gyro_axis_ctrl(dev, LSM6DS0_GYRO_ENABLE_X_AXIS,
 				   LSM6DS0_GYRO_ENABLE_Y_AXIS,
 				   LSM6DS0_GYRO_ENABLE_Z_AXIS) < 0) {
-		SYS_LOG_DBG("failed to set gyroscope axis");
+		LOG_DBG("failed to set gyroscope axis");
 		return -EIO;
 	}
 
 	if (lsm6ds0_gyro_set_fs_raw(dev, LSM6DS0_DEFAULT_GYRO_FULLSCALE)
 				    < 0) {
-		SYS_LOG_DBG("failed to set gyroscope full-scale");
+		LOG_DBG("failed to set gyroscope full-scale");
 		return -EIO;
 	}
 
 	if (lsm6ds0_gyro_set_odr_raw(dev, LSM6DS0_DEFAULT_GYRO_SAMPLING_RATE)
 				     < 0) {
-		SYS_LOG_DBG("failed to set gyroscope sampling rate");
+		LOG_DBG("failed to set gyroscope sampling rate");
 		return -EIO;
 	}
 
@@ -468,7 +472,7 @@ static int lsm6ds0_init_chip(struct device *dev)
 				(0 << LSM6DS0_SHIFT_CTRL_REG8_BLE) |
 				(1 << LSM6DS0_SHIFT_CTRL_REG8_IF_ADD_INC))
 				< 0) {
-		SYS_LOG_DBG("failed to set BDU, BLE and burst");
+		LOG_DBG("failed to set BDU, BLE and burst");
 		return -EIO;
 	}
 
@@ -482,13 +486,13 @@ static int lsm6ds0_init(struct device *dev)
 
 	data->i2c_master = device_get_binding(config->i2c_master_dev_name);
 	if (!data->i2c_master) {
-		SYS_LOG_DBG("i2c master not found: %s",
+		LOG_DBG("i2c master not found: %s",
 			    config->i2c_master_dev_name);
 		return -EINVAL;
 	}
 
 	if (lsm6ds0_init_chip(dev) < 0) {
-		SYS_LOG_DBG("failed to initialize chip");
+		LOG_DBG("failed to initialize chip");
 		return -EIO;
 	}
 
@@ -496,12 +500,12 @@ static int lsm6ds0_init(struct device *dev)
 }
 
 static const struct lsm6ds0_config lsm6ds0_config = {
-	.i2c_master_dev_name = CONFIG_LSM6DS0_I2C_MASTER_DEV_NAME,
-	.i2c_slave_addr = CONFIG_LSM6DS0_I2C_ADDR,
+	.i2c_master_dev_name = DT_INST_0_ST_LSM6DS0_BUS_NAME,
+	.i2c_slave_addr = DT_INST_0_ST_LSM6DS0_BASE_ADDRESS,
 };
 
 static struct lsm6ds0_data lsm6ds0_data;
 
-DEVICE_AND_API_INIT(lsm6ds0, CONFIG_LSM6DS0_DEV_NAME, lsm6ds0_init,
+DEVICE_AND_API_INIT(lsm6ds0, DT_INST_0_ST_LSM6DS0_LABEL, lsm6ds0_init,
 		    &lsm6ds0_data, &lsm6ds0_config, POST_KERNEL,
 		    CONFIG_SENSOR_INIT_PRIORITY, &lsm6ds0_api_funcs);

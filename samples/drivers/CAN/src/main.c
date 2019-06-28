@@ -6,10 +6,10 @@
 
 #include <zephyr.h>
 #include <kernel.h>
-#include <misc/printk.h>
+#include <sys/printk.h>
 #include <device.h>
-#include <can.h>
-#include <gpio.h>
+#include <drivers/can.h>
+#include <drivers/gpio.h>
 
 #define TX_THREAD_STACK_SIZE 512
 #define LED_THREAD_STACK_SIZE 512
@@ -36,10 +36,12 @@ static struct gpio_callback gpio_cb;
 CAN_DEFINE_MSGQ(led_msgq, 2);
 CAN_DEFINE_MSGQ(str_msgq, 5);
 
-void tx_irq_callback(u32_t error_flags)
+void tx_irq_callback(u32_t error_flags, void *arg)
 {
+	char *sender = (char *)arg;
 	if (error_flags) {
-		printk("Callback! error-code: %d\n", error_flags);
+		printk("Callback! error-code: %d\nSender: %s\n",
+		       error_flags, sender);
 	}
 }
 
@@ -51,12 +53,12 @@ void button_callback(struct device *port,
 
 void send_string(char *string, struct device *can_dev)
 {
-	struct can_msg msg;
+	struct zcan_frame msg;
 	int str_len;
 
 	msg.ext_id = STR_MSG_ID;
 	msg.id_type = CAN_EXTENDED_IDENTIFIER;
-	msg.dlc = 0;
+	msg.dlc = 0U;
 	msg.rtr = CAN_DATAFRAME;
 
 	for (str_len = strlen(string); str_len; ) {
@@ -64,30 +66,30 @@ void send_string(char *string, struct device *can_dev)
 		str_len -= msg.dlc;
 		memcpy(msg.data, string, msg.dlc);
 		string += msg.dlc;
-		can_send(can_dev, &msg, 10, tx_irq_callback);
+		can_send(can_dev, &msg, 10, tx_irq_callback, "send_string");
 	}
 }
 
 void tx_thread(void *can_dev_param, void *unused2, void *unused3)
 {
 	u8_t toggle = SET_LED;
-	u16_t button_press_cnt = 0;
-	struct can_msg msg;
-	struct can_msg msg_button_cnt;
+	u16_t button_press_cnt = 0U;
+	struct zcan_frame msg;
+	struct zcan_frame msg_button_cnt;
 	struct device *can_dev = can_dev_param;
 
 	msg.std_id = LED_MSG_ID;
 	msg.id_type = CAN_STANDARD_IDENTIFIER;
-	msg.dlc = 1;
+	msg.dlc = 1U;
 	msg.rtr = CAN_DATAFRAME;
-	msg.data[0] = 0;
+	msg.data[0] = 0U;
 
 	msg_button_cnt.std_id = BUTTON_MSG_ID;
 	msg_button_cnt.id_type = CAN_STANDARD_IDENTIFIER;
-	msg_button_cnt.dlc = 2;
+	msg_button_cnt.dlc = 2U;
 	msg_button_cnt.rtr = CAN_DATAFRAME;
-	msg_button_cnt.data[0] = 0;
-	msg_button_cnt.data[1] = 0;
+	msg_button_cnt.data[0] = 0U;
+	msg_button_cnt.data[1] = 0U;
 
 	printk("TX thread is running.\n");
 	while (1) {
@@ -98,8 +100,8 @@ void tx_thread(void *can_dev_param, void *unused2, void *unused3)
 		msg.data[0] = toggle;
 		msg_button_cnt.data[0] = button_press_cnt & 0xFF;
 		msg_button_cnt.data[1] = (button_press_cnt >> 8) & 0xFF;
-		can_send(can_dev, &msg, 10, tx_irq_callback);
-		can_send(can_dev, &msg_button_cnt, 10, NULL);
+		can_send(can_dev, &msg, 10, tx_irq_callback, "LED msg");
+		can_send(can_dev, &msg_button_cnt, 10, NULL, "Button count");
 		if (toggle == SET_LED) {
 			send_string("String sent over CAN\n", can_dev);
 		}
@@ -108,8 +110,9 @@ void tx_thread(void *can_dev_param, void *unused2, void *unused3)
 
 void rx_str_thread(void *msgq, void *can_dev_param, void *unused)
 {
-	struct can_msg msg;
-	const struct can_filter filter = {
+	struct zcan_frame msg;
+	int filter_id;
+	const struct zcan_filter filter = {
 		.id_type = CAN_EXTENDED_IDENTIFIER,
 		.rtr = CAN_DATAFRAME,
 		.ext_id = STR_MSG_ID,
@@ -118,18 +121,20 @@ void rx_str_thread(void *msgq, void *can_dev_param, void *unused)
 	};
 	struct device *can_dev = can_dev_param;
 
-	can_attach_msgq(can_dev, msgq, &filter);
+	filter_id = can_attach_msgq(can_dev, msgq, &filter);
+	printk("filter id: %d\n", filter_id);
 
 	while (1) {
 		k_msgq_get((struct k_msgq *)msgq, &msg, K_FOREVER);
-		for (int i = 0; i < msg.dlc; i++)
+		for (int i = 0; i < msg.dlc; i++) {
 			printk("%c", msg.data[i]);
+		}
 	}
 }
 
 void led_thread(void *msgq, void *can_dev_param, void *gpio_dev_param)
 {
-	const struct can_filter filter = {
+	const struct zcan_filter filter = {
 		.id_type = CAN_STANDARD_IDENTIFIER,
 		.rtr = CAN_DATAFRAME,
 		.std_id = LED_MSG_ID,
@@ -138,7 +143,7 @@ void led_thread(void *msgq, void *can_dev_param, void *gpio_dev_param)
 	};
 	struct device *can_dev = can_dev_param;
 	struct device *gpio_dev = gpio_dev_param;
-	struct can_msg msg;
+	struct zcan_frame msg;
 	int ret;
 	int filter_id;
 
@@ -156,7 +161,7 @@ void led_thread(void *msgq, void *can_dev_param, void *gpio_dev_param)
 	while (1) {
 		k_msgq_get((struct k_msgq *)msgq, &msg, K_FOREVER);
 
-		if (msg.dlc != 1) {
+		if (msg.dlc != 1U) {
 			continue;
 		}
 
@@ -172,16 +177,18 @@ void led_thread(void *msgq, void *can_dev_param, void *gpio_dev_param)
 	}
 }
 
-void rx_button_isr(struct can_msg *msg)
+void rx_button_isr(struct zcan_frame *msg, void *arg)
 {
 	u16_t cnt = msg->data[0] | (msg->data[1] << 8);
+
+	ARG_UNUSED(arg);
 
 	printk("Button pressed %d times\n", cnt);
 }
 
 void main(void)
 {
-	const struct can_filter filter = {
+	const struct zcan_filter filter = {
 		.id_type = CAN_STANDARD_IDENTIFIER,
 		.rtr = CAN_DATAFRAME,
 		.std_id = BUTTON_MSG_ID,
@@ -235,7 +242,11 @@ void main(void)
 		printk("Error enabling callback!\n");
 	}
 
-	can_attach_isr(can_dev, rx_button_isr, &filter);
+	ret = can_attach_isr(can_dev, rx_button_isr, 0, &filter);
+	if (ret == CAN_NO_FREE_FILTER) {
+		printk("Error, no filter available!\n");
+		return;
+	}
 
 	k_tid_t tx_tid = k_thread_create(&tx_thread_data, tx_thread_stack,
 					 K_THREAD_STACK_SIZEOF(tx_thread_stack),

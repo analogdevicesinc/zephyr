@@ -8,13 +8,14 @@
 
 #include <stdint.h>
 #include <zephyr.h>
-#include <misc/byteorder.h>
+#include <sys/byteorder.h>
 
 #include <net/buf.h>
 #include <bluetooth/bluetooth.h>
 #include <bluetooth/mesh.h>
 
 #define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_MESH_DEBUG_LOW_POWER)
+#define LOG_MODULE_NAME bt_mesh_lpn
 #include "common/log.h"
 
 #include "crypto.h"
@@ -34,7 +35,7 @@
 #endif
 
 #define LPN_RECV_DELAY            CONFIG_BT_MESH_LPN_RECV_DELAY
-#define SCAN_LATENCY              min(CONFIG_BT_MESH_LPN_SCAN_LATENCY, \
+#define SCAN_LATENCY              MIN(CONFIG_BT_MESH_LPN_SCAN_LATENCY, \
 				      LPN_RECV_DELAY)
 
 #define FRIEND_REQ_RETRY_TIMEOUT  K_SECONDS(CONFIG_BT_MESH_LPN_RETRY_TIMEOUT)
@@ -226,14 +227,14 @@ static void clear_friendship(bool force, bool disable)
 	}
 
 	lpn->frnd = BT_MESH_ADDR_UNASSIGNED;
-	lpn->fsn = 0;
-	lpn->req_attempts = 0;
-	lpn->recv_win = 0;
-	lpn->queue_size = 0;
-	lpn->disable = 0;
-	lpn->sent_req = 0;
-	lpn->established = 0;
-	lpn->clear_success = 0;
+	lpn->fsn = 0U;
+	lpn->req_attempts = 0U;
+	lpn->recv_win = 0U;
+	lpn->queue_size = 0U;
+	lpn->disable = 0U;
+	lpn->sent_req = 0U;
+	lpn->established = 0U;
+	lpn->clear_success = 0U;
 
 	group_zero(lpn->added);
 	group_zero(lpn->pending);
@@ -243,7 +244,7 @@ static void clear_friendship(bool force, bool disable)
 	 * Friendship is created, in case lpn->groups doesn't get
 	 * modified meanwhile.
 	 */
-	lpn->groups_changed = 1;
+	lpn->groups_changed = 1U;
 
 	if (disable) {
 		lpn_set_state(BT_MESH_LPN_DISABLED);
@@ -320,7 +321,7 @@ static void req_sent(u16_t duration, int err, void *user_data)
 
 	if (err) {
 		BT_ERR("Sending request failed (err %d)", err);
-		lpn->sent_req = 0;
+		lpn->sent_req = 0U;
 		group_zero(lpn->pending);
 		return;
 	}
@@ -369,7 +370,7 @@ static int send_friend_poll(void)
 
 	if (lpn->sent_req) {
 		if (lpn->sent_req != TRANS_CTL_OP_FRIEND_POLL) {
-			lpn->pending_poll = 1;
+			lpn->pending_poll = 1U;
 		}
 
 		return 0;
@@ -378,7 +379,7 @@ static int send_friend_poll(void)
 	err = bt_mesh_ctl_send(&tx, TRANS_CTL_OP_FRIEND_POLL, &fsn, 1,
 			       NULL, &req_sent_cb, NULL);
 	if (err == 0) {
-		lpn->pending_poll = 0;
+		lpn->pending_poll = 0U;
 		lpn->sent_req = TRANS_CTL_OP_FRIEND_POLL;
 	}
 
@@ -450,8 +451,8 @@ static void friend_response_received(struct bt_mesh_lpn *lpn)
 	k_delayed_work_cancel(&lpn->timer);
 	bt_mesh_scan_disable();
 	lpn_set_state(BT_MESH_LPN_ESTABLISHED);
-	lpn->req_attempts = 0;
-	lpn->sent_req = 0;
+	lpn->req_attempts = 0U;
+	lpn->sent_req = 0U;
 }
 
 void bt_mesh_lpn_msg_received(struct bt_mesh_net_rx *rx)
@@ -526,8 +527,8 @@ int bt_mesh_lpn_friend_offer(struct bt_mesh_net_rx *rx,
 	if (err) {
 		friend_cred_clear(cred);
 		lpn->frnd = BT_MESH_ADDR_UNASSIGNED;
-		lpn->recv_win = 0;
-		lpn->queue_size = 0;
+		lpn->recv_win = 0U;
+		lpn->queue_size = 0U;
 		return err;
 	}
 
@@ -563,7 +564,7 @@ int bt_mesh_lpn_friend_clear_cfm(struct bt_mesh_net_rx *rx,
 		return 0;
 	}
 
-	lpn->clear_success = 1;
+	lpn->clear_success = 1U;
 	clear_friendship(false, lpn->disable);
 
 	return 0;
@@ -592,7 +593,7 @@ static void lpn_group_add(u16_t group)
 	}
 
 	*free_slot = group;
-	lpn->groups_changed = 1;
+	lpn->groups_changed = 1U;
 }
 
 static void lpn_group_del(u16_t group)
@@ -605,7 +606,7 @@ static void lpn_group_del(u16_t group)
 			if (atomic_test_bit(lpn->added, i) ||
 			    atomic_test_bit(lpn->pending, i)) {
 				atomic_set_bit(lpn->to_remove, i);
-				lpn->groups_changed = 1;
+				lpn->groups_changed = 1U;
 			} else {
 				lpn->groups[i] = BT_MESH_ADDR_UNASSIGNED;
 			}
@@ -712,7 +713,7 @@ static void update_timeout(struct bt_mesh_lpn *lpn)
 
 		if (lpn->req_attempts < 6) {
 			BT_WARN("Retrying first Friend Poll");
-			lpn->sent_req = 0;
+			lpn->sent_req = 0U;
 			if (send_friend_poll() == 0) {
 				return;
 			}
@@ -760,13 +761,14 @@ static void lpn_timeout(struct k_work *work)
 		}
 		lpn->counter++;
 		lpn_set_state(BT_MESH_LPN_ENABLED);
+		lpn->sent_req = 0U;
 		k_delayed_work_submit(&lpn->timer, FRIEND_REQ_RETRY_TIMEOUT);
 		break;
 	case BT_MESH_LPN_ESTABLISHED:
 		if (lpn->req_attempts < REQ_ATTEMPTS(lpn)) {
 			u8_t req = lpn->sent_req;
 
-			lpn->sent_req = 0;
+			lpn->sent_req = 0U;
 
 			if (!req || req == TRANS_CTL_OP_FRIEND_POLL) {
 				send_friend_poll();
@@ -779,7 +781,7 @@ static void lpn_timeout(struct k_work *work)
 
 		BT_ERR("No response from Friend after %u retries",
 		       lpn->req_attempts);
-		lpn->req_attempts = 0;
+		lpn->req_attempts = 0U;
 		clear_friendship(false, false);
 		break;
 	case BT_MESH_LPN_RECV_DELAY:
@@ -833,12 +835,12 @@ static s32_t poll_timeout(struct bt_mesh_lpn *lpn)
 {
 	/* If we're waiting for segment acks keep polling at high freq */
 	if (bt_mesh_tx_in_progress()) {
-		return min(POLL_TIMEOUT_MAX(lpn), K_SECONDS(1));
+		return MIN(POLL_TIMEOUT_MAX(lpn), K_SECONDS(1));
 	}
 
 	if (lpn->poll_timeout < POLL_TIMEOUT_MAX(lpn)) {
 		lpn->poll_timeout *= 2;
-		lpn->poll_timeout = min(lpn->poll_timeout,
+		lpn->poll_timeout = MIN(lpn->poll_timeout,
 					POLL_TIMEOUT_MAX(lpn));
 	}
 
@@ -897,7 +899,7 @@ int bt_mesh_lpn_friend_sub_cfm(struct bt_mesh_net_rx *rx,
 		sub_update(TRANS_CTL_OP_FRIEND_SUB_REM);
 
 		if (!lpn->sent_req) {
-			lpn->groups_changed = 0;
+			lpn->groups_changed = 0U;
 		}
 	}
 
@@ -935,8 +937,9 @@ int bt_mesh_lpn_friend_update(struct bt_mesh_net_rx *rx,
 		return 0;
 	}
 
-	if (bt_mesh.ivu_initiator &&
-	    bt_mesh.iv_update == BT_MESH_IV_UPDATE(msg->flags)) {
+	if (atomic_test_bit(bt_mesh.flags, BT_MESH_IVU_INITIATOR) &&
+	    (atomic_test_bit(bt_mesh.flags, BT_MESH_IVU_IN_PROGRESS) ==
+	     BT_MESH_IV_UPDATE(msg->flags))) {
 		bt_mesh_beacon_ivu_initiator(false);
 	}
 
@@ -951,7 +954,7 @@ int bt_mesh_lpn_friend_update(struct bt_mesh_net_rx *rx,
 			return -EINVAL;
 		}
 
-		lpn->established = 1;
+		lpn->established = 1U;
 
 		BT_INFO("Friendship established with 0x%04x", lpn->frnd);
 
@@ -960,7 +963,7 @@ int bt_mesh_lpn_friend_update(struct bt_mesh_net_rx *rx,
 		}
 
 		/* Set initial poll timeout */
-		lpn->poll_timeout = min(POLL_TIMEOUT_MAX(lpn),
+		lpn->poll_timeout = MIN(POLL_TIMEOUT_MAX(lpn),
 					POLL_TIMEOUT_INIT);
 	}
 
@@ -983,7 +986,7 @@ int bt_mesh_lpn_friend_update(struct bt_mesh_net_rx *rx,
 		sub_update(TRANS_CTL_OP_FRIEND_SUB_REM);
 
 		if (!lpn->sent_req) {
-			lpn->groups_changed = 0;
+			lpn->groups_changed = 0U;
 		}
 	}
 

@@ -8,8 +8,8 @@
 #define ZEPHYR_DRIVERS_SENSOR_CCS811_CCS811_H_
 
 #include <device.h>
-#include <gpio.h>
-#include <misc/util.h>
+#include <drivers/gpio.h>
+#include <sys/util.h>
 
 /* Registers */
 #define CCS811_REG_STATUS		0x00
@@ -53,9 +53,5 @@ struct ccs811_data {
 	u8_t error;
 	u16_t resistance;
 };
-
-#define SYS_LOG_DOMAIN "CCS811"
-#define SYS_LOG_LEVEL CONFIG_SYS_LOG_SENSOR_LEVEL
-#include <logging/sys_log.h>
 
 #endif /* _SENSOR_CCS811_ */

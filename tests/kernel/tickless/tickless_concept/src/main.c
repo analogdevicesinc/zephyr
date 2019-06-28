@@ -5,9 +5,9 @@
  */
 
 #include <ztest.h>
-#include <power.h>
+#include <power/power.h>
 
-#define STACK_SIZE 512
+#define STACK_SIZE (512 + CONFIG_TEST_EXTRA_STACKSIZE)
 #define NUM_THREAD 4
 static K_THREAD_STACK_ARRAY_DEFINE(tstack, NUM_THREAD, STACK_SIZE);
 static struct k_thread tdata[NUM_THREAD];
@@ -33,7 +33,7 @@ static struct k_thread tdata[NUM_THREAD];
 	do {				       \
 		u32_t t = k_uptime_get_32();   \
 		while (t == k_uptime_get_32()) \
-			posix_halt_cpu();      \
+			k_busy_wait(50);       \
 	} while (0)
 #else
 #define ALIGN_MS_BOUNDARY()		       \
@@ -58,15 +58,8 @@ static void thread_tslice(void *p1, void *p2, void *p3)
 	/*less than one tick delay*/
 	zassert_true(t <= SLICE_SIZE_LIMIT, NULL);
 
-	u32_t t32 = k_uptime_get_32();
-
 	/*keep the current thread busy for more than one slice*/
-	while (k_uptime_get_32() - t32 < SLEEP_TICKLESS)
-#if defined(CONFIG_ARCH_POSIX)
-		posix_halt_cpu();
-#else
-		;
-#endif
+	k_busy_wait(1000 * SLEEP_TICKLESS);
 	k_sem_give(&sema);
 }
 /**

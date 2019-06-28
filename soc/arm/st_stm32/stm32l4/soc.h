@@ -30,9 +30,14 @@
  */
 #include <kernel_includes.h>
 
-#define GPIO_REG_SIZE         0x400
-/* base address for where GPIO registers start */
-#define GPIO_PORTS_BASE       (GPIOA_BASE)
+#ifdef CONFIG_EXTI_STM32
+#include <stm32l4xx_ll_exti.h>
+#endif
+
+#ifdef CONFIG_GPIO_STM32
+/* Required to enable VDDio2 for port G */
+#include <stm32l4xx_ll_pwr.h>
+#endif
 
 #ifdef CONFIG_SERIAL_HAS_DRIVER
 #include <stm32l4xx_ll_usart.h>
@@ -44,6 +49,7 @@
 #include <stm32l4xx_ll_bus.h>
 #include <stm32l4xx_ll_rcc.h>
 #include <stm32l4xx_ll_system.h>
+#include <stm32l4xx_ll_pwr.h>
 #endif /* CONFIG_CLOCK_CONTROL_STM32_CUBE */
 
 #ifdef CONFIG_SPI_STM32
@@ -62,7 +68,7 @@
 #include <stm32l4xx_ll_rng.h>
 #endif
 
-#ifdef CONFIG_RTC_STM32
+#if defined(CONFIG_RTC_STM32) || defined(CONFIG_COUNTER_RTC_STM32)
 #include <stm32l4xx_ll_rtc.h>
 #include <stm32l4xx_ll_exti.h>
 #include <stm32l4xx_ll_pwr.h>
@@ -72,6 +78,14 @@
 /* Required to remove USB transceiver supply isolation */
 #include <stm32l4xx_ll_pwr.h>
 #endif /* CONFIG_USB */
+
+#ifdef CONFIG_GPIO_STM32
+#include <stm32l4xx_ll_gpio.h>
+#endif
+
+#ifdef CONFIG_ADC_STM32
+#include <stm32l4xx_ll_adc.h>
+#endif
 
 #endif /* !_ASMLANGUAGE */
 

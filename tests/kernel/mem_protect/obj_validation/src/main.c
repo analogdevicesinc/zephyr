@@ -15,12 +15,12 @@
  */
 extern struct k_sem sem1;
 
-static __kernel struct k_sem semarray[SEM_ARRAY_SIZE];
+static struct k_sem semarray[SEM_ARRAY_SIZE];
 static struct k_sem *dyn_sem[SEM_ARRAY_SIZE];
 
 K_SEM_DEFINE(sem1, 0, 1);
-static __kernel struct k_sem sem2;
-static __kernel char bad_sem[sizeof(struct k_sem)];
+static struct k_sem sem2;
+static char bad_sem[sizeof(struct k_sem)];
 static struct k_sem sem3;
 
 static int test_object(struct k_sem *sem, int retval)
@@ -28,12 +28,12 @@ static int test_object(struct k_sem *sem, int retval)
 	int ret;
 
 	if (retval) {
-		/* Expected to fail; bypass _obj_validation_check() so we don't
+		/* Expected to fail; bypass z_obj_validation_check() so we don't
 		 * fill the logs with spam
 		 */
-		ret = _k_object_validate(_k_object_find(sem), K_OBJ_SEM, 0);
+		ret = z_object_validate(z_object_find(sem), K_OBJ_SEM, 0);
 	} else {
-		ret = _obj_validation_check(_k_object_find(sem), sem,
+		ret = z_obj_validation_check(z_object_find(sem), sem,
 					    K_OBJ_SEM, 0);
 	}
 
@@ -82,11 +82,7 @@ void test_generic_object(void)
 	zassert_false(test_object(&stack_sem, -EBADF), NULL);
 	zassert_false(test_object((struct k_sem *)&bad_sem, -EBADF), NULL);
 	zassert_false(test_object((struct k_sem *)0xFFFFFFFF, -EBADF), NULL);
-#ifdef CONFIG_APPLICATION_MEMORY
-	zassert_false(test_object(&sem3, -EBADF), NULL);
-#else
 	object_permission_checks(&sem3, false);
-#endif
 	object_permission_checks(&sem1, true);
 	object_permission_checks(&sem2, false);
 

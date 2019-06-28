@@ -5,16 +5,16 @@
  */
 
 #include <device.h>
-#include <i2c.h>
-#include <misc/byteorder.h>
-#include <misc/util.h>
+#include <drivers/i2c.h>
+#include <sys/byteorder.h>
+#include <sys/util.h>
 #include <kernel.h>
-#include <sensor.h>
-#include <misc/__assert.h>
+#include <drivers/sensor.h>
+#include <sys/__assert.h>
+#include <logging/log.h>
 
-#define SYS_LOG_DOMAIN "TMP112"
-#define SYS_LOG_LEVEL CONFIG_SYS_LOG_SENSOR_LEVEL
-#include <logging/sys_log.h>
+#define LOG_LEVEL CONFIG_SENSOR_LOG_LEVEL
+LOG_MODULE_REGISTER(TMP112);
 
 #define TMP112_I2C_ADDRESS		CONFIG_TMP112_I2C_ADDR
 
@@ -59,7 +59,7 @@ static int tmp112_reg_write(struct tmp112_data *drv_data,
 static int tmp112_reg_update(struct tmp112_data *drv_data, u8_t reg,
 			     u16_t mask, u16_t val)
 {
-	u16_t old_val = 0;
+	u16_t old_val = 0U;
 	u16_t new_val;
 
 	if (tmp112_reg_read(drv_data, reg, &old_val) < 0) {
@@ -99,7 +99,7 @@ static int tmp112_attr_set(struct device *dev,
 
 		if (tmp112_reg_update(drv_data, TMP112_REG_CONFIG,
 				      TMP112_EM_BIT, value) < 0) {
-			SYS_LOG_DBG("Failed to set attribute!");
+			LOG_DBG("Failed to set attribute!");
 			return -EIO;
 		}
 
@@ -135,7 +135,7 @@ static int tmp112_attr_set(struct device *dev,
 		if (tmp112_reg_update(drv_data, TMP112_REG_CONFIG,
 				      TMP112_CR0_BIT | TMP112_CR1_BIT,
 				      value) < 0) {
-			SYS_LOG_DBG("Failed to set attribute!");
+			LOG_DBG("Failed to set attribute!");
 			return -EIO;
 		}
 
@@ -198,17 +198,15 @@ int tmp112_init(struct device *dev)
 
 	drv_data->i2c = device_get_binding(CONFIG_TMP112_I2C_MASTER_DEV_NAME);
 	if (drv_data->i2c == NULL) {
-		SYS_LOG_DBG("Failed to get pointer to %s device!",
+		LOG_DBG("Failed to get pointer to %s device!",
 			    CONFIG_TMP112_I2C_MASTER_DEV_NAME);
 		return -EINVAL;
 	}
-
-	dev->driver_api = &tmp112_driver_api;
 
 	return 0;
 }
 
 static struct tmp112_data tmp112_driver;
 
-DEVICE_INIT(tmp112, CONFIG_TMP112_NAME, tmp112_init, &tmp112_driver,
-	    NULL, POST_KERNEL, CONFIG_SENSOR_INIT_PRIORITY);
+DEVICE_AND_API_INIT(tmp112, CONFIG_TMP112_NAME, tmp112_init, &tmp112_driver,
+	    NULL, POST_KERNEL, CONFIG_SENSOR_INIT_PRIORITY, &tmp112_driver_api);

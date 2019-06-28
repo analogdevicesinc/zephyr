@@ -6,13 +6,13 @@
 
 #include <zephyr.h>
 #include <device.h>
-#include <sensor.h>
+#include <drivers/sensor.h>
 #include <stdio.h>
-#include <misc/printk.h>
+#include <sys/printk.h>
 
 void main(void)
 {
-	struct device *dev = device_get_binding(CONFIG_VL53L0X_NAME);
+	struct device *dev = device_get_binding(DT_INST_0_ST_VL53L0X_LABEL);
 	struct sensor_value value;
 	int ret;
 

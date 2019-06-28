@@ -3,9 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: STMicroelectronics MEMS sensors LPS22HB
-id: st,lps22hb-press
 version: 0.1
 
 description: >
@@ -17,5 +16,3 @@ inherits:
 properties:
     compatible:
       constraint: "st,lps22hb-press"
-
-...

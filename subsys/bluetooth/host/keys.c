@@ -9,8 +9,8 @@
 #include <zephyr.h>
 #include <string.h>
 #include <stdlib.h>
-#include <atomic.h>
-#include <misc/util.h>
+#include <sys/atomic.h>
+#include <sys/util.h>
 
 #include <settings/settings.h>
 
@@ -19,9 +19,11 @@
 #include <bluetooth/hci.h>
 
 #define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_DEBUG_KEYS)
+#define LOG_MODULE_NAME bt_keys
 #include "common/log.h"
 
 #include "common/rpa.h"
+#include "gatt_internal.h"
 #include "hci_core.h"
 #include "smp.h"
 #include "settings.h"
@@ -33,6 +35,7 @@ struct bt_keys *bt_keys_get_addr(u8_t id, const bt_addr_le_t *addr)
 {
 	struct bt_keys *keys;
 	int i;
+	size_t first_free_slot = ARRAY_SIZE(key_pool);
 
 	BT_DBG("%s", bt_addr_le_str(addr));
 
@@ -43,14 +46,19 @@ struct bt_keys *bt_keys_get_addr(u8_t id, const bt_addr_le_t *addr)
 			return keys;
 		}
 
-		if (!bt_addr_le_cmp(&keys->addr, BT_ADDR_LE_ANY)) {
-			keys->id = id;
-			bt_addr_le_copy(&keys->addr, addr);
-			BT_DBG("created %p for %s", keys, bt_addr_le_str(addr));
-			return keys;
+		if (first_free_slot == ARRAY_SIZE(key_pool) &&
+		    !bt_addr_le_cmp(&keys->addr, BT_ADDR_LE_ANY)) {
+			first_free_slot = i;
 		}
 	}
 
+	if (first_free_slot < ARRAY_SIZE(key_pool)) {
+		keys = &key_pool[first_free_slot];
+		keys->id = id;
+		bt_addr_le_copy(&keys->addr, addr);
+		BT_DBG("created %p for %s", keys, bt_addr_le_str(addr));
+		return keys;
+	}
 	BT_DBG("unable to create keys for %s", bt_addr_le_str(addr));
 
 	return NULL;
@@ -217,7 +225,7 @@ void bt_keys_clear(struct bt_keys *keys)
 		}
 
 		BT_DBG("Deleting key %s", key);
-		settings_save_one(key, NULL);
+		settings_delete(key);
 	}
 
 	(void)memset(keys, 0, sizeof(*keys));
@@ -228,6 +236,10 @@ static void keys_clear_id(struct bt_keys *keys, void *data)
 	u8_t *id = data;
 
 	if (*id == keys->id) {
+		if (IS_ENABLED(CONFIG_BT_SETTINGS)) {
+			bt_gatt_clear(*id, &keys->addr);
+		}
+
 		bt_keys_clear(keys);
 	}
 }
@@ -240,17 +252,8 @@ void bt_keys_clear_all(u8_t id)
 #if defined(CONFIG_BT_SETTINGS)
 int bt_keys_store(struct bt_keys *keys)
 {
-	char val[BT_SETTINGS_SIZE(BT_KEYS_STORAGE_LEN)];
 	char key[BT_SETTINGS_KEY_MAX];
-	char *str;
 	int err;
-
-	str = settings_str_from_bytes(keys->storage_start, BT_KEYS_STORAGE_LEN,
-				      val, sizeof(val));
-	if (!str) {
-		BT_ERR("Unable to encode bt_keys as value");
-		return -EINVAL;
-	}
 
 	if (keys->id) {
 		char id[4];
@@ -263,44 +266,56 @@ int bt_keys_store(struct bt_keys *keys)
 				       NULL);
 	}
 
-	err = settings_save_one(key, val);
+	err = settings_save_one(key, keys->storage_start, BT_KEYS_STORAGE_LEN);
 	if (err) {
 		BT_ERR("Failed to save keys (err %d)", err);
 		return err;
 	}
 
-	BT_DBG("Stored keys for %s (%s)", bt_addr_le_str(&keys->addr), key);
+	BT_DBG("Stored keys for %s (%s)", bt_addr_le_str(&keys->addr), log_strdup(key));
 
 	return 0;
 }
 
-static int keys_set(int argc, char **argv, char *val)
+static int keys_set(const char *name, size_t len_rd, settings_read_cb read_cb,
+		    void *cb_arg)
 {
 	struct bt_keys *keys;
 	bt_addr_le_t addr;
 	u8_t id;
-	int len, err;
+	size_t len;
+	int err;
+	char val[BT_KEYS_STORAGE_LEN];
+	const char *next;
 
-	if (argc < 1) {
+	if (!name) {
 		BT_ERR("Insufficient number of arguments");
 		return -EINVAL;
 	}
 
-	BT_DBG("argv[0] %s val %s", argv[0], val ? val : "(null)");
-
-	err = bt_settings_decode_key(argv[0], &addr);
-	if (err) {
-		BT_ERR("Unable to decode address %s", argv[0]);
+	len = read_cb(cb_arg, val, sizeof(val));
+	if (len < 0) {
+		BT_ERR("Failed to read value (err %zu)", len);
 		return -EINVAL;
 	}
 
-	if (argc == 1) {
-		id = BT_ID_DEFAULT;
-	} else {
-		id = strtol(argv[1], NULL, 10);
+	BT_DBG("name %s val %s", name, (len) ? val : "(null)");
+
+	err = bt_settings_decode_key(name, &addr);
+	if (err) {
+		BT_ERR("Unable to decode address %s", name);
+		return -EINVAL;
 	}
 
-	if (!val) {
+	settings_name_next(name, &next);
+
+	if (!next) {
+		id = BT_ID_DEFAULT;
+	} else {
+		id = strtol(next, NULL, 10);
+	}
+
+	if (!len) {
 		keys = bt_keys_find(BT_KEYS_ALL, id, &addr);
 		if (keys) {
 			(void)memset(keys, 0, sizeof(*keys));
@@ -319,18 +334,13 @@ static int keys_set(int argc, char **argv, char *val)
 		return -ENOMEM;
 	}
 
-	len = BT_KEYS_STORAGE_LEN;
-	err = settings_bytes_from_str(val, keys->storage_start, &len);
-	if (err) {
-		BT_ERR("Failed to decode value (err %d)", err);
-		bt_keys_clear(keys);
-		return err;
-	}
-
-	if (len != BT_KEYS_STORAGE_LEN) {
-		BT_ERR("Invalid key length %d != %d", len, BT_KEYS_STORAGE_LEN);
+	if (len_rd != BT_KEYS_STORAGE_LEN) {
+		BT_ERR("Invalid key length %zu != %zu", len,
+		       BT_KEYS_STORAGE_LEN);
 		bt_keys_clear(keys);
 		return -EINVAL;
+	} else {
+		memcpy(keys->storage_start, val, len);
 	}
 
 	BT_DBG("Successfully restored keys for %s", bt_addr_le_str(&addr));
@@ -355,5 +365,7 @@ static int keys_commit(void)
 	return 0;
 }
 
-BT_SETTINGS_DEFINE(keys, keys_set, keys_commit, NULL);
+SETTINGS_STATIC_HANDLER_DEFINE(bt_keys, "bt/keys", NULL, keys_set, keys_commit,
+			       NULL);
+
 #endif /* CONFIG_BT_SETTINGS */

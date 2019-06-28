@@ -15,11 +15,13 @@
 
 	chosen {
 		zephyr,console = &uart0;
-#ifdef CONFIG_MCUMGR_SMP_UART
+		zephyr,shell-uart = &uart0;
 		zephyr,uart-mcumgr = &uart0;
-#endif
+		zephyr,bt-mon-uart = &uart0;
+		zephyr,bt-c2h-uart = &uart0;
 		zephyr,sram = &sram0;
 		zephyr,flash = &flash0;
+		zephyr,code-partition = &slot0_partition;
 	};
 
 	leds {
@@ -65,21 +67,21 @@
 };
 
 &gpiote {
-	status ="ok";
+	status = "okay";
 };
 
 &gpio0 {
-	status ="ok";
+	status = "okay";
 };
 
 &gpio1 {
-	status ="ok";
+	status = "okay";
 };
 
 &uart0 {
 	compatible = "nordic,nrf-uarte";
 	current-speed = <115200>;
-	status = "ok";
+	status = "okay";
 	tx-pin = <20>;
 	rx-pin = <24>;
 	rts-pin = <17>;
@@ -87,13 +89,14 @@
 };
 
 &i2c0 {
-	status = "ok";
+	status = "okay";
 	sda-pin = <26>;
 	scl-pin = <27>;
 };
 
 &i2c1 {
-	status = "ok";
+	/* Cannot be used together with spi1. */
+	/* status = "okay"; */
 	sda-pin = <30>;
 	scl-pin = <31>;
 };
@@ -103,56 +106,28 @@
  * limited GPIOs available on dongle board.
  */
 &spi0 {
-	status = "ok";
+	/* Cannot be used together with i2c0. */
+	/* status = "okay"; */
 	sck-pin = <27>;
 	mosi-pin = <26>;
 	miso-pin = <42>;
 };
 
 &spi1 {
-	status = "ok";
+	status = "okay";
 	sck-pin = <31>;
 	mosi-pin = <30>;
 	miso-pin = <45>;
 };
 
-&flash0 {
-	/*
-	 * For more information, see:
-	 * http://docs.zephyrproject.org/latest/devices/dts/flash_partitions.html
-	 */
-	partitions {
-		compatible = "fixed-partitions";
-		#address-cells = <1>;
-		#size-cells = <1>;
-
-		boot_partition: partition@e0000 {
-			label = "mcuboot";
-			reg = <0x0000e0000 0x0001a000>;
-		};
-		slot0_partition: partition@1000 {
-			label = "image-0";
-			reg = <0x00001000 0x000060000>;
-		};
-		slot1_partition: partition@61000 {
-			label = "image-1";
-			reg = <0x0061000 0x000060000>;
-		};
-		scratch_partition: partition@c1000 {
-			label = "image-scratch";
-			reg = <0x000c1000 0x0001f000>;
-		};
-
-#if defined(CONFIG_FS_FLASH_STORAGE_PARTITION)
-		storage_partition: partition@fa000 {
-			label = "storage";
-			reg = <0x000fa000 0x00004000>;
-		};
-#endif
-	};
-};
+/* Include flash partition table.
+ * Two partition tables are available:
+ * fstab-stock		-compatible with Nordic nRF5 bootloader, default
+ * fstab-debugger	-to use an external debugger, w/o the nRF5 bootloader
+ */
+#include "fstab-stock.dts"
 
 &usbd {
 	compatible = "nordic,nrf-usbd";
-	status = "ok";
+	status = "okay";
 };

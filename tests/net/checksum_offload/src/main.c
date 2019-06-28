@@ -6,15 +6,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define LOG_MODULE_NAME net_test
 #define NET_LOG_LEVEL CONFIG_NET_L2_ETHERNET_LOG_LEVEL
+
+#include <logging/log.h>
+LOG_MODULE_REGISTER(net_test, NET_LOG_LEVEL);
 
 #include <zephyr/types.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <string.h>
 #include <errno.h>
-#include <misc/printk.h>
+#include <sys/printk.h>
 #include <linker/sections.h>
 
 #include <ztest.h>
@@ -106,15 +108,42 @@ static void eth_iface_init(struct net_if *iface)
 	ethernet_init(iface);
 }
 
-static int eth_tx_offloading_disabled(struct net_if *iface, struct net_pkt *pkt)
+static u16_t get_udp_chksum(struct net_pkt *pkt)
 {
-	struct eth_context *context = net_if_get_device(iface)->driver_data;
+	NET_PKT_DATA_ACCESS_DEFINE(udp_access, struct net_udp_hdr);
+	struct net_udp_hdr *udp_hdr;
+	struct net_pkt_cursor backup;
+
+	net_pkt_set_overwrite(pkt, true);
+	net_pkt_cursor_backup(pkt, &backup);
+	net_pkt_cursor_init(pkt);
+
+	/* Let's move the cursor to UDP header */
+	if (net_pkt_skip(pkt, sizeof(struct net_eth_hdr) +
+			 net_pkt_ip_hdr_len(pkt) +
+			 net_pkt_ipv6_ext_len(pkt))) {
+		return 0;
+	}
+
+	udp_hdr = (struct net_udp_hdr *)net_pkt_get_data(pkt, &udp_access);
+	if (!udp_hdr) {
+		return 0;
+	}
+
+	net_pkt_cursor_restore(pkt, &backup);
+
+	return udp_hdr->chksum;
+}
+
+static int eth_tx_offloading_disabled(struct device *dev, struct net_pkt *pkt)
+{
+	struct eth_context *context = dev->driver_data;
 
 	zassert_equal_ptr(&eth_context_offloading_disabled, context,
 			  "Context pointers do not match (%p vs %p)",
 			  eth_context_offloading_disabled, context);
 
-	if (!pkt->frags) {
+	if (!pkt->buffer) {
 		DBG("No data to send!\n");
 		return -ENODATA;
 	}
@@ -153,19 +182,16 @@ static int eth_tx_offloading_disabled(struct net_if *iface, struct net_pkt *pkt)
 		udp_hdr->dst_port = port;
 
 		memcpy(lladdr,
-		       ((struct net_eth_hdr *)net_pkt_ll(pkt))->src.addr,
+		       ((struct net_eth_hdr *)net_pkt_data(pkt))->src.addr,
 		       sizeof(lladdr));
-		memcpy(((struct net_eth_hdr *)net_pkt_ll(pkt))->src.addr,
-		       ((struct net_eth_hdr *)net_pkt_ll(pkt))->dst.addr,
+		memcpy(((struct net_eth_hdr *)net_pkt_data(pkt))->src.addr,
+		       ((struct net_eth_hdr *)net_pkt_data(pkt))->dst.addr,
 		       sizeof(lladdr));
-		memcpy(((struct net_eth_hdr *)net_pkt_ll(pkt))->dst.addr,
+		memcpy(((struct net_eth_hdr *)net_pkt_data(pkt))->dst.addr,
 		       lladdr, sizeof(lladdr));
 
-		pkt->frags->data -= net_pkt_ll_reserve(pkt);
-		pkt->frags->len += net_pkt_ll_reserve(pkt);
-		net_pkt_set_ll_reserve(pkt, 0);
-
-		if (net_recv_data(net_pkt_iface(pkt), pkt) < 0) {
+		if (net_recv_data(net_pkt_iface(pkt),
+				  net_pkt_clone(pkt, K_NO_WAIT)) < 0) {
 			test_failed = true;
 			zassert_true(false, "Packet %p receive failed\n", pkt);
 		}
@@ -176,7 +202,7 @@ static int eth_tx_offloading_disabled(struct net_if *iface, struct net_pkt *pkt)
 	if (test_started) {
 		u16_t chksum;
 
-		chksum = net_udp_get_chksum(pkt, pkt->frags);
+		chksum = get_udp_chksum(pkt);
 
 		DBG("Chksum 0x%x offloading disabled\n", chksum);
 
@@ -185,20 +211,18 @@ static int eth_tx_offloading_disabled(struct net_if *iface, struct net_pkt *pkt)
 		k_sem_give(&wait_data);
 	}
 
-	net_pkt_unref(pkt);
-
 	return 0;
 }
 
-static int eth_tx_offloading_enabled(struct net_if *iface, struct net_pkt *pkt)
+static int eth_tx_offloading_enabled(struct device *dev, struct net_pkt *pkt)
 {
-	struct eth_context *context = net_if_get_device(iface)->driver_data;
+	struct eth_context *context = dev->driver_data;
 
 	zassert_equal_ptr(&eth_context_offloading_enabled, context,
 			  "Context pointers do not match (%p vs %p)",
 			  eth_context_offloading_enabled, context);
 
-	if (!pkt->frags) {
+	if (!pkt->buffer) {
 		DBG("No data to send!\n");
 		return -ENODATA;
 	}
@@ -206,7 +230,7 @@ static int eth_tx_offloading_enabled(struct net_if *iface, struct net_pkt *pkt)
 	if (test_started) {
 		u16_t chksum;
 
-		chksum = net_udp_get_chksum(pkt, pkt->frags);
+		chksum = get_udp_chksum(pkt);
 
 		DBG("Chksum 0x%x offloading enabled\n", chksum);
 
@@ -214,8 +238,6 @@ static int eth_tx_offloading_enabled(struct net_if *iface, struct net_pkt *pkt)
 
 		k_sem_give(&wait_data);
 	}
-
-	net_pkt_unref(pkt);
 
 	return 0;
 }
@@ -233,16 +255,16 @@ static enum ethernet_hw_caps eth_offloading_disabled(struct device *dev)
 
 static struct ethernet_api api_funcs_offloading_disabled = {
 	.iface_api.init = eth_iface_init,
-	.iface_api.send = eth_tx_offloading_disabled,
 
 	.get_capabilities = eth_offloading_disabled,
+	.send = eth_tx_offloading_disabled,
 };
 
 static struct ethernet_api api_funcs_offloading_enabled = {
 	.iface_api.init = eth_iface_init,
-	.iface_api.send = eth_tx_offloading_enabled,
 
 	.get_capabilities = eth_offloading_enabled,
+	.send = eth_tx_offloading_enabled,
 };
 
 static void generate_mac(u8_t *mac_addr)
@@ -269,13 +291,15 @@ ETH_NET_DEVICE_INIT(eth_offloading_disabled_test,
 		    "eth_offloading_disabled_test",
 		    eth_init, &eth_context_offloading_disabled,
 		    NULL, CONFIG_ETH_INIT_PRIORITY,
-		    &api_funcs_offloading_disabled, 1500);
+		    &api_funcs_offloading_disabled,
+		    NET_ETH_MTU);
 
 ETH_NET_DEVICE_INIT(eth_offloading_enabled_test,
 		    "eth_offloading_enabled_test",
 		    eth_init, &eth_context_offloading_enabled,
 		    NULL, CONFIG_ETH_INIT_PRIORITY,
-		    &api_funcs_offloading_enabled, 1500);
+		    &api_funcs_offloading_enabled,
+		    NET_ETH_MTU);
 
 struct user_data {
 	int eth_if_count;
@@ -417,7 +441,7 @@ static bool add_neighbor(struct net_if *iface, struct in6_addr *addr)
 	llstorage.addr[4] = 0x05;
 	llstorage.addr[5] = 0x06;
 
-	lladdr.len = 6;
+	lladdr.len = 6U;
 	lladdr.addr = llstorage.addr;
 	lladdr.type = NET_LINK_ETHERNET;
 
@@ -436,8 +460,6 @@ static void tx_chksum_offload_disabled_test_v6(void)
 {
 	struct eth_context *ctx; /* This is interface context */
 	struct net_if *iface;
-	struct net_pkt *pkt;
-	struct net_buf *frag;
 	int ret, len;
 	struct sockaddr_in6 dst_addr6 = {
 		.sin6_family = AF_INET6,
@@ -464,25 +486,18 @@ static void tx_chksum_offload_disabled_test_v6(void)
 	zassert_equal_ptr(&eth_context_offloading_disabled, ctx,
 			  "eth context mismatch");
 
-	pkt = net_pkt_get_tx(udp_v6_ctx_1, K_FOREVER);
-	zassert_not_null(pkt, "Cannot get pkt");
-	frag = net_pkt_get_data(udp_v6_ctx_1, K_FOREVER);
-	zassert_not_null(frag, "Cannot get frag");
-	net_pkt_frag_add(pkt, frag);
-
-	len = strlen(test_data);
-	memcpy(net_buf_add(frag, len), test_data, len);
-	net_pkt_set_appdatalen(pkt, len);
-
 	test_started = true;
 
 	ret = add_neighbor(iface, &dst_addr);
 	zassert_true(ret, "Cannot add neighbor");
 
-	ret = net_context_sendto(pkt, (struct sockaddr *)&dst_addr6,
+	len = strlen(test_data);
+
+	ret = net_context_sendto(udp_v6_ctx_1, test_data, len,
+				 (struct sockaddr *)&dst_addr6,
 				 sizeof(struct sockaddr_in6),
-				 NULL, 0, NULL, NULL);
-	zassert_equal(ret, 0, "Send UDP pkt failed (%d)\n", ret);
+				 NULL, K_FOREVER, NULL);
+	zassert_equal(ret, len, "Send UDP pkt failed (%d)\n", ret);
 
 	if (k_sem_take(&wait_data, WAIT_TIME)) {
 		DBG("Timeout while waiting interface data\n");
@@ -496,8 +511,6 @@ static void tx_chksum_offload_disabled_test_v4(void)
 {
 	struct eth_context *ctx; /* This is interface context */
 	struct net_if *iface;
-	struct net_pkt *pkt;
-	struct net_buf *frag;
 	int ret, len;
 	struct sockaddr_in dst_addr4 = {
 		.sin_family = AF_INET,
@@ -524,25 +537,18 @@ static void tx_chksum_offload_disabled_test_v4(void)
 	zassert_equal_ptr(&eth_context_offloading_disabled, ctx,
 			  "eth context mismatch");
 
-	pkt = net_pkt_get_tx(udp_v4_ctx_1, K_FOREVER);
-	zassert_not_null(pkt, "Cannot get pkt");
-	frag = net_pkt_get_data(udp_v4_ctx_1, K_FOREVER);
-	zassert_not_null(frag, "Cannot get frag");
-	net_pkt_frag_add(pkt, frag);
-
 	len = strlen(test_data);
-	memcpy(net_buf_add(frag, len), test_data, len);
-	net_pkt_set_appdatalen(pkt, len);
 
 	test_started = true;
 
 	ret = add_neighbor(iface, &dst_addr);
 	zassert_true(ret, "Cannot add neighbor");
 
-	ret = net_context_sendto(pkt, (struct sockaddr *)&dst_addr4,
+	ret = net_context_sendto(udp_v4_ctx_1, test_data, len,
+				 (struct sockaddr *)&dst_addr4,
 				 sizeof(struct sockaddr_in),
-				 NULL, 0, NULL, NULL);
-	zassert_equal(ret, 0, "Send UDP pkt failed (%d)\n", ret);
+				 NULL, K_FOREVER, NULL);
+	zassert_equal(ret, len, "Send UDP pkt failed (%d)\n", ret);
 
 	if (k_sem_take(&wait_data, WAIT_TIME)) {
 		DBG("Timeout while waiting interface data\n");
@@ -556,8 +562,6 @@ static void tx_chksum_offload_enabled_test_v6(void)
 {
 	struct eth_context *ctx; /* This is interface context */
 	struct net_if *iface;
-	struct net_pkt *pkt;
-	struct net_buf *frag;
 	int ret, len;
 	struct sockaddr_in6 dst_addr6 = {
 		.sin6_family = AF_INET6,
@@ -584,25 +588,18 @@ static void tx_chksum_offload_enabled_test_v6(void)
 	zassert_equal_ptr(&eth_context_offloading_enabled, ctx,
 			  "eth context mismatch");
 
-	pkt = net_pkt_get_tx(udp_v6_ctx_2, K_FOREVER);
-	zassert_not_null(pkt, "Cannot get pkt");
-	frag = net_pkt_get_data(udp_v6_ctx_2, K_FOREVER);
-	zassert_not_null(frag, "Cannot get frag");
-	net_pkt_frag_add(pkt, frag);
-
 	len = strlen(test_data);
-	memcpy(net_buf_add(frag, len), test_data, len);
-	net_pkt_set_appdatalen(pkt, len);
 
 	test_started = true;
 
 	ret = add_neighbor(iface, &dst_addr);
 	zassert_true(ret, "Cannot add neighbor");
 
-	ret = net_context_sendto(pkt, (struct sockaddr *)&dst_addr6,
+	ret = net_context_sendto(udp_v6_ctx_2, test_data, len,
+				 (struct sockaddr *)&dst_addr6,
 				 sizeof(struct sockaddr_in6),
-				 NULL, 0, NULL, NULL);
-	zassert_equal(ret, 0, "Send UDP pkt failed (%d)\n", ret);
+				 NULL, K_FOREVER, NULL);
+	zassert_equal(ret, len, "Send UDP pkt failed (%d)\n", ret);
 
 	if (k_sem_take(&wait_data, WAIT_TIME)) {
 		DBG("Timeout while waiting interface data\n");
@@ -616,8 +613,6 @@ static void tx_chksum_offload_enabled_test_v4(void)
 {
 	struct eth_context *ctx; /* This is interface context */
 	struct net_if *iface;
-	struct net_pkt *pkt;
-	struct net_buf *frag;
 	int ret, len;
 	struct sockaddr_in dst_addr4 = {
 		.sin_family = AF_INET,
@@ -644,25 +639,18 @@ static void tx_chksum_offload_enabled_test_v4(void)
 	zassert_equal_ptr(&eth_context_offloading_enabled, ctx,
 			  "eth context mismatch");
 
-	pkt = net_pkt_get_tx(udp_v4_ctx_2, K_FOREVER);
-	zassert_not_null(pkt, "Cannot get pkt");
-	frag = net_pkt_get_data(udp_v4_ctx_2, K_FOREVER);
-	zassert_not_null(frag, "Cannot get frag");
-	net_pkt_frag_add(pkt, frag);
-
 	len = strlen(test_data);
-	memcpy(net_buf_add(frag, len), test_data, len);
-	net_pkt_set_appdatalen(pkt, len);
 
 	test_started = true;
 
 	ret = add_neighbor(iface, &dst_addr);
 	zassert_true(ret, "Cannot add neighbor");
 
-	ret = net_context_sendto(pkt, (struct sockaddr *)&dst_addr4,
+	ret = net_context_sendto(udp_v4_ctx_2, test_data, len,
+				 (struct sockaddr *)&dst_addr4,
 				 sizeof(struct sockaddr_in),
-				 NULL, 0, NULL, NULL);
-	zassert_equal(ret, 0, "Send UDP pkt failed (%d)\n", ret);
+				 NULL, K_FOREVER, NULL);
+	zassert_equal(ret, len, "Send UDP pkt failed (%d)\n", ret);
 
 	if (k_sem_take(&wait_data, WAIT_TIME)) {
 		DBG("Timeout while waiting interface data\n");
@@ -674,15 +662,13 @@ static void tx_chksum_offload_enabled_test_v4(void)
 
 static void recv_cb_offload_disabled(struct net_context *context,
 				     struct net_pkt *pkt,
+				     union net_ip_header *ip_hdr,
+				     union net_proto_header *proto_hdr,
 				     int status,
 				     void *user_data)
 {
-	struct net_udp_hdr hdr, *udp_hdr;
-
-	udp_hdr = net_udp_get_hdr(pkt, &hdr);
-
-	zassert_not_null(udp_hdr, "UDP header missing");
-	zassert_not_equal(udp_hdr->chksum, 0, "Checksum is not set");
+	zassert_not_null(proto_hdr->udp, "UDP header missing");
+	zassert_not_equal(proto_hdr->udp->chksum, 0, "Checksum is not set");
 
 	if (net_pkt_family(pkt) == AF_INET) {
 		struct net_ipv4_hdr *ipv4 = NET_IPV4_HDR(pkt);
@@ -698,15 +684,13 @@ static void recv_cb_offload_disabled(struct net_context *context,
 
 static void recv_cb_offload_enabled(struct net_context *context,
 				    struct net_pkt *pkt,
+				    union net_ip_header *ip_hdr,
+				    union net_proto_header *proto_hdr,
 				    int status,
 				    void *user_data)
 {
-	struct net_udp_hdr hdr, *udp_hdr;
-
-	udp_hdr = net_udp_get_hdr(pkt, &hdr);
-
-	zassert_not_null(udp_hdr, "UDP header missing");
-	zassert_equal(udp_hdr->chksum, 0, "Checksum is set");
+	zassert_not_null(proto_hdr->udp, "UDP header missing");
+	zassert_equal(proto_hdr->udp->chksum, 0, "Checksum is set");
 
 	if (net_pkt_family(pkt) == AF_INET) {
 		struct net_ipv4_hdr *ipv4 = NET_IPV4_HDR(pkt);
@@ -723,8 +707,6 @@ static void rx_chksum_offload_disabled_test_v6(void)
 {
 	struct eth_context *ctx; /* This is interface context */
 	struct net_if *iface;
-	struct net_pkt *pkt;
-	struct net_buf *frag;
 	int ret, len;
 	struct sockaddr_in6 dst_addr6 = {
 		.sin6_family = AF_INET6,
@@ -751,15 +733,7 @@ static void rx_chksum_offload_disabled_test_v6(void)
 	zassert_equal_ptr(&eth_context_offloading_disabled, ctx,
 			  "eth context mismatch");
 
-	pkt = net_pkt_get_tx(udp_v6_ctx_1, K_FOREVER);
-	zassert_not_null(pkt, "Cannot get pkt");
-	frag = net_pkt_get_data(udp_v6_ctx_1, K_FOREVER);
-	zassert_not_null(frag, "Cannot get frag");
-	net_pkt_frag_add(pkt, frag);
-
 	len = strlen(test_data);
-	memcpy(net_buf_add(frag, len), test_data, len);
-	net_pkt_set_appdatalen(pkt, len);
 
 	test_started = true;
 	start_receiving = true;
@@ -768,10 +742,13 @@ static void rx_chksum_offload_disabled_test_v6(void)
 			       NULL);
 	zassert_equal(ret, 0, "Recv UDP failed (%d)\n", ret);
 
-	ret = net_context_sendto(pkt, (struct sockaddr *)&dst_addr6,
+	start_receiving = false;
+
+	ret = net_context_sendto(udp_v6_ctx_1, test_data, len,
+				 (struct sockaddr *)&dst_addr6,
 				 sizeof(struct sockaddr_in6),
-				 NULL, 0, NULL, NULL);
-	zassert_equal(ret, 0, "Send UDP pkt failed (%d)\n", ret);
+				 NULL, K_FOREVER, NULL);
+	zassert_equal(ret, len, "Send UDP pkt failed (%d)\n", ret);
 
 	if (k_sem_take(&wait_data, WAIT_TIME)) {
 		DBG("Timeout while waiting interface data\n");
@@ -786,8 +763,6 @@ static void rx_chksum_offload_disabled_test_v4(void)
 {
 	struct eth_context *ctx; /* This is interface context */
 	struct net_if *iface;
-	struct net_pkt *pkt;
-	struct net_buf *frag;
 	int ret, len;
 	struct sockaddr_in dst_addr4 = {
 		.sin_family = AF_INET,
@@ -814,15 +789,7 @@ static void rx_chksum_offload_disabled_test_v4(void)
 	zassert_equal_ptr(&eth_context_offloading_disabled, ctx,
 			  "eth context mismatch");
 
-	pkt = net_pkt_get_tx(udp_v4_ctx_1, K_FOREVER);
-	zassert_not_null(pkt, "Cannot get pkt");
-	frag = net_pkt_get_data(udp_v4_ctx_1, K_FOREVER);
-	zassert_not_null(frag, "Cannot get frag");
-	net_pkt_frag_add(pkt, frag);
-
 	len = strlen(test_data);
-	memcpy(net_buf_add(frag, len), test_data, len);
-	net_pkt_set_appdatalen(pkt, len);
 
 	test_started = true;
 	start_receiving = true;
@@ -831,10 +798,13 @@ static void rx_chksum_offload_disabled_test_v4(void)
 			       NULL);
 	zassert_equal(ret, 0, "Recv UDP failed (%d)\n", ret);
 
-	ret = net_context_sendto(pkt, (struct sockaddr *)&dst_addr4,
+	start_receiving = false;
+
+	ret = net_context_sendto(udp_v4_ctx_1, test_data, len,
+				 (struct sockaddr *)&dst_addr4,
 				 sizeof(struct sockaddr_in),
-				 NULL, 0, NULL, NULL);
-	zassert_equal(ret, 0, "Send UDP pkt failed (%d)\n", ret);
+				 NULL, K_FOREVER, NULL);
+	zassert_equal(ret, len, "Send UDP pkt failed (%d)\n", ret);
 
 	if (k_sem_take(&wait_data, WAIT_TIME)) {
 		DBG("Timeout while waiting interface data\n");
@@ -849,8 +819,6 @@ static void rx_chksum_offload_enabled_test_v6(void)
 {
 	struct eth_context *ctx; /* This is interface context */
 	struct net_if *iface;
-	struct net_pkt *pkt;
-	struct net_buf *frag;
 	int ret, len;
 	struct sockaddr_in6 dst_addr6 = {
 		.sin6_family = AF_INET6,
@@ -877,15 +845,7 @@ static void rx_chksum_offload_enabled_test_v6(void)
 	zassert_equal_ptr(&eth_context_offloading_enabled, ctx,
 			  "eth context mismatch");
 
-	pkt = net_pkt_get_tx(udp_v6_ctx_2, K_FOREVER);
-	zassert_not_null(pkt, "Cannot get pkt");
-	frag = net_pkt_get_data(udp_v6_ctx_2, K_FOREVER);
-	zassert_not_null(frag, "Cannot get frag");
-	net_pkt_frag_add(pkt, frag);
-
 	len = strlen(test_data);
-	memcpy(net_buf_add(frag, len), test_data, len);
-	net_pkt_set_appdatalen(pkt, len);
 
 	test_started = true;
 	start_receiving = true;
@@ -894,10 +854,11 @@ static void rx_chksum_offload_enabled_test_v6(void)
 			       NULL);
 	zassert_equal(ret, 0, "Recv UDP failed (%d)\n", ret);
 
-	ret = net_context_sendto(pkt, (struct sockaddr *)&dst_addr6,
+	ret = net_context_sendto(udp_v6_ctx_2, test_data, len,
+				 (struct sockaddr *)&dst_addr6,
 				 sizeof(struct sockaddr_in6),
-				 NULL, 0, NULL, NULL);
-	zassert_equal(ret, 0, "Send UDP pkt failed (%d)\n", ret);
+				 NULL, K_FOREVER, NULL);
+	zassert_equal(ret, len, "Send UDP pkt failed (%d)\n", ret);
 
 	if (k_sem_take(&wait_data, WAIT_TIME)) {
 		DBG("Timeout while waiting interface data\n");
@@ -912,8 +873,6 @@ static void rx_chksum_offload_enabled_test_v4(void)
 {
 	struct eth_context *ctx; /* This is interface context */
 	struct net_if *iface;
-	struct net_pkt *pkt;
-	struct net_buf *frag;
 	int ret, len;
 	struct sockaddr_in dst_addr4 = {
 		.sin_family = AF_INET,
@@ -940,15 +899,7 @@ static void rx_chksum_offload_enabled_test_v4(void)
 	zassert_equal_ptr(&eth_context_offloading_enabled, ctx,
 			  "eth context mismatch");
 
-	pkt = net_pkt_get_tx(udp_v4_ctx_2, K_FOREVER);
-	zassert_not_null(pkt, "Cannot get pkt");
-	frag = net_pkt_get_data(udp_v4_ctx_2, K_FOREVER);
-	zassert_not_null(frag, "Cannot get frag");
-	net_pkt_frag_add(pkt, frag);
-
 	len = strlen(test_data);
-	memcpy(net_buf_add(frag, len), test_data, len);
-	net_pkt_set_appdatalen(pkt, len);
 
 	test_started = true;
 	start_receiving = true;
@@ -957,10 +908,11 @@ static void rx_chksum_offload_enabled_test_v4(void)
 			       NULL);
 	zassert_equal(ret, 0, "Recv UDP failed (%d)\n", ret);
 
-	ret = net_context_sendto(pkt, (struct sockaddr *)&dst_addr4,
+	ret = net_context_sendto(udp_v4_ctx_2, test_data, len,
+				 (struct sockaddr *)&dst_addr4,
 				 sizeof(struct sockaddr_in),
-				 NULL, 0, NULL, NULL);
-	zassert_equal(ret, 0, "Send UDP pkt failed (%d)\n", ret);
+				 NULL, K_FOREVER, NULL);
+	zassert_equal(ret, len, "Send UDP pkt failed (%d)\n", ret);
 
 	if (k_sem_take(&wait_data, WAIT_TIME)) {
 		DBG("Timeout while waiting interface data\n");

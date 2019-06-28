@@ -9,7 +9,7 @@
 #include <errno.h>
 
 #include <zephyr.h>
-#include <misc/byteorder.h>
+#include <sys/byteorder.h>
 
 #include <bluetooth/bluetooth.h>
 #include <bluetooth/hci.h>
@@ -21,6 +21,7 @@
 #include <tinycrypt/utils.h>
 
 #define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_DEBUG_HCI_CORE)
+#define LOG_MODULE_NAME bt_crypto
 #include "common/log.h"
 
 #include "hci_core.h"

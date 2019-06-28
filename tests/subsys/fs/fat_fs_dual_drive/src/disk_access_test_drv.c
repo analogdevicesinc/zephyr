@@ -6,8 +6,8 @@
 
 #include <string.h>
 #include <zephyr/types.h>
-#include <misc/__assert.h>
-#include <disk_access.h>
+#include <sys/__assert.h>
+#include <disk/disk_access.h>
 #include <errno.h>
 #include <init.h>
 #include <device.h>
@@ -66,7 +66,7 @@ static int disk_ram_access_ioctl(struct disk_info *disk, u8_t cmd, void *buff)
 		*(u32_t *)buff = RAMDISK_SECTOR_SIZE;
 		break;
 	case DISK_IOCTL_GET_ERASE_BLOCK_SZ:
-		*(u32_t *)buff  = 1;
+		*(u32_t *)buff  = 1U;
 		break;
 	default:
 		return -EINVAL;

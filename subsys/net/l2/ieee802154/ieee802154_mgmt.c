@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define LOG_MODULE_NAME net_ieee802154_mgmt
-#define NET_LOG_LEVEL CONFIG_NET_L2_IEEE802154_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_REGISTER(net_ieee802154_mgmt, CONFIG_NET_L2_IEEE802154_LOG_LEVEL);
 
 #include <net/net_core.h>
 
@@ -20,6 +20,7 @@
 #include "ieee802154_mgmt_priv.h"
 #include "ieee802154_security.h"
 #include "ieee802154_utils.h"
+#include "ieee802154_radio_utils.h"
 
 enum net_verdict ieee802154_handle_beacon(struct net_if *iface,
 					  struct ieee802154_mpdu *mpdu,
@@ -103,11 +104,13 @@ static int ieee802154_scan(u32_t mgmt_request, struct net_if *iface,
 		params.dst.pan_id = IEEE802154_BROADCAST_PAN_ID;
 
 		pkt = ieee802154_create_mac_cmd_frame(
-			ctx, IEEE802154_CFI_BEACON_REQUEST, &params);
+			iface, IEEE802154_CFI_BEACON_REQUEST, &params);
 		if (!pkt) {
 			NET_DBG("Could not create Beacon Request");
 			return -ENOBUFS;
 		}
+
+		ieee802154_mac_cmd_finalize(pkt, IEEE802154_CFI_BEACON_REQUEST);
 	}
 
 	ctx->scan_ctx = scan;
@@ -124,7 +127,7 @@ static int ieee802154_scan(u32_t mgmt_request, struct net_if *iface,
 
 	/* ToDo: For now, we assume we are on 2.4Ghz
 	 * (device will have to export capabilities) */
-	for (channel = 11; channel <= 26; channel++) {
+	for (channel = 11U; channel <= 26U; channel++) {
 		if (IEEE802154_IS_CHAN_UNSCANNED(scan->channel_set, channel)) {
 			continue;
 		}
@@ -136,9 +139,9 @@ static int ieee802154_scan(u32_t mgmt_request, struct net_if *iface,
 		/* Active scan sends a beacon request */
 		if (mgmt_request == NET_REQUEST_IEEE802154_ACTIVE_SCAN) {
 			net_pkt_ref(pkt);
-			net_pkt_frag_ref(pkt->frags);
+			net_pkt_frag_ref(pkt->buffer);
 
-			ret = ieee802154_radio_send(iface, pkt);
+			ret = ieee802154_radio_send(iface, pkt, pkt->buffer);
 			if (ret) {
 				NET_DBG("Could not send Beacon Request (%d)",
 					ret);
@@ -246,20 +249,22 @@ static int ieee802154_associate(u32_t mgmt_request, struct net_if *iface,
 	}
 
 	pkt = ieee802154_create_mac_cmd_frame(
-		ctx, IEEE802154_CFI_ASSOCIATION_REQUEST, &params);
+		iface, IEEE802154_CFI_ASSOCIATION_REQUEST, &params);
 	if (!pkt) {
 		ret = -ENOBUFS;
 		goto out;
 	}
 
 	cmd = ieee802154_get_mac_command(pkt);
-	cmd->assoc_req.ci.dev_type = 0; /* RFD */
-	cmd->assoc_req.ci.power_src = 0; /* ToDo: set right power source */
-	cmd->assoc_req.ci.rx_on = 1; /* ToDo: that will depends on PM */
-	cmd->assoc_req.ci.sec_capability = 0; /* ToDo: security support */
-	cmd->assoc_req.ci.alloc_addr = 0; /* ToDo: handle short addr */
+	cmd->assoc_req.ci.dev_type = 0U; /* RFD */
+	cmd->assoc_req.ci.power_src = 0U; /* ToDo: set right power source */
+	cmd->assoc_req.ci.rx_on = 1U; /* ToDo: that will depends on PM */
+	cmd->assoc_req.ci.sec_capability = 0U; /* ToDo: security support */
+	cmd->assoc_req.ci.alloc_addr = 0U; /* ToDo: handle short addr */
 
 	ctx->associated = false;
+
+	ieee802154_mac_cmd_finalize(pkt, IEEE802154_CFI_ASSOCIATION_REQUEST);
 
 	if (net_if_send_data(iface, pkt)) {
 		net_pkt_unref(pkt);
@@ -317,13 +322,16 @@ static int ieee802154_disassociate(u32_t mgmt_request, struct net_if *iface,
 	params.pan_id = ctx->pan_id;
 
 	pkt = ieee802154_create_mac_cmd_frame(
-		ctx, IEEE802154_CFI_DISASSOCIATION_NOTIFICATION, &params);
+		iface, IEEE802154_CFI_DISASSOCIATION_NOTIFICATION, &params);
 	if (!pkt) {
 		return -ENOBUFS;
 	}
 
 	cmd = ieee802154_get_mac_command(pkt);
 	cmd->disassoc_note.reason = IEEE802154_DRF_DEVICE_WISH;
+
+	ieee802154_mac_cmd_finalize(
+		pkt, IEEE802154_CFI_DISASSOCIATION_NOTIFICATION);
 
 	if (net_if_send_data(iface, pkt)) {
 		net_pkt_unref(pkt);

@@ -13,8 +13,12 @@
 
 #include <toolchain.h>
 #include <bluetooth/bluetooth.h>
-#include <misc/byteorder.h>
+#include <sys/byteorder.h>
 #include <console/uart_pipe.h>
+
+#include <logging/log.h>
+#define LOG_MODULE_NAME bttester
+LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
 #include "bttester.h"
 
@@ -24,7 +28,7 @@ static struct k_thread cmd_thread;
 
 #define CMD_QUEUED 2
 struct btp_buf {
-	u32_t _reserved;
+	intptr_t _reserved;
 	union {
 		u8_t data[BTP_MTU];
 		struct btp_hdr hdr;
@@ -229,7 +233,7 @@ static u8_t *recv_cb(u8_t *buf, size_t *off)
 
 	len = sys_le16_to_cpu(cmd->len);
 	if (len > BTP_MTU - sizeof(*cmd)) {
-		SYS_LOG_ERR("BT tester: invalid packet length");
+		LOG_ERR("BT tester: invalid packet length");
 		*off = 0;
 		return buf;
 	}
@@ -240,7 +244,7 @@ static u8_t *recv_cb(u8_t *buf, size_t *off)
 
 	new_buf =  k_fifo_get(&avail_queue, K_NO_WAIT);
 	if (!new_buf) {
-		SYS_LOG_ERR("BT tester: RX overflow");
+		LOG_ERR("BT tester: RX overflow");
 		*off = 0;
 		return buf;
 	}

@@ -8,9 +8,7 @@
 #ifndef ZEPHYR_DRIVERS_SENSOR_APDS9960_APDS9960_H_
 #define ZEPHYR_DRIVERS_SENSOR_APDS9960_APDS9960_H_
 
-#include <gpio.h>
-
-#define APDS9960_I2C_ADDRESS		0x39
+#include <drivers/gpio.h>
 
 #define APDS9960_ENABLE_REG		0x80
 #define APDS9960_ENABLE_GEN		BIT(6)
@@ -38,9 +36,10 @@
 #define APDS9960_CONFIG1_WLONG		BIT(1)
 
 #define APDS9960_PPULSE_REG		0x8E
-#define APDS9960_PPULSE_PLEN		(BIT(7) | BIT(6))
-#define APDS9960_PPULSE_PULSE		(BIT(5) | BIT(4) | BIT(3) |\
-					BIT(2) | BIT(1) | BIT(0))
+#define APDS9960_PPULSE_LENGTH_4US	0
+#define APDS9960_PPULSE_LENGTH_8US	BIT(6)
+#define APDS9960_PPULSE_LENGTH_16US	BIT(7)
+#define APDS9960_PPULSE_LENGTH_32US	(BIT(7) | BIT(6))
 
 #define APDS9960_CONTROL_REG		0x8F
 #define APDS9960_CONTROL_LDRIVE		(BIT(6) | BIT(7))
@@ -65,12 +64,11 @@
 #define APDS9960_CONFIG2_REG		0x90
 #define APDS9960_CONFIG2_CPSIEN		BIT(6)
 #define APDS9960_CONFIG2_PSIEN		BIT(7)
-#define APDS9960_CONFIG2_LEDBOOST	(BIT(5) | BIT(4))
 /* LED Boost values */
-#define APDS9960_GLED_BOOST_100		0
-#define APDS9960_GLED_BOOST_150		BIT(4)
-#define APDS9960_GLED_BOOST_200		BIT(5)
-#define APDS9960_GLED_BOOST_300		(BIT(5) | BIT(4))
+#define APDS9960_PLED_BOOST_100		0
+#define APDS9960_PLED_BOOST_150		BIT(4)
+#define APDS9960_PLED_BOOST_200		BIT(5)
+#define APDS9960_PLED_BOOST_300		(BIT(5) | BIT(4))
 
 #define APDS9960_ID_REG			0x92
 /* Acceptable device IDs */
@@ -183,15 +181,12 @@
 #define APDS9960_DEFAULT_ATIME		219
 #define APDS9960_DEFAULT_WTIME		255
 #define APDS9960_DEFAULT_CONFIG1	0x60
-#define APDS9960_DEFAULT_AGAIN		APDS9960_AGAIN_4X
-#define APDS9960_DEFAULT_PERS		0x11
-#define APDS9960_DEFAULT_CONFIG2	0x01
-#define APDS9960_DEFAULT_PROX_PPULSE	0x87
+#define APDS9960_DEFAULT_PERS		BIT(4)
+#define APDS9960_DEFAULT_CONFIG2	(BIT(6) | BIT(0))
 #define APDS9960_DEFAULT_GESTURE_PPULSE	0x89
 #define APDS9960_DEFAULT_POFFSET_UR	0
 #define APDS9960_DEFAULT_POFFSET_DL	0
 #define APDS9960_DEFAULT_LDRIVE		APDS9960_LED_DRIVE_100MA
-#define APDS9960_DEFAULT_PGAIN		APDS9960_PGAIN_4X
 
 #ifdef CONFIG_APDS9960_TRIGGER
 #define APDS9960_DEFAULT_PILT		0
@@ -207,7 +202,6 @@
 #define APDS9960_DEFAULT_CONFIG3	APDS9960_CONFIG3_SAI
 #endif
 
-#define APDS9960_DEFAULT_CONFIG2	0x01
 #define APDS9960_DEFAULT_GPENTH		40
 #define APDS9960_DEFAULT_GEXTH		30
 #define APDS9960_DEFAULT_GCONF1		0x40
@@ -218,6 +212,17 @@
 #define APDS9960_DEFAULT_GPULSE		0xC9
 #define APDS9960_DEFAULT_GCONF3		0
 
+struct apds9960_config {
+	char *i2c_name;
+	char *gpio_name;
+	u8_t gpio_pin;
+	u8_t i2c_address;
+	u8_t pgain;
+	u8_t again;
+	u8_t ppcount;
+	u8_t pled_boost;
+};
+
 struct apds9960_data {
 	struct device *i2c;
 	struct device *gpio;
@@ -226,6 +231,7 @@ struct apds9960_data {
 	struct device *dev;
 	u16_t sample_crgb[4];
 	u8_t pdata;
+	u8_t gpio_pin;
 
 #ifdef CONFIG_APDS9960_TRIGGER
 	sensor_trigger_handler_t p_th_handler;
@@ -247,9 +253,5 @@ int apds9960_trigger_set(struct device *dev,
 			 const struct sensor_trigger *trig,
 			 sensor_trigger_handler_t handler);
 #endif /* CONFIG_APDS9960_TRIGGER */
-
-#define SYS_LOG_DOMAIN "APDS9960"
-#define SYS_LOG_LEVEL CONFIG_SYS_LOG_SENSOR_LEVEL
-#include <logging/sys_log.h>
 
 #endif /* ZEPHYR_DRIVERS_SENSOR_APDS9960_APDS9960_H_*/

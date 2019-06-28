@@ -7,15 +7,17 @@
 #include <errno.h>
 
 #include <device.h>
-#include <i2c.h>
-#include <ioapic.h>
-#include <power.h>
+#include <drivers/i2c.h>
+#include <drivers/interrupt_controller/ioapic.h>
+#include <power/power.h>
 
 #include "qm_i2c.h"
 #include "qm_isr.h"
 #include "clk.h"
 #include "soc.h"
 
+#include <logging/log.h>
+LOG_MODULE_REGISTER(i2c_qmsi);
 #include "i2c-priv.h"
 
 /* Convenient macros to get the controller instance and the driver data. */
@@ -90,20 +92,25 @@ static int i2c_resume_device_from_suspend(struct device *dev)
 * the *context may include IN data or/and OUT data
 */
 static int i2c_device_ctrl(struct device *dev, u32_t ctrl_command,
-			   void *context)
+			   void *context, device_pm_cb cb, void *arg)
 {
+	int ret = 0;
+
 	if (ctrl_command == DEVICE_PM_SET_POWER_STATE) {
 		if (*((u32_t *)context) == DEVICE_PM_SUSPEND_STATE) {
-			return i2c_suspend_device(dev);
+			ret = i2c_suspend_device(dev);
 		} else if (*((u32_t *)context) == DEVICE_PM_ACTIVE_STATE) {
-			return i2c_resume_device_from_suspend(dev);
+			ret = i2c_resume_device_from_suspend(dev);
 		}
 	} else if (ctrl_command == DEVICE_PM_GET_POWER_STATE) {
 		*((u32_t *)context) = i2c_qmsi_get_power_state(dev);
-		return 0;
 	}
 
-	return 0;
+	if (cb) {
+		cb(dev, ret, context, arg);
+	}
+
+	return ret;
 }
 #else
 #define i2c_qmsi_set_power_state(...)
@@ -115,7 +122,7 @@ static struct i2c_qmsi_driver_data driver_data_0;
 
 static const struct i2c_qmsi_config_info config_info_0 = {
 	.instance = QM_I2C_0,
-	.bitrate = CONFIG_I2C_0_BITRATE,
+	.bitrate = DT_I2C_0_BITRATE,
 	.clock_gate = CLK_PERIPH_I2C_M0_REGISTER | CLK_PERIPH_CLK,
 };
 
@@ -131,7 +138,7 @@ static struct i2c_qmsi_driver_data driver_data_1;
 
 static const struct i2c_qmsi_config_info config_info_1 = {
 	.instance = QM_I2C_1,
-	.bitrate = CONFIG_I2C_1_BITRATE,
+	.bitrate = DT_I2C_1_BITRATE,
 	.clock_gate = CLK_PERIPH_I2C_M1_REGISTER | CLK_PERIPH_CLK,
 };
 
@@ -150,8 +157,9 @@ static int i2c_qmsi_configure(struct device *dev, u32_t config)
 	qm_i2c_config_t qm_cfg;
 
 	/* This driver only supports master mode. */
-	if (!(I2C_MODE_MASTER & config))
+	if (!(I2C_MODE_MASTER & config)) {
 		return -EINVAL;
+	}
 
 	qm_cfg.mode = QM_I2C_MASTER;
 	if (I2C_ADDR_10_BITS & config) {
@@ -255,6 +263,16 @@ static const struct i2c_driver_api api = {
 	.transfer = i2c_qmsi_transfer,
 };
 
+/* Some SoCs have interrupt controllers w/o priority, in that case set
+ * it to 0 */
+#ifndef DT_I2C_0_IRQ_PRI
+#define DT_I2C_0_IRQ_PRI 0
+#endif
+
+#ifndef DT_I2C_1_IRQ_PRI
+#define DT_I2C_1_IRQ_PRI 0
+#endif
+
 static int i2c_qmsi_init(struct device *dev)
 {
 	struct i2c_qmsi_driver_data *driver_data = GET_DRIVER_DATA(dev);
@@ -271,20 +289,20 @@ static int i2c_qmsi_init(struct device *dev)
 		/* Register interrupt handler, unmask IRQ and route it
 		 * to Lakemont core.
 		 */
-		IRQ_CONNECT(CONFIG_I2C_0_IRQ,
-			    CONFIG_I2C_0_IRQ_PRI, qm_i2c_0_irq_isr, NULL,
-			    CONFIG_I2C_0_IRQ_FLAGS);
-		irq_enable(CONFIG_I2C_0_IRQ);
+		IRQ_CONNECT(DT_I2C_0_IRQ,
+			    DT_I2C_0_IRQ_PRI, qm_i2c_0_irq_isr, NULL,
+			    DT_I2C_0_IRQ_FLAGS);
+		irq_enable(DT_I2C_0_IRQ);
 		QM_IR_UNMASK_INTERRUPTS(
 				QM_INTERRUPT_ROUTER->i2c_master_0_int_mask);
 		break;
 
 #ifdef CONFIG_I2C_1
 	case QM_I2C_1:
-		IRQ_CONNECT(CONFIG_I2C_1_IRQ,
-			    CONFIG_I2C_1_IRQ_PRI, qm_i2c_1_irq_isr, NULL,
-			    CONFIG_I2C_1_IRQ_FLAGS);
-		irq_enable(CONFIG_I2C_1_IRQ);
+		IRQ_CONNECT(DT_I2C_1_IRQ,
+			    DT_I2C_1_IRQ_PRI, qm_i2c_1_irq_isr, NULL,
+			    DT_I2C_1_IRQ_FLAGS);
+		irq_enable(DT_I2C_1_IRQ);
 		QM_IR_UNMASK_INTERRUPTS(
 				QM_INTERRUPT_ROUTER->i2c_master_1_int_mask);
 		break;
@@ -296,7 +314,7 @@ static int i2c_qmsi_init(struct device *dev)
 
 	clk_periph_enable(config->clock_gate);
 
-	bitrate_cfg = _i2c_map_dt_bitrate(config->bitrate);
+	bitrate_cfg = i2c_map_dt_bitrate(config->bitrate);
 
 	err = i2c_qmsi_configure(dev, I2C_MODE_MASTER | bitrate_cfg);
 	if (err < 0) {

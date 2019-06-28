@@ -10,9 +10,9 @@
 #include <stddef.h>
 #include <string.h>
 #include <errno.h>
-#include <misc/printk.h>
-#include <misc/util.h>
-#include <misc/byteorder.h>
+#include <sys/printk.h>
+#include <sys/util.h>
+#include <sys/byteorder.h>
 #include <zephyr.h>
 
 #include <bluetooth/bluetooth.h>
@@ -322,7 +322,7 @@ static ssize_t write_lock(struct bt_conn *conn,
 	}
 
 	/* Write 1 byte to lock or 17 bytes to transition to a new lock state */
-	if (len != 1) {
+	if (len != 1U) {
 		/* TODO: Allow setting new lock code, using AES-128-ECB to
 		 * decrypt with the existing lock code and set the unencrypted
 		 * value as the new code.
@@ -487,7 +487,7 @@ static ssize_t write_adv_data(struct bt_conn *conn,
 		 * controlled by characteristics 4 (Radio Tx Power) and
 		 * 5 (Advertised Tx Power).
 		 */
-		slot->ad[2].data_len = min(slot->ad[2].data_len,
+		slot->ad[2].data_len = MIN(slot->ad[2].data_len,
 					   len + EDS_URL_WRITE_OFFSET);
 		memcpy(&slot->ad[2].data + EDS_URL_WRITE_OFFSET, buf,
 		       slot->ad[2].data_len - EDS_URL_WRITE_OFFSET);
@@ -557,7 +557,7 @@ static ssize_t write_connectable(struct bt_conn *conn,
 }
 
 /* Eddystone Configuration Service Declaration */
-static struct bt_gatt_attr eds_attrs[] = {
+BT_GATT_SERVICE_DEFINE(eds_svc,
 	BT_GATT_PRIMARY_SERVICE(&eds_uuid),
 	/* Capabilities: Readable only when unlocked. Never writable. */
 	BT_GATT_CHARACTERISTIC(&eds_caps_uuid.uuid, BT_GATT_CHRC_READ,
@@ -615,9 +615,7 @@ static struct bt_gatt_attr eds_attrs[] = {
 			       BT_GATT_CHRC_READ | BT_GATT_CHRC_WRITE,
 			       BT_GATT_PERM_READ | BT_GATT_PERM_WRITE,
 			       read_connectable, write_connectable, NULL),
-};
-
-static struct bt_gatt_service eds_svc = BT_GATT_SERVICE(eds_attrs);
+);
 
 static void bt_ready(int err)
 {
@@ -627,8 +625,6 @@ static void bt_ready(int err)
 	}
 
 	printk("Bluetooth initialized\n");
-
-	bt_gatt_service_register(&eds_svc);
 
 	/* Start advertising */
 	err = bt_le_adv_start(BT_LE_ADV_CONN_NAME, ad, ARRAY_SIZE(ad), NULL, 0);

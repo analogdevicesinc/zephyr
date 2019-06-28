@@ -6,13 +6,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <i2c.h>
-#include <misc/util.h>
+#include <drivers/i2c.h>
+#include <sys/util.h>
 #include <kernel.h>
 
 #include "isl29035.h"
 
 extern struct isl29035_driver_data isl29035_data;
+
+#define LOG_LEVEL CONFIG_SENSOR_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_DECLARE(ISL29035);
 
 static u16_t isl29035_lux_processed_to_raw(struct sensor_value const *val)
 {
@@ -20,7 +24,7 @@ static u16_t isl29035_lux_processed_to_raw(struct sensor_value const *val)
 
 	/* raw_val = val * (2 ^ adc_data_bits) / lux_range */
 	raw_val = (((u64_t)val->val1) << ISL29035_ADC_DATA_BITS) +
-		  (((u64_t)val->val2) << ISL29035_ADC_DATA_BITS) / 1000000;
+		  (((u64_t)val->val2) << ISL29035_ADC_DATA_BITS) / 1000000U;
 
 	return raw_val / ISL29035_LUX_RANGE;
 }
@@ -50,7 +54,7 @@ int isl29035_attr_set(struct device *dev,
 			       lsb_reg, raw_val & 0xFF) < 0 ||
 	    i2c_reg_write_byte(drv_data->i2c, ISL29035_I2C_ADDRESS,
 			       msb_reg, raw_val >> 8) < 0) {
-		SYS_LOG_DBG("Failed to set attribute.");
+		LOG_DBG("Failed to set attribute.");
 		return -EIO;
 	}
 
@@ -80,8 +84,11 @@ static void isl29035_thread_cb(struct device *dev)
 	u8_t val;
 
 	/* clear interrupt */
-	i2c_reg_read_byte(drv_data->i2c, ISL29035_I2C_ADDRESS,
-			  ISL29035_COMMAND_I_REG, &val);
+	if (i2c_reg_read_byte(drv_data->i2c, ISL29035_I2C_ADDRESS,
+			      ISL29035_COMMAND_I_REG, &val) < 0) {
+		LOG_ERR("isl29035: Error reading command register");
+		return;
+	}
 
 	if (drv_data->th_handler != NULL) {
 		drv_data->th_handler(dev, &drv_data->th_trigger);
@@ -142,14 +149,14 @@ int isl29035_init_interrupt(struct device *dev)
 				ISL29035_COMMAND_I_REG,
 				ISL29035_INT_PRST_MASK,
 				ISL29035_INT_PRST_BITS) < 0) {
-		SYS_LOG_DBG("Failed to set interrupt persistence cycles.");
+		LOG_DBG("Failed to set interrupt persistence cycles.");
 		return -EIO;
 	}
 
 	/* setup gpio interrupt */
 	drv_data->gpio = device_get_binding(CONFIG_ISL29035_GPIO_DEV_NAME);
 	if (drv_data->gpio == NULL) {
-		SYS_LOG_DBG("Failed to get GPIO device.");
+		LOG_DBG("Failed to get GPIO device.");
 		return -EINVAL;
 	}
 
@@ -162,7 +169,7 @@ int isl29035_init_interrupt(struct device *dev)
 			   BIT(CONFIG_ISL29035_GPIO_PIN_NUM));
 
 	if (gpio_add_callback(drv_data->gpio, &drv_data->gpio_cb) < 0) {
-		SYS_LOG_DBG("Failed to set gpio callback.");
+		LOG_DBG("Failed to set gpio callback.");
 		return -EIO;
 	}
 

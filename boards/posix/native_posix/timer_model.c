@@ -27,7 +27,7 @@
 #include "board_soc.h"
 #include "zephyr/types.h"
 #include "posix_trace.h"
-#include "misc/util.h"
+#include <sys/util.h>
 #include "cmdline.h"
 #include "soc.h"
 
@@ -50,9 +50,9 @@ static char *us_time_to_str(char *dest, u64_t time)
 		unsigned int second;
 		unsigned int us;
 
-		hour   = (time / 3600 / 1000000) % 24;
-		minute = (time / 60 / 1000000) % 60;
-		second = (time / 1000000) % 60;
+		hour   = (time / 3600U / 1000000U) % 24;
+		minute = (time / 60U / 1000000U) % 60;
+		second = (time / 1000000U) % 60;
 		us     = time % 1000000;
 
 		sprintf(dest, "%02u:%02u:%02u.%06u", hour, minute, second, us);
@@ -126,7 +126,7 @@ void hwtimer_set_real_time_mode(bool new_rt)
 
 static void hwtimer_update_timer(void)
 {
-	hw_timer_timer = min(hw_timer_tick_timer, hw_timer_awake_timer);
+	hw_timer_timer = MIN(hw_timer_tick_timer, hw_timer_awake_timer);
 }
 
 static inline void host_clock_gettime(struct timespec *tv)
@@ -155,7 +155,7 @@ void hwtimer_init(void)
 	if (real_time_mode) {
 		boot_time = get_host_us_time();
 		last_radj_rtime = boot_time;
-		last_radj_stime = 0;
+		last_radj_stime = 0U;
 	}
 	if (!reset_rtc) {
 		struct timespec tv;
@@ -202,7 +202,7 @@ static void hwtimer_tick_timer_reached(void)
 		us_time_to_str(rs, real_time - boot_time);
 		printf("tick @%5llims: diff = expected_rt - real_time = "
 			"%5lli = %s - %s\n",
-			hw_timer_tick_timer/1000, diff, es, rs);
+			hw_timer_tick_timer/1000U, diff, es, rs);
 #endif
 
 		if (diff > 0) { /* we need to slow down */

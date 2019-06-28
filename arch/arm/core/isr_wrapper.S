@@ -41,7 +41,7 @@ GTEXT(_IntExit)
  */
 SECTION_FUNC(TEXT, _isr_wrapper)
 
-	push {lr}		/* lr is now the first item on the stack */
+	push {r0,lr}		/* r0, lr are now the first items on the stack */
 
 #ifdef CONFIG_EXECUTION_BENCHMARKING
 	bl read_timer_start_of_isr
@@ -57,7 +57,7 @@ SECTION_FUNC(TEXT, _isr_wrapper)
 	 * idle, this ensures that the calculation and programming of the device
 	 * for the next timer deadline is not interrupted.  For non-tickless idle,
 	 * this ensures that the clearing of the kernel idle state is not
-	 * interrupted.  In each case, _sys_power_save_idle_exit is called with
+	 * interrupted.  In each case, z_sys_power_save_idle_exit is called with
 	 * interrupts disabled.
 	 */
 	cpsid i  /* PRIMASK = 1 */
@@ -73,7 +73,7 @@ SECTION_FUNC(TEXT, _isr_wrapper)
 	movs.n r1, #0
 	/* clear kernel idle state */
 	str r1, [r2, #_kernel_offset_to_idle]
-	blx _sys_power_save_idle_exit
+	bl z_sys_power_save_idle_exit
 _idle_state_cleared:
 
 #elif defined(CONFIG_ARMV7_M_ARMV8_M_MAINLINE)
@@ -81,7 +81,7 @@ _idle_state_cleared:
 	movne	r1, #0
 		/* clear kernel idle state */
 		strne	r1, [r2, #_kernel_offset_to_idle]
-		blxne	_sys_power_save_idle_exit
+		blne	z_sys_power_save_idle_exit
 #else
 #error Unknown ARM architecture
 #endif /* CONFIG_ARMV6_M_ARMV8_M_BASELINE */
@@ -106,27 +106,34 @@ _idle_state_cleared:
 
 	ldm r1!,{r0,r3}	/* arg in r0, ISR in r3 */
 #ifdef CONFIG_EXECUTION_BENCHMARKING
-	stm sp!,{r0-r3} /* Save r0 to r4 into stack */
-	push {lr}
+	stm sp!,{r0-r3} /* Save r0 to r3 into stack */
+	push {r0, lr}
 	bl read_timer_end_of_isr
 #if defined(CONFIG_ARMV6_M_ARMV8_M_BASELINE)
-	pop {r3}
+	pop {r0, r3}
 	mov lr,r3
 #else
-	pop {lr}
+	pop {r0, lr}
 #endif /* CONFIG_ARMV6_M_ARMV8_M_BASELINE */
-	ldm sp!,{r0-r3} /* Restore r0 to r4 regs */
-#endif
+	ldm sp!,{r0-r3} /* Restore r0 to r3 regs */
+#endif /* CONFIG_EXECUTION_BENCHMARKING */
 	blx r3		/* call ISR */
 
+#ifdef CONFIG_TRACING
+	bl z_sys_trace_isr_exit
+#endif
+
 #if defined(CONFIG_ARMV6_M_ARMV8_M_BASELINE)
-	pop {r3}
+	pop {r0, r3}
 	mov lr, r3
 #elif defined(CONFIG_ARMV7_M_ARMV8_M_MAINLINE)
-	pop {lr}
+	pop {r0, lr}
 #else
 #error Unknown ARM architecture
 #endif /* CONFIG_ARMV6_M_ARMV8_M_BASELINE */
 
-	/* exception return is done in _IntExit() */
-	b _IntExit
+	/* Use 'bx' instead of 'b' because 'bx' can jump further, and use
+	 * 'bx' instead of 'blx' because exception return is done in
+	 * _IntExit() */
+	ldr r0, =_IntExit
+	bx r0

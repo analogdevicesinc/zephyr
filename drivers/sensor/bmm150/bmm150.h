@@ -11,17 +11,16 @@
 
 
 #include <zephyr/types.h>
-#include <i2c.h>
+#include <drivers/i2c.h>
 #include <stdint.h>
-#include <misc/util.h>
+#include <sys/util.h>
 
 #include <kernel.h>
 #include <device.h>
-#include <sensor.h>
-#include <misc/byteorder.h>
-#include <misc/__assert.h>
-#include <gpio.h>
-
+#include <drivers/sensor.h>
+#include <sys/byteorder.h>
+#include <sys/__assert.h>
+#include <drivers/gpio.h>
 
 #define BMM150_REG_CHIP_ID         0x40
 #define BMM150_CHIP_ID_VAL         0x32
@@ -158,7 +157,4 @@ enum bmm150_presets {
 	#define BMM150_DEFAULT_PRESET BMM150_HIGH_ACCURACY_PRESET
 #endif
 
-#define SYS_LOG_DOMAIN "BMM150"
-#define SYS_LOG_LEVEL CONFIG_SYS_LOG_SENSOR_LEVEL
-#include <logging/sys_log.h>
 #endif /* __SENSOR_BMM150_H__ */

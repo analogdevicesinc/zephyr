@@ -13,8 +13,10 @@
 
 	chosen {
 		zephyr,console = &usart1;
+		zephyr,shell-uart = &usart1;
 		zephyr,sram = &sram0;
 		zephyr,flash = &flash0;
+		zephyr,code-partition = &slot0_partition;
 	};
 
 	leds {
@@ -46,7 +48,6 @@
 		led1 = &green_led_2;
 		led2 = &bt_blue_led;
 		sw0 = &user_button;
-		bt = &bt0;
 	};
 };
 
@@ -54,37 +55,38 @@
 	current-speed = <115200>;
 	pinctrl-0 = <&usart1_pins_b>;
 	pinctrl-names = "default";
-	status = "ok";
+	status = "okay";
 };
 
 &usart2 {
 	current-speed = <115200>;
 	pinctrl-0 = <&usart2_pins_a>;
 	pinctrl-names = "default";
-	status = "ok";
+	status = "okay";
 };
 
 &usart6 {
 	current-speed = <115200>;
 	pinctrl-0 = <&usart6_pins_a>;
 	pinctrl-names = "default";
-	status = "ok";
+	status = "okay";
 };
 
 &i2c1 {
-	status = "ok";
+	status = "okay";
 	clock-frequency = <I2C_BITRATE_FAST>;
 };
 
 &i2c2 {
+	status = "okay";
 	clock-frequency = <I2C_BITRATE_FAST>;
 };
 
 &spi1 {
-	status = "ok";
+	status = "okay";
 
 	/* Nordic nRF51822-QFAC */
-	bt0: bt-hci@0 {
+	bt-hci@0 {
 		compatible = "zephyr,bt-hci-spi";
 		reg = <0>;
 		reset-gpios = <&gpiob 4 0>;
@@ -95,17 +97,17 @@
 };
 
 &spi2 {
-	status = "ok";
+	status = "okay";
 };
 
 &usbotg_fs {
-	status = "ok";
+	status = "okay";
 };
 
 &flash0 {
 	/*
 	 * For more information, see:
-	 * http://docs.zephyrproject.org/latest/devices/dts/flash_partitions.html
+	 * http://docs.zephyrproject.org/latest/guides/dts/index.html#flash-partitions
 	 */
 	partitions {
 		compatible = "fixed-partitions";
@@ -140,5 +142,5 @@
 };
 
 &rtc {
-	status = "ok";
+	status = "okay";
 };

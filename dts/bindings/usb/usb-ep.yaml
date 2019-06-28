@@ -3,9 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: USB Endpoints' properties
-id: USB-EP
 version: 0.1
 
 description: >
@@ -35,4 +34,3 @@ properties:
       description: Number of OUT endpoints supported by hardware
                    (including EP0 OUT)
       generation: define
-...

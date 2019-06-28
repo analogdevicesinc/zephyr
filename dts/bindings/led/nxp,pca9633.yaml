@@ -1,6 +1,5 @@
----
+
 title: NXP PCA9633 LED Driver
-id: nxp,pca9633
 version: 0.1
 
 description: NXP PCA9633 LED binding
@@ -11,4 +10,3 @@ inherits:
 properties:
     compatible:
       constraint: "nxp,pca9633"
-...

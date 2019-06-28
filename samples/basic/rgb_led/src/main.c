@@ -11,25 +11,25 @@
  */
 
 #include <zephyr.h>
-#include <misc/printk.h>
+#include <sys/printk.h>
 #include <device.h>
-#include <pwm.h>
-#include <board.h>
+#include <drivers/pwm.h>
 
-#if defined(CONFIG_SOC_QUARK_SE_C1000)
-#define PWM_DEV0	CONFIG_PWM_QMSI_DEV_NAME
-#define PWM_CH0		0
-#define PWM_DEV1	CONFIG_PWM_QMSI_DEV_NAME
-#define PWM_CH1		1
-#define PWM_DEV2	CONFIG_PWM_QMSI_DEV_NAME
-#define PWM_CH2		2
-#elif defined(CONFIG_BOARD_HEXIWEAR_K64)
-#define PWM_DEV0	RED_PWM_NAME
-#define PWM_CH0		RED_PWM_CHANNEL
-#define PWM_DEV1	GREEN_PWM_NAME
-#define PWM_CH1		GREEN_PWM_CHANNEL
-#define PWM_DEV2	BLUE_PWM_NAME
-#define PWM_CH2		BLUE_PWM_CHANNEL
+#if defined(DT_ALIAS_RED_PWM_LED_PWMS_CONTROLLER) && \
+      defined(DT_ALIAS_RED_PWM_LED_PWMS_CHANNEL) && \
+      defined(DT_ALIAS_GREEN_PWM_LED_PWMS_CONTROLLER) && \
+      defined(DT_ALIAS_GREEN_PWM_LED_PWMS_CHANNEL) && \
+      defined(DT_ALIAS_BLUE_PWM_LED_PWMS_CONTROLLER) && \
+      defined(DT_ALIAS_BLUE_PWM_LED_PWMS_CHANNEL)
+/* Get the defines from dt (based on aliases 'red-pwm-led', 'green-pwm-led' &
+ * 'blue-pwm-led')
+ */
+#define PWM_DEV0	DT_ALIAS_RED_PWM_LED_PWMS_CONTROLLER
+#define PWM_CH0		DT_ALIAS_RED_PWM_LED_PWMS_CHANNEL
+#define PWM_DEV1	DT_ALIAS_GREEN_PWM_LED_PWMS_CONTROLLER
+#define PWM_CH1		DT_ALIAS_GREEN_PWM_LED_PWMS_CHANNEL
+#define PWM_DEV2	DT_ALIAS_BLUE_PWM_LED_PWMS_CONTROLLER
+#define PWM_CH2		DT_ALIAS_BLUE_PWM_LED_PWMS_CHANNEL
 #else
 #error "Choose supported board or add new board for the application"
 #endif
@@ -38,7 +38,7 @@
  * 50 is flicker fusion threshold. Modulated light will be perceived
  * as steady by our eyes when blinking rate is at least 50.
  */
-#define PERIOD (USEC_PER_SEC / 50)
+#define PERIOD (USEC_PER_SEC / 50U)
 
 /* in micro second */
 #define STEPSIZE	2000
@@ -65,7 +65,7 @@ void main(void)
 	}
 
 	while (1) {
-		for (pulse_width0 = 0; pulse_width0 <= PERIOD;
+		for (pulse_width0 = 0U; pulse_width0 <= PERIOD;
 		     pulse_width0 += STEPSIZE) {
 			if (write_pin(pwm_dev[0], PWM_CH0,
 				      pulse_width0) != 0) {
@@ -73,7 +73,7 @@ void main(void)
 				return;
 			}
 
-			for (pulse_width1 = 0; pulse_width1 <= PERIOD;
+			for (pulse_width1 = 0U; pulse_width1 <= PERIOD;
 			     pulse_width1 += STEPSIZE) {
 				if (write_pin(pwm_dev[1], PWM_CH1,
 					      pulse_width1) != 0) {
@@ -81,7 +81,7 @@ void main(void)
 					return;
 				}
 
-				for (pulse_width2 = 0; pulse_width2 <= PERIOD;
+				for (pulse_width2 = 0U; pulse_width2 <= PERIOD;
 				     pulse_width2 += STEPSIZE) {
 					if (write_pin(pwm_dev[2], PWM_CH2,
 						      pulse_width2) != 0) {

@@ -3,9 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: APDS9960 Digital Proximity, Ambient Light, RGB and Gesture Sensor
-id: avago,apds9960
 version: 0.1
 
 description: >
@@ -21,5 +20,4 @@ properties:
     int-gpios:
       type: compound
       category: required
-      generation: define, use-prop-name
-...
+      generation: define

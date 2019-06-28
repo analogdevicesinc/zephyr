@@ -1,7 +1,9 @@
+# SPDX-License-Identifier: Apache-2.0
+
 if(CONFIG_FILE_SYSTEM)
   zephyr_interface_library_named(FS)
-  zephyr_link_interface_ifdef(CONFIG_FAT_FILESYSTEM_ELM ELMFAT)
-  zephyr_link_interface_ifdef(CONFIG_FILE_SYSTEM_NFFS   NFFS)
+  #zephyr_link_interface_ifdef(CONFIG_FAT_FILESYSTEM_ELM ELMFAT)
+  #zephyr_link_interface_ifdef(CONFIG_FILE_SYSTEM_NFFS   NFFS)
 
   zephyr_library()
   zephyr_library_sources(fs.c)
@@ -17,3 +19,13 @@ endif()
 
 add_subdirectory_ifdef(CONFIG_FCB  ./fcb)
 add_subdirectory_ifdef(CONFIG_NVS  ./nvs)
+
+if(CONFIG_FUSE_FS_ACCESS)
+  zephyr_library_named(FS_FUSE)
+  find_package(PkgConfig REQUIRED)
+  pkg_search_module(FUSE REQUIRED fuse)
+  zephyr_include_directories(${FUSE_INCLUDE_DIR})
+  zephyr_link_libraries(${FUSE_LIBRARIES})
+  zephyr_library_compile_definitions(_FILE_OFFSET_BITS=64)
+  zephyr_library_sources(fuse_fs_access.c)
+endif()

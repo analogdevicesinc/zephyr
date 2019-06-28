@@ -10,12 +10,11 @@
 #include <toolchain.h>
 #include <linker/sections.h>
 #include <wait_q.h>
-#include <misc/dlist.h>
+#include <sys/dlist.h>
 #include <ksched.h>
 #include <init.h>
 
-extern struct k_mem_slab _k_mem_slab_list_start[];
-extern struct k_mem_slab _k_mem_slab_list_end[];
+static struct k_spinlock lock;
 
 #ifdef CONFIG_OBJECT_TRACING
 struct k_mem_slab *_trace_list_k_mem_slab;
@@ -34,10 +33,15 @@ static void create_free_list(struct k_mem_slab *slab)
 	u32_t j;
 	char *p;
 
+	/* blocks must be word aligned */
+	__ASSERT(((slab->block_size | (uintptr_t)slab->buffer)
+					& (sizeof(void *) - 1)) == 0,
+		 "slab at %p not word aligned", slab);
+
 	slab->free_list = NULL;
 	p = slab->buffer;
 
-	for (j = 0; j < slab->num_blocks; j++) {
+	for (j = 0U; j < slab->num_blocks; j++) {
 		*(char **)p = slab->free_list;
 		slab->free_list = p;
 		p += slab->block_size;
@@ -55,13 +59,10 @@ static int init_mem_slab_module(struct device *dev)
 {
 	ARG_UNUSED(dev);
 
-	struct k_mem_slab *slab;
-
-	for (slab = _k_mem_slab_list_start;
-	     slab < _k_mem_slab_list_end;
-	     slab++) {
+	Z_STRUCT_SECTION_FOREACH(k_mem_slab, slab) {
 		create_free_list(slab);
 		SYS_TRACING_OBJ_INIT(k_mem_slab, slab);
+		z_object_init(slab);
 	}
 	return 0;
 }
@@ -75,17 +76,17 @@ void k_mem_slab_init(struct k_mem_slab *slab, void *buffer,
 	slab->num_blocks = num_blocks;
 	slab->block_size = block_size;
 	slab->buffer = buffer;
-	slab->num_used = 0;
+	slab->num_used = 0U;
 	create_free_list(slab);
-	_waitq_init(&slab->wait_q);
+	z_waitq_init(&slab->wait_q);
 	SYS_TRACING_OBJ_INIT(k_mem_slab, slab);
 
-	_k_object_init(slab);
+	z_object_init(slab);
 }
 
 int k_mem_slab_alloc(struct k_mem_slab *slab, void **mem, s32_t timeout)
 {
-	unsigned int key = irq_lock();
+	k_spinlock_key_t key = k_spin_lock(&lock);
 	int result;
 
 	if (slab->free_list != NULL) {
@@ -100,31 +101,31 @@ int k_mem_slab_alloc(struct k_mem_slab *slab, void **mem, s32_t timeout)
 		result = -ENOMEM;
 	} else {
 		/* wait for a free block or timeout */
-		result = _pend_current_thread(key, &slab->wait_q, timeout);
+		result = z_pend_curr(&lock, key, &slab->wait_q, timeout);
 		if (result == 0) {
 			*mem = _current->base.swap_data;
 		}
 		return result;
 	}
 
-	irq_unlock(key);
+	k_spin_unlock(&lock, key);
 
 	return result;
 }
 
 void k_mem_slab_free(struct k_mem_slab *slab, void **mem)
 {
-	int key = irq_lock();
-	struct k_thread *pending_thread = _unpend_first_thread(&slab->wait_q);
+	k_spinlock_key_t key = k_spin_lock(&lock);
+	struct k_thread *pending_thread = z_unpend_first_thread(&slab->wait_q);
 
 	if (pending_thread != NULL) {
-		_set_thread_return_value_with_data(pending_thread, 0, *mem);
-		_ready_thread(pending_thread);
-		_reschedule(key);
+		z_set_thread_return_value_with_data(pending_thread, 0, *mem);
+		z_ready_thread(pending_thread);
+		z_reschedule(&lock, key);
 	} else {
 		**(char ***)mem = slab->free_list;
 		slab->free_list = *(char **)mem;
 		slab->num_used--;
-		irq_unlock(key);
+		k_spin_unlock(&lock, key);
 	}
 }

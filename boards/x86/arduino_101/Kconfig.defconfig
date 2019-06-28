@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 
 if BOARD_ARDUINO_101
 
@@ -13,23 +14,15 @@ config SS_RESET_VECTOR
 if FLASH && SPI
 
 config SPI_FLASH_W25QXXDV
-	def_bool y
+	default y
 
 config GPIO
-	def_bool y
+	default y
 
 if SPI_FLASH_W25QXXDV
 
-config SPI_FLASH_W25QXXDV_SPI_NAME
-	default "SPI_0"
-config SPI_FLASH_W25QXXDV_SPI_SLAVE
-	default 1
 config SPI_FLASH_W25QXXDV_GPIO_SPI_CS
-	def_bool y
-config SPI_FLASH_W25QXXDV_GPIO_SPI_CS_DRV_NAME
-	default "GPIO_0"
-config SPI_FLASH_W25QXXDV_GPIO_SPI_CS_PIN
-	default 24
+	default y
 
 if DISK_ACCESS_FLASH
 
@@ -56,5 +49,18 @@ endif # DISK_ACCESS_FLASH
 endif # SPI_FLASH_W25QXXDV
 
 endif # FLASH && SPI
+
+if USB_DEVICE_STACK
+
+config USB_VBUS_GPIO
+	default y
+
+config USB_VBUS_GPIO_DEV_NAME
+	default "GPIO_0"
+
+config USB_VBUS_GPIO_PIN_NUM
+        default 28
+
+endif # USB_DEVICE_STACK
 
 endif # BOARD_ARDUINO_101

@@ -1,30 +1,38 @@
 /*
- * Copyright (c) 2018 Intel Corporation
+ * Copyright (c) 2019 Intel Corporation
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include <errno.h>
 
-#define SYS_LOG_DOMAIN "dev/codec"
-#define SYS_LOG_LEVEL CONFIG_SYS_LOG_AUDIO_CODEC_LEVEL
-#include <logging/sys_log.h>
-
-#include <misc/util.h>
+#include <sys/util.h>
 
 #include <device.h>
-#include <i2c.h>
+#include <drivers/i2c.h>
+#include <drivers/gpio.h>
 
 #include <audio/codec.h>
 #include "tlv320dac310x.h"
 
+#define LOG_LEVEL CONFIG_AUDIO_CODEC_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_REGISTER(tlv320dac310x);
+
 #define CODEC_OUTPUT_VOLUME_MAX		0
 #define CODEC_OUTPUT_VOLUME_MIN		(-78 * 2)
+
+#define CODEC_RESET_PIN_ASSERT		0
+#define CODEC_RESET_PIN_DEASSERT	1
 
 struct codec_driver_config {
 	struct device	*i2c_device;
 	const char	*i2c_dev_name;
 	u8_t		i2c_address;
+	struct device	*gpio_device;
+	const char	*gpio_dev_name;
+	u32_t		gpio_pin;
+	int		gpio_flags;
 };
 
 struct codec_driver_data {
@@ -33,8 +41,12 @@ struct codec_driver_data {
 
 static struct codec_driver_config codec_device_config = {
 	.i2c_device	= NULL,
-	.i2c_dev_name	= CONFIG_CODEC_I2C_BUS_NAME,
-	.i2c_address	= CONFIG_CODEC_I2C_BUS_ADDR,
+	.i2c_dev_name	= DT_INST_0_TI_TLV320DAC_BUS_NAME,
+	.i2c_address	= DT_INST_0_TI_TLV320DAC_BASE_ADDRESS,
+	.gpio_device	= NULL,
+	.gpio_dev_name	= DT_INST_0_TI_TLV320DAC_RESET_GPIOS_CONTROLLER,
+	.gpio_pin	= DT_INST_0_TI_TLV320DAC_RESET_GPIOS_PIN,
+	.gpio_flags	= DT_INST_0_TI_TLV320DAC_RESET_GPIOS_FLAGS,
 };
 
 static struct codec_driver_data codec_device_data;
@@ -55,7 +67,7 @@ static enum osr_multiple codec_get_osr_multiple(audio_dai_cfg_t *cfg);
 static void codec_configure_output(struct device *dev);
 static int codec_set_output_volume(struct device *dev, int vol);
 
-#if (SYS_LOG_LEVEL >= SYS_LOG_LEVEL_DEBUG)
+#if (LOG_LEVEL >= LOG_LEVEL_DEBUG)
 static void codec_read_all_regs(struct device *dev);
 #define CODEC_DUMP_REGS(dev)	codec_read_all_regs((dev))
 #else
@@ -70,21 +82,38 @@ static int codec_initialize(struct device *dev)
 	dev_cfg->i2c_device = device_get_binding(dev_cfg->i2c_dev_name);
 
 	if (dev_cfg->i2c_device == NULL) {
-		SYS_LOG_ERR("I2C device binding error");
+		LOG_ERR("I2C device binding error");
 		return -ENXIO;
 	}
+
+	/* bind GPIO */
+	dev_cfg->gpio_device = device_get_binding(dev_cfg->gpio_dev_name);
+
+	if (dev_cfg->gpio_device == NULL) {
+		LOG_ERR("GPIO device binding error");
+		return -ENXIO;
+	}
+
 	return 0;
 }
 
 static int codec_configure(struct device *dev,
 		struct audio_codec_cfg *cfg)
 {
+	struct codec_driver_config *const dev_cfg = DEV_CFG(dev);
 	int ret;
 
 	if (cfg->dai_type != AUDIO_DAI_TYPE_I2S) {
-		SYS_LOG_ERR("dai_type must be AUDIO_DAI_TYPE_I2S");
+		LOG_ERR("dai_type must be AUDIO_DAI_TYPE_I2S");
 		return -EINVAL;
 	}
+
+	/* configure reset GPIO */
+	gpio_pin_configure(dev_cfg->gpio_device, dev_cfg->gpio_pin,
+				     dev_cfg->gpio_flags);
+	/* de-assert reset */
+	gpio_pin_write(dev_cfg->gpio_device, dev_cfg->gpio_pin,
+				 CODEC_RESET_PIN_DEASSERT);
 
 	codec_soft_reset(dev);
 
@@ -138,7 +167,8 @@ static int codec_set_property(struct device *dev,
 {
 	/* individual channel control not currently supported */
 	if (channel != AUDIO_CHANNEL_ALL) {
-		SYS_LOG_ERR("channel %u invalid. must be AUDIO_CHANNEL_ALL");
+		LOG_ERR("channel %u invalid. must be AUDIO_CHANNEL_ALL",
+			channel);
 		return -EINVAL;
 	}
 
@@ -175,13 +205,13 @@ static void codec_write_reg(struct device *dev, struct reg_addr reg, u8_t val)
 	/* set page if different */
 	if (dev_data->reg_addr_cache.page != reg.page) {
 		i2c_reg_write_byte(dev_cfg->i2c_device,
-				DAC_I2C_DEV_ADDR, 0, reg.page);
+				dev_cfg->i2c_address, 0, reg.page);
 		dev_data->reg_addr_cache.page = reg.page;
 	}
 
 	i2c_reg_write_byte(dev_cfg->i2c_device,
-			DAC_I2C_DEV_ADDR, reg.reg_addr, val);
-	SYS_LOG_DBG("WR PG:%u REG:%02u VAL:0x%02x",
+			dev_cfg->i2c_address, reg.reg_addr, val);
+	LOG_DBG("WR PG:%u REG:%02u VAL:0x%02x",
 			reg.page, reg.reg_addr, val);
 }
 
@@ -193,13 +223,13 @@ static void codec_read_reg(struct device *dev, struct reg_addr reg, u8_t *val)
 	/* set page if different */
 	if (dev_data->reg_addr_cache.page != reg.page) {
 		i2c_reg_write_byte(dev_cfg->i2c_device,
-				DAC_I2C_DEV_ADDR, 0, reg.page);
+				dev_cfg->i2c_address, 0, reg.page);
 		dev_data->reg_addr_cache.page = reg.page;
 	}
 
 	i2c_reg_read_byte(dev_cfg->i2c_device,
-			DAC_I2C_DEV_ADDR, reg.reg_addr, val);
-	SYS_LOG_DBG("RD PG:%u REG:%02u VAL:0x%02x",
+			dev_cfg->i2c_address, reg.reg_addr, val);
+	LOG_DBG("RD PG:%u REG:%02u VAL:0x%02x",
 			reg.page, reg.reg_addr, *val);
 }
 
@@ -237,7 +267,7 @@ static int codec_configure_dai(struct device *dev, audio_dai_cfg_t *cfg)
 		val |= IF_CTRL_WLEN(IF_CTRL_WLEN_32);
 		break;
 	default:
-		SYS_LOG_ERR("Unsupported PCM sample bit width %u",
+		LOG_ERR("Unsupported PCM sample bit width %u",
 				cfg->i2s.word_size);
 		return -EINVAL;
 	}
@@ -256,7 +286,7 @@ static int codec_configure_clocks(struct device *dev,
 	int mdac, ndac, bclk_div, mclk_div;
 
 	i2s = &cfg->dai_cfg.i2s;
-	SYS_LOG_DBG("MCLK %u Hz PCM Rate: %u Hz", cfg->mclk_freq,
+	LOG_DBG("MCLK %u Hz PCM Rate: %u Hz", cfg->mclk_freq,
 			i2s->frame_clk_freq);
 
 	if (cfg->mclk_freq <= DAC_PROC_CLK_FREQ_MAX) {
@@ -301,23 +331,23 @@ static int codec_configure_clocks(struct device *dev,
 
 	/* check if suitable value was found */
 	if (osr < osr_min) {
-		SYS_LOG_ERR("Unable to find suitable mdac and osr values");
+		LOG_ERR("Unable to find suitable mdac and osr values");
 		return -EINVAL;
 	}
 
-	SYS_LOG_DBG("Processing freq: %u Hz Modulator freq: %u Hz",
+	LOG_DBG("Processing freq: %u Hz Modulator freq: %u Hz",
 			dac_clk, mod_clk);
-	SYS_LOG_DBG("NDAC: %u MDAC: %u OSR: %u", ndac, mdac, osr);
+	LOG_DBG("NDAC: %u MDAC: %u OSR: %u", ndac, mdac, osr);
 
 	if (i2s->options & I2S_OPT_BIT_CLK_MASTER) {
-		bclk_div = osr * mdac / (i2s->word_size * 2); /* stereo */
+		bclk_div = osr * mdac / (i2s->word_size * 2U); /* stereo */
 		if ((bclk_div * i2s->word_size * 2) != (osr * mdac)) {
-			SYS_LOG_ERR("Unable to generate BCLK %u from MCLK %u",
-				i2s->frame_clk_freq * i2s->word_size * 2,
+			LOG_ERR("Unable to generate BCLK %u from MCLK %u",
+				i2s->frame_clk_freq * i2s->word_size * 2U,
 				cfg->mclk_freq);
 			return -EINVAL;
 		}
-		SYS_LOG_DBG("I2S Master BCLKDIV: %u", bclk_div);
+		LOG_DBG("I2S Master BCLKDIV: %u", bclk_div);
 		codec_write_reg(dev, BCLK_DIV_ADDR,
 				BCLK_DIV_POWER_UP | BCLK_DIV(bclk_div));
 	}
@@ -336,11 +366,11 @@ static int codec_configure_clocks(struct device *dev,
 	}
 
 	/* calculate MCLK divider to get ~1MHz */
-	mclk_div = (cfg->mclk_freq + 1000000 - 1) / 1000000;
+	mclk_div = (cfg->mclk_freq + 1000000 - 1) / 1000000U;
 	/* setup timer clock to be MCLK divided */
 	codec_write_reg(dev, TIMER_MCLK_DIV_ADDR,
 			TIMER_MCLK_DIV_EN_EXT | TIMER_MCLK_DIV_VAL(mclk_div));
-	SYS_LOG_DBG("Timer MCLK Divider: %u", mclk_div);
+	LOG_DBG("Timer MCLK Divider: %u", mclk_div);
 
 	return 0;
 }
@@ -352,15 +382,15 @@ static int codec_configure_filters(struct device *dev, audio_dai_cfg_t *cfg)
 	/* determine decimation filter type */
 	if (cfg->i2s.frame_clk_freq >= AUDIO_PCM_RATE_192K) {
 		proc_blk = PRB_P18_DECIMATION_C;
-		SYS_LOG_INF("PCM Rate: %u Filter C PRB P18 selected",
+		LOG_INF("PCM Rate: %u Filter C PRB P18 selected",
 				cfg->i2s.frame_clk_freq);
 	} else if (cfg->i2s.frame_clk_freq >= AUDIO_PCM_RATE_96K) {
 		proc_blk = PRB_P10_DECIMATION_B;
-		SYS_LOG_INF("PCM Rate: %u Filter B PRB P10 selected",
+		LOG_INF("PCM Rate: %u Filter B PRB P10 selected",
 				cfg->i2s.frame_clk_freq);
 	} else {
 		proc_blk = PRB_P25_DECIMATION_A;
-		SYS_LOG_INF("PCM Rate: %u Filter A PRB P25 selected",
+		LOG_INF("PCM Rate: %u Filter A PRB P25 selected",
 				cfg->i2s.frame_clk_freq);
 	}
 
@@ -380,7 +410,7 @@ static enum osr_multiple codec_get_osr_multiple(audio_dai_cfg_t *cfg)
 		osr = OSR_MULTIPLE_8;
 	}
 
-	SYS_LOG_INF("PCM Rate: %u OSR Multiple: %u", cfg->i2s.frame_clk_freq,
+	LOG_INF("PCM Rate: %u OSR Multiple: %u", cfg->i2s.frame_clk_freq,
 			osr);
 	return osr;
 }
@@ -428,14 +458,14 @@ static void codec_configure_output(struct device *dev)
 static int codec_set_output_volume(struct device *dev, int vol)
 {
 	u8_t vol_val;
-	int vol_index, vol_count;
+	int vol_index;
 	u8_t vol_array[] = {
 		107, 108, 110, 113, 116, 120, 125, 128, 132, 138, 144
 	};
 
 	if ((vol > CODEC_OUTPUT_VOLUME_MAX) ||
 			(vol < CODEC_OUTPUT_VOLUME_MIN)) {
-		SYS_LOG_ERR("Invalid volume %d.%d dB",
+		LOG_ERR("Invalid volume %d.%d dB",
 				vol >> 1, ((u32_t)vol & 1) ? 5 : 0);
 		return -EINVAL;
 	}
@@ -448,8 +478,7 @@ static int codec_set_output_volume(struct device *dev, int vol)
 		vol_val = HPX_ANA_VOL_FLOOR;
 	} else if (vol > HPX_ANA_VOL_LOW_THRESH) {
 		/* lookup low volume values */
-		vol_count = sizeof(vol_array)/sizeof(u8_t);
-		for (vol_index = 0; vol_index < vol_count; vol_index++) {
+		for (vol_index = 0; vol_index < ARRAY_SIZE(vol_array); vol_index++) {
 			if (vol_array[vol_index] >= vol) {
 				break;
 			}
@@ -464,7 +493,7 @@ static int codec_set_output_volume(struct device *dev, int vol)
 	return 0;
 }
 
-#if (SYS_LOG_LEVEL >= SYS_LOG_LEVEL_DEBUG)
+#if (LOG_LEVEL >= LOG_LEVEL_DEBUG)
 static void codec_read_all_regs(struct device *dev)
 {
 	u8_t val;
@@ -509,6 +538,6 @@ static const struct audio_codec_api codec_driver_api = {
 	.apply_properties	= codec_apply_properties,
 };
 
-DEVICE_AND_API_INIT(tlv320dac310x, CONFIG_CODEC_NAME, codec_initialize,
+DEVICE_AND_API_INIT(tlv320dac310x, DT_INST_0_TI_TLV320DAC_LABEL, codec_initialize,
 		&codec_device_data, &codec_device_config, POST_KERNEL,
 		CONFIG_AUDIO_CODEC_INIT_PRIORITY, &codec_driver_api);

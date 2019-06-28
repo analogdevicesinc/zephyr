@@ -6,52 +6,59 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-if USB_DEVICE_STACK
-
 config USB_CDC_ACM
 	bool "USB CDC ACM Device Class Driver"
+	select SERIAL_HAS_DRIVER
+	select SERIAL_SUPPORT_INTERRUPT
+	select RING_BUFFER
 	help
-	  USB CDC ACM device class driver
+	  USB CDC ACM device class driver. Default device name is
+	  "CDC_ACM_0".
 
-config CDC_ACM_PORT_NAME
-	string "CDC ACM class device driver port name"
-	depends on USB_CDC_ACM
+if USB_CDC_ACM
+
+config USB_CDC_ACM_RINGBUF_SIZE
+	int "USB CDC ACM ring buffer size"
+	default 1024
+	help
+	  USB CDC ACM ring buffer size
+
+config USB_CDC_ACM_DEVICE_NAME
+	string "USB CDC ACM device name template"
 	default "CDC_ACM"
 	help
-	  Port name through which CDC ACM class device driver is accessed
+	  Device name template for the CDC ACM Devices. First device would
+	  have name $(USB_CDC_ACM_DEVICE_NAME)_0, etc.
+
+module = USB_CDC_ACM
+default-count = 1
+source "subsys/usb/class/Kconfig.template.composite_device_number"
 
 config CDC_ACM_INTERRUPT_EP_MPS
 	int
-	depends on USB_CDC_ACM
 	default 16
 	help
 	  CDC ACM class interrupt IN endpoint size
 
 config CDC_ACM_BULK_EP_MPS
 	int
-	depends on USB_CDC_ACM
 	default 64
 	help
 	  CDC ACM class bulk endpoints size
 
-config SYS_LOG_USB_CDC_ACM_LEVEL
-	int "USB CDC ACM device class driver log level"
-	depends on USB_CDC_ACM && SYS_LOG
-	default 0
+config CDC_ACM_IAD
+	bool "Force using Interface Association Descriptor"
+	default n
 	help
-	  Sets log level for USB CDC ACM device class driver
+	  IAD should not be required for non-composite CDC ACM device,
+	  but Windows 7 fails to properly enumerate without it.
+	  Enable if you want CDC ACM to work with Windows 7.
 
-	  Levels are:
+module = USB_CDC_ACM
+module-str = usb cdc acm
+source "subsys/logging/Kconfig.template.log_config"
 
-	  - 0 OFF, do not write
-
-	  - 1 ERROR, only write SYS_LOG_ERR
-
-	  - 2 WARNING, write SYS_LOG_WRN in addition to previous level
-
-	  - 3 INFO, write SYS_LOG_INF in addition to previous levels
-
-	  - 4 DEBUG, write SYS_LOG_DBG in addition to previous levels
+endif # USB_CDC_ACM
 
 config USB_MASS_STORAGE
 	bool "USB Mass Storage Device Class Driver"
@@ -74,24 +81,11 @@ config MASS_STORAGE_BULK_EP_MPS
 	help
 	  Mass storage device class bulk endpoints size
 
-config SYS_LOG_USB_MASS_STORAGE_LEVEL
-	int "USB Mass Storage device class driver log level"
-	depends on USB_MASS_STORAGE && SYS_LOG
-	default 0
-	help
-	  Sets log level for USB Mass Storage device class driver
-
-	  Levels are:
-
-	  - 0 OFF, do not write
-
-	  - 1 ERROR, only write SYS_LOG_ERR
-
-	  - 2 WARNING, write SYS_LOG_WRN in addition to previous level
-
-	  - 3 INFO, write SYS_LOG_INF in addition to previous levels
-
-	  - 4 DEBUG, write SYS_LOG_DBG in addition to previous levels
+if USB_MASS_STORAGE
+module = USB_MASS_STORAGE
+module-str = usb mass storage
+source "subsys/logging/Kconfig.template.log_config"
+endif
 
 config USB_DEVICE_BLUETOOTH
 	bool "USB Bluetooth Device Class Driver"
@@ -135,18 +129,28 @@ source "subsys/usb/class/hid/Kconfig"
 config USB_DFU_CLASS
 	bool "USB DFU Class Driver"
 	select MPU_ALLOW_FLASH_WRITE
+	select POLL
 	depends on IMG_MANAGER
 	help
 	  USB DFU class driver
 
-config USB_DFU_MAX_XFER_SIZE
+config USB_DFU_WAIT_DELAY_MS
 	int
 	depends on USB_DFU_CLASS
-	default 64
+	default 12000
+	help
+	  A thread can wait for a prescribed time (in ms) for DFU to begin
 
 config USB_DFU_DETACH_TIMEOUT
 	int
 	depends on USB_DFU_CLASS
 	default 1000
 
-endif # CONFIG_USB_DEVICE_STACK
+config USB_DFU_DEFAULT_POLLTIMEOUT
+	prompt "Default value for bwPollTimeout"
+	int
+	depends on USB_DFU_CLASS
+	default 256
+	range 0 1000
+	help
+	  Default value for bwPollTimeout (in ms)

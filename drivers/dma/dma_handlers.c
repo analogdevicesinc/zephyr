@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <dma.h>
+#include <drivers/dma.h>
 #include <syscall_handler.h>
 
 /* Both of these APIs are assuming that the drive implementations are checking
@@ -14,12 +14,12 @@
 Z_SYSCALL_HANDLER(dma_start, dev, channel)
 {
 	Z_OOPS(Z_SYSCALL_DRIVER_DMA(dev, start));
-	return _impl_dma_start((struct device *)dev, channel);
+	return z_impl_dma_start((struct device *)dev, channel);
 }
 
 Z_SYSCALL_HANDLER(dma_stop, dev, channel)
 {
 	Z_OOPS(Z_SYSCALL_DRIVER_DMA(dev, stop));
-	return _impl_dma_stop((struct device *)dev, channel);
+	return z_impl_dma_stop((struct device *)dev, channel);
 }
 

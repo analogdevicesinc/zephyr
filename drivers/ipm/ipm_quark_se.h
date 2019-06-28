@@ -11,8 +11,8 @@
 #define ZEPHYR_DRIVERS_IPM_IPM_QUARK_SE_H_
 
 #include <kernel.h>
-#include <board.h> /* for SCSS_REGISTER_BASE */
-#include <ipm.h>
+#include <soc.h> /* for SCSS_REGISTER_BASE */
+#include <drivers/ipm.h>
 #include <device.h>
 #include <init.h>
 
@@ -104,7 +104,7 @@ struct quark_se_ipm_driver_data {
 	void *callback_ctx;
 };
 
-const struct ipm_driver_api ipm_quark_se_api_funcs;
+extern const struct ipm_driver_api ipm_quark_se_api_funcs;
 
 void quark_se_ipm_isr(void *param);
 
@@ -118,7 +118,7 @@ int quark_se_ipm_controller_initialize(struct device *d);
 		.direction = dir \
 	}; \
 	struct quark_se_ipm_driver_data quark_se_ipm_runtime_##name; \
-	DEVICE_AND_API_INIT(name, _STRINGIFY(name), quark_se_ipm_initialize, \
+	DEVICE_AND_API_INIT(name, Z_STRINGIFY(name), quark_se_ipm_initialize, \
 			    &quark_se_ipm_runtime_##name, \
 			    &quark_se_ipm_config_##name, \
 			    POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT, \

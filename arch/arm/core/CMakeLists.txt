@@ -1,4 +1,12 @@
+# SPDX-License-Identifier: Apache-2.0
+
 zephyr_library()
+
+zephyr_compile_options_ifdef(CONFIG_COVERAGE_GCOV
+  -ftest-coverage
+  -fprofile-arcs
+  -fno-inline
+  )
 
 zephyr_library_sources(
   exc_exit.S
@@ -25,3 +33,4 @@ add_subdirectory_ifdef(CONFIG_CPU_CORTEX_M cortex_m)
 add_subdirectory_ifdef(CONFIG_ARM_MPU cortex_m/mpu)
 add_subdirectory_ifdef(CONFIG_CPU_CORTEX_M_HAS_CMSE cortex_m/cmse)
 add_subdirectory_ifdef(CONFIG_ARM_SECURE_FIRMWARE cortex_m/tz)
+add_subdirectory_ifdef(CONFIG_ARM_NONSECURE_FIRMWARE cortex_m/tz)

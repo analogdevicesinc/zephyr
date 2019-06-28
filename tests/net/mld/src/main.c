@@ -6,8 +6,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define LOG_MODULE_NAME net_test
-#define NET_LOG_LEVEL CONFIG_NET_IPV6_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_REGISTER(net_test, CONFIG_NET_IPV6_LOG_LEVEL);
 
 #include <zephyr/types.h>
 #include <stdbool.h>
@@ -23,6 +23,7 @@
 #include <net/net_ip.h>
 #include <net/net_core.h>
 #include <net/ethernet.h>
+#include <net/dummy.h>
 #include <net/net_mgmt.h>
 #include <net/net_event.h>
 
@@ -95,16 +96,26 @@ static void net_test_iface_init(struct net_if *iface)
 			     NET_LINK_ETHERNET);
 }
 
-#define NET_ICMP_HDR(pkt) ((struct net_icmp_hdr *)net_pkt_icmp_data(pkt))
-
-static int tester_send(struct net_if *iface, struct net_pkt *pkt)
+static struct net_icmp_hdr *get_icmp_hdr(struct net_pkt *pkt)
 {
-	struct net_icmp_hdr *icmp = NET_ICMP_HDR(pkt);
+	net_pkt_cursor_init(pkt);
 
-	if (!pkt->frags) {
+	net_pkt_skip(pkt, net_pkt_ip_hdr_len(pkt) +
+		     net_pkt_ipv6_ext_len(pkt));
+
+	return (struct net_icmp_hdr *)net_pkt_cursor_get_pos(pkt);
+}
+
+static int tester_send(struct device *dev, struct net_pkt *pkt)
+{
+	struct net_icmp_hdr *icmp;
+
+	if (!pkt->buffer) {
 		TC_ERROR("No data to send!\n");
 		return -ENODATA;
 	}
+
+	icmp = get_icmp_hdr(pkt);
 
 	if (icmp->type == NET_ICMPV6_MLDv2) {
 		/* FIXME, add more checks here */
@@ -117,15 +128,13 @@ static int tester_send(struct net_if *iface, struct net_pkt *pkt)
 		k_sem_give(&wait_data);
 	}
 
-	net_pkt_unref(pkt);
-
 	return 0;
 }
 
 struct net_test_mld net_test_data;
 
-static struct net_if_api net_test_if_api = {
-	.init = net_test_iface_init,
+static struct dummy_api net_test_if_api = {
+	.iface_api.init = net_test_iface_init,
 	.send = tester_send,
 };
 
@@ -311,65 +320,79 @@ static void send_query(struct net_if *iface)
 {
 	struct net_pkt *pkt;
 	struct in6_addr dst;
-	u16_t pos;
+	int ret;
 
 	/* Sent to all MLDv2-capable routers */
 	net_ipv6_addr_create(&dst, 0xff02, 0, 0, 0, 0, 0, 0, 0x0016);
 
-	pkt = net_pkt_get_reserve_tx(net_if_get_ll_reserve(iface, &dst),
-				     K_FOREVER);
+	/* router alert opt + icmpv6 reserved space + mldv2 mcast record */
+	pkt = net_pkt_alloc_with_buffer(iface, 144, AF_INET6,
+					IPPROTO_ICMPV6, K_FOREVER);
+	zassert_not_null(pkt, "Cannot allocate pkt");
 
-	pkt = net_ipv6_create(pkt,
-			      &peer_addr,
-			      &dst,
-			      iface,
-			      NET_IPV6_NEXTHDR_HBHO);
-
-	NET_IPV6_HDR(pkt)->hop_limit = 1; /* RFC 3810 ch 7.4 */
+	net_pkt_set_ipv6_hop_limit(pkt, 1); /* RFC 3810 ch 7.4 */
+	ret = net_ipv6_create(pkt, &peer_addr, &dst);
+	zassert_false(ret, "Cannot create ipv6 pkt");
 
 	/* Add hop-by-hop option and router alert option, RFC 3810 ch 5. */
-	net_pkt_append_u8(pkt, IPPROTO_ICMPV6);
-	net_pkt_append_u8(pkt, 0); /* length (0 means 8 bytes) */
+	ret = net_pkt_write_u8(pkt, IPPROTO_ICMPV6);
+	zassert_false(ret, "Failed to write");
+	ret = net_pkt_write_u8(pkt, 0); /* length (0 means 8 bytes) */
+	zassert_false(ret, "Failed to write");
 
 #define ROUTER_ALERT_LEN 8
 
 	/* IPv6 router alert option is described in RFC 2711. */
-	net_pkt_append_be16(pkt, 0x0502); /* RFC 2711 ch 2.1 */
-	net_pkt_append_be16(pkt, 0); /* pkt contains MLD msg */
+	ret = net_pkt_write_be16(pkt, 0x0502); /* RFC 2711 ch 2.1 */
+	zassert_false(ret, "Failed to write");
+	ret = net_pkt_write_be16(pkt, 0); /* pkt contains MLD msg */
+	zassert_false(ret, "Failed to write");
 
-	net_pkt_append_u8(pkt, 1); /* padn */
-	net_pkt_append_u8(pkt, 0); /* padn len */
+	ret = net_pkt_write_u8(pkt, 1); /* padn */
+	zassert_false(ret, "Failed to write");
+	ret = net_pkt_write_u8(pkt, 0); /* padn len */
+	zassert_false(ret, "Failed to write");
+
+	net_pkt_set_ipv6_ext_len(pkt, ROUTER_ALERT_LEN);
 
 	/* ICMPv6 header */
-	net_pkt_append_u8(pkt, NET_ICMPV6_MLD_QUERY); /* type */
-	net_pkt_append_u8(pkt, 0); /* code */
-	net_pkt_append_be16(pkt, 0); /* chksum */
+	ret = net_icmpv6_create(pkt, NET_ICMPV6_MLD_QUERY, 0);
+	zassert_false(ret, "Cannot create icmpv6 pkt");
 
-	net_pkt_append_be16(pkt, 3); /* maximum response code */
-	net_pkt_append_be16(pkt, 0); /* reserved field */
+	ret = net_pkt_write_be16(pkt, 3); /* maximum response code */
+	zassert_false(ret, "Failed to write");
+	ret = net_pkt_write_be16(pkt, 0); /* reserved field */
+	zassert_false(ret, "Failed to write");
 
-	net_pkt_append_all(pkt, sizeof(struct in6_addr),
-		       (const u8_t *)net_ipv6_unspecified_address(),
-		       K_FOREVER); /* multicast address */
+	net_pkt_set_ipv6_next_hdr(pkt, NET_IPV6_NEXTHDR_HBHO);
 
-	net_pkt_append_be16(pkt, 0); /* Resv, S, QRV and QQIC */
-	net_pkt_append_be16(pkt, 0); /* number of addresses */
+	ret = net_pkt_write_be16(pkt, 0); /* Resv, S, QRV and QQIC */
+	zassert_false(ret, "Failed to write");
+	ret = net_pkt_write_be16(pkt, 0); /* number of addresses */
+	zassert_false(ret, "Failed to write");
 
-	net_ipv6_finalize(pkt, NET_IPV6_NEXTHDR_HBHO);
+	ret = net_pkt_write(pkt, net_ipv6_unspecified_address(),
+			    sizeof(struct in6_addr));
+	zassert_false(ret, "Failed to write");
 
-	net_pkt_set_iface(pkt, iface);
+	net_pkt_cursor_init(pkt);
+	ret = net_ipv6_finalize(pkt, IPPROTO_ICMPV6);
+	zassert_false(ret, "Failed to finalize ipv6 packet");
 
-	net_pkt_write_be16(pkt, pkt->frags,
-			   NET_IPV6H_LEN + ROUTER_ALERT_LEN + 2,
-			   &pos, ntohs(~net_calc_chksum_icmpv6(pkt)));
+	net_pkt_cursor_init(pkt);
 
-	net_recv_data(iface, pkt);
+	ret = net_recv_data(iface, pkt);
+	zassert_false(ret, "Failed to receive data");
 }
 
 /* We are not really interested to parse the query at this point */
-static enum net_verdict handle_mld_query(struct net_pkt *pkt)
+static enum net_verdict handle_mld_query(struct net_pkt *pkt,
+					 struct net_ipv6_hdr *ip_hdr,
+					 struct net_icmp_hdr *icmp_hdr)
 {
 	is_query_received = true;
+
+	NET_DBG("Handling MLD query");
 
 	return NET_DROP;
 }
@@ -399,15 +422,12 @@ static void catch_query(void)
 	}
 
 	is_query_received = false;
+
+	net_icmpv6_unregister_handler(&mld_query_input_handler);
 }
 
 static void verify_send_report(void)
 {
-	/* We need to remove our temporary handler so that the
-	 * stack handler is called instead.
-	 */
-	net_icmpv6_unregister_handler(&mld_query_input_handler);
-
 	is_query_received = false;
 	is_report_sent = false;
 
@@ -430,7 +450,7 @@ static void verify_send_report(void)
 }
 
 /* This value should be longer that the one in net_if.c when DAD timeouts */
-#define DAD_TIMEOUT (MSEC_PER_SEC / 5)
+#define DAD_TIMEOUT (MSEC_PER_SEC / 5U)
 
 static void test_allnodes(void)
 {

@@ -72,9 +72,9 @@
 	     puttime[0],                                             \
 	     puttime[1],                                             \
 	     puttime[2],                                             \
-	     (u32_t)((1000000 * (u64_t)putsize) / SAFE_DIVISOR(puttime[0])), \
-	     (u32_t)((1000000 * (u64_t)putsize) / SAFE_DIVISOR(puttime[1])), \
-	     (u32_t)((1000000 * (u64_t)putsize) / SAFE_DIVISOR(puttime[2])))
+	     (u32_t)(((u64_t)putsize * 1000000U) / SAFE_DIVISOR(puttime[0])), \
+	     (u32_t)(((u64_t)putsize * 1000000U) / SAFE_DIVISOR(puttime[1])), \
+	     (u32_t)(((u64_t)putsize * 1000000U) / SAFE_DIVISOR(puttime[2])))
 #endif /* FLOAT */
 
 /*
@@ -129,7 +129,7 @@ void pipe_test(void)
 			 "  no buf  | small buf| big buf  |\n", output_file);
 	PRINT_STRING(dashline, output_file);
 
-	for (putsize = 8; putsize <= MESSAGE_SIZE_PIPE; putsize <<= 1) {
+	for (putsize = 8U; putsize <= MESSAGE_SIZE_PIPE; putsize <<= 1) {
 		for (pipe = 0; pipe < 3; pipe++) {
 			putcount = NR_OF_PIPE_RUNS;
 			pipeput(test_pipes[pipe], _ALL_N, putsize, putcount,
@@ -163,7 +163,7 @@ void pipe_test(void)
 			 "no buf  | small buf| big buf  |\n", output_file);
 		PRINT_STRING(dashline, output_file);
 
-	for (putsize = 8; putsize <= (MESSAGE_SIZE_PIPE); putsize <<= 1) {
+	for (putsize = 8U; putsize <= (MESSAGE_SIZE_PIPE); putsize <<= 1) {
 		putcount = MESSAGE_SIZE_PIPE / putsize;
 		for (pipe = 0; pipe < 3; pipe++) {
 			pipeput(test_pipes[pipe], _1_TO_N, putsize,
@@ -209,7 +209,7 @@ int pipeput(struct k_pipe *pipe,
 	t = BENCH_START();
 	for (i = 0; option == _1_TO_N || (i < count); i++) {
 		size_t sizexferd = 0;
-		size_t size2xfer = min(size, size2xfer_total - sizexferd_total);
+		size_t size2xfer = MIN(size, size2xfer_total - sizexferd_total);
 		int ret;
 		size_t mim_num_of_bytes = 0;
 

@@ -3,9 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: STM32 USB
-id: st,stm32-usb
 version: 0.1
 
 description: >
@@ -19,22 +18,10 @@ properties:
       constraint: "st,stm32-usb"
 
     reg:
-      type: array
-      description: mmio register space
-      generation: define
       category: required
 
     interrupts:
-      type: array
       category: required
-      description: required interrupts
-      generation: define
-
-    interrupt-names:
-      type: stringlist
-      category: optional
-      description: readable string describing the interrupts
-      generation: define
 
     ram-size:
       type: int
@@ -48,5 +35,17 @@ properties:
       category: optional
       description: Some boards use a USB DISCONNECT pin to enable
                    the pull-up resistor on USB Data Positive signal.
-      generation: define, use-prop-name
-...
+      generation: define
+
+    phys:
+      type: array
+      category: optional
+      generation: define
+      description: PHY provider specifier
+
+    enable-pin-remap:
+      type: boolean
+      category: optional
+      description: For STM32F0 series SoCs on QFN28 and TSSOP20 packages
+                   enable PIN pair PA11/12 mapped instead of PA9/10 (e.g. stm32f070x6)
+      generation: define

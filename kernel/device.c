@@ -7,8 +7,9 @@
 #include <errno.h>
 #include <string.h>
 #include <device.h>
-#include <misc/util.h>
-#include <atomic.h>
+#include <sys/util.h>
+#include <sys/atomic.h>
+#include <syscall_handler.h>
 
 extern struct device __device_init_start[];
 extern struct device __device_PRE_KERNEL_1_start[];
@@ -17,14 +18,6 @@ extern struct device __device_POST_KERNEL_start[];
 extern struct device __device_APPLICATION_start[];
 extern struct device __device_init_end[];
 
-static struct device *config_levels[] = {
-	__device_PRE_KERNEL_1_start,
-	__device_PRE_KERNEL_2_start,
-	__device_POST_KERNEL_start,
-	__device_APPLICATION_start,
-	/* End marker */
-	__device_init_end,
-};
 
 #ifdef CONFIG_DEVICE_POWER_MANAGEMENT
 extern u32_t __device_busy_start[];
@@ -43,20 +36,36 @@ extern u32_t __device_busy_end[];
  *
  * @param level init level to run.
  */
-void _sys_device_do_config_level(int level)
+void z_sys_device_do_config_level(s32_t level)
 {
 	struct device *info;
+	static struct device *config_levels[] = {
+		__device_PRE_KERNEL_1_start,
+		__device_PRE_KERNEL_2_start,
+		__device_POST_KERNEL_start,
+		__device_APPLICATION_start,
+		/* End marker */
+		__device_init_end,
+	};
 
 	for (info = config_levels[level]; info < config_levels[level+1];
 								info++) {
-		struct device_config *device = info->config;
+		int retval;
+		struct device_config *device_conf = info->config;
 
-		(void)device->init(info);
-		_k_object_init(info);
+		retval = device_conf->init(info);
+		if (retval != 0) {
+			/* Initialization failed. Clear the API struct so that
+			 * device_get_binding() will not succeed for it.
+			 */
+			info->driver_api = NULL;
+		} else {
+			z_object_init(info);
+		}
 	}
 }
 
-struct device *device_get_binding(const char *name)
+struct device *z_impl_device_get_binding(const char *name)
 {
 	struct device *info;
 
@@ -66,17 +75,18 @@ struct device *device_get_binding(const char *name)
 	 * performed.  Reserve string comparisons for a fallback.
 	 */
 	for (info = __device_init_start; info != __device_init_end; info++) {
-		if (info->driver_api != NULL && info->config->name == name) {
+		if ((info->driver_api != NULL) &&
+		    (info->config->name == name)) {
 			return info;
 		}
 	}
 
 	for (info = __device_init_start; info != __device_init_end; info++) {
-		if (!info->driver_api) {
+		if (info->driver_api == NULL) {
 			continue;
 		}
 
-		if (!strcmp(name, info->config->name)) {
+		if (strcmp(name, info->config->name) == 0) {
 			return info;
 		}
 	}
@@ -84,9 +94,26 @@ struct device *device_get_binding(const char *name)
 	return NULL;
 }
 
+#ifdef CONFIG_USERSPACE
+Z_SYSCALL_HANDLER(device_get_binding, name)
+{
+	char name_copy[Z_DEVICE_MAX_NAME_LEN];
+
+	if (z_user_string_copy(name_copy, (char *)name, sizeof(name_copy))
+	    != 0) {
+		return 0;
+	}
+
+	return (u32_t)z_impl_device_get_binding(name_copy);
+}
+#endif /* CONFIG_USERSPACE */
+
 #ifdef CONFIG_DEVICE_POWER_MANAGEMENT
 int device_pm_control_nop(struct device *unused_device,
-		       u32_t unused_ctrl_command, void *unused_context)
+		       u32_t unused_ctrl_command,
+		       void *unused_context,
+		       device_pm_cb cb,
+		       void *unused_arg)
 {
 	return 0;
 }
@@ -104,7 +131,7 @@ int device_any_busy_check(void)
 	int i = 0;
 
 	for (i = 0; i < DEVICE_BUSY_SIZE; i++) {
-		if (__device_busy_start[i] != 0) {
+		if (__device_busy_start[i] != 0U) {
 			return -EBUSY;
 		}
 	}

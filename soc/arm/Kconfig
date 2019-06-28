@@ -1,10 +1,18 @@
+# Kconfig - general options signifying CPU capabilities of ARM SoCs
+
+#
+# Copyright (c) 2018 Nordic Semiconductor ASA.
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
 config CPU_HAS_ARM_MPU
 	bool
 	# Omit prompt to signify "hidden" option
 	select CPU_HAS_MPU
 	help
 	  This option is enabled when the CPU has a Memory Protection Unit (MPU)
-	  in ARM flavour.
+	  in ARM flavor.
 
 config CPU_HAS_NXP_MPU
 	bool
@@ -12,4 +20,36 @@ config CPU_HAS_NXP_MPU
 	select CPU_HAS_MPU
 	help
 	  This option is enabled when the CPU has a Memory Protection Unit (MPU)
-	  in NXP flavour.
+	  in NXP flavor.
+
+config CPU_HAS_ARM_SAU
+	bool
+	# Omit prompt to signify "hidden" option
+	select CPU_HAS_TEE
+	help
+	  MCU implements the ARM Security Attribution Unit (SAU).
+
+config CPU_HAS_NRF_IDAU
+	bool
+	# Omit prompt to signify "hidden" option
+	depends on SOC_SERIES_NRF91X
+	select CPU_HAS_TEE
+	help
+	  MCU implements the nRF (vendor-specific) Security Attribution Unit.
+	  (IDAU: "Implementation-Defined Attribution Unit", in accordance with
+	  ARM terminology).
+
+config CPU_HAS_FPU_DOUBLE_PRECISION
+	bool
+	# Omit prompt to signify "hidden" option
+	depends on CPU_CORTEX_M7
+	select CPU_HAS_FPU
+	help
+	  When enabled, indicates that the SoC has a double
+	  floating point precision unit.
+
+config HAS_SWO
+	bool
+	# Omit prompt to signify "hidden" option
+	help
+	  When enabled, indicates that SoC has an SWO output

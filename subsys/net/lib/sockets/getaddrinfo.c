@@ -4,13 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define LOG_MODULE_NAME net_sock_addr
-#define NET_LOG_LEVEL CONFIG_NET_SOCKETS_LOG_LEVEL
-
 /* libc headers */
 #include <stdlib.h>
+#include <ctype.h>
 
 /* Zephyr headers */
+#include <logging/log.h>
+LOG_MODULE_REGISTER(net_sock_addr, CONFIG_NET_SOCKETS_LOG_LEVEL);
+
 #include <kernel.h>
 #include <net/socket.h>
 #include <syscall_handler.h>
@@ -18,6 +19,15 @@
 #define AI_ARR_MAX	2
 
 #if defined(CONFIG_DNS_RESOLVER)
+
+/* Helper macros which take into account the fact that ai_family as passed
+ * into getaddrinfo() may take values AF_INET, AF_INET6, or AF_UNSPEC, where
+ * AF_UNSPEC means resolve both AF_INET and AF_INET6.
+ */
+#define RESOLVE_IPV4(ai_family) \
+	(IS_ENABLED(CONFIG_NET_IPV4) && (ai_family) != AF_INET6)
+#define RESOLVE_IPV6(ai_family) \
+	(IS_ENABLED(CONFIG_NET_IPV6) && (ai_family) != AF_INET)
 
 struct getaddrinfo_state {
 	const struct zsock_addrinfo *hints;
@@ -27,6 +37,17 @@ struct getaddrinfo_state {
 	u16_t port;
 	struct zsock_addrinfo *ai_arr;
 };
+
+/* Initialize static fields of addrinfo structure. A macro to let it work
+ * with any sockaddr_* type.
+ */
+#define INIT_ADDRINFO(addrinfo, sockaddr) { \
+		(addrinfo)->ai_addr = &(addrinfo)->_ai_addr; \
+		(addrinfo)->ai_addrlen = sizeof(*sockaddr); \
+		(addrinfo)->ai_canonname = (addrinfo)->_ai_canonname; \
+		(addrinfo)->_ai_canonname[0] = '\0'; \
+		(addrinfo)->ai_next = NULL; \
+	}
 
 static void dns_resolve_cb(enum dns_resolve_status status,
 			   struct dns_addrinfo *info, void *user_data)
@@ -79,12 +100,45 @@ static void dns_resolve_cb(enum dns_resolve_status status,
 	state->idx++;
 }
 
+static int exec_query(const char *host, int family,
+		      struct getaddrinfo_state *ai_state)
+{
+	enum dns_query_type qtype = DNS_QUERY_TYPE_A;
 
-int _impl_z_zsock_getaddrinfo_internal(const char *host, const char *service,
+	if (IS_ENABLED(CONFIG_NET_IPV6) && family == AF_INET6) {
+		qtype = DNS_QUERY_TYPE_AAAA;
+	}
+
+	return dns_get_addr_info(host, qtype, NULL,
+				 dns_resolve_cb, ai_state,
+				 CONFIG_NET_SOCKETS_DNS_TIMEOUT);
+}
+
+static int getaddrinfo_null_host(int port, const struct zsock_addrinfo *hints,
+				struct zsock_addrinfo *res)
+{
+	if (hints && (hints->ai_flags & AI_PASSIVE)) {
+		struct sockaddr_in *addr =
+		    (struct sockaddr_in *)&res->_ai_addr;
+		addr->sin_addr.s_addr = INADDR_ANY;
+		addr->sin_port = htons(port);
+		addr->sin_family = AF_INET;
+		INIT_ADDRINFO(res, addr);
+		res->ai_family = AF_INET;
+		res->ai_socktype = SOCK_STREAM;
+		res->ai_protocol = IPPROTO_TCP;
+		return 0;
+	}
+
+	return DNS_EAI_FAIL;
+}
+
+int z_impl_z_zsock_getaddrinfo_internal(const char *host, const char *service,
 				       const struct zsock_addrinfo *hints,
 				       struct zsock_addrinfo *res)
 {
 	int family = AF_UNSPEC;
+	int ai_flags = 0;
 	long int port = 0;
 	int st1 = DNS_EAI_ADDRFAMILY, st2 = DNS_EAI_ADDRFAMILY;
 	struct sockaddr *ai_addr;
@@ -93,6 +147,7 @@ int _impl_z_zsock_getaddrinfo_internal(const char *host, const char *service,
 
 	if (hints) {
 		family = hints->ai_family;
+		ai_flags = hints->ai_flags;
 	}
 
 	if (service) {
@@ -102,8 +157,47 @@ int _impl_z_zsock_getaddrinfo_internal(const char *host, const char *service,
 		}
 	}
 
+	if (host == NULL) {
+		/* Per POSIX, both can't be NULL. */
+		if (service == NULL) {
+			errno = EINVAL;
+			return DNS_EAI_SYSTEM;
+		}
+
+		return getaddrinfo_null_host(port, hints, res);
+	}
+
+#define SIN_ADDR(ptr) (net_sin(ptr)->sin_addr)
+
+	/* Check for IPv4 numeric address. Start with a quick heuristic check,
+	 * of first char of the address, then do long validating inet_pton()
+	 * call if needed.
+	 */
+	if (RESOLVE_IPV4(family) &&
+	    isdigit((int)*host) &&
+	    zsock_inet_pton(AF_INET, host,
+			    &SIN_ADDR(&res->_ai_addr)) == 1) {
+		struct sockaddr_in *addr =
+			(struct sockaddr_in *)&res->_ai_addr;
+
+		addr->sin_port = htons(port);
+		addr->sin_family = AF_INET;
+		INIT_ADDRINFO(res, addr);
+		res->ai_family = AF_INET;
+		res->ai_socktype = SOCK_STREAM;
+		res->ai_protocol = IPPROTO_TCP;
+		return 0;
+	}
+
+	if (ai_flags & AI_NUMERICHOST) {
+		/* Asked to resolve host as numeric, but it wasn't possible
+		 * to do that.
+		 */
+		return DNS_EAI_FAIL;
+	}
+
 	ai_state.hints = hints;
-	ai_state.idx = 0;
+	ai_state.idx = 0U;
 	ai_state.port = htons(port);
 	ai_state.ai_arr = res;
 	k_sem_init(&ai_state.sem, 0, UINT_MAX);
@@ -111,43 +205,52 @@ int _impl_z_zsock_getaddrinfo_internal(const char *host, const char *service,
 	/* Link entries in advance */
 	ai_state.ai_arr[0].ai_next = &ai_state.ai_arr[1];
 
-	/* Execute if AF_UNSPEC or AF_INET4 */
-	if (family != AF_INET6) {
-		ret = dns_get_addr_info(host, DNS_QUERY_TYPE_A, NULL,
-					dns_resolve_cb, &ai_state, 1000);
-		if (ret == 0) {
-			k_sem_take(&ai_state.sem, K_FOREVER);
-			st1 = ai_state.status;
-		} else {
-			errno = -ret;
-			st1 = DNS_EAI_SYSTEM;
+	/* If the family is AF_UNSPEC, then we query IPv4 address first */
+	ret = exec_query(host, family, &ai_state);
+	if (ret == 0) {
+		/* If the DNS query for reason fails so that the
+		 * dns_resolve_cb() would not be called, then we want the
+		 * semaphore to timeout so that we will not hang forever.
+		 * So make the sem timeout longer than the DNS timeout so that
+		 * we do not need to start to cancel any pending DNS queries.
+		 */
+		int ret = k_sem_take(&ai_state.sem,
+				     CONFIG_NET_SOCKETS_DNS_TIMEOUT +
+				     K_MSEC(100));
+		if (ret == -EAGAIN) {
+			return DNS_EAI_AGAIN;
 		}
 
-		if (ai_state.idx > 0) {
-			ai_addr = &ai_state.ai_arr[ai_state.idx - 1]._ai_addr;
-			net_sin(ai_addr)->sin_port = htons(port);
-		}
+		st1 = ai_state.status;
+	} else {
+		errno = -ret;
+		st1 = DNS_EAI_SYSTEM;
 	}
 
-#if defined(CONFIG_NET_IPV6)
-	/* Execute if AF_UNSPEC or AF_INET6 */
-	if (family != AF_INET) {
-		ret = dns_get_addr_info(host, DNS_QUERY_TYPE_AAAA, NULL,
-					dns_resolve_cb, &ai_state, 1000);
+	/* If family is AF_UNSPEC, the IPv4 query has been already done
+	 * so we can do IPv6 query next if IPv6 is enabled in the config.
+	 */
+	if (family == AF_UNSPEC && IS_ENABLED(CONFIG_NET_IPV6)) {
+		ret = exec_query(host, AF_INET6, &ai_state);
 		if (ret == 0) {
-			k_sem_take(&ai_state.sem, K_FOREVER);
+			int ret = k_sem_take(&ai_state.sem,
+					     CONFIG_NET_SOCKETS_DNS_TIMEOUT +
+					     K_MSEC(100));
+			if (ret == -EAGAIN) {
+				return DNS_EAI_AGAIN;
+			}
+
 			st2 = ai_state.status;
 		} else {
 			errno = -ret;
 			st2 = DNS_EAI_SYSTEM;
 		}
-
-		if (ai_state.idx > 0) {
-			ai_addr = &ai_state.ai_arr[ai_state.idx - 1]._ai_addr;
-			net_sin6(ai_addr)->sin6_port = htons(port);
-		}
 	}
-#endif
+
+	if (ai_state.idx > 0) {
+		ai_addr = &ai_state.ai_arr[ai_state.idx - 1]._ai_addr;
+		net_sin(ai_addr)->sin_port = htons(port);
+	}
 
 	/* If both attempts failed, it's error */
 	if (st1 && st2) {
@@ -193,7 +296,7 @@ Z_SYSCALL_HANDLER(z_zsock_getaddrinfo_internal, host, service, hints, res)
 		}
 	}
 
-	ret = _impl_z_zsock_getaddrinfo_internal(host_copy, service_copy,
+	ret = z_impl_z_zsock_getaddrinfo_internal(host_copy, service_copy,
 						 hints ? &hints_copy : NULL,
 						 (struct zsock_addrinfo *)res);
 out:
@@ -221,5 +324,24 @@ int zsock_getaddrinfo(const char *host, const char *service,
 	}
 	return ret;
 }
+
+#define ERR(e) case DNS_ ## e: return #e
+const char *zsock_gai_strerror(int errcode)
+{
+	switch (errcode) {
+	ERR(EAI_BADFLAGS);
+	ERR(EAI_NONAME);
+	ERR(EAI_AGAIN);
+	ERR(EAI_FAIL);
+	ERR(EAI_NODATA);
+	ERR(EAI_MEMORY);
+	ERR(EAI_SYSTEM);
+	ERR(EAI_SERVICE);
+
+	default:
+		return "EAI_UNKNOWN";
+	}
+}
+#undef ERR
 
 #endif

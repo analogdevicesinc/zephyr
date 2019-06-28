@@ -19,17 +19,14 @@ config CPU_CORTEX_M
 	select ARCH_HAS_CUSTOM_SWAP_TO_MAIN
 	select HAS_CMSIS
 	select HAS_FLASH_LOAD_OFFSET
-	select HAS_DTS
+	select ARCH_HAS_TRUSTED_EXECUTION if ARM_TRUSTZONE_M
 	select ARCH_HAS_STACK_PROTECTION if ARM_MPU || CPU_CORTEX_M_HAS_SPLIM
 	select ARCH_HAS_USERSPACE if ARM_MPU
+	select ARCH_HAS_NOCACHE_MEMORY_SUPPORT if ARM_MPU && CPU_HAS_ARM_MPU && CPU_CORTEX_M7
+	select ARCH_HAS_RAMFUNC_SUPPORT
+	select SWAP_NONATOMIC
 	help
 	  This option signifies the use of a CPU of the Cortex-M family.
-
-config CPU_HAS_SYSTICK
-	bool
-	# Omit prompt to signify "hidden" option
-	help
-	  This option is enabled when the CPU has systick timer implemented.
 
 config BUILTIN_STACK_GUARD
 	bool "Thread Stack Guards based on built-in ARM stack limit checking"
@@ -57,6 +54,7 @@ config ARM_STACK_PROTECTION
 config ARM_SECURE_FIRMWARE
 	bool
 	depends on ARMV8_M_SE
+	default y if TRUSTED_EXECUTION_SECURE
 	help
 	  This option indicates that we are building a Zephyr image that
 	  is intended to execute in Secure state. The option is only
@@ -78,6 +76,7 @@ config ARM_NONSECURE_FIRMWARE
 	bool
 	depends on !ARM_SECURE_FIRMWARE
 	depends on ARMV8_M_SE
+	default y if TRUSTED_EXECUTION_NONSECURE
 	help
 	  This option indicates that we are building a Zephyr image that
 	  is intended to execute in Non-Secure state. Execution of this
@@ -93,8 +92,15 @@ config ARM_NONSECURE_FIRMWARE
 	  resources of the Cortex-M MCU, and, therefore, it shall avoid
 	  accessing them.
 
-menu "ARM Secure Firmware Options"
-depends on ARM_SECURE_FIRMWARE
+
+menu "ARM TrustZone Options"
+depends on ARM_SECURE_FIRMWARE || ARM_NONSECURE_FIRMWARE
+
+comment "Secure firmware"
+	depends on ARM_SECURE_FIRMWARE
+
+comment "Non-secure firmware"
+	depends on !ARM_SECURE_FIRMWARE
 
 config ARM_FIRMWARE_HAS_SECURE_ENTRY_FUNCS
 	bool "Secure Firmware has Secure Entry functions"
@@ -122,15 +128,24 @@ config ARM_NSC_REGION_BASE_ADDRESS
 	  a Non-Secure Callable section, depending on the available
 	  security attribution unit (SAU or IDAU) for a given SOC.
 
+config ARM_FIRMWARE_USES_SECURE_ENTRY_FUNCS
+	bool "Non-Secure Firmware uses Secure Entry functions"
+	depends on ARM_NONSECURE_FIRMWARE
+	help
+	  Option indicates that ARM Non-Secure Firmware uses Secure
+	  Entry functions provided by the Secure Firmware. The Secure
+	  Firmware must be configured to provide these functions.
+
 config ARM_ENTRY_VENEERS_LIB_NAME
 	string "Entry Veneers symbol file"
-	depends on ARM_FIRMWARE_HAS_SECURE_ENTRY_FUNCS
+	depends on ARM_FIRMWARE_HAS_SECURE_ENTRY_FUNCS \
+	        || ARM_FIRMWARE_USES_SECURE_ENTRY_FUNCS
 	default "libentryveneers.a"
 	help
-	  Library file to store the symbol table for
-	  the entry veneers. The library may be used
-	  for building a Non-Secure firmware with
-	  access to Secure Entry functions.
+	  Library file to find the symbol table for the entry veneers.
+	  The library will typically come from building the Secure
+	  Firmware that contains secure entry functions, and allows
+	  the Non-Secure Firmware to call into the Secure Firmware.
 
 endmenu
 
@@ -161,6 +176,6 @@ endmenu
 
 source "arch/arm/core/cortex_m/Kconfig"
 
-if CPU_HAS_MPU
 source "arch/arm/core/cortex_m/mpu/Kconfig"
-endif
+
+source "arch/arm/core/cortex_m/tz/Kconfig"

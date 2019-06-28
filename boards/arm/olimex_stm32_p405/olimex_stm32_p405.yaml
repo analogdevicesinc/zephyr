@@ -5,5 +5,9 @@ arch: arm
 toolchain:
   - zephyr
   - gnuarmemb
+  - xtools
+ram: 128
+flash: 1024
 supported:
   - rtc
+  - counter

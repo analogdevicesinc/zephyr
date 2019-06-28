@@ -5,9 +5,9 @@
  */
 
 #include <zephyr.h>
-#include <misc/printk.h>
+#include <sys/printk.h>
 #include <device.h>
-#include <ipm.h>
+#include <drivers/ipm.h>
 
 struct device *ipm;
 
@@ -20,7 +20,7 @@ void ping_ipm_callback(void *context, u32_t id, volatile void *data)
 
 void main(void)
 {
-	ipm = device_get_binding(MAILBOX_0_LABEL);
+	ipm = device_get_binding(DT_INST_0_NXP_LPC_MAILBOX_LABEL);
 	if (!ipm) {
 		while (1) {
 		}

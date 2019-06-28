@@ -12,17 +12,20 @@
 
 #include <zephyr/types.h>
 
-#define GMAC_MTU 1500
+/* This option enables support to push multiple packets to the DMA engine.
+ * This currently doesn't work given the current version of net_pkt or
+ * net_buf does not allowed access from multiple threads. This option is
+ * therefore currently disabled.
+ */
+#define GMAC_MULTIPLE_TX_PACKETS 0
+
+#define GMAC_MTU NET_ETH_MTU
 #define GMAC_FRAME_SIZE_MAX (GMAC_MTU + 18)
 
 /** Cache alignment */
 #define GMAC_DCACHE_ALIGNMENT             32
 /** Memory alignment of the RX/TX Buffer Descriptor List */
-#if __DCACHE_PRESENT == 1
-#define GMAC_DESC_ALIGNMENT               GMAC_DCACHE_ALIGNMENT
-#else
 #define GMAC_DESC_ALIGNMENT               4
-#endif
 /** Total number of queues supported by GMAC hardware module */
 #define GMAC_QUEUE_NO                     3
 /** Number of priority queues used */
@@ -168,11 +171,20 @@ struct gmac_desc_list {
 struct gmac_queue {
 	struct gmac_desc_list rx_desc_list;
 	struct gmac_desc_list tx_desc_list;
+#if GMAC_MULTIPLE_TX_PACKETS == 1
 	struct k_sem tx_desc_sem;
-	struct k_delayed_work tx_timeout_work;
+#else
+	struct k_sem tx_sem;
+#endif
 
-	struct ring_buf rx_frag_list;
+	struct net_buf **rx_frag_list;
+
+#if GMAC_MULTIPLE_TX_PACKETS == 1
+	struct ring_buf tx_frag_list;
+#if defined(CONFIG_PTP_CLOCK_SAM_GMAC)
 	struct ring_buf tx_frames;
+#endif
+#endif
 
 	/** Number of RX frames dropped by the driver */
 	volatile u32_t err_rx_frames_dropped;

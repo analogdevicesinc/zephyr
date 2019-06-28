@@ -1,4 +1,4 @@
-zephyr_cc_option_ifdef(CONFIG_LTO -flto)
+# SPDX-License-Identifier: Apache-2.0
 
 set(ARCH_FOR_cortex-m0        armv6s-m        )
 set(ARCH_FOR_cortex-m0plus    armv6s-m        )
@@ -13,6 +13,11 @@ if(ARCH_FOR_${GCC_M_CPU})
 endif()
 
 zephyr_compile_options(
+  -mabi=aapcs
+  ${ARCH_FLAG}
+  )
+
+zephyr_ld_options(
   -mabi=aapcs
   ${ARCH_FLAG}
   )

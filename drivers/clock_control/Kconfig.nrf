@@ -1,0 +1,84 @@
+# Kconfig - Clock controller driver configuration options
+#
+# Copyright (c) 2016 Nordic Semiconductor ASA
+#
+# SPDX-License-Identifier: Apache-2.0
+
+config CLOCK_CONTROL_NRF_FORCE_ALT
+	bool
+	depends on SOC_COMPATIBLE_NRF
+	help
+	  This option can be enabled to force an alternative implementation
+	  of the clock control driver.
+
+if !CLOCK_CONTROL_NRF_FORCE_ALT
+
+menuconfig CLOCK_CONTROL_NRF
+	bool "NRF Clock controller support"
+	depends on SOC_COMPATIBLE_NRF
+	default y
+	help
+	  Enable support for the Nordic Semiconductor nRFxx series SoC clock
+	  driver.
+
+if CLOCK_CONTROL_NRF
+
+choice CLOCK_CONTROL_NRF_SOURCE
+	prompt "32KHz clock source"
+	default CLOCK_CONTROL_NRF_K32SRC_XTAL
+
+config CLOCK_CONTROL_NRF_K32SRC_RC
+	bool "RC Oscillator"
+
+config CLOCK_CONTROL_NRF_K32SRC_XTAL
+	bool "Crystal Oscillator"
+
+config CLOCK_CONTROL_NRF_K32SRC_SYNTH
+	depends on !SOC_SERIES_NRF91X
+	bool "Synthesized from HFCLK"
+
+endchoice
+
+config CLOCK_CONTROL_NRF_K32SRC_BLOCKING
+	bool "Blocking 32KHz crystal oscillator startup"
+	depends on CLOCK_CONTROL_NRF_K32SRC_XTAL
+	help
+	  Clock control driver will spin wait in CPU sleep until 32KHz
+	  crystal oscillator starts up. If not enabled, RC oscillator will
+	  initially start running and automatically switch to crystal when
+	  ready.
+
+choice CLOCK_CONTROL_NRF_ACCURACY
+	prompt "32KHz clock accuracy"
+	default CLOCK_CONTROL_NRF_K32SRC_500PPM if CLOCK_CONTROL_NRF_K32SRC_RC
+	default CLOCK_CONTROL_NRF_K32SRC_20PPM
+
+config CLOCK_CONTROL_NRF_K32SRC_500PPM
+	bool "251 ppm to 500 ppm"
+
+config CLOCK_CONTROL_NRF_K32SRC_250PPM
+	bool "151 ppm to 250 ppm"
+
+config CLOCK_CONTROL_NRF_K32SRC_150PPM
+	bool "101 ppm to 150 ppm"
+
+config CLOCK_CONTROL_NRF_K32SRC_100PPM
+	bool "76 ppm to 100 ppm"
+
+config CLOCK_CONTROL_NRF_K32SRC_75PPM
+	bool "51 ppm to 75 ppm"
+
+config CLOCK_CONTROL_NRF_K32SRC_50PPM
+	bool "31 ppm to 50 ppm"
+
+config CLOCK_CONTROL_NRF_K32SRC_30PPM
+	bool "21 ppm to 30 ppm"
+
+config CLOCK_CONTROL_NRF_K32SRC_20PPM
+	bool "0 ppm to 20 ppm"
+
+endchoice
+
+endif # CLOCK_CONTROL_NRF
+
+endif #!CLOCK_CONTROL_NRF_FORCE_ALT

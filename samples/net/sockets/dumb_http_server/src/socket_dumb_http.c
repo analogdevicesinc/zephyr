@@ -16,14 +16,11 @@
 #include <unistd.h>
 
 #else
-#define LOG_MODULE_NAME net_dump_http_download
-#define NET_LOG_LEVEL LOG_LEVEL_DBG
 
 #include <net/socket.h>
 #include <kernel.h>
-#include <net/net_app.h>
 
-#include <net/buf.h>
+#include <net/net_pkt.h>
 
 #endif
 
@@ -89,6 +86,10 @@ int main(void)
 			char c;
 
 			r = recv(client, &c, 1, 0);
+			if (r == 0) {
+				goto close_client;
+			}
+
 			if (r < 0) {
 				if (errno == EAGAIN || errno == EINTR) {
 					continue;

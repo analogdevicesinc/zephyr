@@ -74,7 +74,7 @@ void calculate_pi_low(void)
 		pi = 1.0;
 		divisor = 3.0;
 
-		for (ix = 0; ix < PI_NUM_ITERATIONS; ix++) {
+		for (ix = 0U; ix < PI_NUM_ITERATIONS; ix++) {
 			pi += sign / divisor;
 			divisor += 2.0;
 			sign *= -1.0;
@@ -117,7 +117,7 @@ void calculate_pi_high(void)
 		pi = 1.0;
 		divisor = 3.0;
 
-		for (ix = 0; ix < PI_NUM_ITERATIONS; ix++) {
+		for (ix = 0U; ix < PI_NUM_ITERATIONS; ix++) {
 			pi += sign / divisor;
 			divisor += 2.0;
 			sign *= -1.0;
@@ -149,7 +149,7 @@ void calculate_pi_high(void)
 
 		/* periodically issue progress report */
 
-		if ((++calc_pi_high_count % 100) == 50) {
+		if ((++calc_pi_high_count % 100) == 50U) {
 			PRINT_DATA("Pi calculation OK after %u (high) +"
 				   " %u (low) tests (computed %1.6f)\n",
 				   calc_pi_high_count, calc_pi_low_count, pi);

@@ -6,14 +6,15 @@
 
 #include <device.h>
 #include <errno.h>
-#include <led.h>
-#include <misc/util.h>
+#include <drivers/led.h>
+#include <sys/util.h>
 #include <zephyr.h>
 
-#define SYS_LOG_LEVEL SYS_LOG_LEVEL_DEBUG
-#include <logging/sys_log.h>
+#define LOG_LEVEL 4
+#include <logging/log.h>
+LOG_MODULE_REGISTER(main);
 
-#define LED_DEV_NAME CONFIG_LP5562_DEV_NAME
+#define LED_DEV_NAME DT_INST_0_TI_LP5562_LABEL
 #define NUM_LEDS 4
 #define BLINK_DELAY_ON 500
 #define BLINK_DELAY_OFF 500
@@ -52,7 +53,7 @@ static u8_t colors[COLORS_TO_SHOW][VALUES_PER_COLOR] = {
  */
 static inline u8_t scale_color_to_percent(u8_t hex)
 {
-	return (hex * 100) / 0xFF;
+	return (hex * 100U) / 0xFF;
 }
 
 /*
@@ -75,19 +76,19 @@ static int set_static_color(struct device *dev, u8_t r, u8_t g, u8_t b)
 
 	ret = led_set_brightness(dev, LED_R, r);
 	if (ret) {
-		SYS_LOG_ERR("Failed to set color.");
+		LOG_ERR("Failed to set color.");
 		return ret;
 	}
 
 	ret = led_set_brightness(dev, LED_G, g);
 	if (ret) {
-		SYS_LOG_ERR("Failed to set color.");
+		LOG_ERR("Failed to set color.");
 		return ret;
 	}
 
 	ret = led_set_brightness(dev, LED_B, b);
 	if (ret) {
-		SYS_LOG_ERR("Failed to set color.");
+		LOG_ERR("Failed to set color.");
 		return ret;
 	}
 
@@ -117,7 +118,7 @@ static int blink_color(struct device *dev, bool r, bool g, bool b,
 	if (r) {
 		ret = led_blink(dev, LED_R, delay_on, delay_off);
 		if (ret) {
-			SYS_LOG_ERR("Failed to set color.");
+			LOG_ERR("Failed to set color.");
 			return ret;
 		}
 	}
@@ -125,7 +126,7 @@ static int blink_color(struct device *dev, bool r, bool g, bool b,
 	if (g) {
 		ret = led_blink(dev, LED_G, delay_on, delay_off);
 		if (ret) {
-			SYS_LOG_ERR("Failed to set color.");
+			LOG_ERR("Failed to set color.");
 			return ret;
 		}
 	}
@@ -133,7 +134,7 @@ static int blink_color(struct device *dev, bool r, bool g, bool b,
 	if (b) {
 		ret = led_blink(dev, LED_B, delay_on, delay_off);
 		if (ret) {
-			SYS_LOG_ERR("Failed to set color.");
+			LOG_ERR("Failed to set color.");
 			return ret;
 		}
 	}
@@ -168,13 +169,13 @@ void main(void)
 
 	dev = device_get_binding(LED_DEV_NAME);
 	if (dev) {
-		SYS_LOG_INF("Found LED device %s", LED_DEV_NAME);
+		LOG_INF("Found LED device %s", LED_DEV_NAME);
 	} else {
-		SYS_LOG_ERR("LED device %s not found", LED_DEV_NAME);
+		LOG_ERR("LED device %s not found", LED_DEV_NAME);
 		return;
 	}
 
-	SYS_LOG_INF("Testing leds");
+	LOG_INF("Testing leds");
 
 	while (1) {
 

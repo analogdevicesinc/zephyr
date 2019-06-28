@@ -100,13 +100,11 @@
 					 BME280_FILTER |  \
 					 BME280_SPI_3W_DISABLE)
 
-#define BME280_I2C_ADDR                 CONFIG_BME280_I2C_ADDR
-
 struct bme280_data {
-#ifdef CONFIG_BME280_DEV_TYPE_I2C
+#ifdef DT_BOSCH_BME280_BUS_I2C
 	struct device *i2c_master;
 	u16_t i2c_slave_addr;
-#elif defined CONFIG_BME280_DEV_TYPE_SPI
+#elif defined DT_BOSCH_BME280_BUS_SPI
 	struct device *spi;
 	struct spi_config spi_cfg;
 #else
@@ -143,7 +141,4 @@ struct bme280_data {
 	u8_t chip_id;
 };
 
-#define SYS_LOG_DOMAIN "BME280"
-#define SYS_LOG_LEVEL CONFIG_SYS_LOG_SENSOR_LEVEL
-#include <logging/sys_log.h>
 #endif /* ZEPHYR_DRIVERS_SENSOR_BME280_BME280_H_ */

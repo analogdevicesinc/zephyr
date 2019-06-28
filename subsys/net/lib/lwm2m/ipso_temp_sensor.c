@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017 Linaro Limited
+ * Copyright (c) 2018-2019 Foundries.io
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -18,7 +19,6 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
 #include <stdint.h>
 #include <init.h>
-#include <net/lwm2m.h>
 
 #include "lwm2m_object.h"
 #include "lwm2m_engine.h"
@@ -202,8 +202,6 @@ static struct lwm2m_engine_obj_inst *temp_sensor_create(u16_t obj_inst_id)
 
 static int ipso_temp_sensor_init(struct device *dev)
 {
-	int ret = 0;
-
 	/* Set default values */
 	(void)memset(inst, 0, sizeof(*inst) * MAX_INSTANCE_COUNT);
 	(void)memset(res, 0, sizeof(struct lwm2m_engine_res_inst) *
@@ -216,7 +214,7 @@ static int ipso_temp_sensor_init(struct device *dev)
 	temp_sensor.create_cb = temp_sensor_create;
 	lwm2m_register_obj(&temp_sensor);
 
-	return ret;
+	return 0;
 }
 
 SYS_INIT(ipso_temp_sensor_init, APPLICATION,

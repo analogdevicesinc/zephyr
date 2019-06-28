@@ -1,6 +1,5 @@
----
+
 title: ARM CMSDK UART
-id: arm,cmsdk-uart
 version: 0.1
 
 description: >
@@ -14,14 +13,7 @@ properties:
       constraint: "arm,cmsdk-uart"
 
     reg:
-      type: array
-      description: mmio register space
-      generation: define
       category: required
 
     interrupts:
-      type: array
       category: required
-      description: required interrupts
-      generation: define
-...

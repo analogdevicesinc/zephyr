@@ -13,9 +13,9 @@
 #define SEM_LIMIT 2
 /**TESTPOINT: init via K_SEM_DEFINE*/
 K_SEM_DEFINE(ksema, SEM_INITIAL, SEM_LIMIT);
-__kernel struct k_sem sema;
+struct k_sem sema;
 static K_THREAD_STACK_DEFINE(tstack, STACK_SIZE);
-__kernel struct k_thread tdata;
+struct k_thread tdata;
 
 /*entry of contexts*/
 static void tisr_entry(void *p)
@@ -133,8 +133,7 @@ void test_sema_count_get(void)
 /*test case main entry*/
 void test_main(void)
 {
-	k_thread_access_grant(k_current_get(), &ksema, &tdata, &sema, &tstack,
-			      NULL);
+	k_thread_access_grant(k_current_get(), &ksema, &tdata, &sema, &tstack);
 
 	ztest_test_suite(sema_api,
 			 ztest_user_unit_test(test_sema_thread2thread),

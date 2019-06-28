@@ -10,8 +10,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define LOG_MODULE_NAME net_dns_resolve
-#define NET_LOG_LEVEL CONFIG_DNS_RESOLVER_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_REGISTER(net_dns_resolve, CONFIG_DNS_RESOLVER_LOG_LEVEL);
 
 #include <zephyr/types.h>
 #include <string.h>
@@ -31,13 +31,6 @@
 
 #define LLMNR_IPV4_ADDR "224.0.0.252:5355"
 #define LLMNR_IPV6_ADDR "[ff02::1:3]:5355"
-
-static int dns_write(struct dns_resolve_context *ctx,
-		     int server_idx,
-		     int query_idx,
-		     struct net_buf *dns_data,
-		     struct net_buf *dns_qname,
-		     int hop_limit);
 
 #define DNS_BUF_TIMEOUT 500 /* ms */
 
@@ -79,11 +72,18 @@ NET_BUF_POOL_DEFINE(dns_qname_pool, DNS_RESOLVER_BUF_CTR, DNS_MAX_NAME_LEN,
 
 static struct dns_resolve_context dns_default_ctx;
 
+static int dns_write(struct dns_resolve_context *ctx,
+		     int server_idx,
+		     int query_idx,
+		     struct net_buf *dns_data,
+		     struct net_buf *dns_qname,
+		     int hop_limit);
+
 static bool server_is_mdns(sa_family_t family, struct sockaddr *addr)
 {
 	if (family == AF_INET) {
-		if (net_is_ipv4_addr_mcast(&net_sin(addr)->sin_addr) &&
-		    net_sin(addr)->sin_addr.s4_addr[3] == 251) {
+		if (net_ipv4_is_addr_mcast(&net_sin(addr)->sin_addr) &&
+		    net_sin(addr)->sin_addr.s4_addr[3] == 251U) {
 			return true;
 		}
 
@@ -91,7 +91,7 @@ static bool server_is_mdns(sa_family_t family, struct sockaddr *addr)
 	}
 
 	if (family == AF_INET6) {
-		if (net_is_ipv6_addr_mcast(&net_sin6(addr)->sin6_addr) &&
+		if (net_ipv6_is_addr_mcast(&net_sin6(addr)->sin6_addr) &&
 		    net_sin6(addr)->sin6_addr.s6_addr[15] == 0xfb) {
 			return true;
 		}
@@ -105,8 +105,8 @@ static bool server_is_mdns(sa_family_t family, struct sockaddr *addr)
 static bool server_is_llmnr(sa_family_t family, struct sockaddr *addr)
 {
 	if (family == AF_INET) {
-		if (net_is_ipv4_addr_mcast(&net_sin(addr)->sin_addr) &&
-		    net_sin(addr)->sin_addr.s4_addr[3] == 252) {
+		if (net_ipv4_is_addr_mcast(&net_sin(addr)->sin_addr) &&
+		    net_sin(addr)->sin_addr.s4_addr[3] == 252U) {
 			return true;
 		}
 
@@ -114,7 +114,7 @@ static bool server_is_llmnr(sa_family_t family, struct sockaddr *addr)
 	}
 
 	if (family == AF_INET6) {
-		if (net_is_ipv6_addr_mcast(&net_sin6(addr)->sin6_addr) &&
+		if (net_ipv6_is_addr_mcast(&net_sin6(addr)->sin6_addr) &&
 		    net_sin6(addr)->sin6_addr.s6_addr[15] == 0x03) {
 			return true;
 		}
@@ -136,7 +136,7 @@ static void dns_postprocess_server(struct dns_resolve_context *ctx, int idx)
 				server_is_llmnr(AF_INET, addr);
 		}
 
-		if (net_sin(addr)->sin_port == 0) {
+		if (net_sin(addr)->sin_port == 0U) {
 			if (IS_ENABLED(CONFIG_MDNS_RESOLVER) &&
 			    ctx->servers[idx].is_mdns) {
 				/* We only use 5353 as a default port
@@ -164,7 +164,7 @@ static void dns_postprocess_server(struct dns_resolve_context *ctx, int idx)
 				server_is_llmnr(AF_INET6, addr);
 		}
 
-		if (net_sin6(addr)->sin6_port == 0) {
+		if (net_sin6(addr)->sin6_port == 0U) {
 			if (IS_ENABLED(CONFIG_MDNS_RESOLVER) &&
 			    ctx->servers[idx].is_mdns) {
 				net_sin6(addr)->sin6_port = htons(5353);
@@ -335,17 +335,15 @@ static int dns_read(struct dns_resolve_context *ctx,
 	/* index that points to the current answer being analyzed */
 	int answer_ptr;
 	int data_len;
-	int offset;
 	int items;
 	int ret;
 	int server_idx, query_idx;
 
-	data_len = min(net_pkt_appdatalen(pkt), DNS_RESOLVER_MAX_BUF_SIZE);
-	offset = net_pkt_get_len(pkt) - data_len;
+	data_len = MIN(net_pkt_remaining_data(pkt), DNS_RESOLVER_MAX_BUF_SIZE);
 
 	/* TODO: Instead of this temporary copy, just use the net_pkt directly.
 	 */
-	ret = net_frag_linear_copy(dns_data, pkt->frags, offset, data_len);
+	ret = net_pkt_read(pkt, dns_data->data, data_len);
 	if (ret < 0) {
 		ret = DNS_EAI_MEMORY;
 		goto quit;
@@ -512,13 +510,15 @@ quit:
 
 static void cb_recv(struct net_context *net_ctx,
 		    struct net_pkt *pkt,
+		    union net_ip_header *ip_hdr,
+		    union net_proto_header *proto_hdr,
 		    int status,
 		    void *user_data)
 {
 	struct dns_resolve_context *ctx = user_data;
 	struct net_buf *dns_cname = NULL;
 	struct net_buf *dns_data = NULL;
-	u16_t dns_id = 0;
+	u16_t dns_id = 0U;
 	int ret, i;
 
 	ARG_UNUSED(net_ctx);
@@ -615,7 +615,6 @@ static int dns_write(struct dns_resolve_context *ctx,
 	enum dns_query_type query_type;
 	struct net_context *net_ctx;
 	struct sockaddr *server;
-	struct net_pkt *pkt;
 	int server_addr_len;
 	u16_t dns_id;
 	int ret;
@@ -629,43 +628,21 @@ static int dns_write(struct dns_resolve_context *ctx,
 				 dns_qname->data, dns_qname->len, dns_id,
 				 (enum dns_rr_type)query_type);
 	if (ret < 0) {
-		ret = -EINVAL;
-		goto quit;
+		return -EINVAL;
 	}
 
-	pkt = net_pkt_get_tx(net_ctx, ctx->buf_timeout);
-	if (!pkt) {
-		ret = -ENOMEM;
-		goto quit;
-	}
-
-	if (hop_limit > 0) {
-#if defined(CONFIG_NET_IPV6)
-		if (net_context_get_family(net_ctx) == AF_INET6) {
-			net_pkt_set_ipv6_hop_limit(pkt, hop_limit);
-		} else
-#endif
-#if defined(CONFIG_NET_IPV4)
-		if (net_context_get_family(net_ctx) == AF_INET) {
-			net_pkt_set_ipv4_ttl(pkt, hop_limit);
-		} else
-#endif
-		{
-		}
-	}
-
-	ret = net_pkt_append_all(pkt, dns_data->len, dns_data->data,
-				 ctx->buf_timeout);
-	if (ret < 0) {
-		ret = -ENOMEM;
-		goto quit;
+	if (IS_ENABLED(CONFIG_NET_IPV6) &&
+	    net_context_get_family(net_ctx) == AF_INET6) {
+		net_context_set_ipv6_hop_limit(net_ctx, hop_limit);
+	} else if (IS_ENABLED(CONFIG_NET_IPV4) &&
+		   net_context_get_family(net_ctx) == AF_INET) {
+		net_context_set_ipv4_ttl(net_ctx, hop_limit);
 	}
 
 	ret = net_context_recv(net_ctx, cb_recv, K_NO_WAIT, ctx);
 	if (ret < 0 && ret != -EALREADY) {
 		NET_DBG("Could not receive from socket (%d)", ret);
-		net_pkt_unref(pkt);
-		goto quit;
+		return ret;
 	}
 
 	if (server->sa_family == AF_INET) {
@@ -674,12 +651,12 @@ static int dns_write(struct dns_resolve_context *ctx,
 		server_addr_len = sizeof(struct sockaddr_in6);
 	}
 
-	ret = net_context_sendto(pkt, server, server_addr_len, NULL,
-				 K_NO_WAIT, NULL, NULL);
+	ret = net_context_sendto(net_ctx, dns_data->data, dns_data->len,
+				 server, server_addr_len, NULL,
+				 K_NO_WAIT, NULL);
 	if (ret < 0) {
 		NET_DBG("Cannot send query (%d)", ret);
-		net_pkt_unref(pkt);
-		goto quit;
+		return ret;
 	}
 
 	ret = k_delayed_work_submit(&ctx->queries[query_idx].timer,
@@ -689,18 +666,16 @@ static int dns_write(struct dns_resolve_context *ctx,
 			"timeout %u ret %d",
 			query_idx, server_idx, dns_id,
 			ctx->queries[query_idx].timeout, ret);
-		goto quit;
-	} else {
-		NET_DBG("[%u] submitting work to server idx %d for id %u "
-			"timeout %u",
-			query_idx, server_idx, dns_id,
-			ctx->queries[query_idx].timeout);
+		return ret;
 	}
 
-	ret = 0;
 
-quit:
-	return ret;
+	NET_DBG("[%u] submitting work to server idx %d for id %u "
+		"timeout %u",
+		query_idx, server_idx, dns_id,
+		ctx->queries[query_idx].timeout);
+
+	return 0;
 }
 
 int dns_resolve_cancel(struct dns_resolve_context *ctx, u16_t dns_id)
@@ -853,7 +828,7 @@ try_resolve:
 	}
 
 	for (j = 0; j < SERVER_COUNT; j++) {
-		hop_limit = 0;
+		hop_limit = 0U;
 
 		if (!ctx->servers[j].net_ctx) {
 			continue;
@@ -875,7 +850,7 @@ try_resolve:
 				continue;
 			}
 
-			hop_limit = 1;
+			hop_limit = 1U;
 		}
 
 		ret = dns_write(ctx, j, i, dns_data, dns_qname, hop_limit);
@@ -914,7 +889,7 @@ quit:
 		}
 
 		if (dns_id) {
-			*dns_id = 0;
+			*dns_id = 0U;
 		}
 	}
 

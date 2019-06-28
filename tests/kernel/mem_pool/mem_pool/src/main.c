@@ -20,15 +20,15 @@
 #include <zephyr.h>
 #include <ztest.h>
 #include <tc_util.h>
-#include <misc/util.h>
+#include <sys/util.h>
 
-#define  ONE_SECOND     (sys_clock_ticks_per_sec)
-#define  TENTH_SECOND   (sys_clock_ticks_per_sec / 10)
+#define  ONE_SECOND     (CONFIG_SYS_CLOCK_TICKS_PER_SEC)
+#define  TENTH_SECOND   (CONFIG_SYS_CLOCK_TICKS_PER_SEC / 10)
 
 #define  NUM_BLOCKS     64
 
 /* size of stack area used by each thread */
-#define STACKSIZE 512
+#define STACKSIZE (512 + CONFIG_TEST_EXTRA_STACKSIZE)
 
 K_SEM_DEFINE(ALTERNATE_SEM, 0, 1);
 K_SEM_DEFINE(REGRESS_SEM, 0, 1);

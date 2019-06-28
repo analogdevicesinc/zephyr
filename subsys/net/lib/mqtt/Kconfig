@@ -1,47 +1,41 @@
-# Kconfig - MQTT Library for Zephyr
-
+# Kconfig - Socket MQTT Library for Zephyr
 #
-# Copyright (c) 2016 Intel Corporation
+# Copyright (c) 2018 Nordic Semiconductor ASA
 #
 # SPDX-License-Identifier: Apache-2.0
 #
 
-config  MQTT_LIB
-	bool "MQTT Library Support"
-	select NET_APP_CLIENT
+config MQTT_LIB
+	bool "Socket MQTT Library Support"
+	select NET_SOCKETS
+	select NET_SOCKETS_POSIX_NAMES
 	help
 	  Enable the Zephyr MQTT Library
 
-config MQTT_MSG_MAX_SIZE
-	int "Max size of a MQTT message"
-	depends on MQTT_LIB
-	default 128
-	range 128 1024
-	help
-	  Set the maximum size of the MQTT message. So, no messages
-	  longer than CONFIG_MQTT_MSG_SIZE will be processed.
+if MQTT_LIB
 
-config MQTT_ADDITIONAL_BUFFER_CTR
-	int "Additional buffers available for the MQTT application"
-	depends on MQTT_LIB
-	default 0
-	help
-	  Set some additional buffers. When two or more concurrent contexts are
-	  used in the same application, additional buffers may help to have a 1:1
-	  relation between application contexts and internal buffers.
+module=MQTT
+module-dep=NET_LOG
+module-str=Log level for MQTT
+module-help=Enables mqtt debug messages.
+source "subsys/net/Kconfig.template.log_config.net"
 
-config MQTT_SUBSCRIBE_MAX_TOPICS
-	int "Max number of topics to subscribe to"
-	depends on MQTT_LIB
-	default 1
-	range 1 8
+config MQTT_KEEPALIVE
+	int "Maximum number of clients Keep alive time for MQTT (in seconds)"
+	default 60
 	help
-	  Set the maximum number of topics handled by the SUBSCRIBE/SUBACK
-	  messages during reception.
+	  Keep alive time for MQTT (in seconds). Sending of Ping Requests to
+	  keep the connection alive are governed by this value.
 
 config MQTT_LIB_TLS
-	bool "Enable TLS support for the MQTT application"
-	depends on MQTT_LIB
-	select NET_APP_TLS
+	bool "TLS support for socket MQTT Library"
 	help
-	  Enables MQTT library with TLS support
+	  Enable TLS support for socket MQTT Library
+
+config MQTT_LIB_SOCKS
+	bool "SOCKS proxy support for socket MQTT Library"
+	select SOCKS
+	help
+	  Enable SOCKS proxy support for socket MQTT Library
+
+endif # MQTT_LIB

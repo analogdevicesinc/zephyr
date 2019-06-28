@@ -18,9 +18,41 @@
  * (originally from x86's atomic.c)
  */
 
-#include <atomic.h>
+#include <sys/atomic.h>
 #include <toolchain.h>
 #include <arch/cpu.h>
+#include <spinlock.h>
+
+/* Single global spinlock for atomic operations.  This is fallback
+ * code, not performance sensitive.  At least by not using irq_lock()
+ * in SMP contexts we won't content with legitimate users of the
+ * global lock.
+ */
+static struct k_spinlock lock;
+
+/* For those rare CPUs which support user mode, but not native atomic
+ * operations, the best we can do for them is implement the atomic
+ * functions as system calls, since in user mode locking a spinlock is
+ * forbidden.
+ */
+#ifdef CONFIG_USERSPACE
+#include <syscall_handler.h>
+
+#define ATOMIC_SYSCALL_HANDLER_TARGET(name) \
+	Z_SYSCALL_HANDLER(name, target) { \
+		Z_OOPS(Z_SYSCALL_MEMORY_WRITE(target, sizeof(atomic_t))); \
+		return z_impl_##name((atomic_t *)target); \
+	}
+
+#define ATOMIC_SYSCALL_HANDLER_TARGET_VALUE(name) \
+	Z_SYSCALL_HANDLER(name, target, value) { \
+		Z_OOPS(Z_SYSCALL_MEMORY_WRITE(target, sizeof(atomic_t))); \
+		return z_impl_##name((atomic_t *)target, value); \
+	}
+#else
+#define ATOMIC_SYSCALL_HANDLER_TARGET(name)
+#define ATOMIC_SYSCALL_HANDLER_TARGET_VALUE(name)
+#endif
 
 /**
  *
@@ -42,23 +74,32 @@
  * @param new_value value to compare against
  * @return Returns 1 if <new_value> is written, 0 otherwise.
  */
-int atomic_cas(atomic_t *target, atomic_val_t old_value,
-			  atomic_val_t new_value)
+int z_impl_atomic_cas(atomic_t *target, atomic_val_t old_value,
+		      atomic_val_t new_value)
 {
-	unsigned int key;
+	k_spinlock_key_t key;
 	int ret = 0;
 
-	key = irq_lock();
+	key = k_spin_lock(&lock);
 
 	if (*target == old_value) {
 		*target = new_value;
 		ret = 1;
 	}
 
-	irq_unlock(key);
+	k_spin_unlock(&lock, key);
 
 	return ret;
 }
+
+#ifdef CONFIG_USERSPACE
+Z_SYSCALL_HANDLER(atomic_cas, target, old_value, new_value)
+{
+	Z_OOPS(Z_SYSCALL_MEMORY_WRITE(target, sizeof(atomic_t)));
+
+	return z_impl_atomic_cas((atomic_t *)target, old_value, new_value);
+}
+#endif /* CONFIG_USERSPACE */
 
 /**
  *
@@ -73,20 +114,22 @@ int atomic_cas(atomic_t *target, atomic_val_t old_value,
  *
  * @return The previous value from <target>
  */
-atomic_val_t atomic_add(atomic_t *target, atomic_val_t value)
+atomic_val_t z_impl_atomic_add(atomic_t *target, atomic_val_t value)
 {
-	unsigned int key;
+	k_spinlock_key_t key;
 	atomic_val_t ret;
 
-	key = irq_lock();
+	key = k_spin_lock(&lock);
 
 	ret = *target;
 	*target += value;
 
-	irq_unlock(key);
+	k_spin_unlock(&lock, key);
 
 	return ret;
 }
+
+ATOMIC_SYSCALL_HANDLER_TARGET_VALUE(atomic_add);
 
 /**
  *
@@ -101,72 +144,22 @@ atomic_val_t atomic_add(atomic_t *target, atomic_val_t value)
  *
  * @return The previous value from <target>
  */
-atomic_val_t atomic_sub(atomic_t *target, atomic_val_t value)
+atomic_val_t z_impl_atomic_sub(atomic_t *target, atomic_val_t value)
 {
-	unsigned int key;
+	k_spinlock_key_t key;
 	atomic_val_t ret;
 
-	key = irq_lock();
+	key = k_spin_lock(&lock);
 
 	ret = *target;
 	*target -= value;
 
-	irq_unlock(key);
+	k_spin_unlock(&lock, key);
 
 	return ret;
 }
 
-/**
- *
- * @brief Atomic increment primitive
- *
- * @param target memory location to increment
- *
- * This routine provides the atomic increment operator. The value at <target>
- * is atomically incremented by 1, and the old value from <target> is returned.
- *
- * @return The value from <target> before the increment
- */
-atomic_val_t atomic_inc(atomic_t *target)
-{
-	unsigned int key;
-	atomic_val_t ret;
-
-	key = irq_lock();
-
-	ret = *target;
-	(*target)++;
-
-	irq_unlock(key);
-
-	return ret;
-}
-
-/**
- *
- * @brief Atomic decrement primitive
- *
- * @param target memory location to decrement
- *
- * This routine provides the atomic decrement operator. The value at <target>
- * is atomically decremented by 1, and the old value from <target> is returned.
- *
- * @return The value from <target> prior to the decrement
- */
-atomic_val_t atomic_dec(atomic_t *target)
-{
-	unsigned int key;
-	atomic_val_t ret;
-
-	key = irq_lock();
-
-	ret = *target;
-	(*target)--;
-
-	irq_unlock(key);
-
-	return ret;
-}
+ATOMIC_SYSCALL_HANDLER_TARGET_VALUE(atomic_sub);
 
 /**
  *
@@ -197,47 +190,22 @@ atomic_val_t atomic_get(const atomic_t *target)
  *
  * @return The previous value from <target>
  */
-atomic_val_t atomic_set(atomic_t *target, atomic_val_t value)
+atomic_val_t z_impl_atomic_set(atomic_t *target, atomic_val_t value)
 {
-	unsigned int key;
+	k_spinlock_key_t key;
 	atomic_val_t ret;
 
-	key = irq_lock();
+	key = k_spin_lock(&lock);
 
 	ret = *target;
 	*target = value;
 
-	irq_unlock(key);
+	k_spin_unlock(&lock, key);
 
 	return ret;
 }
 
-/**
- *
- * @brief Atomic clear primitive
- *
- * This routine provides the atomic clear operator. The value of 0 is atomically
- * written at <target> and the previous value at <target> is returned. (Hence,
- * atomic_clear(pAtomicVar) is equivalent to atomic_set(pAtomicVar, 0).)
- *
- * @param target the memory location to write
- *
- * @return The previous value from <target>
- */
-atomic_val_t atomic_clear(atomic_t *target)
-{
-	unsigned int key;
-	atomic_val_t ret;
-
-	key = irq_lock();
-
-	ret = *target;
-	*target = 0;
-
-	irq_unlock(key);
-
-	return ret;
-}
+ATOMIC_SYSCALL_HANDLER_TARGET_VALUE(atomic_set);
 
 /**
  *
@@ -252,20 +220,22 @@ atomic_val_t atomic_clear(atomic_t *target)
  *
  * @return The previous value from <target>
  */
-atomic_val_t atomic_or(atomic_t *target, atomic_val_t value)
+atomic_val_t z_impl_atomic_or(atomic_t *target, atomic_val_t value)
 {
-	unsigned int key;
+	k_spinlock_key_t key;
 	atomic_val_t ret;
 
-	key = irq_lock();
+	key = k_spin_lock(&lock);
 
 	ret = *target;
 	*target |= value;
 
-	irq_unlock(key);
+	k_spin_unlock(&lock, key);
 
 	return ret;
 }
+
+ATOMIC_SYSCALL_HANDLER_TARGET_VALUE(atomic_or);
 
 /**
  *
@@ -280,20 +250,22 @@ atomic_val_t atomic_or(atomic_t *target, atomic_val_t value)
  *
  * @return The previous value from <target>
  */
-atomic_val_t atomic_xor(atomic_t *target, atomic_val_t value)
+atomic_val_t z_impl_atomic_xor(atomic_t *target, atomic_val_t value)
 {
-	unsigned int key;
+	k_spinlock_key_t key;
 	atomic_val_t ret;
 
-	key = irq_lock();
+	key = k_spin_lock(&lock);
 
 	ret = *target;
 	*target ^= value;
 
-	irq_unlock(key);
+	k_spin_unlock(&lock, key);
 
 	return ret;
 }
+
+ATOMIC_SYSCALL_HANDLER_TARGET_VALUE(atomic_xor);
 
 /**
  *
@@ -308,20 +280,22 @@ atomic_val_t atomic_xor(atomic_t *target, atomic_val_t value)
  *
  * @return The previous value from <target>
  */
-atomic_val_t atomic_and(atomic_t *target, atomic_val_t value)
+atomic_val_t z_impl_atomic_and(atomic_t *target, atomic_val_t value)
 {
-	unsigned int key;
+	k_spinlock_key_t key;
 	atomic_val_t ret;
 
-	key = irq_lock();
+	key = k_spin_lock(&lock);
 
 	ret = *target;
 	*target &= value;
 
-	irq_unlock(key);
+	k_spin_unlock(&lock, key);
 
 	return ret;
 }
+
+ATOMIC_SYSCALL_HANDLER_TARGET_VALUE(atomic_and);
 
 /**
  *
@@ -336,17 +310,19 @@ atomic_val_t atomic_and(atomic_t *target, atomic_val_t value)
  *
  * @return The previous value from <target>
  */
-atomic_val_t atomic_nand(atomic_t *target, atomic_val_t value)
+atomic_val_t z_impl_atomic_nand(atomic_t *target, atomic_val_t value)
 {
-	unsigned int key;
+	k_spinlock_key_t key;
 	atomic_val_t ret;
 
-	key = irq_lock();
+	key = k_spin_lock(&lock);
 
 	ret = *target;
 	*target = ~(*target & value);
 
-	irq_unlock(key);
+	k_spin_unlock(&lock, key);
 
 	return ret;
 }
+
+ATOMIC_SYSCALL_HANDLER_TARGET_VALUE(atomic_nand);

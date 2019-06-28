@@ -14,33 +14,82 @@
 
 	chosen {
 		zephyr,console = &uart0;
+		zephyr,shell-uart = &uart0;
+		zephyr,bt-mon-uart = &uart0;
+		zephyr,bt-c2h-uart = &uart0;
 		zephyr,sram = &sram0;
 		zephyr,flash = &flash0;
+		zephyr,code-partition = &slot0_partition;
+	};
+
+	/* These aliases are provided for compatibility with samples */
+	aliases {
+		led0 = &led0;
+		led1 = &led1;
+		bt = &led1;
+		sw0 = &button0;
+	};
+
+	leds {
+		compatible = "gpio-leds";
+		/* green led */
+		led0: led_0 {
+			gpios = <&gpio0 29 0>;
+			label = "USR1 LED";
+		};
+		/* blue led */
+		led1: led_1 {
+			gpios = <&gpio0 28 0>;
+			label = "BT LED";
+		};
+	};
+
+	buttons {
+		compatible = "gpio-keys";
+		button0: button_0 {
+			/* gpio flags need validation */
+			gpios = <&gpio0 27 GPIO_INT_ACTIVE_LOW>;
+			label = "User Push Button";
+		};
 	};
 };
 
 &gpiote {
-	status ="ok";
+	status = "okay";
 };
 
 &gpio0 {
-	status ="ok";
+	status = "okay";
 };
 
 &uart0 {
 	compatible = "nordic,nrf-uart";
 	current-speed = <115200>;
-	status = "ok";
+	status = "okay";
 	tx-pin = <13>;
 	rx-pin = <15>;
 	rts-pin = <12>;
 	cts-pin = <14>;
 };
 
+&i2c0 {
+	status = "okay";
+	sda-pin = <20>;
+	scl-pin = <22>;
+};
+
+&spi1 {
+	status = "okay";
+	sck-pin = <26>;
+	mosi-pin = <23>;
+	miso-pin = <25>;
+	csn-pin = <24>;
+};
+
 &flash0 {
 	/*
 	 * For more information, see:
-	 * http://docs.zephyrproject.org/latest/devices/dts/flash_partitions.html
+	 * http://docs.zephyrproject.org/latest/guides/dts/index.html#flash-partitions
 	 */
 	partitions {
 		compatible = "fixed-partitions";
@@ -49,25 +98,30 @@
 
 		boot_partition: partition@0 {
 			label = "mcuboot";
-			reg = <0x00000000 0x8000>;
+			reg = <0x00000000 0xa000>;
 		};
-		slot0_partition: partition@8000 {
+		slot0_partition: partition@a000 {
 			label = "image-0";
-			reg = <0x00008000 0x34000>;
+			reg = <0x0000a000 0x33000>;
 		};
-		slot1_partition: partition@3c000 {
+		slot1_partition: partition@3d000 {
 			label = "image-1";
-			reg = <0x0003c000 0x34000>;
+			reg = <0x0003d000 0x33000>;
 		};
 		scratch_partition: partition@70000 {
 			label = "image-scratch";
-			reg = <0x00070000 0xD000>;
+			reg = <0x00070000 0xa000>;
 		};
 
 		/*
-		 * The flash starting at 0x0007d000 and ending at
-		 * 0x0007ffff (sectors 125-127) is reserved for use
-		 * by the application.
+		 * The flash starting at 0x0007a000 and ending at
+		 * 0x0007ffff (sectors 122-127) is reserved for use
+		 * by the application. If enabled, partition for FCB/NFFS
+		 * will be created in this area.
 		 */
+		storage_partition: partition@7a000 {
+			label = "storage";
+			reg = <0x0007a000 0x00006000>;
+		};
 	};
 };

@@ -6,18 +6,18 @@
 
 #include <ztest.h>
 #include <irq_offload.h>
-#define STACK_SIZE 512
-#define STACK_LEN 2
+#define STACK_SIZE (512 + CONFIG_TEST_EXTRA_STACKSIZE)
+#define STACK_LEN 4
 
 /**TESTPOINT: init via K_STACK_DEFINE*/
 K_STACK_DEFINE(kstack, STACK_LEN);
 K_STACK_DEFINE(kstack_test_alloc, STACK_LEN);
-__kernel struct k_stack stack;
+struct k_stack stack;
 
 K_THREAD_STACK_DEFINE(threadstack, STACK_SIZE);
-__kernel struct k_thread thread_data;
-static u32_t data[STACK_LEN] = { 0xABCD, 0x1234 };
-__kernel struct k_sem end_sema;
+struct k_thread thread_data;
+static ZTEST_DMEM stack_data_t data[STACK_LEN] = { 0xABCD, 0x1234 };
+struct k_sem end_sema;
 
 static void tstack_push(struct k_stack *pstack)
 {
@@ -29,7 +29,7 @@ static void tstack_push(struct k_stack *pstack)
 
 static void tstack_pop(struct k_stack *pstack)
 {
-	u32_t rx_data;
+	stack_data_t rx_data;
 
 	for (int i = STACK_LEN - 1; i >= 0; i--) {
 		/**TESTPOINT: stack pop*/

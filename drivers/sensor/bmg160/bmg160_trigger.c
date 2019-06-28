@@ -9,11 +9,15 @@
  */
 
 #include <kernel.h>
-#include <sensor.h>
+#include <drivers/sensor.h>
 
 #include "bmg160.h"
 
 extern struct bmg160_device_data bmg160_data;
+
+#define LOG_LEVEL CONFIG_SENSOR_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_DECLARE(BMG160);
 
 static void bmg160_gpio_callback(struct device *port, struct gpio_callback *cb,
 				 u32_t pin)
@@ -35,7 +39,7 @@ static int bmg160_anymotion_set(struct device *dev,
 				sensor_trigger_handler_t handler)
 {
 	struct bmg160_device_data *bmg160 = dev->driver_data;
-	u8_t anymotion_en = 0;
+	u8_t anymotion_en = 0U;
 
 	if (handler) {
 		anymotion_en = BMG160_ANY_EN_X |
@@ -79,10 +83,10 @@ int bmg160_slope_config(struct device *dev, enum sensor_attribute attr,
 
 		any_th_dps = sensor_rad_to_degrees(val);
 		range_dps = BMG160_SCALE_TO_RANGE(bmg160->scale);
-		any_th_reg_val = any_th_dps * 2000 / range_dps;
+		any_th_reg_val = any_th_dps * 2000U / range_dps;
 
 		/* the maximum slope depends on selected range */
-		if (any_th_dps > range_dps / 16) {
+		if (any_th_dps > range_dps / 16U) {
 			return -ENOTSUP;
 		}
 
@@ -196,20 +200,20 @@ int bmg160_trigger_init(struct device *dev)
 
 	/* set INT1 pin to: push-pull, active low */
 	if (bmg160_write_byte(dev, BMG160_REG_INT_EN1, 0) < 0) {
-		SYS_LOG_DBG("Failed to select interrupt pins type.");
+		LOG_DBG("Failed to select interrupt pins type.");
 		return -EIO;
 	}
 
 	/* set interrupt mode to non-latched */
 	if (bmg160_write_byte(dev, BMG160_REG_INT_RST_LATCH, 0) < 0) {
-		SYS_LOG_DBG("Failed to set the interrupt mode.");
+		LOG_DBG("Failed to set the interrupt mode.");
 		return -EIO;
 	}
 
 	/* map anymotion and high rate interrupts to INT1 pin */
 	if (bmg160_write_byte(dev, BMG160_REG_INT_MAP0,
 			      BMG160_INT1_ANY | BMG160_INT1_HIGH) < 0) {
-		SYS_LOG_DBG("Unable to map interrupts.");
+		LOG_DBG("Unable to map interrupts.");
 		return -EIO;
 	}
 
@@ -217,13 +221,13 @@ int bmg160_trigger_init(struct device *dev)
 	if (bmg160_write_byte(dev, BMG160_REG_INT_MAP1,
 			      BMG160_INT1_DATA | BMG160_INT1_FIFO |
 			      BMG160_INT1_FAST_OFFSET) < 0) {
-		SYS_LOG_DBG("Unable to map interrupts.");
+		LOG_DBG("Unable to map interrupts.");
 		return -EIO;
 	}
 
 	bmg160->gpio = device_get_binding((char *)cfg->gpio_port);
 	if (!bmg160->gpio) {
-		SYS_LOG_DBG("Gpio controller %s not found", cfg->gpio_port);
+		LOG_DBG("Gpio controller %s not found", cfg->gpio_port);
 		return -EINVAL;
 	}
 

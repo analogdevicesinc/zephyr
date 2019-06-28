@@ -1,0 +1,34 @@
+
+title: GECKO UART
+version: 0.1
+
+description: >
+    This binding gives a base representation of the GECKO UART
+
+inherits:
+    !include uart.yaml
+
+properties:
+    compatible:
+      constraint: "silabs,gecko-uart"
+
+    reg:
+      category: required
+
+    interrupts:
+      category: required
+
+    # Note: Not all SoC series support setting individual pin location. If this
+    # is a case all location-* properties need to have identical value.
+
+    location-rx:
+      type: array
+      category: required
+      description: RX pin configuration defined as <location port pin>
+      generation: define
+
+    location-tx:
+      type: array
+      category: required
+      description: TX pin configuration defined as <location port pin>
+      generation: define

@@ -13,8 +13,10 @@
 
 	chosen {
 		zephyr,console = &usart3;
+		zephyr,shell-uart = &usart3;
 		zephyr,sram = &sram0;
 		zephyr,flash = &flash0;
+		zephyr,ccm = &ccm0;
 	};
 
 	leds {
@@ -47,24 +49,43 @@
 
 	aliases {
 		led0 = &green_led_1;
+		led1 = &orange_led_2;
+		led2 = &red_led_3;
+		led3 = &blue_led_4;
 		sw0 = &user_button;
 	};
 };
+
+arduino_i2c: &i2c1 {};
+arduino_spi: &spi2 {};
+arduino_serial: &usart6 {};
 
 &usart3 {
 	current-speed = <115200>;
 	pinctrl-0 = <&usart3_pins_a>;
 	pinctrl-names = "default";
-	status = "ok";
+	status = "okay";
 };
 
 &usart6 {
 	current-speed = <115200>;
-	pinctrl-0 = <&usart6_pins_a>;
+	pinctrl-0 = <&usart6_pins_b>;
 	pinctrl-names = "default";
-	status = "ok";
+	status = "okay";
+};
+
+&i2c1 {
+	status = "okay";
+};
+
+&spi2 {
+	status = "okay";
+};
+
+&usbotg_fs {
+	status = "okay";
 };
 
 &rtc {
-	status = "ok";
+	status = "okay";
 };

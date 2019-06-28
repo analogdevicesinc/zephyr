@@ -8,14 +8,15 @@
 
 #include <zephyr.h>
 #include <string.h>
-#include <atomic.h>
-#include <misc/util.h>
+#include <sys/atomic.h>
+#include <sys/util.h>
 
 #include <bluetooth/bluetooth.h>
 #include <bluetooth/conn.h>
 #include <bluetooth/hci.h>
 
 #define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_DEBUG_KEYS)
+#define LOG_MODULE_NAME bt_keys_br
 #include "common/log.h"
 
 #include "hci_core.h"

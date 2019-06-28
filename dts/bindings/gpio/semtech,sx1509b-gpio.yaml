@@ -3,9 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: Semtech SX1509B I2C GPIO
-id: semtech,sx1509b
 version: 0.1
 
 description: >
@@ -17,4 +16,12 @@ inherits:
 properties:
     compatible:
       constraint: "semtech,sx1509b"
-...
+
+    label:
+      category: required
+
+cell_string: GPIO
+
+"#cells":
+  - pin
+  - flags

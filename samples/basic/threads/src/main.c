@@ -6,10 +6,9 @@
 
 #include <zephyr.h>
 #include <device.h>
-#include <gpio.h>
-#include <misc/printk.h>
-#include <misc/__assert.h>
-#include <board.h>
+#include <drivers/gpio.h>
+#include <sys/printk.h>
+#include <sys/__assert.h>
 #include <string.h>
 
 /* size of stack area used by each thread */

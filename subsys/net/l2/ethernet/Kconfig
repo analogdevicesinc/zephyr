@@ -21,7 +21,8 @@ source "subsys/net/Kconfig.template.log_config.net"
 
 config NET_L2_ETHERNET_MGMT
 	bool "Enable Ethernet network management interface"
-	depends on NET_MGMT && NET_MGMT_EVENT
+	select NET_MGMT
+	select NET_MGMT_EVENT
 	help
 	  Enable support net_mgmt Ethernet interface which can be used to
 	  configure at run-time Ethernet drivers and L2 settings.
@@ -53,6 +54,19 @@ config NET_ARP_TABLE_SIZE
 	default 2
 	help
 	  Each entry in the ARP table consumes 22 bytes of memory.
+
+config NET_ARP_GRATUITOUS
+	bool "Support gratuitous ARP requests/replies."
+	depends on NET_ARP
+	default y
+	help
+	  Gratuitous in this case means a ARP request or reply that is not
+	  normally needed according to the ARP specification but could be used
+	  in some cases. A gratuitous ARP request is a ARP request packet where
+	  the source and destination IP are both set to the IP of the machine
+	  issuing the packet and the destination MAC is the broadcast address
+	  ff:ff:ff:ff:ff:ff. Ordinarily, no reply packet will occur.
+	  A gratuitous ARP reply is a reply to which no request has been made.
 
 if NET_ARP
 module = NET_ARP

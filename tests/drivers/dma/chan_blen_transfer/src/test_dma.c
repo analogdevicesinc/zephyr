@@ -20,7 +20,7 @@
  */
 
 #include <zephyr.h>
-#include <dma.h>
+#include <drivers/dma.h>
 #include <ztest.h>
 
 #define DMA_DEVICE_NAME CONFIG_DMA_0_NAME
@@ -29,7 +29,7 @@
 static const char tx_data[] = "It is harder to be kind than to be wise";
 static char rx_data[RX_BUFF_SIZE] = { 0 };
 
-static void test_done(struct device *dev, u32_t id, int error_code)
+static void test_done(void *arg, u32_t id, int error_code)
 {
 	if (error_code == 0) {
 		TC_PRINT("DMA transfer done\n");
@@ -50,14 +50,14 @@ static int test_task(u32_t chan_id, u32_t blen)
 	}
 
 	dma_cfg.channel_direction = MEMORY_TO_MEMORY;
-	dma_cfg.source_data_size = 1;
-	dma_cfg.dest_data_size = 1;
+	dma_cfg.source_data_size = 1U;
+	dma_cfg.dest_data_size = 1U;
 	dma_cfg.source_burst_length = blen;
 	dma_cfg.dest_burst_length = blen;
 	dma_cfg.dma_callback = test_done;
-	dma_cfg.complete_callback_en = 0;
-	dma_cfg.error_callback_en = 1;
-	dma_cfg.block_count = 1;
+	dma_cfg.complete_callback_en = 0U;
+	dma_cfg.error_callback_en = 1U;
+	dma_cfg.block_count = 1U;
 	dma_cfg.head_block = &dma_block_cfg;
 
 	TC_PRINT("Preparing DMA Controller: Chan_ID=%u, BURST_LEN=%u\n",

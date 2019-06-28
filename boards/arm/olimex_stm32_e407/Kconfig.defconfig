@@ -12,10 +12,9 @@ config BOARD
 
 if UART_CONSOLE
 
-config UART_STM32_PORT_1
+config UART_1
 	default y
 
 endif # UART_CONSOLE
 
 endif # BOARD_OLIMEX_STM32_E407
-

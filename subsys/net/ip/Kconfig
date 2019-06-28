@@ -20,6 +20,28 @@ config NET_RAW_MODE
 
 if !NET_RAW_MODE
 
+choice
+	prompt "Qemu networking"
+	default NET_QEMU_SLIP
+	depends on QEMU_TARGET
+	help
+	  Can be used to select how the network connectivity is established
+	  from inside qemu to host system. This can be done either via
+	  serial connection (SLIP) or via Qemu ethernet driver.
+
+config NET_QEMU_SLIP
+	bool "SLIP"
+	help
+	  Connect to host or to another Qemu via SLIP.
+
+config NET_QEMU_ETHERNET
+	bool "Ethernet"
+	help
+	  Connect to host system via Qemu ethernet driver support. One such
+	  driver that Zephyr supports is Intel e1000 ethernet driver.
+
+endchoice
+
 config NET_INIT_PRIO
 	int
 	default 90
@@ -27,18 +49,31 @@ config NET_INIT_PRIO
 	  Network initialization priority level. This number tells how
 	  early in the boot the network stack is initialized.
 
-source "subsys/net/ip/Kconfig.debug"
-
 source "subsys/net/ip/Kconfig.ipv6"
 
 source "subsys/net/ip/Kconfig.ipv4"
 
 config NET_SHELL
 	bool "Enable network shell utilities"
-	select CONSOLE_SHELL
+	select SHELL
 	help
 	  Activate shell module that provides network commands like
 	  ping to the console.
+
+config NET_SHELL_DYN_CMD_COMPLETION
+	bool "Enable network shell dynamic command completion"
+	depends on NET_SHELL
+	default y
+	help
+	  Enable various net-shell command to support dynamic command
+	  completion. This means that for example the nbr command can
+	  automatically complete the neighboring IPv6 address and user
+	  does not need to type it manually.
+	  Please note that this uses more memory in order to save the
+	  dynamic command strings. For example for nbr command the
+	  increase is 320 bytes (8 neighbors * 40 bytes for IPv6 address
+	  length) by default. Other dynamic completion commands in
+	  net-shell require also some smaller amount of memory.
 
 config NET_TC_TX_COUNT
 	int "How many Tx traffic classes to have for each network device"
@@ -269,6 +304,15 @@ config NET_UDP_CHECKSUM
 	  Enables UDP handler to check UDP checksum. If the checksum is invalid,
 	  then the packet is discarded.
 
+config NET_UDP_MISSING_CHECKSUM
+	bool "Accept missing checksum (IPv4 only)"
+	depends on NET_UDP && NET_IPV4
+	help
+	  RFC 768 states the possibility to have a missing checksum, for
+	  debugging purposes for instance. That feature is however valid only
+	  for IPv4 and on reception only, since Zephyr will always compute the
+	  UDP checksum in transmission path.
+
 if NET_UDP
 module = NET_UDP
 module-dep = NET_LOG
@@ -279,19 +323,12 @@ endif # NET_UDP
 
 config NET_MAX_CONN
 	int "How many network connections are supported"
-	depends on NET_UDP || NET_TCP
+	depends on NET_UDP || NET_TCP || NET_SOCKETS_PACKET || NET_SOCKETS_CAN
 	default 8 if NET_IPV6 && NET_IPV4
 	default 4
 	help
 	  The value depends on your network needs. The value
 	  should include both UDP and TCP connections.
-
-config NET_CONN_CACHE
-	bool "Cache network connections"
-	depends on NET_UDP || NET_TCP
-	help
-	  Caching takes slight more memory but will speedup connection
-	  handling of UDP and TCP connections.
 
 config NET_MAX_CONTEXTS
 	int "Number of network contexts to allocate"
@@ -332,6 +369,12 @@ config NET_CONTEXT_PRIORITY
 	  It is possible to prioritize network traffic. This requires
 	  also traffic class support to work as expected.
 
+config NET_CONTEXT_TIMESTAMP
+	bool "Add timestamp support to net_context"
+	select NET_PKT_TIMESTAMP
+	help
+	  It is possible to timestamp outgoing packets.
+
 config NET_TEST
 	bool "Network Testing"
 	help
@@ -340,6 +383,7 @@ config NET_TEST
 
 config NET_SLIP_TAP
 	bool "TAP SLIP driver"
+	depends on NET_QEMU_SLIP
 	select SLIP
 	select UART_PIPE
 	select UART_INTERRUPT_DRIVEN
@@ -399,17 +443,54 @@ config NET_BUF_TX_COUNT
 	  Each data buffer will occupy CONFIG_NET_BUF_DATA_SIZE + smallish
 	  header (sizeof(struct net_buf)) amount of data.
 
+choice
+	prompt "Network packet data allocator type"
+	default NET_BUF_FIXED_DATA_SIZE
+	help
+	  Select the memory allocator for the network buffers that hold the
+	  packet data.
+
+config NET_BUF_FIXED_DATA_SIZE
+	bool "Fixed data size buffer"
+	help
+	  Each buffer comes with a built time configured size. If runtime
+	  requested is bigger than that, it will allocate as many net_buf
+	  as necessary to reach that request.
+
+config NET_BUF_VARIABLE_DATA_SIZE
+	bool "Variable data size buffer [EXPERIMENTAL]"
+	help
+	  The buffer is dynamically allocated from runtime requested size.
+
+endchoice
+
 config NET_BUF_DATA_SIZE
 	int "Size of each network data fragment"
-	default 125 if NET_L2_IEEE802154
 	default 128
+	depends on NET_BUF_FIXED_DATA_SIZE
 	help
-	  This value tells what is the size of the data fragment that is
-	  received from the network.
-	  Example: For IEEE 802.15.4, the network packet is 127 bytes long,
-	  which leaves in worst case 81 bytes for user data (MTU).
-	  In order to be able to receive at least full IPv6 packet which
-	  has a size of 1280 bytes, the one should allocate 16 fragments here.
+	  This value tells what is the fixed size of each network buffer.
+
+config NET_BUF_DATA_POOL_SIZE
+	int "Size of the memory pool where buffers are allocated from"
+	default 4096 if NET_L2_ETHERNET
+	default 2048
+	depends on NET_BUF_VARIABLE_DATA_SIZE
+	help
+	 This value tell what is the size of the memory pool where each
+	 network buffer is allocated from.
+
+config NET_HEADERS_ALWAYS_CONTIGUOUS
+	bool
+	help
+	  This a hidden option, which one should use with a lot of care.
+	  NO bug reports will be accepted if that option is enabled!
+	  You are warned.
+	  If you are 100% sure the headers memory space is always in a
+	  contiguous space, this will save stack usage and ROM in net core.
+	  This is a possible case when using IPv4 only, with
+	  NET_BUF_FIXED_DATA_SIZE enabled and NET_BUF_DATA_SIZE of 128 for
+	  instance.
 
 choice
 	prompt "Default Network Interface"
@@ -442,6 +523,10 @@ config NET_DEFAULT_IF_DUMMY
 	bool "Dummy testing interface"
 	depends on NET_L2_DUMMY
 
+config NET_DEFAULT_IF_CANBUS
+	bool "Socket CAN interface"
+	depends on NET_L2_CANBUS
+
 endchoice
 
 config NET_PKT_TIMESTAMP
@@ -470,11 +555,17 @@ config NET_PROMISCUOUS_MODE
 	  device driver supports promiscuous mode. The user application
 	  also needs to read the promiscuous mode data.
 
+if NET_PROMISCUOUS_MODE
+module = NET_PROMISC
+module-dep = NET_LOG
+module-str = Log level for promiscuous mode
+module-help = Enables promiscuous mode to output debug messages.
+source "subsys/net/Kconfig.template.log_config.net"
+endif # NET_PROMISCUOUS_MODE
+
 source "subsys/net/ip/Kconfig.stack"
 
 source "subsys/net/ip/Kconfig.mgmt"
-
-source "subsys/net/ip/Kconfig.rpl"
 
 source "subsys/net/ip/Kconfig.stats"
 
@@ -490,5 +581,7 @@ module-str = Log level for offload layer
 module-help = Enables offload layer to output debug messages.
 source "subsys/net/Kconfig.template.log_config.net"
 endif # NET_OFFLOAD
+
+source "subsys/net/ip/Kconfig.debug"
 
 endmenu

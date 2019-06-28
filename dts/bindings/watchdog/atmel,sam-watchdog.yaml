@@ -1,0 +1,33 @@
+#
+# Copyright (c) 2018, Atmel Corporation
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+title: Atmel SAM watchdog driver
+version: 0.1
+
+description: >
+    This is a representation of the SAM0 watchdog
+
+inherits:
+    !include base.yaml
+
+properties:
+    compatible:
+      constraint: "atmel,sam-watchdog"
+
+    reg:
+      category: required
+
+    label:
+      category: required
+
+    interrupts:
+      category: required
+
+    peripheral-id:
+      type: int
+      description: peripheral ID
+      generation: define
+      category: required

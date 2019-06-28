@@ -20,7 +20,7 @@
 #include <net/net_if.h>
 #include <net/net_context.h>
 
-#include "ipv4.h"
+#define NET_IPV4_IHL_MASK 0x0F
 
 /**
  * @brief Create IPv4 packet in provided net_pkt.
@@ -28,17 +28,12 @@
  * @param pkt Network packet
  * @param src Source IPv4 address
  * @param dst Destination IPv4 address
- * @param iface Network interface
- * @param next_header Protocol type of the next header after IPv4 header.
  *
- * @return Return network packet that contains the IPv4 packet or NULL if
- * network packet could not be allocated.
+ * @return 0 on success, negative errno otherwise.
  */
-struct net_pkt *net_ipv4_create(struct net_pkt *pkt,
-				const struct in_addr *src,
-				const struct in_addr *dst,
-				struct net_if *iface,
-				u8_t next_header_proto);
+int net_ipv4_create(struct net_pkt *pkt,
+		    const struct in_addr *src,
+		    const struct in_addr *dst);
 
 /**
  * @brief Finalize IPv4 packet. It should be called right before
@@ -49,7 +44,8 @@ struct net_pkt *net_ipv4_create(struct net_pkt *pkt,
  * @param pkt Network packet
  * @param next_header_proto Protocol type of the next header after IPv4 header.
  *
+ * @return 0 on success, negative errno otherwise.
  */
-void net_ipv4_finalize(struct net_pkt *pkt, u8_t next_header_proto);
+int net_ipv4_finalize(struct net_pkt *pkt, u8_t next_header_proto);
 
 #endif /* __IPV4_H */

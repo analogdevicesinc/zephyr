@@ -17,17 +17,17 @@
 #include <device.h>
 #include <kernel.h>
 #include <net/buf.h>
-#include <misc/byteorder.h>
-#include <crc8.h>
-#include <crc16.h>
+#include <sys/byteorder.h>
+#include <sys/crc.h>
+#include <sys/crc.h>
 
-#include <gpio.h>
-#include <led_strip.h>
-#include <spi.h>
-#include <uart.h>
-#include <usb/class/usb_hid.h>
+#include <drivers/gpio.h>
+#include <drivers/led_strip.h>
+#include <drivers/spi.h>
+#include <drivers/uart.h>
 #include <usb/usb_device.h>
-#include <watchdog.h>
+#include <usb/class/usb_hid.h>
+#include <drivers/watchdog.h>
 
 #include <ztest.h>
 

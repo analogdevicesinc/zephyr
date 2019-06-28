@@ -1,0 +1,27 @@
+#
+# Copyright (c) 2018, Linaro Limited
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+title: Kinetis TRNG (True Random Number Generator)
+version: 0.1
+
+description: >
+    This binding gives a base representation of the Kinetis RNGA
+
+inherits:
+    !include base.yaml
+
+properties:
+    compatible:
+      constraint: "nxp,kinetis-trng"
+
+    reg:
+      category: required
+
+    interrupts:
+      category: required
+
+    label:
+      category: required

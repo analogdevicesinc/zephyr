@@ -3,9 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: STMicroelectronics MEMS sensors LSM6DSL SPI
-id: st,lsm6dsl-spi
 version: 0.1
 
 description: >
@@ -17,10 +16,9 @@ inherits:
 
 properties:
     compatible:
-        constraint: "st,lsm6dsl-spi"
+        constraint: "st,lsm6dsl"
 
     irq-gpios:
       type: compound
       category: required
-      generation: define, use-prop-name
-...
+      generation: define

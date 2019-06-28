@@ -6,16 +6,20 @@
 
 #include <kernel.h>
 #include <string.h>
-#include <sensor.h>
+#include <drivers/sensor.h>
 #include <init.h>
-#include <gpio.h>
-#include <misc/printk.h>
-#include <misc/__assert.h>
+#include <drivers/gpio.h>
+#include <sys/printk.h>
+#include <sys/__assert.h>
 #include <stdlib.h>
-#include <spi.h>
-#include <i2c.h>
+#include <drivers/spi.h>
+#include <drivers/i2c.h>
+#include <logging/log.h>
 
 #include "adxl372.h"
+
+#define LOG_LEVEL CONFIG_SENSOR_LOG_LEVEL
+LOG_MODULE_REGISTER(ADXL372);
 
 static int adxl372_bus_access(struct device *dev, u8_t reg,
 			      void *data, size_t length)
@@ -115,7 +119,7 @@ static int adxl372_reg_write(struct device *dev,
 			      u8_t reg_addr,
 			      u8_t reg_data)
 {
-	SYS_LOG_DBG("[0x%X] = 0x%X", reg_addr, reg_data);
+	LOG_DBG("[0x%X] = 0x%X", reg_addr, reg_data);
 
 	return adxl372_bus_access(dev, ADXL372_REG_WRITE(reg_addr),
 				  &reg_data, 1);
@@ -197,7 +201,7 @@ static int adxl372_set_activity_threshold_xyz(struct device *dev,
 		if (ret) {
 			return ret;
 		}
-		axis_reg_h += 2;
+		axis_reg_h += 2U;
 	}
 
 	return 0;
@@ -255,7 +259,7 @@ static int adxl372_set_bandwidth(struct device *dev, enum adxl372_bandwidth bw)
 	if (bw == ADXL372_BW_LPF_DISABLED) {
 		mask = ADXL372_POWER_CTL_LPF_DIS_MSK;
 	} else {
-		mask = 0;
+		mask = 0U;
 	}
 
 	ret = adxl372_reg_write_mask(dev, ADXL372_POWER_CTL,
@@ -289,7 +293,7 @@ static int adxl372_set_hpf_corner(struct device *dev, enum adxl372_hpf_corner c)
 	if (c == ADXL372_HPF_DISABLED) {
 		mask = ADXL372_POWER_CTL_HPF_DIS_MSK;
 	} else {
-		mask = 0;
+		mask = 0U;
 	}
 
 	ret = adxl372_reg_write_mask(dev, ADXL372_POWER_CTL,
@@ -457,7 +461,7 @@ int adxl372_get_status(struct device *dev,
 			   u8_t *status2,
 			   u16_t *fifo_entries)
 {
-	u8_t buf[4], length = 1;
+	u8_t buf[4], length = 1U;
 	int ret;
 
 	if (status2) {
@@ -465,7 +469,7 @@ int adxl372_get_status(struct device *dev,
 	}
 
 	if (fifo_entries) {
-		length += 2;
+		length += 2U;
 	}
 
 	ret = adxl372_reg_read_multiple(dev, ADXL372_STATUS_1, buf, length);
@@ -664,7 +668,7 @@ static int adxl372_attr_set_thresh(struct device *dev, enum sensor_channel chan,
 	case SENSOR_CHAN_ACCEL_XYZ:
 		return adxl372_set_activity_threshold_xyz(dev, reg, &threshold);
 	default:
-		SYS_LOG_ERR("attr_set() not supported on this channel");
+		LOG_ERR("attr_set() not supported on this channel");
 		return -ENOTSUP;
 	}
 }
@@ -759,7 +763,7 @@ static int adxl372_probe(struct device *dev)
 	}
 
 	if (dev_id != ADXL372_DEVID_VAL || part_id != ADXL372_PARTID_VAL) {
-		SYS_LOG_ERR("failed to read id (0x%X:0x%X)", dev_id, part_id);
+		LOG_ERR("failed to read id (0x%X:0x%X)", dev_id, part_id);
 		return -ENODEV;
 	}
 
@@ -770,7 +774,7 @@ static int adxl372_probe(struct device *dev)
 	 */
 	adxl372_reg_read(dev, ADXL372_REVID, &dev_id);
 	if (dev_id < 3) {
-		SYS_LOG_WRN("The ADXL372 Rev %u only supports point to point I2C communication!",
+		LOG_WRN("The ADXL372 Rev %u only supports point to point I2C communication!",
 			    dev_id);
 	}
 #endif
@@ -852,7 +856,7 @@ static int adxl372_probe(struct device *dev)
 
 #ifdef CONFIG_ADXL372_TRIGGER
 	if (adxl372_init_interrupt(dev) < 0) {
-		SYS_LOG_ERR("Failed to initialize interrupt!");
+		LOG_ERR("Failed to initialize interrupt!");
 		return -EIO;
 	}
 #endif
@@ -878,7 +882,7 @@ static int adxl372_init(struct device *dev)
 #ifdef CONFIG_ADXL372_I2C
 	data->bus  = device_get_binding(cfg->i2c_port);
 	if (data->bus  == NULL) {
-		SYS_LOG_ERR("Failed to get pointer to %s device!",
+		LOG_ERR("Failed to get pointer to %s device!",
 			    cfg->i2c_port);
 		return -EINVAL;
 	}
@@ -886,7 +890,7 @@ static int adxl372_init(struct device *dev)
 #ifdef CONFIG_ADXL372_SPI
 	data->bus = device_get_binding(cfg->spi_port);
 	if (!data->bus) {
-		SYS_LOG_ERR("spi device not found: %s", cfg->spi_port);
+		LOG_ERR("spi device not found: %s", cfg->spi_port);
 		return -EINVAL;
 	}
 	/* CPOL=0, CPHA=0, max 10MHz */
@@ -894,17 +898,17 @@ static int adxl372_init(struct device *dev)
 	data->spi_cfg.frequency = cfg->spi_max_frequency;
 	data->spi_cfg.slave = cfg->spi_slave;
 
-#if defined(CONFIG_ADXL372_SPI_GPIO_CS)
+#if defined(DT_INST_0_ADI_ADXL372_CS_GPIOS_CONTROLLER)
 	/* handle SPI CS thru GPIO if it is the case */
 
 	data->adxl372_cs_ctrl.gpio_dev = device_get_binding(cfg->gpio_cs_port);
 	if (!data->adxl372_cs_ctrl.gpio_dev) {
-		SYS_LOG_ERR("Unable to get GPIO SPI CS device");
+		LOG_ERR("Unable to get GPIO SPI CS device");
 		return -ENODEV;
 	}
 
 	data->adxl372_cs_ctrl.gpio_pin = cfg->cs_gpio;
-	data->adxl372_cs_ctrl.delay = 0;
+	data->adxl372_cs_ctrl.delay = 0U;
 
 	data->spi_cfg.cs = &data->adxl372_cs_ctrl;
 #endif
@@ -921,21 +925,21 @@ static struct adxl372_data adxl372_data;
 
 static const struct adxl372_dev_config adxl372_config = {
 #ifdef CONFIG_ADXL372_I2C
-	.i2c_port = CONFIG_ADXL372_I2C_MASTER_DEV_NAME,
-	.i2c_addr = CONFIG_ADXL372_I2C_ADDR,
+	.i2c_port = DT_INST_0_ADI_ADXL372_BUS_NAME,
+	.i2c_addr = DT_INST_0_ADI_ADXL372_BASE_ADDRESS,
 #endif
 #ifdef CONFIG_ADXL372_SPI
-	.spi_port = CONFIG_ADXL372_SPI_DEV_NAME,
-	.spi_slave = CONFIG_ADXL372_SPI_DEV_SLAVE,
-	.spi_max_frequency = CONFIG_ADXL372_SPI_BUS_FREQ,
-#ifdef CONFIG_ADXL372_SPI_GPIO_CS
-	.gpio_cs_port = CONFIG_ADXL372_SPI_GPIO_CS_DRV_NAME,
-	.cs_gpio = CONFIG_ADXL372_SPI_GPIO_CS_PIN,
+	.spi_port = DT_INST_0_ADI_ADXL372_BUS_NAME,
+	.spi_slave = DT_INST_0_ADI_ADXL372_BASE_ADDRESS,
+	.spi_max_frequency = DT_INST_0_ADI_ADXL372_SPI_MAX_FREQUENCY,
+#ifdef DT_INST_0_ADI_ADXL372_CS_GPIOS_CONTROLLER
+	.gpio_cs_port = DT_INST_0_ADI_ADXL372_CS_GPIOS_CONTROLLER,
+	.cs_gpio = DT_INST_0_ADI_ADXL372_CS_GPIOS_PIN,
 #endif
 #endif
 #ifdef CONFIG_ADXL372_TRIGGER
-	.gpio_port = CONFIG_ADXL372_GPIO_DEV_NAME,
-	.int_gpio = CONFIG_ADXL372_GPIO_PIN_NUM,
+	.gpio_port = DT_INST_0_ADI_ADXL372_INT1_GPIOS_CONTROLLER,
+	.int_gpio = DT_INST_0_ADI_ADXL372_INT1_GPIOS_PIN,
 #endif
 
 	.max_peak_detect_mode = IS_ENABLED(CONFIG_ADXL372_PEAK_DETECT_MODE),
@@ -1007,6 +1011,6 @@ static const struct adxl372_dev_config adxl372_config = {
 	.op_mode = ADXL372_FULL_BW_MEASUREMENT,
 };
 
-DEVICE_AND_API_INIT(adxl372, CONFIG_ADXL372_DEV_NAME, adxl372_init,
+DEVICE_AND_API_INIT(adxl372, DT_INST_0_ADI_ADXL372_LABEL, adxl372_init,
 		    &adxl372_data, &adxl372_config, POST_KERNEL,
 		    CONFIG_SENSOR_INIT_PRIORITY, &adxl372_api_funcs);

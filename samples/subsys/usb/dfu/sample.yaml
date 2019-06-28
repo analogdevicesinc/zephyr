@@ -1,7 +1,8 @@
 sample:
   name: USB DFU sample
 tests:
-  test:
-    platform_whitelist: nrf52840_pca10056
+  sample.subsys.usb.dfu:
+    build_only: True
+    platform_whitelist: nrf52840_pca10056 intel_s1000_crb
     depends_on: usb_device
     tags: usb

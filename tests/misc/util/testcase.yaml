@@ -1,0 +1,3 @@
+tests:
+  misc.util:
+    tags: util

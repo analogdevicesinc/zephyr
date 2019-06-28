@@ -16,19 +16,9 @@ menuconfig CAN
 
 if CAN
 
-config SYS_LOG_CAN_LEVEL
-	int "CAN driver log level"
-	depends on SYS_LOG
-	default 0
-	range 0 4
-	help
-	  Sets log level for CAN Device Drivers.
-	  Levels are:
-	  0 OFF, do not write
-	  1 ERROR, only write SYS_LOG_ERR
-	  2 WARNING, write SYS_LOG_WRN in addition to previous level
-	  3 INFO, write SYS_LOG_INF in addition to previous levels
-	  4 DEBUG, write SYS_LOG_DBG in addition to previous levels
+module = CAN
+module-str = CAN
+source "subsys/logging/Kconfig.template.log_config"
 
 config CAN_INIT_PRIORITY
 	int "CAN driver init priority"
@@ -39,12 +29,26 @@ config CAN_INIT_PRIORITY
 	  Note that the priority needs to be lower than the net stack
 	  so that it can start before the networking sub-system.
 
+config CAN_WORKQ_FRAMES_BUF_CNT
+	int "Work queue buffer frame count"
+	default 4
+	range 1 65534
+	help
+	  Number of frames in the buffer of a zcan_work.
+
+config CAN_0
+	bool "Enable CAN 0"
+	help
+	  Enable CAN controller 0
+
 config CAN_1
 	bool "Enable CAN 1"
-	default y
 	help
 	  Enable CAN controller 1
 
 source "drivers/can/Kconfig.stm32"
+source "drivers/can/Kconfig.mcux"
+source "drivers/can/Kconfig.mcp2515"
+source "drivers/can/Kconfig.loopback"
 
 endif # CAN

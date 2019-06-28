@@ -1,7 +1,11 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ */
 #ifndef __RISCV32_MIV_SOC_H_
 #define __RISCV32_MIV_SOC_H_
 
 #include <soc_common.h>
+#include <generated_dts_board.h>
 
 /* GPIO Interrupts */
 #define MIV_GPIO_0_IRQ           (RISCV_MAX_GENERIC_IRQ + 0)
@@ -38,19 +42,10 @@
 #define MIV_GPIO_31_IRQ          (RISCV_MAX_GENERIC_IRQ + 31)
 
 /* UART Configuration */
-#define MIV_UART_0_BASE_ADDR         0x70001000
 #define MIV_UART_0_LINECFG           0x1
 
 /* GPIO Configuration */
 #define MIV_GPIO_0_BASE_ADDR         0x70002000
-
-/* Platform Level Interrupt Controller Configuration */
-#define MIV_PLIC_BASE_ADDR           0x40000000
-#define MIV_PLIC_PRIO_BASE_ADDR      MIV_PLIC_BASE_ADDR
-#define MIV_PLIC_IRQ_EN_BASE_ADDR    (MIV_PLIC_BASE_ADDR + 0x2000)
-#define MIV_PLIC_REG_BASE_ADDR       (MIV_PLIC_BASE_ADDR + 0x200000)
-
-#define MIV_PLIC_MAX_PRIORITY        7
 
 /* Clock controller. */
 #define PRCI_BASE_ADDR               0x44000000
@@ -60,7 +55,7 @@
 #define RISCV_MTIMECMP_BASE          0x44004000
 
 /* lib-c hooks required RAM defined variables */
-#define RISCV_RAM_BASE               CONFIG_RISCV_RAM_BASE_ADDR
-#define RISCV_RAM_SIZE               CONFIG_RISCV_RAM_SIZE
+#define RISCV_RAM_BASE               DT_SRAM_BASE_ADDRESS
+#define RISCV_RAM_SIZE               KB(DT_SRAM_SIZE)
 
 #endif /* __RISCV32_MIV_SOC_H_ */

@@ -8,8 +8,8 @@
 #define ZEPHYR_DRIVERS_SENSOR_TMP007_TMP007_H_
 
 #include <device.h>
-#include <gpio.h>
-#include <misc/util.h>
+#include <drivers/gpio.h>
+#include <sys/util.h>
 
 #define TMP007_I2C_ADDRESS		CONFIG_TMP007_I2C_ADDR
 
@@ -79,7 +79,4 @@ int tmp007_trigger_set(struct device *dev,
 int tmp007_init_interrupt(struct device *dev);
 #endif
 
-#define SYS_LOG_DOMAIN "TMP007"
-#define SYS_LOG_LEVEL CONFIG_SYS_LOG_SENSOR_LEVEL
-#include <logging/sys_log.h>
 #endif /* _SENSOR_TMP007_ */

@@ -6,7 +6,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <logging/log.h>
 #include "bmm150.h"
+
+#define LOG_LEVEL CONFIG_SENSOR_LOG_LEVEL
+LOG_MODULE_REGISTER(BMM150);
 
 static const struct {
 	int freq;
@@ -47,7 +51,7 @@ static int bmm150_set_power_mode(struct device *dev,
 					!state) < 0) {
 			return -EIO;
 		}
-		k_busy_wait(5 * USEC_PER_MSEC);
+		k_busy_wait(USEC_PER_MSEC * 5U);
 
 		return 0;
 	case BMM150_POWER_MODE_SLEEP:
@@ -78,7 +82,7 @@ static int bmm150_set_odr(struct device *dev, u8_t val)
 	const struct bmm150_config *config = dev->config->config_info;
 	u8_t i;
 
-	for (i = 0; i < ARRAY_SIZE(bmm150_samp_freq_table); ++i) {
+	for (i = 0U; i < ARRAY_SIZE(bmm150_samp_freq_table); ++i) {
 		if (val <= bmm150_samp_freq_table[i].freq) {
 			return i2c_reg_update_byte(data->i2c,
 						   config->i2c_slave_addr,
@@ -169,7 +173,7 @@ static int bmm150_read_odr(struct device *dev)
 
 	odr_val = (reg_val & BMM150_MASK_ODR) >> BMM150_SHIFT_ODR;
 
-	for (i = 0; i < ARRAY_SIZE(bmm150_samp_freq_table); ++i) {
+	for (i = 0U; i < ARRAY_SIZE(bmm150_samp_freq_table); ++i) {
 		if (bmm150_samp_freq_table[i].reg_val == odr_val) {
 			data->odr = bmm150_samp_freq_table[i].freq;
 			return 0;
@@ -293,12 +297,12 @@ static int bmm150_sample_fetch(struct device *dev, enum sensor_channel chan)
 	u16_t rhall;
 
 	__ASSERT_NO_MSG(chan == SENSOR_CHAN_ALL ||
-			chan == SENSOR_CHAN_MAGN_ANY);
+			chan == SENSOR_CHAN_MAGN_XYZ);
 
 	if (i2c_burst_read(drv_data->i2c, config->i2c_slave_addr,
 			   BMM150_REG_X_L, (u8_t *)values,
 			   sizeof(values)) < 0) {
-		SYS_LOG_ERR("failed to read sample");
+		LOG_ERR("failed to read sample");
 		return -EIO;
 	}
 
@@ -349,7 +353,7 @@ static int bmm150_channel_get(struct device *dev,
 	case SENSOR_CHAN_MAGN_Z:
 		bmm150_convert(val, drv_data->sample_x);
 		break;
-	case SENSOR_CHAN_MAGN_ANY:
+	case SENSOR_CHAN_MAGN_XYZ:
 		bmm150_convert(val, drv_data->sample_x);
 		bmm150_convert(val + 1, drv_data->sample_y);
 		bmm150_convert(val + 2, drv_data->sample_z);
@@ -451,7 +455,7 @@ static int bmm150_attr_set(struct device *dev,
 		}
 
 		if (data->max_odr < val->val1) {
-			SYS_LOG_ERR("not supported with current oversampling");
+			LOG_ERR("not supported with current oversampling");
 			return -ENOTSUP;
 		}
 
@@ -489,35 +493,35 @@ static int bmm150_init_chip(struct device *dev)
 	struct bmm150_preset preset;
 
 	if (bmm150_set_power_mode(dev, BMM150_POWER_MODE_NORMAL, 0) < 0) {
-		SYS_LOG_ERR("failed to bring up device from normal mode");
+		LOG_ERR("failed to bring up device from normal mode");
 		return -EIO;
 	}
 
 	if (bmm150_set_power_mode(dev, BMM150_POWER_MODE_SUSPEND, 1) < 0) {
-		SYS_LOG_ERR("failed to bring up device in suspend mode");
+		LOG_ERR("failed to bring up device in suspend mode");
 		return -EIO;
 	}
 
 	if (bmm150_set_power_mode(dev, BMM150_POWER_MODE_SUSPEND, 0)
 	    < 0) {
-		SYS_LOG_ERR("failed to bring up device from suspend mode");
+		LOG_ERR("failed to bring up device from suspend mode");
 		return -EIO;
 	}
 
 	if (i2c_reg_read_byte(data->i2c, config->i2c_slave_addr,
 			      BMM150_REG_CHIP_ID, &chip_id) < 0) {
-		SYS_LOG_ERR("failed reading chip id");
+		LOG_ERR("failed reading chip id");
 		goto err_poweroff;
 	}
 
 	if (chip_id != BMM150_CHIP_ID_VAL) {
-		SYS_LOG_ERR("invalid chip id 0x%x", chip_id);
+		LOG_ERR("invalid chip id 0x%x", chip_id);
 		goto err_poweroff;
 	}
 
 	preset = bmm150_presets_table[BMM150_DEFAULT_PRESET];
 	if (bmm150_set_odr(dev, preset.odr) < 0) {
-		SYS_LOG_ERR("failed to set ODR to %d",
+		LOG_ERR("failed to set ODR to %d",
 			    preset.odr);
 		goto err_poweroff;
 	}
@@ -526,7 +530,7 @@ static int bmm150_init_chip(struct device *dev)
 			       BMM150_REG_REP_XY,
 			       BMM150_REPXY_TO_REGVAL(preset.rep_xy))
 	    < 0) {
-		SYS_LOG_ERR("failed to set REP XY to %d",
+		LOG_ERR("failed to set REP XY to %d",
 			    preset.rep_xy);
 		goto err_poweroff;
 	}
@@ -534,20 +538,20 @@ static int bmm150_init_chip(struct device *dev)
 	if (i2c_reg_write_byte(data->i2c, config->i2c_slave_addr,
 			       BMM150_REG_REP_Z,
 			       BMM150_REPZ_TO_REGVAL(preset.rep_z)) < 0) {
-		SYS_LOG_ERR("failed to set REP Z to %d",
+		LOG_ERR("failed to set REP Z to %d",
 			    preset.rep_z);
 		goto err_poweroff;
 	}
 
 	if (bmm150_set_power_mode(dev, BMM150_POWER_MODE_NORMAL, 1)
 	    < 0) {
-		SYS_LOG_ERR("failed to power on device");
+		LOG_ERR("failed to power on device");
 	}
 
 	if (i2c_burst_read(data->i2c, config->i2c_slave_addr,
 			   BMM150_REG_TRIM_START, (u8_t *)&data->tregs,
 			   sizeof(data->tregs)) < 0) {
-		SYS_LOG_ERR("failed to read trim regs");
+		LOG_ERR("failed to read trim regs");
 		goto err_poweroff;
 	}
 
@@ -581,13 +585,13 @@ static int bmm150_init(struct device *dev)
 
 	data->i2c = device_get_binding(config->i2c_master_dev_name);
 	if (!data->i2c) {
-		SYS_LOG_ERR("i2c master not found: %s",
+		LOG_ERR("i2c master not found: %s",
 			    config->i2c_master_dev_name);
 		return -EINVAL;
 	}
 
 	if (bmm150_init_chip(dev) < 0) {
-		SYS_LOG_ERR("failed to initialize chip");
+		LOG_ERR("failed to initialize chip");
 		return -EIO;
 	}
 

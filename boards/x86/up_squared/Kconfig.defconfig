@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 
 if BOARD_UP_SQUARED
 
@@ -5,29 +6,56 @@ config BOARD
 	default "up_squared"
 
 config BUILD_OUTPUT_STRIPPED
-	def_bool y
+	default y
+
+if UART_NS16550
+
+config UART_NS16550_PORT_0
+	default y
+
+config UART_NS16550_PORT_1
+	default y
+
+endif # UART_NS16550
 
 if I2C
 
-config I2C_DW
-	def_bool y
-
 config I2C_0
-	def_bool y
+	default y
 
 config I2C_1
-	def_bool y
+	default y
 
 endif # I2C
 
-config SYS_CLOCK_HW_CYCLES_PER_SEC
-	# HPET Timer: 19.2MHz
-	default 19200000 if HPET_TIMER
-	# Atom E3940 TSC: 1593.600MHz
-	default 1593600000 if (LOAPIC_TIMER && BOARD_UP_SQUARED_ATOM)
-	# Celeron N3550 base core freq: 1.1GHz
-	default 1100000000 if (LOAPIC_TIMER && BOARD_UP_SQUARED_CELERON)
-	# Pentium N3550 base core freq: 1.1GHz
-	default 1100000000 if (LOAPIC_TIMER && BOARD_UP_SQUARED_PENTIUM)
+config APIC_TIMER
+	default y if !HPET_TIMER
+
+if HPET_TIMER
+
+config HPET_TIMER_IRQ
+	default 2
+
+endif # HPET_TIMER
+
+if APIC_TIMER
+
+config APIC_TIMER_IRQ
+	default 24
+
+config APIC_TIMER_TSC
+	default y
+
+if APIC_TIMER_TSC
+
+config APIC_TIMER_TSC_M
+	default 3
+
+config APIC_TIMER_TSC_N
+	default 249
+
+endif # APIC_TIMER_TSC
+
+endif # APIC_TIMER
 
 endif # BOARD_UP_SQUARED

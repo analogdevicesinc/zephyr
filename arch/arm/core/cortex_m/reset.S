@@ -11,7 +11,6 @@
  * Reset handler that prepares the system for running C code.
  */
 
-#include <board.h>
 #include <toolchain.h>
 #include <linker/sections.h>
 #include <arch/cpu.h>
@@ -23,7 +22,7 @@ GTEXT(__reset)
 GTEXT(memset)
 GDATA(_interrupt_stack)
 #if defined(CONFIG_PLATFORM_SPECIFIC_INIT)
-GTEXT(_PlatformInit)
+GTEXT(z_platform_init)
 #endif
 
 /**
@@ -60,7 +59,7 @@ SECTION_SUBSEC_FUNC(TEXT,_reset_section,__reset)
 SECTION_SUBSEC_FUNC(TEXT,_reset_section,__start)
 
 #if defined(CONFIG_PLATFORM_SPECIFIC_INIT)
-    bl _PlatformInit
+    bl z_platform_init
 #endif
 
     /* lock interrupts: will get unlocked when switch to main task */
@@ -71,7 +70,7 @@ SECTION_SUBSEC_FUNC(TEXT,_reset_section,__start)
     msr BASEPRI, r0
 #else
 #error Unknown ARM architecture
-#endif /* CONFIG_ARMV6_M_ARMV8_M_BASELINE */
+#endif
 
 #ifdef CONFIG_WDOG_INIT
     /* board-specific watchdog initialization is necessary */
@@ -87,19 +86,21 @@ SECTION_SUBSEC_FUNC(TEXT,_reset_section,__start)
 
     /*
      * Set PSP and use it to boot without using MSP, so that it
-     * gets set to _interrupt_stack during initialisation.
+     * gets set to _interrupt_stack during initialization.
      */
     ldr r0, =_interrupt_stack
     ldr r1, =CONFIG_ISR_STACK_SIZE
     adds r0, r0, r1
     msr PSP, r0
-    movs.n r0, #2	/* switch to using PSP (bit1 of CONTROL reg) */
+    mrs r0, CONTROL
+    movs r1, #2
+    orrs r0, r1 /* CONTROL_SPSEL_Msk */
     msr CONTROL, r0
     /*
      * When changing the stack pointer, software must use an ISB instruction
      * immediately after the MSR instruction. This ensures that instructions
      * after the ISB instruction execute using the new stack pointer.
-    */
+     */
     isb
 
     /*

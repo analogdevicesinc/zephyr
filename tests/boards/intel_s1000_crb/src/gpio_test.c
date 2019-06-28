@@ -7,10 +7,10 @@
 /**
  * @file
  *
- * @brief Sample app to utilize GPIO on Intel_S1000.
+ * @brief Sample app to utilize GPIO on Intel S1000 CRB.
  *
- * Intel_S1000 - Xtensa
- * --------------------
+ * Intel S1000 CRB
+ * ---------------
  *
  * The gpio_dw driver is being used.
  *
@@ -28,10 +28,10 @@
  */
 
 #include <zephyr.h>
-#include <misc/printk.h>
+#include <sys/printk.h>
 
 #include <device.h>
-#include <gpio.h>
+#include <drivers/gpio.h>
 
 #define GPIO_OUT_PIN            23
 #define GPIO_INT_PIN            24
@@ -89,7 +89,7 @@ void setup_gpio(struct device *gpio_dev)
 	}
 
 	/* Disable the GPIO interrupt. It is enabled by default */
-	/* irq_disable(GPIO_DW_0_IRQ); */
+	/* irq_disable(DT_GPIO_DW_0_IRQ); */
 }
 
 /* gpio_thread is a static thread that is spawned automatically */
@@ -98,7 +98,7 @@ void gpio_thread(void *dummy1, void *dummy2, void *dummy3)
 	struct device *gpio_dev;
 	int ret;
 	int toggle = 1;
-	u32_t read_val = 0;
+	u32_t read_val = 0U;
 
 	ARG_UNUSED(dummy1);
 	ARG_UNUSED(dummy2);

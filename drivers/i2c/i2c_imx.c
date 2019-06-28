@@ -5,10 +5,14 @@
  */
 
 #include <errno.h>
-#include <i2c.h>
+#include <drivers/i2c.h>
 #include <soc.h>
 #include <i2c_imx.h>
-#include <misc/util.h>
+#include <sys/util.h>
+
+#include <logging/log.h>
+LOG_MODULE_REGISTER(i2c_imx);
+
 #include "i2c-priv.h"
 
 #define DEV_CFG(dev) \
@@ -92,7 +96,7 @@ static void i2c_imx_read(struct device *dev, u8_t *rxBuffer, u8_t rxSize)
 	transfer->rxBuff = rxBuffer;
 	transfer->rxSize = rxSize;
 
-	if (transfer->rxSize == 1) {
+	if (transfer->rxSize == 1U) {
 		/* Send Nack */
 		I2C_SetAckBit(base, false);
 	} else {
@@ -131,9 +135,9 @@ static int i2c_imx_configure(struct device *dev, u32_t dev_config_raw)
 	/* Initialize I2C state structure content. */
 	transfer->txBuff = 0;
 	transfer->rxBuff = 0;
-	transfer->cmdSize = 0;
-	transfer->txSize = 0;
-	transfer->rxSize = 0;
+	transfer->cmdSize = 0U;
+	transfer->txSize = 0U;
+	transfer->rxSize = 0U;
 	transfer->isBusy = false;
 	transfer->currentDir = i2cDirectionReceive;
 	transfer->currentMode = i2cModeSlave;
@@ -190,7 +194,7 @@ static int i2c_imx_transfer(struct device *dev, struct i2c_msg *msgs,
 	while ((I2C_I2SR_REG(base) & i2cStatusBusBusy) && (--timeout)) {
 	}
 
-	if (timeout == 0) {
+	if (timeout == 0U) {
 		return result;
 	}
 
@@ -268,8 +272,9 @@ static void i2c_imx_isr(void *arg)
 
 
 	/* Exit the ISR if no transfer is happening for this instance. */
-	if (!transfer->isBusy)
+	if (!transfer->isBusy) {
 		return;
+	}
 
 	if (i2cModeMaster == transfer->currentMode) {
 		if (i2cDirectionTransmit == transfer->currentDir) {
@@ -277,7 +282,7 @@ static void i2c_imx_isr(void *arg)
 			transfer->ack =
 			!(I2C_GetStatusFlag(base, i2cStatusReceivedAck));
 
-			if (transfer->txSize == 0) {
+			if (transfer->txSize == 0U) {
 				/* Close I2C interrupt. */
 				I2C_SetIntCmd(base, false);
 				/* Release I2C Bus. */
@@ -290,7 +295,7 @@ static void i2c_imx_isr(void *arg)
 			}
 		} else {
 			/* Normal read operation. */
-			if (transfer->rxSize == 2) {
+			if (transfer->rxSize == 2U) {
 				/* Send Nack */
 				I2C_SetAckBit(base, false);
 			} else {
@@ -298,7 +303,7 @@ static void i2c_imx_isr(void *arg)
 				I2C_SetAckBit(base, true);
 			}
 
-			if (transfer->rxSize == 1) {
+			if (transfer->rxSize == 1U) {
 				/* Switch back to Tx direction to avoid
 				 * additional I2C bus read.
 				 */
@@ -311,7 +316,7 @@ static void i2c_imx_isr(void *arg)
 			transfer->rxSize--;
 
 			/* receive finished. */
-			if (transfer->rxSize == 0) {
+			if (transfer->rxSize == 0U) {
 				/* Close I2C interrupt. */
 				I2C_SetIntCmd(base, false);
 				/* Release I2C Bus. */
@@ -331,7 +336,7 @@ static int i2c_imx_init(struct device *dev)
 
 	k_sem_init(&data->device_sync_sem, 0, UINT_MAX);
 
-	bitrate_cfg = _i2c_map_dt_bitrate(config->bitrate);
+	bitrate_cfg = i2c_map_dt_bitrate(config->bitrate);
 
 	error = i2c_imx_configure(dev, I2C_MODE_MASTER | bitrate_cfg);
 	if (error) {
@@ -352,14 +357,14 @@ static const struct i2c_driver_api i2c_imx_driver_api = {
 static void i2c_imx_config_func_1(struct device *dev);
 
 static const struct i2c_imx_config i2c_imx_config_1 = {
-	.base = (I2C_Type *)I2C_1_BASE_ADDRESS,
+	.base = (I2C_Type *)DT_FSL_IMX7D_I2C_I2C_1_BASE_ADDRESS,
 	.irq_config_func = i2c_imx_config_func_1,
-	.bitrate = I2C_1_CLOCK_FREQUENCY,
+	.bitrate = DT_FSL_IMX7D_I2C_I2C_1_CLOCK_FREQUENCY,
 };
 
 static struct i2c_imx_data i2c_imx_data_1;
 
-DEVICE_AND_API_INIT(i2c_imx_1, I2C_1_LABEL, &i2c_imx_init,
+DEVICE_AND_API_INIT(i2c_imx_1, DT_FSL_IMX7D_I2C_I2C_1_LABEL, &i2c_imx_init,
 			&i2c_imx_data_1, &i2c_imx_config_1,
 			POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
 			&i2c_imx_driver_api);
@@ -368,10 +373,10 @@ static void i2c_imx_config_func_1(struct device *dev)
 {
 	ARG_UNUSED(dev);
 
-	IRQ_CONNECT(I2C_1_IRQ, I2C_1_IRQ_PRIORITY,
+	IRQ_CONNECT(DT_FSL_IMX7D_I2C_I2C_1_IRQ_0, DT_FSL_IMX7D_I2C_I2C_1_IRQ_0_PRIORITY,
 			i2c_imx_isr, DEVICE_GET(i2c_imx_1), 0);
 
-	irq_enable(I2C_1_IRQ);
+	irq_enable(DT_FSL_IMX7D_I2C_I2C_1_IRQ_0);
 }
 #endif /* CONFIG_I2C_1 */
 
@@ -379,14 +384,14 @@ static void i2c_imx_config_func_1(struct device *dev)
 static void i2c_imx_config_func_2(struct device *dev);
 
 static const struct i2c_imx_config i2c_imx_config_2 = {
-	.base = (I2C_Type *)I2C_2_BASE_ADDRESS,
+	.base = (I2C_Type *)DT_FSL_IMX7D_I2C_I2C_2_BASE_ADDRESS,
 	.irq_config_func = i2c_imx_config_func_2,
-	.bitrate = I2C_2_CLOCK_FREQUENCY,
+	.bitrate = DT_FSL_IMX7D_I2C_I2C_2_CLOCK_FREQUENCY,
 };
 
 static struct i2c_imx_data i2c_imx_data_2;
 
-DEVICE_AND_API_INIT(i2c_imx_2, I2C_2_LABEL, &i2c_imx_init,
+DEVICE_AND_API_INIT(i2c_imx_2, DT_FSL_IMX7D_I2C_I2C_2_LABEL, &i2c_imx_init,
 			&i2c_imx_data_2, &i2c_imx_config_2,
 			POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
 			&i2c_imx_driver_api);
@@ -395,10 +400,10 @@ static void i2c_imx_config_func_2(struct device *dev)
 {
 	ARG_UNUSED(dev);
 
-	IRQ_CONNECT(I2C_2_IRQ, I2C_2_IRQ_PRIORITY,
+	IRQ_CONNECT(DT_FSL_IMX7D_I2C_I2C_2_IRQ_0, DT_FSL_IMX7D_I2C_I2C_2_IRQ_0_PRIORITY,
 			i2c_imx_isr, DEVICE_GET(i2c_imx_2), 0);
 
-	irq_enable(I2C_2_IRQ);
+	irq_enable(DT_FSL_IMX7D_I2C_I2C_2_IRQ_0);
 }
 #endif /* CONFIG_I2C_2 */
 
@@ -406,14 +411,14 @@ static void i2c_imx_config_func_2(struct device *dev)
 static void i2c_imx_config_func_3(struct device *dev);
 
 static const struct i2c_imx_config i2c_imx_config_3 = {
-	.base = (I2C_Type *)I2C_3_BASE_ADDRESS,
+	.base = (I2C_Type *)DT_FSL_IMX7D_I2C_I2C_3_BASE_ADDRESS,
 	.irq_config_func = i2c_imx_config_func_3,
-	.bitrate = I2C_3_CLOCK_FREQUENCY,
+	.bitrate = DT_FSL_IMX7D_I2C_I2C_3_CLOCK_FREQUENCY,
 };
 
 static struct i2c_imx_data i2c_imx_data_3;
 
-DEVICE_AND_API_INIT(i2c_imx_3, I2C_3_LABEL, &i2c_imx_init,
+DEVICE_AND_API_INIT(i2c_imx_3, DT_FSL_IMX7D_I2C_I2C_3_LABEL, &i2c_imx_init,
 			&i2c_imx_data_3, &i2c_imx_config_3,
 			POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
 			&i2c_imx_driver_api);
@@ -422,10 +427,10 @@ static void i2c_imx_config_func_3(struct device *dev)
 {
 	ARG_UNUSED(dev);
 
-	IRQ_CONNECT(I2C_3_IRQ, I2C_3_IRQ_PRIORITY,
+	IRQ_CONNECT(DT_FSL_IMX7D_I2C_I2C_3_IRQ_0, DT_FSL_IMX7D_I2C_I2C_3_IRQ_0_PRIORITY,
 			i2c_imx_isr, DEVICE_GET(i2c_imx_3), 0);
 
-	irq_enable(I2C_3_IRQ);
+	irq_enable(DT_FSL_IMX7D_I2C_I2C_3_IRQ_0);
 }
 #endif /* CONFIG_I2C_3 */
 
@@ -433,14 +438,14 @@ static void i2c_imx_config_func_3(struct device *dev)
 static void i2c_imx_config_func_4(struct device *dev);
 
 static const struct i2c_imx_config i2c_imx_config_4 = {
-	.base = (I2C_Type *)I2C_4_BASE_ADDRESS,
+	.base = (I2C_Type *)DT_FSL_IMX7D_I2C_I2C_4_BASE_ADDRESS,
 	.irq_config_func = i2c_imx_config_func_4,
-	.bitrate = I2C_4_CLOCK_FREQUENCY,
+	.bitrate = DT_FSL_IMX7D_I2C_I2C_4_CLOCK_FREQUENCY,
 };
 
 static struct i2c_imx_data i2c_imx_data_4;
 
-DEVICE_AND_API_INIT(i2c_imx_4, I2C_4_LABEL, &i2c_imx_init,
+DEVICE_AND_API_INIT(i2c_imx_4, DT_FSL_IMX7D_I2C_I2C_4_LABEL, &i2c_imx_init,
 			&i2c_imx_data_4, &i2c_imx_config_4,
 			POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
 			&i2c_imx_driver_api);
@@ -448,9 +453,9 @@ DEVICE_AND_API_INIT(i2c_imx_4, I2C_4_LABEL, &i2c_imx_init,
 static void i2c_imx_config_func_4(struct device *dev)
 {
 	ARG_UNUSED(dev);
-	IRQ_CONNECT(I2C_4_IRQ, I2C_4_IRQ_PRIORITY,
+	IRQ_CONNECT(DT_FSL_IMX7D_I2C_I2C_4_IRQ_0, DT_FSL_IMX7D_I2C_I2C_4_IRQ_0_PRIORITY,
 			i2c_imx_isr, DEVICE_GET(i2c_imx_4), 0);
 
-	irq_enable(I2C_4_IRQ);
+	irq_enable(DT_FSL_IMX7D_I2C_I2C_4_IRQ_0);
 }
 #endif /* CONFIG_I2C_4 */

@@ -13,8 +13,10 @@
 
 	chosen {
 		zephyr,console = &usart1;
+		zephyr,shell-uart = &usart1;
 		zephyr,sram = &sram0;
 		zephyr,flash = &flash0;
+		zephyr,code-partition = &slot0_partition;
 	};
 
 	leds {
@@ -48,24 +50,18 @@
 	current-speed = <115200>;
 	pinctrl-0 = <&usart1_pins_b>;
 	pinctrl-names = "default";
-	status = "ok";
+	status = "okay";
 };
 
 &usart2 {
 	current-speed = <115200>;
 	pinctrl-0 = <&usart2_pins_a>;
 	pinctrl-names = "default";
-	status = "ok";
+	status = "okay";
 };
 
 &flash0 {
 	partitions {
-		/*
-		 * If chosen's zephyr,code-partion is unset, the image will be
-		 * linked into the entire flash device.  If it points to an
-		 * individual partition, the code will be linked to, and
-		 * restricted to that partition.
-		 */
 		compatible = "fixed-partitions";
 		#address-cells = <1>;
 		#size-cells = <1>;
@@ -94,4 +90,8 @@
 			reg = <0x0000C000 0x00004000>;
 		};
 	};
+};
+
+&iwdg {
+	status = "okay";
 };

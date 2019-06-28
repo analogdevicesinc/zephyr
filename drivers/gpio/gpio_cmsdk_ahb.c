@@ -8,7 +8,7 @@
 
 #include <device.h>
 #include <errno.h>
-#include <gpio.h>
+#include <drivers/gpio.h>
 #include <init.h>
 #include <soc.h>
 #include <clock_control/arm_clock_control.h>
@@ -38,7 +38,7 @@ struct gpio_cmsdk_ahb_dev_data {
 	sys_slist_t gpio_cb;
 };
 
-static void cmsdk_ahb_gpio_config(struct device *dev, u32_t mask, int flags)
+static int cmsdk_ahb_gpio_config(struct device *dev, u32_t mask, int flags)
 {
 	const struct gpio_cmsdk_ahb_cfg * const cfg = dev->config->config_info;
 
@@ -57,7 +57,7 @@ static void cmsdk_ahb_gpio_config(struct device *dev, u32_t mask, int flags)
 	/* Setup interrupt config */
 	if (flags & GPIO_INT) {
 		if (flags & GPIO_INT_DOUBLE_EDGE) {
-			/* FIXME: Not supported in this iteration */
+			return -ENOTSUP;
 		} else {
 			/*
 			 * Interrupt type:
@@ -83,6 +83,8 @@ static void cmsdk_ahb_gpio_config(struct device *dev, u32_t mask, int flags)
 	}
 
 	cfg->port->altfuncclr = mask;
+
+	return 0;
 }
 
 /**
@@ -98,18 +100,20 @@ static void cmsdk_ahb_gpio_config(struct device *dev, u32_t mask, int flags)
 static int gpio_cmsdk_ahb_config(struct device *dev, int access_op,
 				 u32_t pin, int flags)
 {
+	int ret = 0;
+
 	switch (access_op) {
 	case GPIO_ACCESS_BY_PIN:
-		cmsdk_ahb_gpio_config(dev, BIT(pin), flags);
+		ret = cmsdk_ahb_gpio_config(dev, BIT(pin), flags);
 		break;
 	case GPIO_ACCESS_BY_PORT:
-		cmsdk_ahb_gpio_config(dev, (0xFFFF), flags);
+		ret = cmsdk_ahb_gpio_config(dev, (0xFFFF), flags);
 		break;
 	default:
 		return -ENOTSUP;
 	}
 
-	return 0;
+	return ret;
 }
 
 /**
@@ -205,7 +209,7 @@ static void gpio_cmsdk_ahb_isr(void *arg)
 
 	int_stat = cfg->port->intstatus;
 
-	_gpio_fire_callbacks(&data->gpio_cb, dev, int_stat);
+	gpio_fire_callbacks(&data->gpio_cb, dev, int_stat);
 
 	/* clear the port interrupts */
 	cfg->port->intclear = 0xFFFFFFFF;
@@ -217,9 +221,7 @@ static int gpio_cmsdk_ahb_manage_callback(struct device *dev,
 {
 	struct gpio_cmsdk_ahb_dev_data *data = dev->driver_data;
 
-	_gpio_manage_callback(&data->gpio_cb, callback, set);
-
-	return 0;
+	return gpio_manage_callback(&data->gpio_cb, callback, set);
 }
 
 static int gpio_cmsdk_ahb_enable_callback(struct device *dev,
@@ -307,14 +309,14 @@ static int gpio_cmsdk_ahb_init(struct device *dev)
 static void gpio_cmsdk_ahb_config_0(struct device *dev);
 
 static const struct gpio_cmsdk_ahb_cfg gpio_cmsdk_ahb_0_cfg = {
-	.port = ((volatile struct gpio_cmsdk_ahb *)CMSDK_AHB_GPIO0),
+	.port = ((volatile struct gpio_cmsdk_ahb *)DT_CMSDK_AHB_GPIO0),
 	.gpio_config_func = gpio_cmsdk_ahb_config_0,
 	.gpio_cc_as = {.bus = CMSDK_AHB, .state = SOC_ACTIVE,
-		       .device = CMSDK_AHB_GPIO0,},
+		       .device = DT_CMSDK_AHB_GPIO0,},
 	.gpio_cc_ss = {.bus = CMSDK_AHB, .state = SOC_SLEEP,
-		       .device = CMSDK_AHB_GPIO0,},
+		       .device = DT_CMSDK_AHB_GPIO0,},
 	.gpio_cc_dss = {.bus = CMSDK_AHB, .state = SOC_DEEPSLEEP,
-			.device = CMSDK_AHB_GPIO0,},
+			.device = DT_CMSDK_AHB_GPIO0,},
 };
 
 static struct gpio_cmsdk_ahb_dev_data gpio_cmsdk_ahb_0_data;
@@ -328,10 +330,10 @@ DEVICE_AND_API_INIT(gpio_cmsdk_ahb_0,
 
 static void gpio_cmsdk_ahb_config_0(struct device *dev)
 {
-	IRQ_CONNECT(IRQ_PORT0_ALL, CONFIG_GPIO_CMSDK_AHB_PORT0_IRQ_PRI,
+	IRQ_CONNECT(DT_IRQ_PORT0_ALL, CONFIG_GPIO_CMSDK_AHB_PORT0_IRQ_PRI,
 		    gpio_cmsdk_ahb_isr,
 		    DEVICE_GET(gpio_cmsdk_ahb_0), 0);
-	irq_enable(IRQ_PORT0_ALL);
+	irq_enable(DT_IRQ_PORT0_ALL);
 }
 #endif /* CONFIG_GPIO_CMSDK_AHB_PORT0 */
 
@@ -340,14 +342,14 @@ static void gpio_cmsdk_ahb_config_0(struct device *dev)
 static void gpio_cmsdk_ahb_config_1(struct device *dev);
 
 static const struct gpio_cmsdk_ahb_cfg gpio_cmsdk_ahb_1_cfg = {
-	.port = ((volatile struct gpio_cmsdk_ahb *)CMSDK_AHB_GPIO1),
+	.port = ((volatile struct gpio_cmsdk_ahb *)DT_CMSDK_AHB_GPIO1),
 	.gpio_config_func = gpio_cmsdk_ahb_config_1,
 	.gpio_cc_as = {.bus = CMSDK_AHB, .state = SOC_ACTIVE,
-		       .device = CMSDK_AHB_GPIO1,},
+		       .device = DT_CMSDK_AHB_GPIO1,},
 	.gpio_cc_ss = {.bus = CMSDK_AHB, .state = SOC_SLEEP,
-		       .device = CMSDK_AHB_GPIO1,},
+		       .device = DT_CMSDK_AHB_GPIO1,},
 	.gpio_cc_dss = {.bus = CMSDK_AHB, .state = SOC_DEEPSLEEP,
-			.device = CMSDK_AHB_GPIO1,},
+			.device = DT_CMSDK_AHB_GPIO1,},
 };
 
 static struct gpio_cmsdk_ahb_dev_data gpio_cmsdk_ahb_1_data;
@@ -361,10 +363,10 @@ DEVICE_AND_API_INIT(gpio_cmsdk_ahb_1,
 
 static void gpio_cmsdk_ahb_config_1(struct device *dev)
 {
-	IRQ_CONNECT(IRQ_PORT1_ALL, CONFIG_GPIO_CMSDK_AHB_PORT1_IRQ_PRI,
+	IRQ_CONNECT(DT_IRQ_PORT1_ALL, CONFIG_GPIO_CMSDK_AHB_PORT1_IRQ_PRI,
 		    gpio_cmsdk_ahb_isr,
 		    DEVICE_GET(gpio_cmsdk_ahb_1), 0);
-	irq_enable(IRQ_PORT1_ALL);
+	irq_enable(DT_IRQ_PORT1_ALL);
 }
 #endif /* CONFIG_GPIO_CMSDK_AHB_PORT1 */
 
@@ -373,14 +375,14 @@ static void gpio_cmsdk_ahb_config_1(struct device *dev)
 static void gpio_cmsdk_ahb_config_2(struct device *dev);
 
 static const struct gpio_cmsdk_ahb_cfg gpio_cmsdk_ahb_2_cfg = {
-	.port = ((volatile struct gpio_cmsdk_ahb *)CMSDK_AHB_GPIO2),
+	.port = ((volatile struct gpio_cmsdk_ahb *)DT_CMSDK_AHB_GPIO2),
 	.gpio_config_func = gpio_cmsdk_ahb_config_2,
 	.gpio_cc_as = {.bus = CMSDK_AHB, .state = SOC_ACTIVE,
-		       .device = CMSDK_AHB_GPIO2,},
+		       .device = DT_CMSDK_AHB_GPIO2,},
 	.gpio_cc_ss = {.bus = CMSDK_AHB, .state = SOC_SLEEP,
-		       .device = CMSDK_AHB_GPIO2,},
+		       .device = DT_CMSDK_AHB_GPIO2,},
 	.gpio_cc_dss = {.bus = CMSDK_AHB, .state = SOC_DEEPSLEEP,
-			.device = CMSDK_AHB_GPIO2,},
+			.device = DT_CMSDK_AHB_GPIO2,},
 };
 
 static struct gpio_cmsdk_ahb_dev_data gpio_cmsdk_ahb_2_data;
@@ -394,10 +396,10 @@ DEVICE_AND_API_INIT(gpio_cmsdk_ahb_2,
 
 static void gpio_cmsdk_ahb_config_2(struct device *dev)
 {
-	IRQ_CONNECT(IRQ_PORT2_ALL, CONFIG_GPIO_CMSDK_AHB_PORT2_IRQ_PRI,
+	IRQ_CONNECT(DT_IRQ_PORT2_ALL, CONFIG_GPIO_CMSDK_AHB_PORT2_IRQ_PRI,
 		    gpio_cmsdk_ahb_isr,
 		    DEVICE_GET(gpio_cmsdk_ahb_2), 0);
-	irq_enable(IRQ_PORT2_ALL);
+	irq_enable(DT_IRQ_PORT2_ALL);
 }
 #endif /* CONFIG_GPIO_CMSDK_AHB_PORT2 */
 
@@ -406,14 +408,14 @@ static void gpio_cmsdk_ahb_config_2(struct device *dev)
 static void gpio_cmsdk_ahb_config_3(struct device *dev);
 
 static const struct gpio_cmsdk_ahb_cfg gpio_cmsdk_ahb_3_cfg = {
-	.port = ((volatile struct gpio_cmsdk_ahb *)CMSDK_AHB_GPIO3),
+	.port = ((volatile struct gpio_cmsdk_ahb *)DT_CMSDK_AHB_GPIO3),
 	.gpio_config_func = gpio_cmsdk_ahb_config_3,
 	.gpio_cc_as = {.bus = CMSDK_AHB, .state = SOC_ACTIVE,
-		       .device = CMSDK_AHB_GPIO3,},
+		       .device = DT_CMSDK_AHB_GPIO3,},
 	.gpio_cc_ss = {.bus = CMSDK_AHB, .state = SOC_SLEEP,
-		       .device = CMSDK_AHB_GPIO3,},
+		       .device = DT_CMSDK_AHB_GPIO3,},
 	.gpio_cc_dss = {.bus = CMSDK_AHB, .state = SOC_DEEPSLEEP,
-			.device = CMSDK_AHB_GPIO3,},
+			.device = DT_CMSDK_AHB_GPIO3,},
 };
 
 static struct gpio_cmsdk_ahb_dev_data gpio_cmsdk_ahb_3_data;
@@ -427,9 +429,9 @@ DEVICE_AND_API_INIT(gpio_cmsdk_ahb_3,
 
 static void gpio_cmsdk_ahb_config_3(struct device *dev)
 {
-	IRQ_CONNECT(IRQ_PORT3_ALL, CONFIG_GPIO_CMSDK_AHB_PORT3_IRQ_PRI,
+	IRQ_CONNECT(DT_IRQ_PORT3_ALL, CONFIG_GPIO_CMSDK_AHB_PORT3_IRQ_PRI,
 		    gpio_cmsdk_ahb_isr,
 		    DEVICE_GET(gpio_cmsdk_ahb_3), 0);
-	irq_enable(IRQ_PORT3_ALL);
+	irq_enable(DT_IRQ_PORT3_ALL);
 }
 #endif /* CONFIG_GPIO_CMSDK_AHB_PORT3 */

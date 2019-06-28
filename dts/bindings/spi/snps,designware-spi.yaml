@@ -3,9 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: Synopsys Designware SPI Controller
-id: snps,designware-spi
 version: 0.1
 
 description: >
@@ -19,14 +18,7 @@ properties:
       constraint: "snps,designware-spi"
 
     reg:
-      type: array
-      description: mmio register space
-      generation: define
       category: required
 
     interrupts:
-      type: array
       category: required
-      description: required interrupts
-      generation: define
-...

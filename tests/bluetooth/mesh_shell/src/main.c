@@ -8,15 +8,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <misc/printk.h>
+#include <sys/printk.h>
 #include <zephyr.h>
 
-#include <shell/legacy_shell.h>
+#include <shell/shell.h>
 
 void main(void)
 {
-	printk("Type \"help\" for supported commands.\n");
-	printk("Before any Bluetooth commands you must run \"init\"\n");
-
-	shell_register_default_module("mesh");
+	printk("Press the <Tab> button for supported commands.\n");
+	printk("Before any Mesh commands you must run \"mesh init\"\n");
 }

@@ -1,0 +1,8 @@
+sample:
+  description: TBD
+  name: TBD
+tests:
+  sample.net.sockets.coap_client:
+    harness: net
+    tags: net socket
+    platform_whitelist: qemu_x86

@@ -15,14 +15,15 @@
 
 #include <kernel.h>
 #include <arch/cpu.h>
-#include <misc/util.h>
+#include <sys/util.h>
 #include <toolchain.h>
 #include <cache.h>
 #include <linker/linker-defs.h>
 #include <arch/arc/v2/aux_regs.h>
 #include <kernel_internal.h>
-#include <misc/__assert.h>
+#include <sys/__assert.h>
 #include <init.h>
+#include <stdbool.h>
 
 #if defined(CONFIG_CACHE_FLUSHING)
 
@@ -48,19 +49,19 @@
 #define DC_CTRL_OP_SUCCEEDED         0x4  /* d-cache operation succeeded */
 
 
-static int dcache_available(void)
+static bool dcache_available(void)
 {
-	unsigned long val = _arc_v2_aux_reg_read(_ARC_V2_D_CACHE_BUILD);
+	unsigned long val = z_arc_v2_aux_reg_read(_ARC_V2_D_CACHE_BUILD);
 
 	val &= 0xff; /* extract version */
-	return (val == 0)?0:1;
+	return (val == 0) ? false : true;
 }
 
 static void dcache_dc_ctrl(u32_t dcache_en_mask)
 {
-	if (!dcache_available())
-		return;
-	_arc_v2_aux_reg_write(_ARC_V2_DC_CTRL, dcache_en_mask);
+	if (dcache_available()) {
+		z_arc_v2_aux_reg_write(_ARC_V2_DC_CTRL, dcache_en_mask);
+	}
 }
 
 static void dcache_enable(void)
@@ -90,7 +91,7 @@ static void dcache_flush_mlines(u32_t start_addr, u32_t size)
 	u32_t end_addr;
 	unsigned int key;
 
-	if (!dcache_available() || (size == 0)) {
+	if (!dcache_available() || (size == 0U)) {
 		return;
 	}
 
@@ -100,15 +101,16 @@ static void dcache_flush_mlines(u32_t start_addr, u32_t size)
 	key = irq_lock(); /* --enter critical section-- */
 
 	do {
-		_arc_v2_aux_reg_write(_ARC_V2_DC_FLDL, start_addr);
+		z_arc_v2_aux_reg_write(_ARC_V2_DC_FLDL, start_addr);
 		__asm__ volatile("nop_s");
 		__asm__ volatile("nop_s");
 		__asm__ volatile("nop_s");
 		/* wait for flush completion */
 		do {
-			if ((_arc_v2_aux_reg_read(_ARC_V2_DC_CTRL) &
-				DC_CTRL_FLUSH_STATUS) == 0)
+			if ((z_arc_v2_aux_reg_read(_ARC_V2_DC_CTRL) &
+			     DC_CTRL_FLUSH_STATUS) == 0) {
 				break;
+			}
 		} while (1);
 		start_addr += DCACHE_LINE_SIZE;
 	} while (start_addr <= end_addr);
@@ -147,10 +149,10 @@ static void init_dcache_line_size(void)
 {
 	u32_t val;
 
-	val = _arc_v2_aux_reg_read(_ARC_V2_D_CACHE_BUILD);
-	__ASSERT((val&0xff) != 0, "d-cache is not present");
+	val = z_arc_v2_aux_reg_read(_ARC_V2_D_CACHE_BUILD);
+	__ASSERT((val&0xff) != 0U, "d-cache is not present");
 	val = ((val>>16) & 0xf) + 1;
-	val *= 16;
+	val *= 16U;
 	sys_cache_line_size = (size_t) val;
 }
 #endif

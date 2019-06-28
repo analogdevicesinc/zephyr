@@ -9,13 +9,13 @@
 #include <zephyr/types.h>
 #include <stddef.h>
 #include <string.h>
-#include <misc/printk.h>
+#include <sys/printk.h>
 
 #include <net/buf.h>
 
 #include <ztest.h>
 
-#define TEST_TIMEOUT SECONDS(1)
+#define TEST_TIMEOUT K_SECONDS(1)
 
 struct bt_data {
 	void *hci_sync;

@@ -19,6 +19,11 @@ menuconfig ADC
 
 if ADC
 
+config ADC_SHELL
+	bool "Enable ADC Shell"
+	help
+	  Enable ADC Shell for testing.
+
 # By selecting or not this option particular ADC drivers indicate if it is
 # required to explicitly specify analog inputs when configuring channels or
 # just the channel identifier is sufficient.
@@ -31,26 +36,9 @@ config ADC_ASYNC
 	help
 	  This option enables the asynchronous API calls.
 
-config SYS_LOG_ADC_LEVEL
-	int "ADC drivers log level"
-	depends on SYS_LOG
-	default 0
-	range 0 4
-	help
-
-	  Sets log level for ADC driver.
-
-	  Levels are:
-
-	  - 0 OFF, do not write
-
-	  - 1 ERROR, only write SYS_LOG_ERR
-
-	  - 2 WARNING, write SYS_LOG_WRN in addition to previous level
-
-	  - 3 INFO, write SYS_LOG_INF in addition to previous levels
-
-	  - 4 DEBUG, write SYS_LOG_DBG in addition to previous levels
+module = ADC
+module-str = ADC
+source "subsys/logging/Kconfig.template.log_config"
 
 config ADC_INIT_PRIORITY
 	int "Init priority"
@@ -61,30 +49,11 @@ config ADC_INIT_PRIORITY
 config ADC_0
 	bool "Enable ADC 0"
 
-config ADC_0_NAME
-	string "ADC 0 Driver's name"
-	depends on ADC_0 && !HAS_DTS_ADC
-	default "ADC_0"
-
-config ADC_0_IRQ_PRI
-	int "ADC 0 interrupt priority"
-	depends on ADC_0 && !HAS_DTS_ADC
-	default 2
-
 config ADC_1
 	bool "Enable ADC 1"
 
-config ADC_1_NAME
-	string "ADC 1 Driver's name"
-	depends on ADC_1 && !HAS_DTS_ADC
-	default "ADC_1"
-
-config ADC_1_IRQ_PRI
-	int "ADC 1 interrupt priority"
-	depends on ADC_1 && !HAS_DTS_ADC
-	default 2
-
-source "drivers/adc/Kconfig.dw"
+config ADC_2
+	bool "Enable ADC 2"
 
 source "drivers/adc/Kconfig.mcux"
 
@@ -92,8 +61,10 @@ source "drivers/adc/Kconfig.nrfx"
 
 source "drivers/adc/Kconfig.sam_afec"
 
-source "drivers/adc/Kconfig.ti_adc108s102"
-
 source "drivers/adc/Kconfig.intel_quark"
+
+source "drivers/adc/Kconfig.sam0"
+
+source "drivers/adc/Kconfig.stm32"
 
 endif # ADC

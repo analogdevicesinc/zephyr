@@ -6,14 +6,15 @@
 
 #include <device.h>
 #include <errno.h>
-#include <led.h>
-#include <misc/util.h>
+#include <drivers/led.h>
+#include <sys/util.h>
 #include <zephyr.h>
 
-#define SYS_LOG_LEVEL SYS_LOG_LEVEL_DEBUG
-#include <logging/sys_log.h>
+#define LOG_LEVEL CONFIG_LOG_DEFAULT_LEVEL
+#include <logging/log.h>
+LOG_MODULE_REGISTER(main);
 
-#define LED_DEV_NAME CONFIG_PCA9633_DEV_NAME
+#define LED_DEV_NAME DT_INST_0_NXP_PCA9633_LABEL
 #define NUM_LEDS 4
 #define MAX_BRIGHTNESS 100
 #define HALF_BRIGHTNESS (MAX_BRIGHTNESS / 2)
@@ -28,13 +29,13 @@ void main(void)
 
 	led_dev = device_get_binding(LED_DEV_NAME);
 	if (led_dev) {
-		SYS_LOG_INF("Found LED device %s", LED_DEV_NAME);
+		LOG_INF("Found LED device %s", LED_DEV_NAME);
 	} else {
-		SYS_LOG_ERR("LED device %s not found", LED_DEV_NAME);
+		LOG_ERR("LED device %s not found", LED_DEV_NAME);
 		return;
 	}
 
-	SYS_LOG_INF("Testing leds");
+	LOG_INF("Testing leds");
 
 	while (1) {
 		/* Turn on LEDs one by one */

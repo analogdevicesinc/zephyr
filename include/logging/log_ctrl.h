@@ -16,6 +16,7 @@ extern "C" {
 /**
  * @brief Logger
  * @defgroup logger Logger system
+ * @ingroup logging
  * @{
  * @}
  */
@@ -47,7 +48,7 @@ void log_init(void);
  *
  * See CONFIG_LOG_PROCESS_TRIGGER_THRESHOLD.
  *
- * @note Function has asserts and has no effect when CONFIG_LOG_PROCESS is set.
+ * @note Function has asserts and has no effect when CONFIG_LOG_PROCESS_THREAD is set.
  *
  * @param process_tid Process thread id. Used to wake up the thread.
  */
@@ -134,15 +135,18 @@ u32_t log_filter_get(struct log_backend const *const backend,
 /**
  * @brief Set filter on given source for the provided backend.
  *
- * @param backend	Backend instance.
+ * @param backend	Backend instance. NULL for all backends.
  * @param domain_id	ID of the domain.
  * @param src_id	Source (module or instance) ID.
  * @param level		Severity level.
+ *
+ * @return Actual level set which may be limited by compiled level. If filter
+ *	   was set for all backends then maximal level that was set is returned.
  */
-void log_filter_set(struct log_backend const *const backend,
-		    u32_t domain_id,
-		    u32_t src_id,
-		    u32_t level);
+u32_t log_filter_set(struct log_backend const *const backend,
+		     u32_t domain_id,
+		     u32_t src_id,
+		     u32_t level);
 
 /**
  *

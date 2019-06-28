@@ -12,7 +12,7 @@
 #
 # Note: The version of zsh need to be 5.0.6 or above. Any versions below
 # 5.0.6 maybe encoutner errors when sourcing this script.
-if [ -n "$ZSH_VERSION" ]; then
+if [ -n "${ZSH_VERSION:-}" ]; then
 	DIR="${(%):-%N}"
 	if [ $options[posixargzero] != "on" ]; then
 		setopt posixargzero
@@ -44,7 +44,7 @@ else
 fi
 
 # identify OS source tree root directory
-export ZEPHYR_BASE=$( builtin cd "$( dirname "$DIR" )" && pwd ${PWD_OPT})
+export ZEPHYR_BASE=$( builtin cd "$( dirname "$DIR" )" > /dev/null && pwd ${PWD_OPT})
 unset PWD_OPT
 
 scripts_path=${ZEPHYR_BASE}/scripts

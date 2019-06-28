@@ -20,10 +20,11 @@
 		zephyr,sram = &sram0;
 		zephyr,flash = &flash0;
 		zephyr,console = &uart6;
+		zephyr,shell-uart = &uart6;
 	};
 };
 
 &uart6 {
-	status = "ok";
+	status = "okay";
 	current-speed = <115200>;
 };

@@ -15,20 +15,11 @@ config FILE_SYSTEM
 	help
 	  Enables support for file system.
 
-config SYS_LOG_FS_LEVEL
-	int "File System log level"
-	depends on SYS_LOG
-	default 0
-	help
-	  Sets log level for File System drivers.
-	  Levels are:
-	  - 0 OFF, do not write
-	  - 1 ERROR, only write SYS_LOG_ERR
-	  - 2 WARNING, write SYS_LOG_WRN in addition to previous level
-	  - 3 INFO, write SYS_LOG_INF in addition to previous levels
-	  - 4 DEBUG, write SYS_LOG_DBG in addition to previous levels
-
 if FILE_SYSTEM
+
+module = FS
+module-str = fs
+source "subsys/logging/Kconfig.template.log_config"
 
 config APP_LINK_WITH_FS
 	bool "Link 'app' with FS"
@@ -46,7 +37,7 @@ config FAT_FILESYSTEM_ELM
 
 config FILE_SYSTEM_NFFS
 	bool "NFFS file system support"
-	select FLASH_PAGE_LAYOUT
+	depends on FLASH_PAGE_LAYOUT
 	select FS_FLASH_STORAGE_PARTITION
 	help
 	  Enables NFFS file system support.
@@ -55,10 +46,16 @@ config FILE_SYSTEM_NFFS
 
 config FILE_SYSTEM_SHELL
 	bool "Enable file system shell"
-	depends on CONSOLE_SHELL
+	depends on SHELL
 	help
 	  This shell provides basic browsing of the contents of the
 	  file system.
+
+config FUSE_FS_ACCESS
+	bool "Enable FUSE based access to file system partitions"
+	depends on ARCH_POSIX
+	help
+	  Expose file system partitions to the host system through FUSE.
 
 menu "FatFs Settings"
 	visible if FAT_FILESYSTEM_ELM
@@ -108,7 +105,23 @@ config FS_NFFS_NUM_CACHE_BLOCKS
 	range 1 512
 	default 64
 
-source "ext/fs/nffs/Kconfig"
+config NFFS_FILESYSTEM_MAX_AREAS
+        int "Maximum number of areas"
+        range 2 64
+        default 8
+        help
+          This defines maximum number of areas located on flash. Each area can
+          be erased without affecting other areas thus the size of area can
+          affect performance of GC where single area has to be rewritten.
+          At least one scratch and one non-scratch area is required.
+
+config NFFS_FILESYSTEM_MAX_BLOCK_SIZE
+        int "Maximum block size"
+        range 16 2048
+        default 2048
+        help
+          This determines the maximum size of data block written to flash.
+          Writes larger than this size are split into multiple write operations.
 
 endmenu
 

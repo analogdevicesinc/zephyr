@@ -1,6 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+
+file(MAKE_DIRECTORY ${PROJECT_BINARY_DIR}/include/generated)
+
 # Zephyr code can configure itself based on a KConfig'uration with the
 # header file autoconf.h. There exists an analogous file
-# generated_dts_board.h that allows configuration based on information
+# generated_dts_board_unfixed.h that allows configuration based on information
 # encoded in DTS.
 #
 # Here we call on dtc, the gcc preprocessor, and
@@ -8,56 +12,36 @@
 # CMake configure-time.
 #
 # See ~/zephyr/doc/dts
-set(GENERATED_DTS_BOARD_H    ${PROJECT_BINARY_DIR}/include/generated/generated_dts_board.h)
-set(GENERATED_DTS_BOARD_CONF ${PROJECT_BINARY_DIR}/include/generated/generated_dts_board.conf)
+set(GENERATED_DTS_BOARD_UNFIXED_H ${PROJECT_BINARY_DIR}/include/generated/generated_dts_board_unfixed.h)
+set(GENERATED_DTS_BOARD_CONF      ${PROJECT_BINARY_DIR}/include/generated/generated_dts_board.conf)
+
 set_ifndef(DTS_SOURCE ${BOARD_DIR}/${BOARD}.dts)
 set_ifndef(DTS_COMMON_OVERLAYS ${ZEPHYR_BASE}/dts/common/common.dts)
-set_ifndef(DTS_APP_BINDINGS ${APPLICATION_SOURCE_DIR}/dts/bindings)
+
+# 'DTS_ROOT' is a list of directories where a directory tree with DT
+# files may be found. It always includes the application directory and
+# ${ZEPHYR_BASE}.
+list(APPEND
+  DTS_ROOT
+  ${APPLICATION_SOURCE_DIR}
+  ${ZEPHYR_BASE}
+  )
 
 set(dts_files
   ${DTS_SOURCE}
   ${DTS_COMMON_OVERLAYS}
+  ${shield_dts_files}
   )
 
-#Parse boards/shields to generate the shield list
+# TODO: What to do about non-posix platforms where NOT CONFIG_HAS_DTS (xtensa)?
+# Drop support for NOT CONFIG_HAS_DTS perhaps?
+if(EXISTS ${DTS_SOURCE})
+  set(SUPPORTS_DTS 1)
+else()
+  set(SUPPORTS_DTS 0)
+endif()
 
-set(shield_dir ${ZEPHYR_BASE}/boards/shields)
-
-# Match the .overlay files in the shield directories to make sure we are
-# finding shields, e.g. x_nucleo_iks01a1/x_nucleo_iks01a1.overlay
-file(GLOB_RECURSE shields_refs_list
-     RELATIVE ${shield_dir}
-     ${shield_dir}/*/*.overlay
-     )
-
-# The above gives a list like
-# x_nucleo_iks01a1/x_nucleo_iks01a1.overlay;x_nucleo_iks01a2/x_nucleo_iks01a2.overlay
-# we construct a list of shield names by extracting file name and
-# removing the extension.
-foreach(shield_path ${shields_refs_list})
-  get_filename_component(shield ${shield_path} NAME_WE)
-
-  # Generate CONFIG flags matching each shield
-  string(TOUPPER "CONFIG_SHIELD_${shield}" shield_config)
-
-  if(${shield_config})
-    # if shield config flag is on, add shield overlay to the shield overlays
-    # list and dts.fixup file to the shield fixup file
-    list(APPEND
-      dts_files
-      ${shield_dir}/${shield_path}
-      )
-    list(APPEND
-      dts_fixups
-      ${shield_dir}/${shield}/dts.fixup
-      )
-  endif()
-endforeach()
-
-message(STATUS "Generating zephyr/include/generated/generated_dts_board.h")
-
-if(CONFIG_HAS_DTS)
-
+if(SUPPORTS_DTS)
   if(DTC_OVERLAY_FILE)
     # Convert from space-separated files into file list
     string(REPLACE " " ";" DTC_OVERLAY_FILE_AS_LIST ${DTC_OVERLAY_FILE})
@@ -67,14 +51,56 @@ if(CONFIG_HAS_DTS)
       )
   endif()
 
+  set(i 0)
   unset(DTC_INCLUDE_FLAG_FOR_DTS)
   foreach(dts_file ${dts_files})
     list(APPEND DTC_INCLUDE_FLAG_FOR_DTS
          -include ${dts_file})
+
+    if(i EQUAL 0)
+      message(STATUS "Loading ${dts_file} as base")
+    else()
+      message(STATUS "Overlaying ${dts_file}")
+    endif()
+
+    # Ensure that changes to 'dts_file's cause CMake to be re-run
+    set_property(DIRECTORY APPEND PROPERTY
+      CMAKE_CONFIGURE_DEPENDS
+      ${dts_file}
+      )
+
+    math(EXPR i "${i}+1")
+  endforeach()
+
+  foreach(dts_root ${DTS_ROOT})
+    foreach(dts_root_path
+        include
+        dts/common
+        dts/${ARCH}
+        dts
+        )
+      set(full_path ${dts_root}/${dts_root_path})
+      if(EXISTS ${full_path})
+        list(APPEND
+          DTS_ROOT_SYSTEM_INCLUDE_DIRS
+          -isystem ${full_path}
+          )
+      endif()
+    endforeach()
+  endforeach()
+
+  foreach(dts_root ${DTS_ROOT})
+    set(full_path ${dts_root}/dts/bindings)
+    if(EXISTS ${full_path})
+      list(APPEND
+        DTS_ROOT_BINDINGS
+        ${full_path}
+        )
+    endif()
   endforeach()
 
   # TODO: Cut down on CMake configuration time by avoiding
-  # regeneration of generated_dts_board.h on every configure. How
+  # regeneration of generated_dts_board_unfixed.h on every configure. How
   # challenging is this? What are the dts dependencies? We run the
   # preprocessor, and it seems to be including all kinds of
   # directories with who-knows how many header files.
@@ -86,13 +112,10 @@ if(CONFIG_HAS_DTS)
     COMMAND ${CMAKE_C_COMPILER}
     -x assembler-with-cpp
     -nostdinc
-    -isystem ${ZEPHYR_BASE}/include
-    -isystem ${ZEPHYR_BASE}/dts/${ARCH}
-    -isystem ${ZEPHYR_BASE}/dts
-    -include ${AUTOCONF_H}
+    ${DTS_ROOT_SYSTEM_INCLUDE_DIRS}
     ${DTC_INCLUDE_FLAG_FOR_DTS}  # include the DTS source and overlays
-    -I${ZEPHYR_BASE}/dts/common
-    -undef -D__DTS__
+    ${NOSYSDEF_CFLAG}
+    -D__DTS__
     -P
     -E ${ZEPHYR_BASE}/misc/empty_file.c
     -o ${BOARD}.dts.pre.tmp
@@ -104,12 +127,25 @@ if(CONFIG_HAS_DTS)
   endif()
 
   # Run the DTC on *.dts.pre.tmp to create the intermediary file *.dts_compiled
+
+  set(DTC_WARN_UNIT_ADDR_IF_ENABLED "")
+  check_dtc_flag("-Wunique_unit_address_if_enabled" check)
+  if (check)
+    set(DTC_WARN_UNIT_ADDR_IF_ENABLED "-Wunique_unit_address_if_enabled")
+  endif()
+  set(DTC_NO_WARN_UNIT_ADDR "")
+  check_dtc_flag("-Wno-unique_unit_address" check)
+  if (check)
+    set(DTC_NO_WARN_UNIT_ADDR "-Wno-unique_unit_address")
+  endif()
   execute_process(
     COMMAND ${DTC}
     -O dts
     -o ${BOARD}.dts_compiled
     -b 0
     -E unit_address_vs_reg
+    ${DTC_NO_WARN_UNIT_ADDR}
+    ${DTC_WARN_UNIT_ADDR_IF_ENABLED}
     ${EXTRA_DTC_FLAGS} # User settable
     ${BOARD}.dts.pre.tmp
     WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
@@ -119,39 +155,12 @@ if(CONFIG_HAS_DTS)
     message(FATAL_ERROR "command failed with return code: ${ret}")
   endif()
 
-  # Run extract_dts_includes.py for the header file
-  # generated_dts_board.h
-  set_ifndef(DTS_BOARD_FIXUP_FILE ${BOARD_DIR}/dts.fixup)
-  set_ifndef(DTS_SOC_FIXUP_FILE   ${PROJECT_SOURCE_DIR}/soc/${ARCH}/${SOC_PATH}/dts.fixup)
-
-  list(APPEND dts_fixups
-    ${DTS_BOARD_FIXUP_FILE}
-    ${DTS_SOC_FIXUP_FILE}
-    ${APPLICATION_SOURCE_DIR}/dts.fixup
-    )
-
-  foreach(fixup ${dts_fixups})
-    if(EXISTS ${fixup})
-      list(APPEND existing_dts_fixups ${fixup})
-    endif()
-  endforeach()
-
-  if("${existing_dts_fixups}" STREQUAL "")
-    unset(DTS_FIXUPS_WITH_FLAG)
-  else()
-    set(DTS_FIXUPS_WITH_FLAG --fixup ${existing_dts_fixups})
-  endif()
-
-  if(NOT EXISTS ${DTS_APP_BINDINGS})
-    set(DTS_APP_BINDINGS)
-  endif()
-
   set(CMD_EXTRACT_DTS_INCLUDES ${PYTHON_EXECUTABLE} ${ZEPHYR_BASE}/scripts/dts/extract_dts_includes.py
     --dts ${BOARD}.dts_compiled
-    --yaml ${ZEPHYR_BASE}/dts/bindings ${DTS_APP_BINDINGS}
-    ${DTS_FIXUPS_WITH_FLAG}
+    --yaml ${DTS_ROOT_BINDINGS}
     --keyvalue ${GENERATED_DTS_BOARD_CONF}
-    --include ${GENERATED_DTS_BOARD_H}
+    --include ${GENERATED_DTS_BOARD_UNFIXED_H}
+    --old-alias-names
     )
 
   # Run extract_dts_includes.py to create a .conf and a header file that can be
@@ -165,8 +174,9 @@ if(CONFIG_HAS_DTS)
     message(FATAL_ERROR "command failed with return code: ${ret}")
   endif()
 
-  import_kconfig(${GENERATED_DTS_BOARD_CONF})
+  import_kconfig(CONFIG_ ${GENERATED_DTS_BOARD_CONF})
+  import_kconfig(DT_     ${GENERATED_DTS_BOARD_CONF})
 
 else()
-  file(WRITE ${GENERATED_DTS_BOARD_H} "/* WARNING. THIS FILE IS AUTO-GENERATED. DO NOT MODIFY! */")
-endif()
+  file(WRITE ${GENERATED_DTS_BOARD_UNFIXED_H} "/* WARNING. THIS FILE IS AUTO-GENERATED. DO NOT MODIFY! */")
+endif(SUPPORTS_DTS)

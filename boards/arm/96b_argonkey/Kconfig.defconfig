@@ -12,7 +12,7 @@ config BOARD
 
 if UART_CONSOLE
 
-config UART_STM32_PORT_1
+config UART_1
 	default y
 
 endif # UART_CONSOLE
@@ -35,16 +35,48 @@ endif # I2C
 
 if SPI
 
+config SPI_1
+	default y
+
 config SPI_2
+	default y
+
+config SPI_STM32_INTERRUPT
 	default y
 
 endif # SPI
 
-if LSM6DSL
+if I2S
 
-choice LSM6DSL_BUS_TYPE
-	default LSM6DSL_SPI
-endchoice
+config I2S_STM32
+	default y
+
+# configure PLLI2S to generate a I2SxCLK=128MHz
+config I2S_STM32_USE_PLLI2S_ENABLE
+	default y
+
+config I2S_STM32_PLLI2S_PLLM
+	default 8
+
+config I2S_STM32_PLLI2S_PLLN
+	default 192
+
+config I2S_STM32_PLLI2S_PLLR
+	default 3
+
+config I2S_5
+	default y
+
+endif # I2S
+
+if DMA
+
+config DMA_STM32F4X
+	default y
+
+endif # DMA
+
+if LSM6DSL
 
 choice LSM6DSL_TRIGGER_MODE
 	default LSM6DSL_TRIGGER_GLOBAL_THREAD

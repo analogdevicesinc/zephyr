@@ -8,23 +8,26 @@
 
 menu "Interrupt Controllers"
 
-config LOAPIC
+menuconfig LOAPIC
 	bool "LOAPIC"
-	select IOAPIC
 	depends on X86
 	help
 	  This option selects local APIC as the interrupt controller.
-
+if LOAPIC
 config LOAPIC_BASE_ADDRESS
 	hex "Local APIC Base Address"
 	default 0xFEE00000
-	depends on LOAPIC
 	help
 	  This option specifies the base address of the Local APIC device.
 
+config X2APIC
+	bool "Access local APIC in x2APIC mode"
+	default n
+	help
+	  If your local APIC supports x2APIC mode, turn this on.
+
 config LOAPIC_SPURIOUS_VECTOR
 	bool "Handle LOAPIC spurious interrupts"
-	depends on LOAPIC
 	help
 	  A special situation may occur when a processor raises its task
 	  priority to be greater than or equal to the level of the
@@ -48,7 +51,6 @@ config LOAPIC_SPURIOUS_VECTOR_ID
 config IOAPIC
 	bool "IO-APIC"
 	default y
-	depends on LOAPIC
 	help
 	  This option signifies that the target has an IO-APIC device. This
 	  capability allows IO-APIC-dependent code to be included.
@@ -80,26 +82,7 @@ config IOAPIC_MASK_RTE
 	  when the OS starts up, or a previous boot stage has done some IOAPIC
 	  configuration that needs to be preserved.
 
-config MVIC
-	bool "Intel Quark D2000 Interrupt Controller (MVIC)"
-	depends on X86
-	select X86_FIXED_IRQ_MAPPING
-	help
-	  The MVIC (Intel Quark microcontroller D2000 Interrupt Controller) is
-	  configured by default to support 32 external interrupt lines. Unlike the
-	  traditional IA LAPIC/IOAPIC, the interrupt vectors in MVIC are fixed and
-	  not programmable. In addition, the priorities of these interrupt
-	  lines are also fixed.
-
-config MVIC_TIMER_IRQ
-	int "IRQ line to use for timer interrupt"
-	range 0 15
-	default 10
-	depends on MVIC
-	help
-	  Specify the IRQ line to use for the timer interrupt. This should be
-	  an IRQ line unused by any hardware. If nested interrupts are enabled,
-	  higher interrupt lines have priority.
+endif #LOAPIC
 
 config ARCV2_INTERRUPT_UNIT
 	bool "ARCv2 Interrupt Unit"
@@ -115,11 +98,17 @@ config ARCV2_INTERRUPT_UNIT
 config PLIC
 	bool "Platform Level Interrupt Controller (PLIC)"
 	default y
-	depends on SOC_FAMILY_RISCV_PRIVILEGE && !QEMU_TARGET
+	depends on SOC_FAMILY_RISCV_PRIVILEGE
 	select RISCV_HAS_PLIC
 	help
 	  Platform Level Interrupt Controller provides support
 	  for external interrupt lines defined by the RISC-V SoC;
+
+config VEXRISCV_LITEX_IRQ
+	bool "VexRiscv LiteX Interrupt controller"
+	depends on SOC_RISCV32_LITEX_VEXRISCV
+	help
+	  IRQ implementation for LiteX VexRiscv
 
 config DW_ICTL
 	bool "Designware Interrupt Controller"
@@ -137,8 +126,8 @@ config DW_ICTL_NAME
 	  Give a name for the instance of Designware Interrupt Controller
 
 config DW_ICTL_OFFSET
-	hex "Parent interrupt number to which DW_ICTL maps"
-	default 0x00
+	int "Parent interrupt number to which DW_ICTL maps"
+	default 0
 	depends on DW_ICTL
 	help
 	  Parent interrupt number to which DW_ICTL maps
@@ -163,5 +152,9 @@ source "drivers/interrupt_controller/Kconfig.stm32"
 source "drivers/interrupt_controller/Kconfig.multilevel"
 
 source "drivers/interrupt_controller/Kconfig.s1000"
+
+source "drivers/interrupt_controller/Kconfig.rv32m1"
+
+source "drivers/interrupt_controller/Kconfig.sam0"
 
 endmenu

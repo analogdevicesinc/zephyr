@@ -6,7 +6,7 @@
 
 #include <zephyr.h>
 #include <string.h>
-#include <misc/printk.h>
+#include <sys/printk.h>
 #include <logging/log_ctrl.h>
 #include "sample_instance.h"
 #include "sample_module.h"
@@ -81,6 +81,7 @@ static void module_logging_showcase(void)
 	printk("Module logging showcase.\n");
 
 	sample_module_func();
+	inline_func();
 
 	if (IS_ENABLED(CONFIG_LOG_RUNTIME_FILTERING)) {
 		printk("Disabling logging in the %s module\n",
@@ -111,7 +112,9 @@ static void instance_logging_showcase(void)
 {
 	printk("Instance level logging showcase.\n");
 
+	sample_instance_inline_call(&inst1);
 	sample_instance_call(&inst1);
+	sample_instance_inline_call(&inst2);
 	sample_instance_call(&inst2);
 
 	if (IS_ENABLED(CONFIG_LOG_RUNTIME_FILTERING)) {
@@ -121,7 +124,9 @@ static void instance_logging_showcase(void)
 		log_filter_set(NULL, 0,
 			       log_source_id_get(INST1_NAME), LOG_LEVEL_WRN);
 
+		sample_instance_inline_call(&inst1);
 		sample_instance_call(&inst1);
+		sample_instance_inline_call(&inst2);
 		sample_instance_call(&inst2);
 
 		printk("Disabling logging on both instances.\n");
@@ -134,7 +139,9 @@ static void instance_logging_showcase(void)
 			       log_source_id_get(INST2_NAME),
 			       LOG_LEVEL_NONE);
 
+		sample_instance_inline_call(&inst1);
 		sample_instance_call(&inst1);
+		sample_instance_inline_call(&inst2);
 		sample_instance_call(&inst2);
 
 		printk("Function call on both instances with logging disabled.\n");
@@ -184,8 +191,8 @@ static void performance_showcase(void)
 	volatile u32_t current_timestamp;
 	volatile u32_t start_timestamp;
 	u32_t per_sec;
-	u32_t cnt = 0;
-	u32_t window = 2;
+	u32_t cnt = 0U;
+	u32_t window = 2U;
 
 	printk("Logging performance showcase.\n");
 
@@ -254,8 +261,6 @@ void log_demo_thread(void *dummy1, void *dummy2, void *dummy3)
 		       CONFIG_LOG_DEFAULT_LEVEL);
 
 	wait_on_log_flushed();
-
-	severity_levels_showcase();
 
 	log_strdup_showcase();
 

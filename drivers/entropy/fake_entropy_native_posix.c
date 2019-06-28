@@ -12,9 +12,9 @@
  */
 
 #include "device.h"
-#include "entropy.h"
+#include <drivers/entropy.h>
 #include "init.h"
-#include "misc/util.h"
+#include <sys/util.h>
 #include <stdlib.h>
 #include <string.h>
 #include "posix_trace.h"
@@ -35,7 +35,7 @@ static int entropy_native_posix_get_entropy(struct device *dev, u8_t *buffer,
 		 */
 		long int value = random();
 
-		size_t to_copy = min(length, sizeof(long int));
+		size_t to_copy = MIN(length, sizeof(long int));
 
 		memcpy(buffer, &value, to_copy);
 		buffer += to_copy;

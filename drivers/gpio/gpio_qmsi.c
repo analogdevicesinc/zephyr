@@ -7,18 +7,18 @@
 #include <errno.h>
 
 #include <device.h>
-#include <drivers/ioapic.h>
-#include <gpio.h>
+#include <drivers/interrupt_controller/ioapic.h>
+#include <drivers/gpio.h>
 #include <init.h>
-#include <sys_io.h>
-#include <misc/util.h>
+#include <sys/sys_io.h>
+#include <sys/util.h>
 
 #include "qm_gpio.h"
 #include "gpio_utils.h"
 #include "qm_isr.h"
 #include "clk.h"
 #include "soc.h"
-#include <power.h>
+#include <power/power.h>
 
 struct gpio_qmsi_config {
 	qm_gpio_t gpio;
@@ -101,23 +101,28 @@ static int gpio_resume_device_from_suspend(struct device *dev)
 * the *context may include IN data or/and OUT data
 */
 static int gpio_qmsi_device_ctrl(struct device *port, u32_t ctrl_command,
-				 void *context)
+				 void *context, device_pm_cb cb, void *arg)
 {
+	int ret = 0;
+
 	if (ctrl_command == DEVICE_PM_SET_POWER_STATE) {
 		if (*((u32_t *)context) == DEVICE_PM_SUSPEND_STATE) {
-			return gpio_suspend_device(port);
+			ret = gpio_suspend_device(port);
 		} else if (*((u32_t *)context) == DEVICE_PM_ACTIVE_STATE) {
-			return gpio_resume_device_from_suspend(port);
+			ret = gpio_resume_device_from_suspend(port);
 		}
 	} else if (ctrl_command == DEVICE_PM_GET_POWER_STATE) {
 		*((u32_t *)context) = gpio_qmsi_get_power_state(port);
-		return 0;
 	}
-	return 0;
+
+	if (cb) {
+		cb(port, ret, context, arg);
+	}
+	return ret;
 }
 #endif
 
-DEVICE_DEFINE(gpio_0, CONFIG_GPIO_QMSI_0_NAME, &gpio_qmsi_init,
+DEVICE_DEFINE(gpio_0, DT_GPIO_QMSI_0_NAME, &gpio_qmsi_init,
 	      gpio_qmsi_device_ctrl, &gpio_0_runtime, &gpio_0_config,
 	      POST_KERNEL, CONFIG_GPIO_QMSI_INIT_PRIORITY, NULL);
 
@@ -138,7 +143,7 @@ static struct gpio_qmsi_runtime gpio_aon_runtime;
 * the *context may include IN data or/and OUT data
 */
 static int gpio_aon_device_ctrl(struct device *port, u32_t ctrl_command,
-				void *context)
+				void *context, device_pm_cb cb, void *arg)
 {
 	if (ctrl_command == DEVICE_PM_SET_POWER_STATE) {
 		u32_t device_pm_state = *(u32_t *)context;
@@ -150,11 +155,15 @@ static int gpio_aon_device_ctrl(struct device *port, u32_t ctrl_command,
 	} else if (ctrl_command == DEVICE_PM_GET_POWER_STATE) {
 		*((u32_t *)context) = gpio_qmsi_get_power_state(port);
 	}
+
+	if (cb) {
+		cb(port, 0, context, arg);
+	}
 	return 0;
 }
 #endif
 
-DEVICE_DEFINE(gpio_aon, CONFIG_GPIO_QMSI_1_NAME, &gpio_qmsi_init,
+DEVICE_DEFINE(gpio_aon, DT_GPIO_QMSI_1_NAME, &gpio_qmsi_init,
 	      gpio_aon_device_ctrl, &gpio_aon_runtime, &gpio_aon_config,
 	      POST_KERNEL, CONFIG_GPIO_QMSI_INIT_PRIORITY, NULL);
 
@@ -167,7 +176,7 @@ static void gpio_qmsi_callback(void *data, u32_t status)
 	const u32_t enabled_mask = context->pin_callbacks & status;
 
 	if (enabled_mask) {
-		_gpio_fire_callbacks(&context->callbacks, port, enabled_mask);
+		gpio_fire_callbacks(&context->callbacks, port, enabled_mask);
 	}
 }
 
@@ -298,9 +307,7 @@ static inline int gpio_qmsi_manage_callback(struct device *port,
 {
 	struct gpio_qmsi_runtime *context = port->driver_data;
 
-	_gpio_manage_callback(&context->callbacks, callback, set);
-
-	return 0;
+	return gpio_manage_callback(&context->callbacks, callback, set);
 }
 
 static inline int gpio_qmsi_enable_callback(struct device *port,
@@ -336,7 +343,7 @@ static inline int gpio_qmsi_disable_callback(struct device *port,
 	if (access_op == GPIO_ACCESS_BY_PIN) {
 		context->pin_callbacks &= ~BIT(pin);
 	} else {
-		context->pin_callbacks = 0;
+		context->pin_callbacks = 0U;
 	}
 
 	if (IS_ENABLED(CONFIG_GPIO_QMSI_API_REENTRANCY)) {
@@ -378,18 +385,18 @@ static int gpio_qmsi_init(struct device *port)
 				  CLK_PERIPH_GPIO_INTERRUPT |
 				  CLK_PERIPH_GPIO_DB |
 				  CLK_PERIPH_CLK);
-		IRQ_CONNECT(CONFIG_GPIO_QMSI_0_IRQ,
-			    CONFIG_GPIO_QMSI_0_IRQ_PRI, qm_gpio_0_isr, 0,
-			    CONFIG_GPIO_QMSI_0_IRQ_FLAGS);
-		irq_enable(CONFIG_GPIO_QMSI_0_IRQ);
+		IRQ_CONNECT(DT_GPIO_QMSI_0_IRQ,
+			    DT_GPIO_QMSI_0_IRQ_PRI, qm_gpio_0_isr, 0,
+			    DT_GPIO_QMSI_0_IRQ_FLAGS);
+		irq_enable(DT_GPIO_QMSI_0_IRQ);
 		QM_IR_UNMASK_INTERRUPTS(QM_INTERRUPT_ROUTER->gpio_0_int_mask);
 		break;
 #ifdef CONFIG_GPIO_QMSI_1
 	case QM_AON_GPIO_0:
-		IRQ_CONNECT(CONFIG_GPIO_QMSI_1_IRQ,
-			    CONFIG_GPIO_QMSI_1_IRQ_PRI, qm_aon_gpio_0_isr,
-			    0, CONFIG_GPIO_QMSI_1_IRQ_FLAGS);
-		irq_enable(CONFIG_GPIO_QMSI_1_IRQ);
+		IRQ_CONNECT(DT_GPIO_QMSI_1_IRQ,
+			    DT_GPIO_QMSI_1_IRQ_PRI, qm_aon_gpio_0_isr,
+			    0, DT_GPIO_QMSI_1_IRQ_FLAGS);
+		irq_enable(DT_GPIO_QMSI_1_IRQ);
 		QM_IR_UNMASK_INTERRUPTS(
 			QM_INTERRUPT_ROUTER->aon_gpio_0_int_mask);
 		break;

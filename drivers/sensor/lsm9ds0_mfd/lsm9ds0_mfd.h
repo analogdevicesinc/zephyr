@@ -12,7 +12,7 @@
 #define ZEPHYR_DRIVERS_SENSOR_LSM9DS0_MFD_LSM9DS0_MFD_H_
 
 #include <zephyr/types.h>
-#include <misc/util.h>
+#include <sys/util.h>
 
 #define LSM9DS0_MFD_REG_OUT_TEMP_L_XM		0x05
 #define LSM9DS0_MFD_REG_OUT_TEMP_H_XM		0x06
@@ -394,8 +394,6 @@
 						 BIT(1) | BIT(0))
 #define LMS9DS0_MFD_SHIFT_ACT_DUR_ACTD          0
 
-#define LSM9DS0_MFD_I2C_ADDR			CONFIG_LSM9DS0_MFD_I2C_ADDR
-
 #if defined(CONFIG_LSM9DS0_MFD_ACCEL_SAMPLING_RATE_0)
 	#define LSM9DS0_MFD_ACCEL_DEFAULT_AODR	0
 #elif defined(CONFIG_LSM9DS0_MFD_ACCEL_SAMPLING_RATE_3_125)
@@ -557,7 +555,4 @@ struct lsm9ds0_mfd_data {
 #endif
 };
 
-#define SYS_LOG_DOMAIN "LSM9DS0_MFD"
-#define SYS_LOG_LEVEL CONFIG_SYS_LOG_SENSOR_LEVEL
-#include <logging/sys_log.h>
 #endif /* ZEPHYR_DRIVERS_SENSOR_LSM9DS0_MFD_LSM9DS0_MFD_H_ */

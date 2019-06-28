@@ -38,7 +38,7 @@
 
 /* Two threads at each priority (to test the case of waking up a
  * thread of equal priority).  But only one metairq, as it isn't
- * technically legal to have more than one at the smae priority.
+ * technically legal to have more than one at the same priority.
  */
 const enum { METAIRQ, COOP, PREEMPTIBLE } worker_priorities[] = {
 	METAIRQ,
@@ -48,7 +48,7 @@ const enum { METAIRQ, COOP, PREEMPTIBLE } worker_priorities[] = {
 
 #define NUM_THREADS ARRAY_SIZE(worker_priorities)
 
-#define STACK_SIZE (384 + CONFIG_TEST_EXTRA_STACKSIZE)
+#define STACK_SIZE (640 + CONFIG_TEST_EXTRA_STACKSIZE)
 
 k_tid_t last_thread;
 
@@ -123,7 +123,7 @@ void wakeup_src_thread(int id)
 		 * executes in 0 time: it always waits for the code to finish
 		 * and it letting the cpu sleep before letting time pass)
 		 */
-		posix_halt_cpu();
+		k_busy_wait(50);
 #endif
 	}
 
@@ -236,7 +236,7 @@ void validate_wakeup(int src, int target, k_tid_t last_thread)
 
 void worker(void *p1, void *p2, void *p3)
 {
-	int id = (int)p1;
+	int id = POINTER_TO_INT(p1);
 	k_tid_t curr = &worker_threads[id], prev;
 
 	ARG_UNUSED(p2);
@@ -329,7 +329,7 @@ void test_preempt(void)
 
 		k_thread_create(&worker_threads[i],
 				worker_stacks[i], STACK_SIZE,
-				worker, (void *)i, NULL, NULL,
+				worker, INT_TO_POINTER(i), NULL, NULL,
 				priority, 0, 0);
 	}
 

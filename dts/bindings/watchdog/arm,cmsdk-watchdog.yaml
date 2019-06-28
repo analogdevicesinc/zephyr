@@ -1,22 +1,16 @@
----
+
 title: ARM CMSDK WATCHDOG
-id: arm,cmsdk-watchdog
 version: 0.1
 
 description: >
     This binding gives a base representation of the ARM CMSDK WATCHDOG
 
+inherits:
+    !include base.yaml
+
 properties:
     compatible:
-      type: string
-      category: required
-      description: compatible strings
       constraint: "arm,cmsdk-watchdog"
-      generation: define
 
     reg:
-      type: array
-      description: mmio register space
-      generation: define
       category: required
-...

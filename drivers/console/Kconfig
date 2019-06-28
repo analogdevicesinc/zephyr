@@ -7,6 +7,16 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
+# Setting shared by different subsystems
+config UART_CONSOLE_ON_DEV_NAME
+	string "Device Name of UART Device for UART Console"
+	default "$(dt_str_val,DT_UART_CONSOLE_ON_DEV_NAME)" if HAS_DTS
+	default "UART_0"
+	depends on (UART_CONSOLE || CONSOLE_SUBSYS)
+	help
+	  This option specifies the name of UART device to be used for
+	  UART console.
+
 menuconfig CONSOLE
 	bool "Console drivers"
 
@@ -41,18 +51,9 @@ config UART_CONSOLE
 	  Enable this option to use one UART for console. Make sure
 	  CONFIG_UART_CONSOLE_ON_DEV_NAME is also set correctly.
 
-if !HAS_DTS
-config UART_CONSOLE_ON_DEV_NAME
-	string "Device Name of UART Device for UART Console"
-	default "UART_0"
-	depends on UART_CONSOLE
-	help
-	  This option specifies the name of UART device to be used for
-	  UART console.
-endif
-
 config UART_CONSOLE_INIT_PRIORITY
 	int "Init priority"
+	default 95 if USB_UART_CONSOLE
 	default 60
 	depends on UART_CONSOLE
 	help
@@ -81,8 +82,7 @@ config UART_CONSOLE_MCUMGR
 
 config USB_UART_CONSOLE
 	bool "Use USB port for console outputs"
-	depends on SERIAL
-	select CONSOLE_HAS_DRIVER
+	select UART_CONSOLE
 	select USB_CDC_ACM
 	help
 	  Enable this option to use the USB UART for console output. The output
@@ -117,7 +117,7 @@ config RAM_CONSOLE_BUFFER_SIZE
 
 config RTT_CONSOLE
 	bool "Use RTT console"
-	depends on HAS_SEGGER_RTT
+	depends on USE_SEGGER_RTT
 	select CONSOLE_HAS_DRIVER
 	help
 	  Emit console messages to a RAM buffer that is then read by the
@@ -192,15 +192,14 @@ config	UART_PIPE
 	  data (as contrary to console UART driver) and all aspects of received
 	  protocol data are handled by application provided callback.
 
-if !HAS_DTS
 config UART_PIPE_ON_DEV_NAME
 	string "Device Name of UART Device for pipe UART"
+	default "$(dt_str_val,DT_UART_PIPE_ON_DEV_NAME)" if HAS_DTS
 	default "UART_0"
 	depends on UART_PIPE
 	help
 	  This option specifies the name of UART device to be used
 	  for pipe UART.
-endif
 
 config UART_MCUMGR
 	bool "Enable mcumgr UART driver"
@@ -213,15 +212,14 @@ config UART_MCUMGR
 	  data are handled by an application provided callback.
 
 if UART_MCUMGR
-if !HAS_DTS
+
 config UART_MCUMGR_ON_DEV_NAME
 	string "Device Name of UART Device for mcumgr UART"
+	default "$(dt_str_val,DT_UART_MCUMGR_ON_DEV_NAME)" if HAS_DTS
 	default "UART_0"
-	depends on UART_MCUMGR
 	help
 	  This option specifies the name of UART device to be used
 	  for mcumgr UART.
-endif # !HAS_DTS
 
 config UART_MCUMGR_RX_BUF_SIZE
 	int "Size of receive buffer for mcumgr fragments received over UART, in bytes"
@@ -262,9 +260,9 @@ config NATIVE_POSIX_CONSOLE
 config NATIVE_POSIX_STDIN_CONSOLE
 	bool "Use the host terminal stdin"
 	depends on NATIVE_POSIX_CONSOLE
-	default y if !NATIVE_UART_0_ON_STDINOUT
 	help
-	  Feed the host terminal stdin to the Zephyr console/shell.
+	  No current use. Kept only as there is plans to start using these
+	  drivers with the shell
 
 config NATIVE_STDIN_POLL_PERIOD
 	int "Polling period for stdin"
@@ -301,6 +299,8 @@ config NATIVE_POSIX_CONSOLE_INIT_PRIORITY
 	help
 	  Device driver initialization priority.
 
-source "drivers/console/Kconfig.telnet"
-source "drivers/console/Kconfig.ws"
+module = UART_CONSOLE
+module-str = UART console
+source "subsys/logging/Kconfig.template.log_config"
+
 endif

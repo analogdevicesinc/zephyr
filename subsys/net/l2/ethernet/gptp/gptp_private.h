@@ -18,8 +18,6 @@
 extern "C" {
 #endif
 
-#if defined(CONFIG_NET_GPTP)
-
 #include <net/gptp.h>
 
 /* Common defines for the gPTP stack. */
@@ -125,9 +123,15 @@ static inline u64_t gptp_timestamp_to_nsec(struct net_ptp_time *ts)
  * @param port Port number of the clock to use.
  * @param state New state
  */
+#if CONFIG_NET_GPTP_LOG_LEVEL < LOG_LEVEL_DBG
 void gptp_change_port_state(int port, enum gptp_port_state state);
+#else
+#define gptp_change_port_state(port, state)			\
+	gptp_change_port_state_debug(port, state, __func__, __LINE__)
 
-#endif /* CONFIG_NET_GPTP */
+void gptp_change_port_state_debug(int port, enum gptp_port_state state,
+				  const char *caller, int line);
+#endif
 
 #ifdef __cplusplus
 }

@@ -5,7 +5,7 @@
  */
 
 #include <zephyr.h>
-#include <sensor.h>
+#include <drivers/sensor.h>
 #include <stdio.h>
 
 #define pow2(x) ((x) * (x))
@@ -47,10 +47,10 @@ void main(void)
 	int i;
 	char meter[200];
 
-	struct device *dev = device_get_binding(CONFIG_ADXL372_DEV_NAME);
+	struct device *dev = device_get_binding(DT_INST_0_ADI_ADXL372_LABEL);
 
 	if (dev == NULL) {
-		printf("Could not get %s device\n", CONFIG_ADXL372_DEV_NAME);
+		printf("Could not get %s device\n", DT_INST_0_ADI_ADXL372_LABEL);
 		return;
 	}
 

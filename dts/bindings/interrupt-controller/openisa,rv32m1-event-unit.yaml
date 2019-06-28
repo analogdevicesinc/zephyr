@@ -1,0 +1,25 @@
+#
+# Copyright (c) 2018, Linaro Inc.
+# Copyright (c) 2018, Foundries.io
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+title: RV32M1 Event Unit
+version: 0.1
+
+description: >
+    This binding describes the RV32M1 Event Unit
+
+inherits:
+    !include base.yaml
+
+properties:
+  compatible:
+      constraint: "openisa,rv32m1-event-unit"
+
+  reg:
+      category: required
+
+"#cells":
+  - irq

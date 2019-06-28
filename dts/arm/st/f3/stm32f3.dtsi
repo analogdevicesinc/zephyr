@@ -40,12 +40,14 @@
 			flash0: flash@8000000 {
 				compatible = "soc-nv-flash";
 				label = "FLASH_STM32";
+
+				write-block-size = <2>;
+				erase-block-size = <2048>;
 			};
 		};
 
 		rcc: rcc@40021000 {
 			compatible = "st,stm32-rcc";
-			clocks-controller;
 			#clock-cells = <2>;
 			reg = <0x40021000 0x400>;
 			label = "STM32_CLK_RCC";
@@ -62,7 +64,7 @@
 				gpio-controller;
 				#gpio-cells = <2>;
 				reg = <0x48000000 0x400>;
-				clocks = <&rcc STM32_CLOCK_BUS_AHB2 0x00020000>;
+				clocks = <&rcc STM32_CLOCK_BUS_AHB1 0x00020000>;
 				label = "GPIOA";
 			};
 
@@ -71,7 +73,7 @@
 				gpio-controller;
 				#gpio-cells = <2>;
 				reg = <0x48000400 0x400>;
-				clocks = <&rcc STM32_CLOCK_BUS_AHB2 0x00040000>;
+				clocks = <&rcc STM32_CLOCK_BUS_AHB1 0x00040000>;
 				label = "GPIOB";
 			};
 
@@ -80,7 +82,7 @@
 				gpio-controller;
 				#gpio-cells = <2>;
 				reg = <0x48000800 0x400>;
-				clocks = <&rcc STM32_CLOCK_BUS_AHB2 0x00080000>;
+				clocks = <&rcc STM32_CLOCK_BUS_AHB1 0x00080000>;
 				label = "GPIOC";
 			};
 
@@ -89,18 +91,25 @@
 				gpio-controller;
 				#gpio-cells = <2>;
 				reg = <0x48000c00 0x400>;
-				clocks = <&rcc STM32_CLOCK_BUS_AHB2 0x00100000>;
+				clocks = <&rcc STM32_CLOCK_BUS_AHB1 0x00100000>;
 				label = "GPIOD";
 			};
 
-			gpiof: gpio@480014000 {
+			gpiof: gpio@48001400 {
 				compatible = "st,stm32-gpio";
 				gpio-controller;
 				#gpio-cells = <2>;
 				reg = <0x48001400 0x400>;
-				clocks = <&rcc STM32_CLOCK_BUS_AHB2 0x00400000>;
+				clocks = <&rcc STM32_CLOCK_BUS_AHB1 0x00400000>;
 				label = "GPIOF";
 			};
+		};
+
+		iwdg: watchdog@40003000 {
+			compatible = "st,stm32-watchdog";
+			reg = <0x40003000 0x400>;
+			label = "IWDG";
+			status = "disabled";
 		};
 
 		usart1: serial@40013800 {
@@ -161,6 +170,7 @@
 			interrupt-names = "usb";
 			num-bidir-endpoints = <8>;
 			ram-size = <512>;
+			phys = <&usb_fs_phy>;
 			status = "disabled";
 			label= "USB";
 		};
@@ -177,6 +187,7 @@
 				status = "disabled";
 				st,prescaler = <0>;
 				label = "PWM_2";
+				#pwm-cells = <2>;
 			};
 		};
 
@@ -192,6 +203,7 @@
 				status = "disabled";
 				st,prescaler = <10000>;
 				label = "PWM_3";
+				#pwm-cells = <2>;
 			};
 		};
 
@@ -207,6 +219,7 @@
 				status = "disabled";
 				st,prescaler = <10000>;
 				label = "PWM_6";
+				#pwm-cells = <2>;
 			};
 		};
 
@@ -222,6 +235,7 @@
 				status = "disabled";
 				st,prescaler = <10000>;
 				label = "PWM_7";
+				#pwm-cells = <2>;
 			};
 		};
 
@@ -237,6 +251,7 @@
 				status = "disabled";
 				st,prescaler = <10000>;
 				label = "PWM_15";
+				#pwm-cells = <2>;
 			};
 		};
 
@@ -252,6 +267,7 @@
 				status = "disabled";
 				st,prescaler = <10000>;
 				label = "PWM_16";
+				#pwm-cells = <2>;
 			};
 		};
 
@@ -267,17 +283,34 @@
 				status = "disabled";
 				st,prescaler = <10000>;
 				label = "PWM_17";
+				#pwm-cells = <2>;
 			};
 		};
 
 		rtc: rtc@40002800 {
 			compatible = "st,stm32-rtc";
 			reg = <0x40002800 0x400>;
+			clocks = <&rcc STM32_CLOCK_BUS_APB1 0x10000000>;
 			interrupts = <41 0>;
 			prescaler = <32768>;
 			status = "disabled";
 			label = "RTC_0";
 		};
+
+		adc1: adc@50000000 {
+			compatible = "st,stm32-adc";
+			reg = <0x50000000 0x400>;
+			clocks = <&rcc STM32_CLOCK_BUS_AHB1 0x10000000>;
+			interrupts = <18 0>;
+			status = "disabled";
+			label = "ADC_1";
+		};
+	};
+
+	usb_fs_phy: usbphy {
+		compatible = "usb-nop-xceiv";
+		#phy-cells = <0>;
+		label = "USB_FS_PHY";
 	};
 };
 

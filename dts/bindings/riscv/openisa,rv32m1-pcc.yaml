@@ -1,0 +1,28 @@
+#
+# Copyright (c) 2018 Foundries.io
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+title: RV32M1 PCC (Peripheral Clock Control)
+version: 0.1
+
+description: >
+    This is a representation of the RV32M1 PCC IP node
+
+inherits:
+    !include base.yaml
+
+properties:
+    compatible:
+      constraint: "openisa,rv32m1-pcc"
+
+    reg:
+      category: required
+
+    label:
+      category: required
+
+"#cells":
+  - name
+  - offset

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+
 if(CONFIG_NET_L2_BT OR CONFIG_NET_L2_BT_SHELL)
   add_subdirectory(bluetooth)
 endif()
@@ -20,4 +22,8 @@ endif()
 
 if(CONFIG_NET_L2_WIFI_MGMT OR CONFIG_NET_L2_WIFI_SHELL)
   add_subdirectory(wifi)
+endif()
+
+if(CONFIG_NET_L2_CANBUS)
+  add_subdirectory(canbus)
 endif()

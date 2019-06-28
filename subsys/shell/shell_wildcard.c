@@ -8,13 +8,14 @@
 #include <fnmatch.h>
 #include "shell_wildcard.h"
 #include "shell_utils.h"
+#include "shell_ops.h"
 
 static void subcmd_get(const struct shell_cmd_entry *cmd,
 		       size_t idx, const struct shell_static_entry **entry,
 		       struct shell_static_entry *d_entry)
 {
 	__ASSERT_NO_MSG(entry != NULL);
-	__ASSERT_NO_MSG(st_entry != NULL);
+	__ASSERT_NO_MSG(d_entry != NULL);
 
 	if (cmd == NULL) {
 		*entry = NULL;
@@ -108,11 +109,11 @@ static enum shell_wildcard_status commands_expand(const struct shell *shell,
 					      &shell->ctx->cmd_tmp_buff_len,
 					      p_static_entry->syntax, pattern);
 			if (ret_val == SHELL_WILDCARD_CMD_MISSING_SPACE) {
-				shell_fprintf(shell,
+				shell_internal_fprintf(shell,
 					      SHELL_WARNING,
 					      "Command buffer is too short to"
 					      " expand all commands matching"
-					      " wildcard pattern: %s\r\n",
+					      " wildcard pattern: %s\n",
 					      pattern);
 				break;
 			} else if (ret_val != SHELL_WILDCARD_CMD_ADDED) {
@@ -132,7 +133,7 @@ static enum shell_wildcard_status commands_expand(const struct shell *shell,
 
 bool shell_wildcard_character_exist(const char *str)
 {
-	size_t str_len = shell_strlen(str);
+	u16_t str_len = shell_strlen(str);
 
 	for (size_t i = 0; i < str_len; i++) {
 		if ((str[i] == '?') || (str[i] == '*')) {

@@ -8,15 +8,10 @@
 #define ZEPHYR_DRIVERS_SENSOR_HTS221_HTS221_H_
 
 #include <device.h>
-#include <misc/util.h>
+#include <sys/util.h>
 #include <zephyr/types.h>
-#include <gpio.h>
+#include <drivers/gpio.h>
 
-#define SYS_LOG_DOMAIN "HTS221"
-#define SYS_LOG_LEVEL CONFIG_SYS_LOG_SENSOR_LEVEL
-#include <logging/sys_log.h>
-
-#define HTS221_I2C_ADDR			0x5F
 #define HTS221_AUTOINCREMENT_ADDR	BIT(7)
 
 #define HTS221_REG_WHO_AM_I		0x0F
@@ -24,7 +19,7 @@
 
 #define HTS221_REG_CTRL1		0x20
 #define HTS221_PD_BIT			BIT(7)
-#define HTS221_BDU_BIT			BIT(3)
+#define HTS221_BDU_BIT			BIT(2)
 #define HTS221_ODR_SHIFT		0
 
 #define HTS221_REG_CTRL3		0x22
@@ -32,10 +27,6 @@
 
 #define HTS221_REG_DATA_START		0x28
 #define HTS221_REG_CONVERSION_START	0x30
-
-static const char * const hts221_odr_strings[] = {
-	"1", "7", "12.5"
-};
 
 struct hts221_data {
 	struct device *i2c;

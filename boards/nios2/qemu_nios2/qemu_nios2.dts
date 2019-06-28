@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 /dts-v1/;
 
 #include <nios2-qemu.dtsi>
@@ -7,23 +9,24 @@
 	compatible = "qemu,nios2";
 
 	aliases {
-		uart_0 = &jtag_uart;
-		uart_1 = &ns16550_uart;
+		uart-0 = &jtag_uart;
+		uart-1 = &ns16550_uart;
 	};
 
 	chosen {
 		zephyr,sram = &sram0;
 		zephyr,flash = &flash0;
-		zephyr,console = &jtag_uart;
+		zephyr,console = &ns16550_uart;
+		zephyr,shell-uart = &ns16550_uart;
 	};
 };
 
 &jtag_uart {
-	status = "ok";
+	status = "okay";
 	current-speed = <115200>;
 };
 
 &ns16550_uart {
-	status = "ok";
+	status = "okay";
 	current-speed = <115200>;
 };

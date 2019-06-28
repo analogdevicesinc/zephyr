@@ -6,8 +6,7 @@
 
 #include <kernel.h>
 #include <arch/cpu.h>
-#include <uart.h>
-#include <board.h>
+#include <drivers/uart.h>
 
 
 /* UART REGISTERS DEFINITIONS */
@@ -151,17 +150,15 @@ struct uart_miv_data {
 #define DEV_DATA(dev)						\
 	((struct uart_miv_data * const)(dev)->driver_data)
 
-static unsigned char uart_miv_poll_out(struct device *dev,
+static void uart_miv_poll_out(struct device *dev,
 				       unsigned char c)
 {
 	volatile struct uart_miv_regs_t *uart = DEV_UART(dev);
 
-	while (!(uart->status & STATUS_TXRDY_MASK))
-		;
+	while (!(uart->status & STATUS_TXRDY_MASK)) {
+	}
 
 	uart->tx = c;
-
-	return c;
 }
 
 static int uart_miv_poll_in(struct device *dev, unsigned char *c)
@@ -346,7 +343,7 @@ static int uart_miv_init(struct device *dev)
 	const struct uart_miv_device_config *const cfg = DEV_CFG(dev);
 	volatile struct uart_miv_regs_t *uart = DEV_UART(dev);
 	/* Calculate divider value to set baudrate */
-	u16_t baud_value = (cfg->sys_clk_freq / (16 * cfg->baud_rate)) - 1;
+	u16_t baud_value = (cfg->sys_clk_freq / (cfg->baud_rate * 16U)) - 1;
 
 	/* Set baud rate */
 	uart->ctrlreg1 = (u8_t)(baud_value & BAUDVALUE_LSB);
@@ -391,16 +388,16 @@ static void uart_miv_irq_cfg_func_0(struct device *dev);
 #endif
 
 static const struct uart_miv_device_config uart_miv_dev_cfg_0 = {
-	.uart_addr    = MIV_UART_0_BASE_ADDR,
-	.sys_clk_freq = uart_miv_port_0_clk_freq,
+	.uart_addr    = DT_MIV_UART_0_BASE_ADDR,
+	.sys_clk_freq = DT_MIV_UART_0_CLOCK_FREQUENCY,
 	.line_config  = MIV_UART_0_LINECFG,
-	.baud_rate    = CONFIG_UART_MIV_PORT_0_BAUD_RATE,
+	.baud_rate    = DT_MIV_UART_0_BAUD_RATE,
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 	.cfg_func     = uart_miv_irq_cfg_func_0,
 #endif
 };
 
-DEVICE_AND_API_INIT(uart_miv_0, CONFIG_UART_MIV_PORT_0_NAME,
+DEVICE_AND_API_INIT(uart_miv_0, DT_MIV_UART_0_NAME,
 		    uart_miv_init, &uart_miv_data_0, &uart_miv_dev_cfg_0,
 		    PRE_KERNEL_1, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
 		    (void *)&uart_miv_driver_api);
@@ -415,4 +412,4 @@ static void uart_miv_irq_cfg_func_0(struct device *dev)
 }
 #endif
 
-#endif /* CONFIG_MIV_UART_0 */
+#endif /* CONFIG_UART_MIV_PORT_0 */

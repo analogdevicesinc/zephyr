@@ -5,15 +5,19 @@
  */
 
 #include <device.h>
-#include <i2c.h>
-#include <gpio.h>
-#include <misc/byteorder.h>
-#include <misc/util.h>
+#include <drivers/i2c.h>
+#include <drivers/gpio.h>
+#include <sys/byteorder.h>
+#include <sys/util.h>
 #include <kernel.h>
-#include <sensor.h>
-#include <misc/__assert.h>
+#include <drivers/sensor.h>
+#include <sys/__assert.h>
+#include <logging/log.h>
 
 #include "tmp007.h"
+
+#define LOG_LEVEL CONFIG_SENSOR_LOG_LEVEL
+LOG_MODULE_REGISTER(TMP007);
 
 int tmp007_reg_read(struct tmp007_data *drv_data, u8_t reg, u16_t *val)
 {
@@ -50,7 +54,7 @@ int tmp007_reg_write(struct tmp007_data *drv_data, u8_t reg, u16_t val)
 int tmp007_reg_update(struct tmp007_data *drv_data, u8_t reg,
 		      u16_t mask, u16_t val)
 {
-	u16_t old_val = 0;
+	u16_t old_val = 0U;
 	u16_t new_val;
 
 	if (tmp007_reg_read(drv_data, reg, &old_val) < 0) {
@@ -116,14 +120,14 @@ int tmp007_init(struct device *dev)
 
 	drv_data->i2c = device_get_binding(CONFIG_TMP007_I2C_MASTER_DEV_NAME);
 	if (drv_data->i2c == NULL) {
-		SYS_LOG_DBG("Failed to get pointer to %s device!",
+		LOG_DBG("Failed to get pointer to %s device!",
 			    CONFIG_TMP007_I2C_MASTER_DEV_NAME);
 		return -EINVAL;
 	}
 
 #ifdef CONFIG_TMP007_TRIGGER
 	if (tmp007_init_interrupt(dev) < 0) {
-		SYS_LOG_DBG("Failed to initialize interrupt!");
+		LOG_DBG("Failed to initialize interrupt!");
 		return -EIO;
 	}
 #endif

@@ -6,13 +6,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <gpio.h>
+#include <drivers/gpio.h>
 #include <board.h>
 #include <soc.h>
-#include <misc/printk.h>
+#include <sys/printk.h>
 #include <ctype.h>
-#include <gpio.h>
-#include <pwm.h>
+#include <drivers/gpio.h>
+#include <drivers/pwm.h>
 
 #include <display/mb_display.h>
 
@@ -101,14 +101,14 @@ static u32_t get_period(char note, bool sharp)
 void board_play_tune(const char *str)
 {
 	while (*str) {
-		u32_t period, duration = 0;
+		u32_t period, duration = 0U;
 
 		while (*str && !isdigit((unsigned char)*str)) {
 			str++;
 		}
 
 		while (isdigit((unsigned char)*str)) {
-			duration *= 10;
+			duration *= 10U;
 			duration += *str - '0';
 			str++;
 		}
@@ -126,7 +126,7 @@ void board_play_tune(const char *str)
 		}
 
 		if (period) {
-			pwm_pin_set_usec(pwm, BUZZER_PIN, period, period / 2);
+			pwm_pin_set_usec(pwm, BUZZER_PIN, period, period / 2U);
 		}
 
 		k_sleep(duration);
@@ -170,7 +170,7 @@ void board_heartbeat(u8_t hops, u16_t feat)
 	printk("%u hops\n", hops);
 
 	if (hops) {
-		hops = min(hops, ARRAY_SIZE(hops_img));
+		hops = MIN(hops, ARRAY_SIZE(hops_img));
 		mb_display_image(disp, MB_DISPLAY_MODE_SINGLE, K_SECONDS(2),
 				 &hops_img[hops - 1], 1);
 	}
@@ -227,7 +227,7 @@ static void configure_button(void)
 
 	k_work_init(&button_work, button_send_pressed);
 
-	gpio = device_get_binding(SW0_GPIO_NAME);
+	gpio = device_get_binding(SW0_GPIO_CONTROLLER);
 
 	gpio_pin_configure(gpio, SW0_GPIO_PIN,
 			   (GPIO_DIR_IN | GPIO_INT | GPIO_INT_EDGE |
@@ -248,7 +248,7 @@ void board_init(u16_t *addr)
 {
 	struct mb_display *disp = mb_display_get();
 
-	nvm = device_get_binding(FLASH_DEV_NAME);
+	nvm = device_get_binding(DT_FLASH_DEV_NAME);
 	pwm = device_get_binding(CONFIG_PWM_NRF5_SW_0_DEV_NAME);
 
 	*addr = NRF_UICR->CUSTOMER[0];

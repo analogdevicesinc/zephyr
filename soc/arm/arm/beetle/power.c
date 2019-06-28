@@ -6,7 +6,7 @@
 
 #include <device.h>
 #include <init.h>
-#include <power.h>
+#include <power/power.h>
 #include <soc.h>
 #include <soc_power.h>
 #include <arch/cpu.h>
@@ -25,13 +25,13 @@
 
 #define AHB_CLK_BITS (CLK_BIT_GPIO0 | CLK_BIT_GPIO1)
 
-#if defined(CONFIG_COUNTER_TMR_CMSDK_APB_0)
+#if defined(DT_ARM_CMSDK_TIMER_40000000_BASE_ADDRESS)
 #define CLK_BIT_TIMER0	_BEETLE_TIMER0
 #else
 #define CLK_BIT_TIMER0	0
 #endif
 
-#if defined(CONFIG_COUNTER_TMR_CMSDK_APB_1)
+#if defined(DT_ARM_CMSDK_TIMER_40001000_BASE_ADDRESS)
 #define CLK_BIT_TIMER1	_BEETLE_TIMER1
 #else
 #define CLK_BIT_TIMER1	0
@@ -43,13 +43,13 @@
 #define CLK_BIT_WDOG	0
 #endif
 
-#ifdef CONFIG_UART_CMSDK_APB_PORT0
+#ifdef DT_ARM_CMSDK_UART_40004000_BASE_ADDRESS
 #define CLK_BIT_UART0	_BEETLE_UART0
 #else
 #define CLK_BIT_UART0	0
 #endif
 
-#ifdef CONFIG_UART_CMSDK_APB_PORT1
+#ifdef DT_ARM_CMSDK_UART_40005000_BASE_ADDRESS
 #define CLK_BIT_UART1	_BEETLE_UART1
 #else
 #define CLK_BIT_UART1	0

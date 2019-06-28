@@ -24,6 +24,7 @@
 #ifndef _ASMLANGUAGE
 
 #include <zephyr/types.h>
+#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -33,7 +34,7 @@ extern "C" {
 /* Syscall invocation macros. arm-specific machine constraints used to ensure
  * args land in the proper registers.
  */
-static inline u32_t _arch_syscall_invoke6(u32_t arg1, u32_t arg2, u32_t arg3,
+static inline u32_t z_arch_syscall_invoke6(u32_t arg1, u32_t arg2, u32_t arg3,
 					  u32_t arg4, u32_t arg5, u32_t arg6,
 					  u32_t call_id)
 {
@@ -55,7 +56,7 @@ static inline u32_t _arch_syscall_invoke6(u32_t arg1, u32_t arg2, u32_t arg3,
 	return ret;
 }
 
-static inline u32_t _arch_syscall_invoke5(u32_t arg1, u32_t arg2, u32_t arg3,
+static inline u32_t z_arch_syscall_invoke5(u32_t arg1, u32_t arg2, u32_t arg3,
 					  u32_t arg4, u32_t arg5, u32_t call_id)
 {
 	register u32_t ret __asm__("r0") = arg1;
@@ -75,7 +76,7 @@ static inline u32_t _arch_syscall_invoke5(u32_t arg1, u32_t arg2, u32_t arg3,
 	return ret;
 }
 
-static inline u32_t _arch_syscall_invoke4(u32_t arg1, u32_t arg2, u32_t arg3,
+static inline u32_t z_arch_syscall_invoke4(u32_t arg1, u32_t arg2, u32_t arg3,
 					  u32_t arg4, u32_t call_id)
 {
 	register u32_t ret __asm__("r0") = arg1;
@@ -94,7 +95,7 @@ static inline u32_t _arch_syscall_invoke4(u32_t arg1, u32_t arg2, u32_t arg3,
 	return ret;
 }
 
-static inline u32_t _arch_syscall_invoke3(u32_t arg1, u32_t arg2, u32_t arg3,
+static inline u32_t z_arch_syscall_invoke3(u32_t arg1, u32_t arg2, u32_t arg3,
 					  u32_t call_id)
 {
 	register u32_t ret __asm__("r0") = arg1;
@@ -111,7 +112,7 @@ static inline u32_t _arch_syscall_invoke3(u32_t arg1, u32_t arg2, u32_t arg3,
 	return ret;
 }
 
-static inline u32_t _arch_syscall_invoke2(u32_t arg1, u32_t arg2, u32_t call_id)
+static inline u32_t z_arch_syscall_invoke2(u32_t arg1, u32_t arg2, u32_t call_id)
 {
 	register u32_t ret __asm__("r0") = arg1;
 	register u32_t r1 __asm__("r1") = arg2;
@@ -126,7 +127,7 @@ static inline u32_t _arch_syscall_invoke2(u32_t arg1, u32_t arg2, u32_t call_id)
 	return ret;
 }
 
-static inline u32_t _arch_syscall_invoke1(u32_t arg1, u32_t call_id)
+static inline u32_t z_arch_syscall_invoke1(u32_t arg1, u32_t call_id)
 {
 	register u32_t ret __asm__("r0") = arg1;
 	register u32_t r6 __asm__("r6") = call_id;
@@ -139,7 +140,7 @@ static inline u32_t _arch_syscall_invoke1(u32_t arg1, u32_t call_id)
 	return ret;
 }
 
-static inline u32_t _arch_syscall_invoke0(u32_t call_id)
+static inline u32_t z_arch_syscall_invoke0(u32_t call_id)
 {
 	register u32_t ret __asm__("r0");
 	register u32_t r6 __asm__("r6") = call_id;
@@ -153,19 +154,19 @@ static inline u32_t _arch_syscall_invoke0(u32_t call_id)
 	return ret;
 }
 
-static inline int _arch_is_user_context(void)
+static inline bool z_arch_is_user_context(void)
 {
 	u32_t value;
 
 	/* check for handler mode */
 	__asm__ volatile("mrs %0, IPSR\n\t" : "=r"(value));
 	if (value) {
-		return 0;
+		return false;
 	}
 
 	/* if not handler mode, return mode information */
 	__asm__ volatile("mrs %0, CONTROL\n\t" : "=r"(value));
-	return value & 0x1;
+	return (value & 0x1) ? true : false;
 }
 
 #ifdef __cplusplus

@@ -4,6 +4,22 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+"""
+Script to scan Zephyr include directories and emit system call metadata
+
+System calls require a great deal of boilerplate code in order to implement
+completely. This script is the first step in the build system's process of
+auto-generating this code by doing a text scan of directories containing
+header files, and building up a database of system calls and their
+function call prototypes. This information is emitted to a generated
+JSON file for further processing.
+
+If the output JSON file already exists, its contents are checked against
+what information this script would have outputted; if the result is that the
+file would be unchanged, it is not modified to prevent unnecessary
+incremental builds.
+"""
+
 import sys
 import re
 import argparse
@@ -23,7 +39,9 @@ def analyze_headers(multiple_directories):
     ret = []
 
     for base_path in multiple_directories:
-        for root, dirs, files in os.walk(base_path):
+        for root, dirs, files in os.walk(base_path, topdown=True):
+            dirs.sort()
+            files.sort()
             for fn in files:
 
                 # toolchain/common.h has the definition of __syscall which we
@@ -52,7 +70,9 @@ def parse_args():
         formatter_class=argparse.RawDescriptionHelpFormatter)
 
     parser.add_argument("-i", "--include", required=True, action='append',
-                        help="Base include directory")
+                        help='''include directories recursively scanned
+                        for .h files.  Can be specified multiple times:
+                        -i topdir1 -i topdir2 ...''')
     parser.add_argument(
         "-j", "--json-file", required=True,
         help="Write system call prototype information as json to file")

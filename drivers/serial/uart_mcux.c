@@ -6,8 +6,8 @@
 
 #include <errno.h>
 #include <device.h>
-#include <uart.h>
-#include <clock_control.h>
+#include <drivers/uart.h>
+#include <drivers/clock_control.h>
 #include <fsl_uart.h>
 #include <soc.h>
 
@@ -16,6 +16,7 @@ struct uart_mcux_config {
 	char *clock_name;
 	clock_control_subsys_t clock_subsys;
 	u32_t baud_rate;
+	u8_t hw_flow_control;
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 	void (*irq_config_func)(struct device *dev);
 #endif
@@ -42,16 +43,14 @@ static int uart_mcux_poll_in(struct device *dev, unsigned char *c)
 	return ret;
 }
 
-static unsigned char uart_mcux_poll_out(struct device *dev, unsigned char c)
+static void uart_mcux_poll_out(struct device *dev, unsigned char c)
 {
 	const struct uart_mcux_config *config = dev->config->config_info;
 
-	while (!(UART_GetStatusFlags(config->base) & kUART_TxDataRegEmptyFlag))
-		;
+	while (!(UART_GetStatusFlags(config->base) & kUART_TxDataRegEmptyFlag)) {
+	}
 
 	UART_WriteByte(config->base, c);
-
-	return c;
 }
 
 static int uart_mcux_err_check(struct device *dev)
@@ -84,7 +83,7 @@ static int uart_mcux_fifo_fill(struct device *dev, const u8_t *tx_data,
 			       int len)
 {
 	const struct uart_mcux_config *config = dev->config->config_info;
-	u8_t num_tx = 0;
+	u8_t num_tx = 0U;
 
 	while ((len - num_tx > 0) &&
 	       (UART_GetStatusFlags(config->base) & kUART_TxDataRegEmptyFlag)) {
@@ -99,7 +98,7 @@ static int uart_mcux_fifo_read(struct device *dev, u8_t *rx_data,
 			       const int len)
 {
 	const struct uart_mcux_config *config = dev->config->config_info;
-	u8_t num_rx = 0;
+	u8_t num_rx = 0U;
 
 	while ((len - num_rx > 0) &&
 	       (UART_GetStatusFlags(config->base) & kUART_RxDataRegFullFlag)) {
@@ -131,7 +130,7 @@ static int uart_mcux_irq_tx_complete(struct device *dev)
 	const struct uart_mcux_config *config = dev->config->config_info;
 	u32_t flags = UART_GetStatusFlags(config->base);
 
-	return (flags & kUART_TxDataRegEmptyFlag) != 0;
+	return (flags & kUART_TxDataRegEmptyFlag) != 0U;
 }
 
 static int uart_mcux_irq_tx_ready(struct device *dev)
@@ -164,7 +163,7 @@ static int uart_mcux_irq_rx_full(struct device *dev)
 	const struct uart_mcux_config *config = dev->config->config_info;
 	u32_t flags = UART_GetStatusFlags(config->base);
 
-	return (flags & kUART_RxDataRegFullFlag) != 0;
+	return (flags & kUART_RxDataRegFullFlag) != 0U;
 }
 
 static int uart_mcux_irq_rx_ready(struct device *dev)
@@ -247,6 +246,10 @@ static int uart_mcux_init(struct device *dev)
 	UART_GetDefaultConfig(&uart_config);
 	uart_config.enableTx = true;
 	uart_config.enableRx = true;
+	if (config->hw_flow_control) {
+		uart_config.enableRxRTS = true;
+		uart_config.enableTxCTS = true;
+	}
 	uart_config.baudRate_Bps = config->baud_rate;
 
 	UART_Init(config->base, &uart_config, clock_freq);
@@ -288,9 +291,10 @@ static void uart_mcux_config_func_0(struct device *dev);
 
 static const struct uart_mcux_config uart_mcux_0_config = {
 	.base = UART0,
-	.clock_name = CONFIG_UART_MCUX_0_CLOCK_NAME,
-	.clock_subsys = (clock_control_subsys_t)CONFIG_UART_MCUX_0_CLOCK_SUBSYS,
-	.baud_rate = CONFIG_UART_MCUX_0_BAUD_RATE,
+	.clock_name = DT_UART_MCUX_0_CLOCK_NAME,
+	.clock_subsys = (clock_control_subsys_t)DT_UART_MCUX_0_CLOCK_SUBSYS,
+	.baud_rate = DT_UART_MCUX_0_BAUD_RATE,
+	.hw_flow_control = DT_UART_MCUX_0_HW_FLOW_CONTROL,
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 	.irq_config_func = uart_mcux_config_func_0,
 #endif
@@ -298,7 +302,7 @@ static const struct uart_mcux_config uart_mcux_0_config = {
 
 static struct uart_mcux_data uart_mcux_0_data;
 
-DEVICE_AND_API_INIT(uart_0, CONFIG_UART_MCUX_0_NAME,
+DEVICE_AND_API_INIT(uart_0, DT_UART_MCUX_0_NAME,
 		    &uart_mcux_init,
 		    &uart_mcux_0_data, &uart_mcux_0_config,
 		    PRE_KERNEL_1, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
@@ -307,17 +311,17 @@ DEVICE_AND_API_INIT(uart_0, CONFIG_UART_MCUX_0_NAME,
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 static void uart_mcux_config_func_0(struct device *dev)
 {
-	IRQ_CONNECT(CONFIG_UART_MCUX_0_IRQ_STATUS,
-		    CONFIG_UART_MCUX_0_IRQ_STATUS_PRI,
+	IRQ_CONNECT(DT_UART_MCUX_0_IRQ_STATUS,
+		    DT_UART_MCUX_0_IRQ_STATUS_PRI,
 		    uart_mcux_isr, DEVICE_GET(uart_0), 0);
 
-	irq_enable(CONFIG_UART_MCUX_0_IRQ_STATUS);
+	irq_enable(DT_UART_MCUX_0_IRQ_STATUS);
 
-	IRQ_CONNECT(CONFIG_UART_MCUX_0_IRQ_ERROR,
-		    CONFIG_UART_MCUX_0_IRQ_ERROR_PRI,
+	IRQ_CONNECT(DT_UART_MCUX_0_IRQ_ERROR,
+		    DT_UART_MCUX_0_IRQ_ERROR_PRI,
 		    uart_mcux_isr, DEVICE_GET(uart_0), 0);
 
-	irq_enable(CONFIG_UART_MCUX_0_IRQ_ERROR);
+	irq_enable(DT_UART_MCUX_0_IRQ_ERROR);
 }
 #endif
 
@@ -331,9 +335,10 @@ static void uart_mcux_config_func_1(struct device *dev);
 
 static const struct uart_mcux_config uart_mcux_1_config = {
 	.base = UART1,
-	.clock_name = CONFIG_UART_MCUX_1_CLOCK_NAME,
-	.clock_subsys = (clock_control_subsys_t)CONFIG_UART_MCUX_1_CLOCK_SUBSYS,
-	.baud_rate = CONFIG_UART_MCUX_1_BAUD_RATE,
+	.clock_name = DT_UART_MCUX_1_CLOCK_NAME,
+	.clock_subsys = (clock_control_subsys_t)DT_UART_MCUX_1_CLOCK_SUBSYS,
+	.baud_rate = DT_UART_MCUX_1_BAUD_RATE,
+	.hw_flow_control = DT_UART_MCUX_1_HW_FLOW_CONTROL,
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 	.irq_config_func = uart_mcux_config_func_1,
 #endif
@@ -341,7 +346,7 @@ static const struct uart_mcux_config uart_mcux_1_config = {
 
 static struct uart_mcux_data uart_mcux_1_data;
 
-DEVICE_AND_API_INIT(uart_1, CONFIG_UART_MCUX_1_NAME,
+DEVICE_AND_API_INIT(uart_1, DT_UART_MCUX_1_NAME,
 		    &uart_mcux_init,
 		    &uart_mcux_1_data, &uart_mcux_1_config,
 		    PRE_KERNEL_1, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
@@ -350,17 +355,17 @@ DEVICE_AND_API_INIT(uart_1, CONFIG_UART_MCUX_1_NAME,
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 static void uart_mcux_config_func_1(struct device *dev)
 {
-	IRQ_CONNECT(CONFIG_UART_MCUX_1_IRQ_STATUS,
-		    CONFIG_UART_MCUX_1_IRQ_STATUS_PRI,
+	IRQ_CONNECT(DT_UART_MCUX_1_IRQ_STATUS,
+		    DT_UART_MCUX_1_IRQ_STATUS_PRI,
 		    uart_mcux_isr, DEVICE_GET(uart_1), 0);
 
-	irq_enable(CONFIG_UART_MCUX_1_IRQ_STATUS);
+	irq_enable(DT_UART_MCUX_1_IRQ_STATUS);
 
-	IRQ_CONNECT(CONFIG_UART_MCUX_1_IRQ_ERROR,
-		    CONFIG_UART_MCUX_1_IRQ_ERROR_PRI,
+	IRQ_CONNECT(DT_UART_MCUX_1_IRQ_ERROR,
+		    DT_UART_MCUX_1_IRQ_ERROR_PRI,
 		    uart_mcux_isr, DEVICE_GET(uart_1), 0);
 
-	irq_enable(CONFIG_UART_MCUX_1_IRQ_ERROR);
+	irq_enable(DT_UART_MCUX_1_IRQ_ERROR);
 }
 #endif
 
@@ -374,9 +379,10 @@ static void uart_mcux_config_func_2(struct device *dev);
 
 static const struct uart_mcux_config uart_mcux_2_config = {
 	.base = UART2,
-	.clock_name = CONFIG_UART_MCUX_2_CLOCK_NAME,
-	.clock_subsys = (clock_control_subsys_t)CONFIG_UART_MCUX_2_CLOCK_SUBSYS,
-	.baud_rate = CONFIG_UART_MCUX_2_BAUD_RATE,
+	.clock_name = DT_UART_MCUX_2_CLOCK_NAME,
+	.clock_subsys = (clock_control_subsys_t)DT_UART_MCUX_2_CLOCK_SUBSYS,
+	.baud_rate = DT_UART_MCUX_2_BAUD_RATE,
+	.hw_flow_control = DT_UART_MCUX_2_HW_FLOW_CONTROL,
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 	.irq_config_func = uart_mcux_config_func_2,
 #endif
@@ -384,7 +390,7 @@ static const struct uart_mcux_config uart_mcux_2_config = {
 
 static struct uart_mcux_data uart_mcux_2_data;
 
-DEVICE_AND_API_INIT(uart_2, CONFIG_UART_MCUX_2_NAME,
+DEVICE_AND_API_INIT(uart_2, DT_UART_MCUX_2_NAME,
 		    &uart_mcux_init,
 		    &uart_mcux_2_data, &uart_mcux_2_config,
 		    PRE_KERNEL_1, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
@@ -393,17 +399,17 @@ DEVICE_AND_API_INIT(uart_2, CONFIG_UART_MCUX_2_NAME,
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 static void uart_mcux_config_func_2(struct device *dev)
 {
-	IRQ_CONNECT(CONFIG_UART_MCUX_2_IRQ_STATUS,
-		    CONFIG_UART_MCUX_2_IRQ_STATUS_PRI,
+	IRQ_CONNECT(DT_UART_MCUX_2_IRQ_STATUS,
+		    DT_UART_MCUX_2_IRQ_STATUS_PRI,
 		    uart_mcux_isr, DEVICE_GET(uart_2), 0);
 
-	irq_enable(CONFIG_UART_MCUX_2_IRQ_STATUS);
+	irq_enable(DT_UART_MCUX_2_IRQ_STATUS);
 
-	IRQ_CONNECT(CONFIG_UART_MCUX_2_IRQ_ERROR,
-		    CONFIG_UART_MCUX_2_IRQ_ERROR_PRI,
+	IRQ_CONNECT(DT_UART_MCUX_2_IRQ_ERROR,
+		    DT_UART_MCUX_2_IRQ_ERROR_PRI,
 		    uart_mcux_isr, DEVICE_GET(uart_2), 0);
 
-	irq_enable(CONFIG_UART_MCUX_2_IRQ_ERROR);
+	irq_enable(DT_UART_MCUX_2_IRQ_ERROR);
 }
 #endif
 
@@ -417,9 +423,10 @@ static void uart_mcux_config_func_3(struct device *dev);
 
 static const struct uart_mcux_config uart_mcux_3_config = {
 	.base = UART3,
-	.clock_name = CONFIG_UART_MCUX_3_CLOCK_NAME,
-	.clock_subsys = (clock_control_subsys_t)CONFIG_UART_MCUX_3_CLOCK_SUBSYS,
-	.baud_rate = CONFIG_UART_MCUX_3_BAUD_RATE,
+	.clock_name = DT_UART_MCUX_3_CLOCK_NAME,
+	.clock_subsys = (clock_control_subsys_t)DT_UART_MCUX_3_CLOCK_SUBSYS,
+	.baud_rate = DT_UART_MCUX_3_BAUD_RATE,
+	.hw_flow_control = DT_UART_MCUX_3_HW_FLOW_CONTROL,
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 	.irq_config_func = uart_mcux_config_func_3,
 #endif
@@ -427,7 +434,7 @@ static const struct uart_mcux_config uart_mcux_3_config = {
 
 static struct uart_mcux_data uart_mcux_3_data;
 
-DEVICE_AND_API_INIT(uart_3, CONFIG_UART_MCUX_3_NAME,
+DEVICE_AND_API_INIT(uart_3, DT_UART_MCUX_3_NAME,
 		    &uart_mcux_init,
 		    &uart_mcux_3_data, &uart_mcux_3_config,
 		    PRE_KERNEL_1, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
@@ -436,17 +443,17 @@ DEVICE_AND_API_INIT(uart_3, CONFIG_UART_MCUX_3_NAME,
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 static void uart_mcux_config_func_3(struct device *dev)
 {
-	IRQ_CONNECT(CONFIG_UART_MCUX_3_IRQ_STATUS,
-		    CONFIG_UART_MCUX_3_IRQ_STATUS_PRI,
+	IRQ_CONNECT(DT_UART_MCUX_3_IRQ_STATUS,
+		    DT_UART_MCUX_3_IRQ_STATUS_PRI,
 		    uart_mcux_isr, DEVICE_GET(uart_3), 0);
 
-	irq_enable(CONFIG_UART_MCUX_3_IRQ_STATUS);
+	irq_enable(DT_UART_MCUX_3_IRQ_STATUS);
 
-	IRQ_CONNECT(CONFIG_UART_MCUX_3_IRQ_ERROR,
-		    CONFIG_UART_MCUX_3_IRQ_ERROR_PRI,
+	IRQ_CONNECT(DT_UART_MCUX_3_IRQ_ERROR,
+		    DT_UART_MCUX_3_IRQ_ERROR_PRI,
 		    uart_mcux_isr, DEVICE_GET(uart_3), 0);
 
-	irq_enable(CONFIG_UART_MCUX_3_IRQ_ERROR);
+	irq_enable(DT_UART_MCUX_3_IRQ_ERROR);
 }
 #endif
 
@@ -460,9 +467,10 @@ static void uart_mcux_config_func_4(struct device *dev);
 
 static const struct uart_mcux_config uart_mcux_4_config = {
 	.base = UART4,
-	.clock_name = CONFIG_UART_MCUX_4_CLOCK_NAME,
-	.clock_subsys = (clock_control_subsys_t)CONFIG_UART_MCUX_4_CLOCK_SUBSYS,
-	.baud_rate = CONFIG_UART_MCUX_4_BAUD_RATE,
+	.clock_name = DT_UART_MCUX_4_CLOCK_NAME,
+	.clock_subsys = (clock_control_subsys_t)DT_UART_MCUX_4_CLOCK_SUBSYS,
+	.baud_rate = DT_UART_MCUX_4_BAUD_RATE,
+	.hw_flow_control = DT_UART_MCUX_4_HW_FLOW_CONTROL,
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 	.irq_config_func = uart_mcux_config_func_4,
 #endif
@@ -470,7 +478,7 @@ static const struct uart_mcux_config uart_mcux_4_config = {
 
 static struct uart_mcux_data uart_mcux_4_data;
 
-DEVICE_AND_API_INIT(uart_4, CONFIG_UART_MCUX_4_NAME,
+DEVICE_AND_API_INIT(uart_4, DT_UART_MCUX_4_NAME,
 		    &uart_mcux_init,
 		    &uart_mcux_4_data, &uart_mcux_4_config,
 		    PRE_KERNEL_1, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
@@ -479,17 +487,17 @@ DEVICE_AND_API_INIT(uart_4, CONFIG_UART_MCUX_4_NAME,
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 static void uart_mcux_config_func_4(struct device *dev)
 {
-	IRQ_CONNECT(CONFIG_UART_MCUX_4_IRQ_STATUS,
-		    CONFIG_UART_MCUX_4_IRQ_STATUS_PRI,
+	IRQ_CONNECT(DT_UART_MCUX_4_IRQ_STATUS,
+		    DT_UART_MCUX_4_IRQ_STATUS_PRI,
 		    uart_mcux_isr, DEVICE_GET(uart_4), 0);
 
-	irq_enable(CONFIG_UART_MCUX_4_IRQ_STATUS);
+	irq_enable(DT_UART_MCUX_4_IRQ_STATUS);
 
-	IRQ_CONNECT(CONFIG_UART_MCUX_4_IRQ_ERROR,
-		    CONFIG_UART_MCUX_4_IRQ_ERROR_PRI,
+	IRQ_CONNECT(DT_UART_MCUX_4_IRQ_ERROR,
+		    DT_UART_MCUX_4_IRQ_ERROR_PRI,
 		    uart_mcux_isr, DEVICE_GET(uart_4), 0);
 
-	irq_enable(CONFIG_UART_MCUX_4_IRQ_ERROR);
+	irq_enable(DT_UART_MCUX_4_IRQ_ERROR);
 }
 #endif
 
@@ -503,9 +511,10 @@ static void uart_mcux_config_func_5(struct device *dev);
 
 static const struct uart_mcux_config uart_mcux_5_config = {
 	.base = UART5,
-	.clock_name = CONFIG_UART_MCUX_5_CLOCK_NAME,
-	.clock_subsys = (clock_control_subsys_t)CONFIG_UART_MCUX_5_CLOCK_SUBSYS,
-	.baud_rate = CONFIG_UART_MCUX_5_BAUD_RATE,
+	.clock_name = DT_UART_MCUX_5_CLOCK_NAME,
+	.clock_subsys = (clock_control_subsys_t)DT_UART_MCUX_5_CLOCK_SUBSYS,
+	.baud_rate = DT_UART_MCUX_5_BAUD_RATE,
+	.hw_flow_control = DT_UART_MCUX_5_HW_FLOW_CONTROL,
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 	.irq_config_func = uart_mcux_config_func_5,
 #endif
@@ -513,7 +522,7 @@ static const struct uart_mcux_config uart_mcux_5_config = {
 
 static struct uart_mcux_data uart_mcux_5_data;
 
-DEVICE_AND_API_INIT(uart_5, CONFIG_UART_MCUX_5_NAME,
+DEVICE_AND_API_INIT(uart_5, DT_UART_MCUX_5_NAME,
 		    &uart_mcux_init,
 		    &uart_mcux_5_data, &uart_mcux_5_config,
 		    PRE_KERNEL_1, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
@@ -522,17 +531,17 @@ DEVICE_AND_API_INIT(uart_5, CONFIG_UART_MCUX_5_NAME,
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 static void uart_mcux_config_func_5(struct device *dev)
 {
-	IRQ_CONNECT(CONFIG_UART_MCUX_5_IRQ_STATUS,
-		    CONFIG_UART_MCUX_5_IRQ_STATUS_PRI,
+	IRQ_CONNECT(DT_UART_MCUX_5_IRQ_STATUS,
+		    DT_UART_MCUX_5_IRQ_STATUS_PRI,
 		    uart_mcux_isr, DEVICE_GET(uart_5), 0);
 
-	irq_enable(CONFIG_UART_MCUX_5_IRQ_STATUS);
+	irq_enable(DT_UART_MCUX_5_IRQ_STATUS);
 
-	IRQ_CONNECT(CONFIG_UART_MCUX_5_IRQ_ERROR,
-		    CONFIG_UART_MCUX_5_IRQ_ERROR_PRI,
+	IRQ_CONNECT(DT_UART_MCUX_5_IRQ_ERROR,
+		    DT_UART_MCUX_5_IRQ_ERROR_PRI,
 		    uart_mcux_isr, DEVICE_GET(uart_5), 0);
 
-	irq_enable(CONFIG_UART_MCUX_5_IRQ_ERROR);
+	irq_enable(DT_UART_MCUX_5_IRQ_ERROR);
 }
 #endif
 

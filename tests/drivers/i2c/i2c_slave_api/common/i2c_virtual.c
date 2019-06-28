@@ -5,15 +5,15 @@
  */
 
 #include <clock_control/stm32_clock_control.h>
-#include <clock_control.h>
-#include <misc/util.h>
+#include <drivers/clock_control.h>
+#include <sys/util.h>
 #include <kernel.h>
-#include <board.h>
 #include <errno.h>
-#include <i2c.h>
+#include <drivers/i2c.h>
 
-#define SYS_LOG_LEVEL CONFIG_SYS_LOG_I2C_LEVEL
-#include <logging/sys_log.h>
+#define LOG_LEVEL CONFIG_I2C_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_DECLARE(main);
 
 #define DEV_DATA(dev) ((struct i2c_virtual_data * const)(dev)->driver_data)
 
@@ -88,7 +88,7 @@ static int i2c_virtual_msg_write(struct device *dev, struct i2c_msg *msg,
 				 struct i2c_slave_config *config,
 				 bool prev_write)
 {
-	unsigned int len = 0;
+	unsigned int len = 0U;
 	u8_t *buf = msg->buf;
 	int ret;
 
@@ -113,7 +113,7 @@ static int i2c_virtual_msg_write(struct device *dev, struct i2c_msg *msg,
 
 	return 0;
 error:
-	SYS_LOG_DBG("%s: NACK", __func__);
+	LOG_DBG("%s: NACK", __func__);
 
 	return -EIO;
 }
@@ -180,7 +180,7 @@ static int i2c_virtual_transfer(struct device *dev, struct i2c_msg *msg,
 		}
 
 		/* Stop condition is required for the last message */
-		if ((num_msgs == 1) && !(current->flags & I2C_MSG_STOP)) {
+		if ((num_msgs == 1U) && !(current->flags & I2C_MSG_STOP)) {
 			ret = -EINVAL;
 			break;
 		}

@@ -4,10 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define SYS_LOG_DOMAIN "modem_wncm14a2a"
-#define SYS_LOG_LEVEL CONFIG_SYS_LOG_MODEM_LEVEL
-
-#include <logging/sys_log.h>
+#define LOG_DOMAIN modem_wncm14a2a
+#define LOG_LEVEL CONFIG_MODEM_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_REGISTER(LOG_DOMAIN);
 
 #include <zephyr/types.h>
 #include <stddef.h>
@@ -15,7 +15,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <zephyr.h>
-#include <gpio.h>
+#include <drivers/gpio.h>
 #include <device.h>
 #include <init.h>
 
@@ -23,14 +23,17 @@
 #include <net/net_if.h>
 #include <net/net_offload.h>
 #include <net/net_pkt.h>
-#if defined(CONFIG_NET_UDP)
-#include <net/udp.h>
+#if defined(CONFIG_NET_IPV6)
+#include "ipv6.h"
 #endif
-#if defined(CONFIG_NET_TCP)
-#include <net/tcp.h>
+#if defined(CONFIG_NET_IPV4)
+#include "ipv4.h"
+#endif
+#if defined(CONFIG_NET_UDP)
+#include "udp_internal.h"
 #endif
 
-#include <drivers/modem/modem_receiver.h>
+#include "modem_receiver.h"
 
 /* Uncomment the #define below to enable a hexdump of all incoming
  * data from the modem receiver
@@ -54,7 +57,7 @@ enum mdm_control_pins {
 	MDM_KEEP_AWAKE,
 	MDM_RESET,
 	SHLD_3V3_1V8_SIG_TRANS_ENA,
-#ifdef CONFIG_WNCM14A2A_GPIO_MDM_SEND_OK_PIN
+#ifdef DT_INST_0_WNC_M14A2A_MDM_SEND_OK_GPIOS_PIN
 	MDM_SEND_OK,
 #endif
 	MAX_MDM_CONTROL_PINS,
@@ -62,33 +65,33 @@ enum mdm_control_pins {
 
 static const struct mdm_control_pinconfig pinconfig[] = {
 	/* MDM_BOOT_MODE_SEL */
-	PINCONFIG(CONFIG_WNCM14A2A_GPIO_MDM_BOOT_MODE_SEL_NAME,
-		  CONFIG_WNCM14A2A_GPIO_MDM_BOOT_MODE_SEL_PIN),
+	PINCONFIG(DT_INST_0_WNC_M14A2A_MDM_BOOT_MODE_SEL_GPIOS_CONTROLLER,
+		  DT_INST_0_WNC_M14A2A_MDM_BOOT_MODE_SEL_GPIOS_PIN),
 
 	/* MDM_POWER */
-	PINCONFIG(CONFIG_WNCM14A2A_GPIO_MDM_POWER_NAME,
-		  CONFIG_WNCM14A2A_GPIO_MDM_POWER_PIN),
+	PINCONFIG(DT_INST_0_WNC_M14A2A_MDM_POWER_GPIOS_CONTROLLER,
+		  DT_INST_0_WNC_M14A2A_MDM_POWER_GPIOS_PIN),
 
 	/* MDM_KEEP_AWAKE */
-	PINCONFIG(CONFIG_WNCM14A2A_GPIO_MDM_KEEP_AWAKE_NAME,
-		  CONFIG_WNCM14A2A_GPIO_MDM_KEEP_AWAKE_PIN),
+	PINCONFIG(DT_INST_0_WNC_M14A2A_MDM_KEEP_AWAKE_GPIOS_CONTROLLER,
+		  DT_INST_0_WNC_M14A2A_MDM_KEEP_AWAKE_GPIOS_PIN),
 
 	/* MDM_RESET */
-	PINCONFIG(CONFIG_WNCM14A2A_GPIO_MDM_RESET_NAME,
-		  CONFIG_WNCM14A2A_GPIO_MDM_RESET_PIN),
+	PINCONFIG(DT_INST_0_WNC_M14A2A_MDM_RESET_GPIOS_CONTROLLER,
+		  DT_INST_0_WNC_M14A2A_MDM_RESET_GPIOS_PIN),
 
 	/* SHLD_3V3_1V8_SIG_TRANS_ENA */
-	PINCONFIG(CONFIG_WNCM14A2A_GPIO_MDM_SHLD_TRANS_ENA_NAME,
-		  CONFIG_WNCM14A2A_GPIO_MDM_SHLD_TRANS_ENA_PIN),
+	PINCONFIG(DT_INST_0_WNC_M14A2A_MDM_SHLD_TRANS_ENA_GPIOS_CONTROLLER,
+		  DT_INST_0_WNC_M14A2A_MDM_SHLD_TRANS_ENA_GPIOS_PIN),
 
-#ifdef CONFIG_WNCM14A2A_GPIO_MDM_SEND_OK_PIN
+#ifdef DT_INST_0_WNC_M14A2A_MDM_SEND_OK_GPIOS_PIN
 	/* MDM_SEND_OK */
-	PINCONFIG(CONFIG_WNCM14A2A_GPIO_MDM_SEND_OK_NAME,
-		  CONFIG_WNCM14A2A_GPIO_MDM_SEND_OK_PIN),
+	PINCONFIG(DT_INST_0_WNC_M14A2A_MDM_SEND_OK_GPIOS_CONTROLLER,
+		  DT_INST_0_WNC_M14A2A_MDM_SEND_OK_GPIOS_PIN),
 #endif
 };
 
-#define MDM_UART_DEV_NAME		CONFIG_WNCM14A2A_UART_DRV_NAME
+#define MDM_UART_DEV_NAME		DT_INST_0_WNC_M14A2A_BUS_NAME
 
 #define MDM_BOOT_MODE_SPECIAL		0
 #define MDM_BOOT_MODE_NORMAL		1
@@ -153,7 +156,6 @@ struct wncm14a2a_socket {
 	struct sockaddr dst;
 
 	int socket_id;
-	bool socket_reading;
 
 	/** semaphore */
 	struct k_sem sock_send_sem;
@@ -209,7 +211,7 @@ static void wncm14a2a_read_rx(struct net_buf **buf);
 
 /*** Verbose Debugging Functions ***/
 #if defined(ENABLE_VERBOSE_MODEM_RECV_HEXDUMP)
-static inline void _hexdump(const u8_t *packet, size_t length)
+static inline void hexdump(const u8_t *packet, size_t length)
 {
 	char output[sizeof("xxxxyyyy xxxxyyyy")];
 	int n = 0, k = 0;
@@ -259,7 +261,7 @@ static inline void _hexdump(const u8_t *packet, size_t length)
 	}
 }
 #else
-#define _hexdump(...)
+#define hexdump(...)
 #endif
 
 static struct wncm14a2a_socket *socket_get(void)
@@ -325,7 +327,7 @@ char *wncm14a2a_sprint_ip_addr(const struct sockaddr *addr)
 	} else
 #endif
 	{
-		SYS_LOG_ERR("Unknown IP address family:%d", addr->sa_family);
+		LOG_ERR("Unknown IP address family:%d", addr->sa_family);
 		return NULL;
 	}
 }
@@ -338,7 +340,7 @@ static int send_at_cmd(struct wncm14a2a_socket *sock,
 
 	ictx.last_error = 0;
 
-	SYS_LOG_DBG("OUT: [%s]", data);
+	LOG_DBG("OUT: [%s]", data);
 	mdm_receiver_send(&ictx.mdm_ctx, data, strlen(data));
 	mdm_receiver_send(&ictx.mdm_ctx, "\r\n", 2);
 
@@ -425,13 +427,13 @@ static void net_buf_skipcrlf(struct net_buf **buf)
 static u16_t net_buf_findcrlf(struct net_buf *buf, struct net_buf **frag,
 			      u16_t *offset)
 {
-	u16_t len = 0, pos = 0;
+	u16_t len = 0U, pos = 0U;
 
 	while (buf && !is_crlf(*(buf->data + pos))) {
 		if (pos + 1 >= buf->len) {
 			len += buf->len;
 			buf = buf->frags;
-			pos = 0;
+			pos = 0U;
 		} else {
 			pos++;
 		}
@@ -454,51 +456,33 @@ static u16_t net_buf_findcrlf(struct net_buf *buf, struct net_buf **frag,
  * important.
  * Return the IP + protocol header length.
  */
-static int net_pkt_setup_ip_data(struct net_pkt *pkt,
-				  struct wncm14a2a_socket *sock)
+static int pkt_setup_ip_data(struct net_pkt *pkt,
+			     struct wncm14a2a_socket *sock)
 {
 	int hdr_len = 0;
-	u16_t src_port = 0, dst_port = 0;
+	u16_t src_port = 0U, dst_port = 0U;
 
 #if defined(CONFIG_NET_IPV6)
 	if (net_pkt_family(pkt) == AF_INET6) {
-		net_buf_add(pkt->frags, NET_IPV6H_LEN);
+		if (net_ipv6_create(
+			    pkt,
+			    &((struct sockaddr_in6 *)&sock->dst)->sin6_addr,
+			    &((struct sockaddr_in6 *)&sock->src)->sin6_addr)) {
+			return -1;
+		}
 
-		/* set IPv6 data */
-		NET_IPV6_HDR(pkt)->vtc = 0x60;
-		NET_IPV6_HDR(pkt)->tcflow = 0;
-		NET_IPV6_HDR(pkt)->flow = 0;
-		net_ipaddr_copy(&NET_IPV6_HDR(pkt)->src,
-			&((struct sockaddr_in6 *)&sock->dst)->sin6_addr);
-		net_ipaddr_copy(&NET_IPV6_HDR(pkt)->dst,
-			&((struct sockaddr_in6 *)&sock->src)->sin6_addr);
-		NET_IPV6_HDR(pkt)->nexthdr = sock->ip_proto;
-
-		src_port = net_sin6(&sock->dst)->sin6_port;
-		dst_port = net_sin6(&sock->src)->sin6_port;
-
-		net_pkt_set_ip_hdr_len(pkt, sizeof(struct net_ipv6_hdr));
-		net_pkt_set_ipv6_ext_len(pkt, 0);
 		hdr_len = sizeof(struct net_ipv6_hdr);
 	} else
 #endif
 #if defined(CONFIG_NET_IPV4)
 	if (net_pkt_family(pkt) == AF_INET) {
-		net_buf_add(pkt->frags, NET_IPV4H_LEN);
+		if (net_ipv4_create(
+			    pkt,
+			    &((struct sockaddr_in *)&sock->dst)->sin_addr,
+			    &((struct sockaddr_in *)&sock->src)->sin_addr)) {
+			return -1;
+		}
 
-		/* set IPv4 data */
-		NET_IPV4_HDR(pkt)->vhl = 0x45;
-		NET_IPV4_HDR(pkt)->tos = 0x00;
-		net_ipaddr_copy(&NET_IPV4_HDR(pkt)->src,
-			&((struct sockaddr_in *)&sock->dst)->sin_addr);
-		net_ipaddr_copy(&NET_IPV4_HDR(pkt)->dst,
-			&((struct sockaddr_in *)&sock->src)->sin_addr);
-		NET_IPV4_HDR(pkt)->proto = sock->ip_proto;
-
-		src_port = net_sin(&sock->dst)->sin_port;
-		dst_port = net_sin(&sock->src)->sin_port;
-
-		net_pkt_set_ip_hdr_len(pkt, sizeof(struct net_ipv4_hdr));
 		hdr_len = sizeof(struct net_ipv4_hdr);
 	} else
 #endif
@@ -508,31 +492,33 @@ static int net_pkt_setup_ip_data(struct net_pkt *pkt,
 
 #if defined(CONFIG_NET_UDP)
 	if (sock->ip_proto == IPPROTO_UDP) {
-		struct net_udp_hdr hdr, *udp;
+		if (net_udp_create(pkt, src_port, dst_port)) {
+			return -1;
+		}
 
-		net_buf_add(pkt->frags, NET_UDPH_LEN);
-		udp = net_udp_get_hdr(pkt, &hdr);
-		(void)memset(udp, 0, NET_UDPH_LEN);
-
-		/* Setup UDP header */
-		udp->src_port = src_port;
-		udp->dst_port = dst_port;
-		net_udp_set_hdr(pkt, udp);
 		hdr_len += NET_UDPH_LEN;
 	} else
 #endif
 #if defined(CONFIG_NET_TCP)
 	if (sock->ip_proto == IPPROTO_TCP) {
-		struct net_tcp_hdr hdr, *tcp;
+		NET_PKT_DATA_ACCESS_DEFINE(tcp_access, struct net_tcp_hdr);
+		struct net_tcp_hdr *tcp;
 
-		net_buf_add(pkt->frags, NET_TCPH_LEN);
-		tcp = net_tcp_get_hdr(pkt, &hdr);
+		tcp = (struct net_tcp_hdr *)net_pkt_get_data(pkt, &tcp_access);
+		if (!tcp) {
+			return -1;
+		}
+
 		(void)memset(tcp, 0, NET_TCPH_LEN);
 
 		/* Setup TCP header */
 		tcp->src_port = src_port;
 		tcp->dst_port = dst_port;
-		net_tcp_set_hdr(pkt, tcp);
+
+		if (net_pkt_set_data(pkt, &tcp_access)) {
+			return -1;
+		}
+
 		hdr_len += NET_TCPH_LEN;
 	} else
 #endif /* CONFIG_NET_TCP */
@@ -563,54 +549,69 @@ static void on_cmd_atcmdecho_nosock(struct net_buf **buf, u16_t len)
 
 static void on_cmd_atcmdinfo_manufacturer(struct net_buf **buf, u16_t len)
 {
-	net_buf_linearize(ictx.mdm_manufacturer, sizeof(ictx.mdm_manufacturer),
-			  *buf, 0, len);
-	SYS_LOG_INF("Manufacturer: %s", ictx.mdm_manufacturer);
+	size_t out_len;
+
+	out_len = net_buf_linearize(ictx.mdm_manufacturer,
+				    sizeof(ictx.mdm_manufacturer) - 1,
+				    *buf, 0, len);
+	ictx.mdm_manufacturer[out_len] = 0;
+	LOG_INF("Manufacturer: %s", ictx.mdm_manufacturer);
 }
 
 static void on_cmd_atcmdinfo_model(struct net_buf **buf, u16_t len)
 {
-	net_buf_linearize(ictx.mdm_model, sizeof(ictx.mdm_model),
-			  *buf, 0, len);
-	SYS_LOG_INF("Model: %s", ictx.mdm_model);
+	size_t out_len;
+
+	out_len = net_buf_linearize(ictx.mdm_model,
+				    sizeof(ictx.mdm_model) - 1,
+				    *buf, 0, len);
+	ictx.mdm_model[out_len] = 0;
+	LOG_INF("Model: %s", ictx.mdm_model);
 }
 
 static void on_cmd_atcmdinfo_revision(struct net_buf **buf, u16_t len)
 {
-	net_buf_linearize(ictx.mdm_revision, sizeof(ictx.mdm_revision),
-			  *buf, 0, len);
-	SYS_LOG_INF("Revision: %s", ictx.mdm_revision);
+	size_t out_len;
+
+	out_len = net_buf_linearize(ictx.mdm_revision,
+				    sizeof(ictx.mdm_revision) - 1,
+				    *buf, 0, len);
+	ictx.mdm_revision[out_len] = 0;
+	LOG_INF("Revision: %s", ictx.mdm_revision);
 }
 
 static void on_cmd_atcmdecho_nosock_imei(struct net_buf **buf, u16_t len)
 {
 	struct net_buf *frag = NULL;
 	u16_t offset;
+	size_t out_len;
 
 	/* make sure IMEI data is received */
 	if (len < MDM_IMEI_LENGTH) {
-		SYS_LOG_DBG("Waiting for data");
+		LOG_DBG("Waiting for data");
 		/* wait for more data */
-		k_sleep(K_MSEC(100));
+		k_sleep(K_MSEC(500));
 		wncm14a2a_read_rx(buf);
 	}
 
 	net_buf_skipcrlf(buf);
 	if (!*buf) {
-		SYS_LOG_DBG("Unable to find IMEI (net_buf_skipcrlf)");
+		LOG_DBG("Unable to find IMEI (net_buf_skipcrlf)");
 		return;
 	}
 
 	frag = NULL;
 	len = net_buf_findcrlf(*buf, &frag, &offset);
 	if (!frag) {
-		SYS_LOG_DBG("Unable to find IMEI (net_buf_findcrlf)");
+		LOG_DBG("Unable to find IMEI (net_buf_findcrlf)");
 		return;
 	}
 
-	net_buf_linearize(ictx.mdm_imei, sizeof(ictx.mdm_imei), *buf, 0, len);
+	out_len = net_buf_linearize(ictx.mdm_imei, sizeof(ictx.mdm_imei) - 1,
+				    *buf, 0, len);
+	ictx.mdm_imei[out_len] = 0;
 
-	SYS_LOG_INF("IMEI: %s", ictx.mdm_imei);
+	LOG_INF("IMEI: %s", ictx.mdm_imei);
 }
 
 /* Handler: %MEAS: RSSI:Reported= -68, Ant0= -63, Ant1= -251 */
@@ -648,9 +649,9 @@ static void on_cmd_atcmdinfo_rssi(struct net_buf **buf, u16_t len)
 
 	if (i > 0) {
 		ictx.mdm_ctx.data_rssi = atoi(value);
-		SYS_LOG_INF("RSSI: %d", ictx.mdm_ctx.data_rssi);
+		LOG_INF("RSSI: %d", ictx.mdm_ctx.data_rssi);
 	} else {
-		SYS_LOG_WRN("Bad format found for RSSI");
+		LOG_WRN("Bad format found for RSSI");
 	}
 }
 
@@ -686,12 +687,14 @@ static void on_cmd_sockerror(struct net_buf **buf, u16_t len)
 static void on_cmd_sockexterror(struct net_buf **buf, u16_t len)
 {
 	char value[8];
+	size_t out_len;
 
 	struct wncm14a2a_socket *sock = NULL;
 
-	net_buf_linearize(value, sizeof(value), *buf, 0, len);
+	out_len = net_buf_linearize(value, sizeof(value) - 1, *buf, 0, len);
+	value[out_len] = 0;
 	ictx.last_error = -atoi(value);
-	SYS_LOG_ERR("@EXTERR:%d", ictx.last_error);
+	LOG_ERR("@EXTERR:%d", ictx.last_error);
 	sock = socket_from_id(ictx.last_socket_id);
 	if (!sock) {
 		k_sem_give(&ictx.response_sem);
@@ -704,8 +707,10 @@ static void on_cmd_sockexterror(struct net_buf **buf, u16_t len)
 static void on_cmd_sockdial(struct net_buf **buf, u16_t len)
 {
 	char value[8];
+	size_t out_len;
 
-	net_buf_linearize(value, sizeof(value), *buf, 0, len);
+	out_len = net_buf_linearize(value, sizeof(value) - 1, *buf, 0, len);
+	value[out_len] = 0;
 	ictx.last_error = atoi(value);
 	k_sem_give(&ictx.response_sem);
 }
@@ -730,11 +735,13 @@ static void on_cmd_sockcreat(struct net_buf **buf, u16_t len)
 static void on_cmd_sockwrite(struct net_buf **buf, u16_t len)
 {
 	char value[8];
+	size_t out_len;
 	int write_len;
 	struct wncm14a2a_socket *sock = NULL;
 
 	/* TODO: check against what we wanted to send */
-	net_buf_linearize(value, sizeof(value), *buf, 0, len);
+	out_len = net_buf_linearize(value, sizeof(value) - 1, *buf, 0, len);
+	value[out_len] = 0;
 	write_len = atoi(value);
 	if (write_len <= 0) {
 		return;
@@ -757,7 +764,8 @@ static void sockreadrecv_cb_work(struct k_work *work)
 	pkt = sock->recv_pkt;
 	sock->recv_pkt = NULL;
 	if (sock->recv_cb) {
-		sock->recv_cb(sock->context, pkt, 0, sock->recv_user_data);
+		sock->recv_cb(sock->context, pkt, NULL, NULL,
+			      0, sock->recv_user_data);
 	} else {
 		net_pkt_unref(pkt);
 	}
@@ -767,9 +775,7 @@ static void sockreadrecv_cb_work(struct k_work *work)
 static void on_cmd_sockread(struct net_buf **buf, u16_t len)
 {
 	struct wncm14a2a_socket *sock = NULL;
-	struct net_buf *frag;
-	u8_t c = 0;
-	u16_t pos;
+	u8_t c = 0U;
 	int i, actual_length, hdr_len = 0;
 	size_t value_size;
 	char value[10];
@@ -778,7 +784,7 @@ static void on_cmd_sockread(struct net_buf **buf, u16_t len)
 	i = 0;
 	value_size = sizeof(value);
 	(void)memset(value, 0, value_size);
-	while (*buf && i < value_size) {
+	while (*buf && i < value_size - 1) {
 		value[i++] = net_buf_pull_u8(*buf);
 		len--;
 		if (!(*buf)->len) {
@@ -795,7 +801,7 @@ static void on_cmd_sockread(struct net_buf **buf, u16_t len)
 	 * a comma and that the next char in the buffer is a quote.
 	 */
 	if (!*buf || value[i] != ',' || *(*buf)->data != '\"') {
-		SYS_LOG_ERR("Incorrect format! Ignoring data!");
+		LOG_ERR("Incorrect format! Ignoring data!");
 		return;
 	}
 
@@ -812,40 +818,31 @@ static void on_cmd_sockread(struct net_buf **buf, u16_t len)
 
 	/* check that we have enough data */
 	if (!*buf || len > (actual_length * 2) + 1) {
-		SYS_LOG_ERR("Incorrect format! Ignoring data!");
+		LOG_ERR("Incorrect format! Ignoring data!");
 		return;
 	}
 
 	sock = socket_from_id(ictx.last_socket_id);
 	if (!sock) {
-		SYS_LOG_ERR("Socket not found! (%d)", ictx.last_socket_id);
+		LOG_ERR("Socket not found! (%d)", ictx.last_socket_id);
 		return;
 	}
 
 	/* allocate an RX pkt */
-	sock->recv_pkt = net_pkt_get_rx(sock->context, BUF_ALLOC_TIMEOUT);
+	sock->recv_pkt = net_pkt_rx_alloc_with_buffer(
+			net_context_get_iface(sock->context),
+			actual_length, sock->family, sock->ip_proto,
+			BUF_ALLOC_TIMEOUT);
 	if (!sock->recv_pkt) {
-		SYS_LOG_ERR("Failed net_pkt_get_reserve_rx!");
-		goto cleanup;
+		LOG_ERR("Failed net_pkt_get_reserve_rx!");
+		return;
 	}
 
 	/* set pkt data */
 	net_pkt_set_context(sock->recv_pkt, sock->context);
-	net_pkt_set_family(sock->recv_pkt, sock->family);
-
-	/* add a data buffer */
-	frag = net_pkt_get_frag(sock->recv_pkt, BUF_ALLOC_TIMEOUT);
-	if (!frag) {
-		SYS_LOG_ERR("Failed net_pkt_get_frag!");
-		net_pkt_unref(sock->recv_pkt);
-		sock->recv_pkt = NULL;
-		goto cleanup;
-	}
-
-	net_pkt_frag_add(sock->recv_pkt, frag);
 
 	/* add IP / protocol headers */
-	hdr_len = net_pkt_setup_ip_data(sock->recv_pkt, sock);
+	hdr_len = pkt_setup_ip_data(sock->recv_pkt, sock);
 
 	/* move hex encoded data from the buffer to the recv_pkt */
 	for (i = 0; i < actual_length * 2; i++) {
@@ -860,16 +857,14 @@ static void on_cmd_sockread(struct net_buf **buf, u16_t len)
 		}
 
 		if (i % 2) {
-			pos = net_pkt_append(sock->recv_pkt, 1, &c,
-					     BUF_ALLOC_TIMEOUT);
-			if (pos != 1) {
-				SYS_LOG_ERR("Unable to add data! Aborting!");
+			if (net_pkt_write_u8(sock->recv_pkt, c)) {
+				LOG_ERR("Unable to add data! Aborting!");
 				net_pkt_unref(sock->recv_pkt);
 				sock->recv_pkt = NULL;
-				goto cleanup;
+				return;
 			}
 
-			c = 0;
+			c = 0U;
 		} else {
 			c = c << 4;
 		}
@@ -881,41 +876,36 @@ static void on_cmd_sockread(struct net_buf **buf, u16_t len)
 		}
 	}
 
-	net_pkt_set_appdatalen(sock->recv_pkt, actual_length);
+	net_pkt_cursor_init(sock->recv_pkt);
+	net_pkt_set_overwrite(sock->recv_pkt, true);
 
 	if (hdr_len > 0) {
-		frag = net_frag_get_pos(sock->recv_pkt, hdr_len, &pos);
-		NET_ASSERT(frag);
-		net_pkt_set_appdata(sock->recv_pkt, frag->data + pos);
-	} else {
-		net_pkt_set_appdata(sock->recv_pkt,
-				    sock->recv_pkt->frags->data);
+		net_pkt_skip(sock->recv_pkt, hdr_len);
 	}
 
 	/* Let's do the callback processing in a different work queue in
 	 * case the app takes a long time.
 	 */
 	k_work_submit_to_queue(&wncm14a2a_workq, &sock->recv_cb_work);
-
-cleanup:
-	sock->socket_reading = false;
 }
 
 /* Handler: @SOCKDATAIND: <socket_id>,<session_status>,<left_bytes> */
 static void on_cmd_sockdataind(struct net_buf **buf, u16_t len)
 {
 	int socket_id, session_status, left_bytes;
+	size_t out_len;
 	char *delim1, *delim2;
 	char value[sizeof("#,#,#####\r")];
 	char sendbuf[sizeof("AT@SOCKREAD=#,#####\r")];
 	struct wncm14a2a_socket *sock = NULL;
 
-	net_buf_linearize(value, sizeof(value), *buf, 0, len);
+	out_len = net_buf_linearize(value, sizeof(value) - 1, *buf, 0, len);
+	value[out_len] = 0;
 
 	/* First comma separator marks the end of socket_id */
 	delim1 = strchr(value, ',');
 	if (!delim1) {
-		SYS_LOG_ERR("Missing 1st comma");
+		LOG_ERR("Missing 1st comma");
 		return;
 	}
 
@@ -926,7 +916,7 @@ static void on_cmd_sockdataind(struct net_buf **buf, u16_t len)
 	/* TODO: ignore for now, but maybe this is useful? */
 	delim2 = strchr(delim1, ',');
 	if (!delim2) {
-		SYS_LOG_ERR("Missing 2nd comma");
+		LOG_ERR("Missing 2nd comma");
 		return;
 	}
 
@@ -941,37 +931,35 @@ static void on_cmd_sockdataind(struct net_buf **buf, u16_t len)
 
 	sock = socket_from_id(socket_id);
 	if (!sock) {
-		SYS_LOG_ERR("Unable to find socket_id:%d", socket_id);
+		LOG_ERR("Unable to find socket_id:%d", socket_id);
 		return;
 	}
 
 	if (left_bytes > 0) {
-		if (!sock->socket_reading) {
-			SYS_LOG_DBG("socket_id:%d left_bytes:%d",
-				    socket_id, left_bytes);
+		LOG_DBG("socket_id:%d left_bytes:%d", socket_id, left_bytes);
+		snprintk(sendbuf, sizeof(sendbuf), "AT@SOCKREAD=%d,%d",
+			 sock->socket_id, left_bytes);
 
-			/* TODO: add a timeout to unset this */
-			sock->socket_reading = true;
-			snprintk(sendbuf, sizeof(sendbuf), "AT@SOCKREAD=%d,%d",
-				 sock->socket_id, left_bytes);
-
-			/* We still have a lock from hitting this cmd trigger,
-			 * so don't hold one when we send the new command
-			 */
-			send_at_cmd(sock, sendbuf, K_NO_WAIT);
-		} else {
-			SYS_LOG_DBG("SKIPPING socket_id:%d left_bytes:%d",
-				    socket_id, left_bytes);
-		}
+		/* We entered this trigger due to an unsolicited modem response.
+		 * When we send the AT@SOCKREAD command it won't generate an
+		 * "OK" response directly.  The modem will respond with
+		 * "@SOCKREAD ..." and the data requested and then "OK" or
+		 * "ERROR".  Let's not wait here by passing in a timeout to
+		 * send_at_cmd().  Instead, when the resulting response is
+		 * received, we trigger on_cmd_sockread() to handle it.
+		 */
+		send_at_cmd(sock, sendbuf, K_NO_WAIT);
 	}
 }
 
 static void on_cmd_socknotifyev(struct net_buf **buf, u16_t len)
 {
 	char value[40];
+	size_t out_len;
 	int p1 = 0, p2 = 0;
 
-	net_buf_linearize(value, sizeof(value), *buf, 0, len);
+	out_len = net_buf_linearize(value, sizeof(value) - 1, *buf, 0, len);
+	value[out_len] = 0;
 
 	/* walk value till 1st quote */
 	while (p1 < len && value[p1] != '\"') {
@@ -1008,26 +996,26 @@ static void on_cmd_socknotifyev(struct net_buf **buf, u16_t len)
 		ictx.ev_csps = atoi(&value[p2]);
 		/* This also signifies that RRCSTATE = 1 */
 		ictx.ev_rrcstate = 1;
-		SYS_LOG_DBG("CSPS:%d", ictx.ev_csps);
+		LOG_DBG("CSPS:%d", ictx.ev_csps);
 	/* RRCSTATE: 0: RRC Idle, 1: RRC Connected, 2: RRC Unknown */
 	} else if (!strncmp(&value[p1], "RRCSTATE", 8)) {
 		ictx.ev_rrcstate = atoi(&value[p2]);
-		SYS_LOG_DBG("RRCSTATE:%d", ictx.ev_rrcstate);
+		LOG_DBG("RRCSTATE:%d", ictx.ev_rrcstate);
 	} else if (!strncmp(&value[p1], "LTIME", 5)) {
 		/* local time from network */
-		SYS_LOG_INF("LTIME:%s", &value[p2]);
+		LOG_INF("LTIME:%s", &value[p2]);
 	} else if (!strncmp(&value[p1], "SIB1", 4)) {
 		/* do nothing? */
-		SYS_LOG_DBG("SIB1");
+		LOG_DBG("SIB1");
 	} else {
-		SYS_LOG_DBG("UNHANDLED: [%s:%s]", &value[p1], &value[p2]);
+		LOG_DBG("UNHANDLED: [%s:%s]", &value[p1], &value[p2]);
 	}
 }
 
 static int net_buf_ncmp(struct net_buf *buf, const u8_t *s2, size_t n)
 {
 	struct net_buf *frag = buf;
-	u16_t offset = 0;
+	u16_t offset = 0U;
 
 	while ((n > 0) && (*(frag->data + offset) == *s2) && (*s2 != '\0')) {
 		if (offset == frag->len) {
@@ -1035,7 +1023,7 @@ static int net_buf_ncmp(struct net_buf *buf, const u8_t *s2, size_t n)
 				break;
 			}
 			frag = frag->frags;
-			offset = 0;
+			offset = 0U;
 		} else {
 			offset++;
 		}
@@ -1065,18 +1053,18 @@ static void wncm14a2a_read_rx(struct net_buf **buf)
 					uart_buffer,
 					sizeof(uart_buffer),
 					&bytes_read);
-		if (ret < 0) {
+		if (ret < 0 || bytes_read == 0) {
 			/* mdm_receiver buffer is empty */
 			break;
 		}
 
-		_hexdump(uart_buffer, bytes_read);
+		hexdump(uart_buffer, bytes_read);
 
 		/* make sure we have storage */
 		if (!*buf) {
 			*buf = net_buf_alloc(&mdm_recv_pool, BUF_ALLOC_TIMEOUT);
 			if (!*buf) {
-				SYS_LOG_ERR("Can't allocate RX data! "
+				LOG_ERR("Can't allocate RX data! "
 					    "Skipping data!");
 				break;
 			}
@@ -1087,7 +1075,7 @@ static void wncm14a2a_read_rx(struct net_buf **buf)
 					      read_rx_allocator,
 					      &mdm_recv_pool);
 		if (rx_len < bytes_read) {
-			SYS_LOG_ERR("Data was lost! read %u of %u!",
+			LOG_ERR("Data was lost! read %u of %u!",
 				    rx_len, bytes_read);
 		}
 	}
@@ -1163,7 +1151,7 @@ static void wncm14a2a_rx(void)
 				if (net_buf_ncmp(rx_buf, handlers[i].cmd,
 						 handlers[i].cmd_len) == 0) {
 					/* found a matching handler */
-					SYS_LOG_DBG("MATCH %s (len:%u)",
+					LOG_DBG("MATCH %s (len:%u)",
 						    handlers[i].cmd, len);
 
 					/* skip cmd_len */
@@ -1189,13 +1177,17 @@ static void wncm14a2a_rx(void)
 						break;
 					}
 
-					/* locate next cr/lf */
-					len = net_buf_findcrlf(rx_buf,
+					/*
+					 * We've handled the current line
+					 * and need to exit the "search for
+					 * handler loop".  Let's skip any
+					 * "extra" data and look for the next
+					 * CR/LF, leaving us ready for the
+					 * next handler search.  Ignore the
+					 * length returned.
+					 */
+					(void)net_buf_findcrlf(rx_buf,
 							       &frag, &offset);
-					if (!frag) {
-						break;
-					}
-
 					break;
 				}
 			}
@@ -1217,16 +1209,16 @@ static void wncm14a2a_rx(void)
 
 static int modem_pin_init(void)
 {
-	SYS_LOG_INF("Setting Modem Pins");
+	LOG_INF("Setting Modem Pins");
 
 	/* Hard reset the modem (>5 seconds required)
 	 * (doesn't go through the signal level translator)
 	 */
-	SYS_LOG_DBG("MDM_RESET_PIN -> ASSERTED");
+	LOG_DBG("MDM_RESET_PIN -> ASSERTED");
 	gpio_pin_write(ictx.gpio_port_dev[MDM_RESET],
 		       pinconfig[MDM_RESET].pin, MDM_RESET_ASSERTED);
 	k_sleep(K_SECONDS(7));
-	SYS_LOG_DBG("MDM_RESET_PIN -> NOT_ASSERTED");
+	LOG_DBG("MDM_RESET_PIN -> NOT_ASSERTED");
 	gpio_pin_write(ictx.gpio_port_dev[MDM_RESET],
 		       pinconfig[MDM_RESET].pin, MDM_RESET_NOT_ASSERTED);
 
@@ -1237,7 +1229,7 @@ static int modem_pin_init(void)
 	 * the level translator is disabled, these pins will
 	 * be in the correct state.
 	 */
-	SYS_LOG_DBG("SIG_TRANS_ENA_PIN -> DISABLED");
+	LOG_DBG("SIG_TRANS_ENA_PIN -> DISABLED");
 	gpio_pin_write(ictx.gpio_port_dev[SHLD_3V3_1V8_SIG_TRANS_ENA],
 		       pinconfig[SHLD_3V3_1V8_SIG_TRANS_ENA].pin,
 		       SHLD_3V3_1V8_SIG_TRANS_DISABLED);
@@ -1247,17 +1239,17 @@ static int modem_pin_init(void)
 	 * as the WNC Module pins so that when the level translator is
 	 * enabled, there are no differences.
 	 */
-	SYS_LOG_DBG("MDM_BOOT_MODE_SEL_PIN -> NORMAL");
+	LOG_DBG("MDM_BOOT_MODE_SEL_PIN -> NORMAL");
 	gpio_pin_write(ictx.gpio_port_dev[MDM_BOOT_MODE_SEL],
 		       pinconfig[MDM_BOOT_MODE_SEL].pin, MDM_BOOT_MODE_NORMAL);
-	SYS_LOG_DBG("MDM_POWER_PIN -> ENABLE");
+	LOG_DBG("MDM_POWER_PIN -> ENABLE");
 	gpio_pin_write(ictx.gpio_port_dev[MDM_POWER],
 		       pinconfig[MDM_POWER].pin, MDM_POWER_ENABLE);
-	SYS_LOG_DBG("MDM_KEEP_AWAKE_PIN -> ENABLED");
+	LOG_DBG("MDM_KEEP_AWAKE_PIN -> ENABLED");
 	gpio_pin_write(ictx.gpio_port_dev[MDM_KEEP_AWAKE],
 		       pinconfig[MDM_KEEP_AWAKE].pin, MDM_KEEP_AWAKE_ENABLED);
-#ifdef CONFIG_WNCM14A2A_GPIO_MDM_SEND_OK_PIN
-	SYS_LOG_DBG("MDM_SEND_OK_PIN -> ENABLED");
+#ifdef DT_INST_0_WNC_M14A2A_MDM_SEND_OK_GPIOS_PIN
+	LOG_DBG("MDM_SEND_OK_PIN -> ENABLED");
 	gpio_pin_write(ictx.gpio_port_dev[MDM_SEND_OK],
 		       pinconfig[MDM_SEND_OK].pin, MDM_SEND_OK_ENABLED);
 #endif
@@ -1270,12 +1262,12 @@ static int modem_pin_init(void)
 	 * driving them with internal pull ups/downs.
 	 * When enabled, there will be no changes in the above 4 pins...
 	 */
-	SYS_LOG_DBG("SIG_TRANS_ENA_PIN -> ENABLED");
+	LOG_DBG("SIG_TRANS_ENA_PIN -> ENABLED");
 	gpio_pin_write(ictx.gpio_port_dev[SHLD_3V3_1V8_SIG_TRANS_ENA],
 		       pinconfig[SHLD_3V3_1V8_SIG_TRANS_ENA].pin,
 		       SHLD_3V3_1V8_SIG_TRANS_ENABLED);
 
-	SYS_LOG_INF("... Done!");
+	LOG_INF("... Done!");
 
 	return 0;
 }
@@ -1285,13 +1277,13 @@ static void modem_wakeup_pin_fix(void)
 	/* AT&T recommend toggling the KEEP_AWAKE signal to reduce missed
 	 * UART characters.
 	 */
-	SYS_LOG_DBG("Toggling MDM_KEEP_AWAKE_PIN to avoid missed characters");
+	LOG_DBG("Toggling MDM_KEEP_AWAKE_PIN to avoid missed characters");
 	k_sleep(K_MSEC(20));
-	SYS_LOG_DBG("MDM_KEEP_AWAKE_PIN -> DISABLED");
+	LOG_DBG("MDM_KEEP_AWAKE_PIN -> DISABLED");
 	gpio_pin_write(ictx.gpio_port_dev[MDM_KEEP_AWAKE],
 		       pinconfig[MDM_KEEP_AWAKE].pin, MDM_KEEP_AWAKE_DISABLED);
 	k_sleep(K_SECONDS(2));
-	SYS_LOG_DBG("MDM_KEEP_AWAKE_PIN -> ENABLED");
+	LOG_DBG("MDM_KEEP_AWAKE_PIN -> ENABLED");
 	gpio_pin_write(ictx.gpio_port_dev[MDM_KEEP_AWAKE],
 		       pinconfig[MDM_KEEP_AWAKE].pin, MDM_KEEP_AWAKE_ENABLED);
 	k_sleep(K_MSEC(20));
@@ -1304,8 +1296,7 @@ static void wncm14a2a_rssi_query_work(struct k_work *work)
 	/* query modem RSSI */
 	ret = send_at_cmd(NULL, "AT%MEAS=\"23\"", MDM_CMD_TIMEOUT);
 	if (ret < 0) {
-		SYS_LOG_ERR("AT%%MEAS ret:%d", ret);
-		return;
+		LOG_ERR("AT%%MEAS ret:%d", ret);
 	}
 
 	/* re-start RSSI query work */
@@ -1319,7 +1310,7 @@ static void wncm14a2a_modem_reset(void)
 	int ret = 0, retry_count = 0, counter = 0;
 
 	/* bring down network interface */
-	atomic_clear_bit(ictx.iface->if_dev->flags, NET_IF_UP);
+	net_if_flag_clear(ictx.iface, NET_IF_UP);
 
 restart:
 	/* stop RSSI delay work */
@@ -1327,7 +1318,7 @@ restart:
 
 	modem_pin_init();
 
-	SYS_LOG_INF("Waiting for modem to respond");
+	LOG_INF("Waiting for modem to respond");
 
 	/* Give the modem a while to start responding to simple 'AT' commands.
 	 * Also wait for CSPS=1 or RRCSTATE=1 notification
@@ -1342,42 +1333,42 @@ restart:
 	}
 
 	if (ret < 0) {
-		SYS_LOG_ERR("MODEM WAIT LOOP ERROR: %d", ret);
+		LOG_ERR("MODEM WAIT LOOP ERROR: %d", ret);
 		goto error;
 	}
 
-	SYS_LOG_INF("Setting modem to always stay awake");
+	LOG_INF("Setting modem to always stay awake");
 	modem_wakeup_pin_fix();
 
 	ret = send_at_cmd(NULL, "ATE1", MDM_CMD_TIMEOUT);
 	if (ret < 0) {
-		SYS_LOG_ERR("ATE1 ret:%d", ret);
+		LOG_ERR("ATE1 ret:%d", ret);
 		goto error;
 	}
 
 	ret = send_at_cmd(NULL, "AT%PDNSET=1,\"" CONFIG_MODEM_WNCM14A2A_APN_NAME
 			  "\",\"IPV4V6\"", MDM_CMD_TIMEOUT);
 	if (ret < 0) {
-		SYS_LOG_ERR("AT%%PDNSET ret:%d", ret);
+		LOG_ERR("AT%%PDNSET ret:%d", ret);
 		goto error;
 	}
 
 	/* query modem info */
-	SYS_LOG_INF("Querying modem information");
+	LOG_INF("Querying modem information");
 	ret = send_at_cmd(NULL, "ATI", MDM_CMD_TIMEOUT);
 	if (ret < 0) {
-		SYS_LOG_ERR("ATI ret:%d", ret);
+		LOG_ERR("ATI ret:%d", ret);
 		goto error;
 	}
 
 	/* query modem IMEI */
 	ret = send_at_cmd(NULL, "AT+CGSN", MDM_CMD_TIMEOUT);
 	if (ret < 0) {
-		SYS_LOG_ERR("AT+CGSN ret:%d", ret);
+		LOG_ERR("AT+CGSN ret:%d", ret);
 		goto error;
 	}
 
-	SYS_LOG_INF("Waiting for network");
+	LOG_INF("Waiting for network");
 
 	/* query modem RSSI */
 	wncm14a2a_rssi_query_work(NULL);
@@ -1397,26 +1388,26 @@ restart:
 	if (ictx.mdm_ctx.data_rssi <= -1000 || ictx.mdm_ctx.data_rssi == 0) {
 		retry_count++;
 		if (retry_count > 3) {
-			SYS_LOG_ERR("Failed network init.  Too many attempts!");
+			LOG_ERR("Failed network init.  Too many attempts!");
 			ret = -ENETUNREACH;
 			goto error;
 		}
 
-		SYS_LOG_ERR("Failed network init.  Restarting process.");
+		LOG_ERR("Failed network init.  Restarting process.");
 		goto restart;
 	}
 
-	SYS_LOG_INF("Network is ready.");
+	LOG_INF("Network is ready.");
 
 	ret = send_at_cmd(NULL, "AT@INTERNET=1", MDM_CMD_TIMEOUT);
 	if (ret < 0) {
-		SYS_LOG_ERR("AT@INTERNET ret:%d", ret);
+		LOG_ERR("AT@INTERNET ret:%d", ret);
 		goto error;
 	}
 
 	ret = send_at_cmd(NULL, "AT@SOCKDIAL=1", MDM_CMD_TIMEOUT);
 	if (ret < 0) {
-		SYS_LOG_ERR("SOCKDIAL=1 CHECK ret:%d", ret);
+		LOG_ERR("SOCKDIAL=1 CHECK ret:%d", ret);
 		/* don't report this as an error, we retry later */
 		ret = 0;
 	}
@@ -1428,20 +1419,14 @@ error:
 	return;
 }
 
-static void wncm14a2a_modem_reset_work(struct k_work *work)
-{
-	wncm14a2a_modem_reset();
-}
-
 static int wncm14a2a_init(struct device *dev)
 {
-	static struct k_delayed_work reset_work;
 	int i, ret = 0;
 
 	ARG_UNUSED(dev);
 
 	/* check for valid pinconfig */
-	__ASSERT(sizeof(pinconfig) == MAX_MDM_CONTROL_PINS,
+	__ASSERT(ARRAY_SIZE(pinconfig) == MAX_MDM_CONTROL_PINS,
 	       "Incorrect modem pinconfig!");
 
 	(void)memset(&ictx, 0, sizeof(ictx));
@@ -1465,7 +1450,7 @@ static int wncm14a2a_init(struct device *dev)
 		ictx.gpio_port_dev[i] =
 				device_get_binding(pinconfig[i].dev_name);
 		if (!ictx.gpio_port_dev[i]) {
-			SYS_LOG_ERR("gpio port (%s) not found!",
+			LOG_ERR("gpio port (%s) not found!",
 				    pinconfig[i].dev_name);
 			return -ENODEV;
 		}
@@ -1483,7 +1468,7 @@ static int wncm14a2a_init(struct device *dev)
 	ret = mdm_receiver_register(&ictx.mdm_ctx, MDM_UART_DEV_NAME,
 				    mdm_recv_buf, sizeof(mdm_recv_buf));
 	if (ret < 0) {
-		SYS_LOG_ERR("Error registering modem receiver (%d)!", ret);
+		LOG_ERR("Error registering modem receiver (%d)!", ret);
 		goto error;
 	}
 
@@ -1496,10 +1481,7 @@ static int wncm14a2a_init(struct device *dev)
 	/* init RSSI query */
 	k_delayed_work_init(&ictx.rssi_query_work, wncm14a2a_rssi_query_work);
 
-	/* Let's start the modem reset in a workq so that init can proceed */
-	k_delayed_work_init(&reset_work, wncm14a2a_modem_reset_work);
-	ret = k_delayed_work_submit_to_queue(&wncm14a2a_workq,
-					     &reset_work, K_MSEC(10));
+	wncm14a2a_modem_reset();
 
 error:
 	return ret;
@@ -1533,7 +1515,7 @@ static int offload_get(sa_family_t family,
 		 family == AF_INET ? 0 : 1);
 	ret = send_at_cmd(NULL, buf, MDM_CMD_TIMEOUT);
 	if (ret < 0) {
-		SYS_LOG_ERR("AT@SOCKCREAT ret:%d", ret);
+		LOG_ERR("AT@SOCKCREAT ret:%d", ret);
 		socket_put(sock);
 	}
 
@@ -1552,7 +1534,7 @@ static int offload_bind(struct net_context *context,
 
 	sock = (struct wncm14a2a_socket *)context->offload_context;
 	if (!sock) {
-		SYS_LOG_ERR("Can't locate socket for net_ctx:%p!", context);
+		LOG_ERR("Can't locate socket for net_ctx:%p!", context);
 		return -EINVAL;
 	}
 
@@ -1593,9 +1575,13 @@ static int offload_connect(struct net_context *context,
 			   void *user_data)
 {
 	int ret, dst_port = -1;
-	s32_t timeout_sec = timeout / MSEC_PER_SEC;
+	s32_t timeout_sec = -1; /* if not changed, this will be min timeout */
 	char buf[sizeof("AT@SOCKCONN=#,###.###.###.###,#####,#####\r")];
 	struct wncm14a2a_socket *sock;
+
+	if (timeout > 0) {
+		timeout_sec = timeout / MSEC_PER_SEC;
+	}
 
 	if (!context || !addr) {
 		return -EINVAL;
@@ -1603,12 +1589,12 @@ static int offload_connect(struct net_context *context,
 
 	sock = (struct wncm14a2a_socket *)context->offload_context;
 	if (!sock) {
-		SYS_LOG_ERR("Can't locate socket for net_ctx:%p!", context);
+		LOG_ERR("Can't locate socket for net_ctx:%p!", context);
 		return -EINVAL;
 	}
 
 	if (sock->socket_id < 1) {
-		SYS_LOG_ERR("Invalid socket_id(%d) for net_ctx:%p!",
+		LOG_ERR("Invalid socket_id(%d) for net_ctx:%p!",
 			    sock->socket_id, context);
 		return -EINVAL;
 	}
@@ -1636,21 +1622,22 @@ static int offload_connect(struct net_context *context,
 	}
 
 	if (dst_port < 0) {
-		SYS_LOG_ERR("Invalid port: %d", dst_port);
+		LOG_ERR("Invalid port: %d", dst_port);
 		return -EINVAL;
 	}
 
-	/* minimum timeout in seconds is 30 */
-	if (timeout_sec < 30) {
-		timeout_sec = 30;
-	}
+	/*
+	 * AT@SOCKCONN timeout param has minimum value of 30 seconds and
+	 * maximum value of 360 seconds, otherwise an error is generated
+	 */
+	timeout_sec = MIN(360, MAX(timeout_sec, 30));
 
 	snprintk(buf, sizeof(buf), "AT@SOCKCONN=%d,\"%s\",%d,%d",
 		 sock->socket_id, wncm14a2a_sprint_ip_addr(addr),
 		 dst_port, timeout_sec);
 	ret = send_at_cmd(sock, buf, MDM_CMD_CONN_TIMEOUT);
 	if (ret < 0) {
-		SYS_LOG_ERR("AT@SOCKCONN ret:%d", ret);
+		LOG_ERR("AT@SOCKCONN ret:%d", ret);
 	}
 
 	if (cb) {
@@ -1674,7 +1661,6 @@ static int offload_sendto(struct net_pkt *pkt,
 			  socklen_t addrlen,
 			  net_context_send_cb_t cb,
 			  s32_t timeout,
-			  void *token,
 			  void *user_data)
 {
 	struct net_context *context = net_pkt_context(pkt);
@@ -1687,18 +1673,19 @@ static int offload_sendto(struct net_pkt *pkt,
 
 	sock = (struct wncm14a2a_socket *)context->offload_context;
 	if (!sock) {
-		SYS_LOG_ERR("Can't locate socket for net_ctx:%p!", context);
+		LOG_ERR("Can't locate socket for net_ctx:%p!", context);
 		return -EINVAL;
 	}
 
 	ret = send_data(sock, pkt);
 	if (ret < 0) {
-		SYS_LOG_ERR("send_data error: %d", ret);
+		LOG_ERR("send_data error: %d", ret);
+	} else {
+		net_pkt_unref(pkt);
 	}
 
-	net_pkt_unref(pkt);
 	if (cb) {
-		cb(context, ret, token, user_data);
+		cb(context, ret, user_data);
 	}
 
 	return ret;
@@ -1707,7 +1694,6 @@ static int offload_sendto(struct net_pkt *pkt,
 static int offload_send(struct net_pkt *pkt,
 			net_context_send_cb_t cb,
 			s32_t timeout,
-			void *token,
 			void *user_data)
 {
 	struct net_context *context = net_pkt_context(pkt);
@@ -1729,7 +1715,7 @@ static int offload_send(struct net_pkt *pkt,
 	}
 
 	return offload_sendto(pkt, &context->remote, addrlen, cb,
-			      timeout, token, user_data);
+			      timeout, user_data);
 }
 
 static int offload_recv(struct net_context *context,
@@ -1745,7 +1731,7 @@ static int offload_recv(struct net_context *context,
 
 	sock = (struct wncm14a2a_socket *)context->offload_context;
 	if (!sock) {
-		SYS_LOG_ERR("Can't locate socket for net_ctx:%p!", context);
+		LOG_ERR("Can't locate socket for net_ctx:%p!", context);
 		return -EINVAL;
 	}
 
@@ -1775,7 +1761,7 @@ static int offload_put(struct net_context *context)
 
 	ret = send_at_cmd(sock, buf, MDM_CMD_TIMEOUT);
 	if (ret < 0) {
-		SYS_LOG_ERR("AT@SOCKCLOSE ret:%d", ret);
+		LOG_ERR("AT@SOCKCLOSE ret:%d", ret);
 	}
 
 	/* clear last_socket_id */
@@ -1810,7 +1796,7 @@ static inline u8_t *wncm14a2a_get_mac(struct device *dev)
 	ctx->mac_addr[1] = 0x10;
 
 	UNALIGNED_PUT(sys_cpu_to_be32(sys_rand32_get()),
-		      (u32_t *) ((void *)ctx->mac_addr+2));
+		      (u32_t *)(ctx->mac_addr + 2));
 
 	return ctx->mac_addr;
 }
@@ -1829,7 +1815,6 @@ static void offload_iface_init(struct net_if *iface)
 
 static struct net_if_api api_funcs = {
 	.init	= offload_iface_init,
-	.send	= NULL,
 };
 
 NET_DEVICE_OFFLOAD_INIT(modem_wncm14a2a, "MODEM_WNCM14A2A",

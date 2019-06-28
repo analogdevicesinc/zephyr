@@ -5,7 +5,7 @@
  */
 
 #include <ztest.h>
-#include <misc/mempool.h>
+#include <sys/mempool.h>
 
 
 #define BLK_SIZE_MIN    256
@@ -19,10 +19,8 @@
 #define BLK_SIZE_EXCLUDE_DESC (BLK_SIZE_MIN - 16)
 #define BLK_ALIGN BLK_SIZE_MIN
 
-
-K_MUTEX_DEFINE(pool_mutex);
-SYS_MEM_POOL_DEFINE(pool, &pool_mutex, BLK_SIZE_MIN, BLK_SIZE_MAX,
-		    BLK_NUM_MAX, BLK_ALIGN, .data);
+SYS_MEM_POOL_DEFINE(pool, NULL, BLK_SIZE_MIN, BLK_SIZE_MAX,
+		    BLK_NUM_MAX, BLK_ALIGN, ZTEST_SECTION);
 
 /**
  * @brief Verify sys_mem_pool allocation and free
@@ -73,12 +71,12 @@ void test_sys_mem_pool_alloc_align4(void)
 
 	/**
 	 * TESTPOINT: The address of the allocated chunk is guaranteed to be
-	 * aligned on a multiple of 4 bytes.
+	 * aligned on a word boundary (4 or 8 bytes).
 	 */
 	for (int i = 0; i < BLK_NUM_MAX; i++) {
 		block[i] = sys_mem_pool_alloc(&pool, i);
 		zassert_not_null(block[i], NULL);
-		zassert_false((int)block[i] % 4, NULL);
+		zassert_false((uintptr_t)block[i] % sizeof(void *), NULL);
 	}
 
 	/* test case tear down*/
@@ -126,7 +124,6 @@ void test_sys_mem_pool_min_block_size(void)
 /*test case main entry*/
 void test_main(void)
 {
-	k_thread_access_grant(k_current_get(), &pool_mutex, NULL);
 	sys_mem_pool_init(&pool);
 
 	ztest_test_suite(test_sys_mem_pool_api,

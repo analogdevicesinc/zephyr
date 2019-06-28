@@ -8,7 +8,7 @@
 #include <kernel.h>
 #include <cmsis_os.h>
 
-#define STACKSZ		512
+#define STACKSZ CONFIG_CMSIS_THREAD_MAX_STACK_SIZE
 
 static osPriority osPriorityDeadline = 10;
 

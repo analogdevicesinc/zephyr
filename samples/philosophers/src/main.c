@@ -40,10 +40,10 @@
 #if defined(CONFIG_STDOUT_CONSOLE)
 #include <stdio.h>
 #else
-#include <misc/printk.h>
+#include <sys/printk.h>
 #endif
 
-#include <misc/__assert.h>
+#include <sys/__assert.h>
 
 #define SEMAPHORES 1
 #define MUTEXES 2
@@ -85,23 +85,6 @@
 
 #define STACK_SIZE 768
 
-/*
- * There are multiple threads doing printfs and they may conflict.
- * Therefore use puts() instead of printf().
- */
-#if defined(CONFIG_STDOUT_CONSOLE)
-#define PRINTF(...) { char output[256]; \
-		      sprintf(output, __VA_ARGS__); puts(output); }
-#else
-#define PRINTF(...) printk(__VA_ARGS__)
-#endif
-
-#if DEBUG_PRINTF
-#define PR_DEBUG PRINTF
-#else
-#define PR_DEBUG(...)
-#endif
-
 #include "phil_obj_abstract.h"
 
 #define fork(x) (forks[x])
@@ -109,7 +92,7 @@
 static void set_phil_state_pos(int id)
 {
 #if !DEBUG_PRINTF
-	PRINTF("\x1b[%d;%dH", id + 1, 1);
+	printk("\x1b[%d;%dH", id + 1, 1);
 #endif
 }
 
@@ -120,18 +103,18 @@ static void print_phil_state(int id, const char *fmt, s32_t delay)
 
 	set_phil_state_pos(id);
 
-	PRINTF("Philosopher %d [%s:%s%d] ",
+	printk("Philosopher %d [%s:%s%d] ",
 	       id, prio < 0 ? "C" : "P",
 	       prio < 0 ? "" : " ",
 	       prio);
 
 	if (delay) {
-		PRINTF(fmt, delay < 1000 ? " " : "", delay);
+		printk(fmt, delay < 1000 ? " " : "", delay);
 	} else {
-		PRINTF(fmt, "");
+		printk(fmt, "");
 	}
 
-	PRINTF("\n");
+	printk("\n");
 }
 
 static s32_t get_random_delay(int id, int period_in_ms)
@@ -141,9 +124,7 @@ static s32_t get_random_delay(int id, int period_in_ms)
 	 * and the current uptime to create some pseudo-randomness. It produces
 	 * a value between 0 and 31.
 	 */
-	k_enable_sys_clock_always_on();
 	s32_t delay = (k_uptime_get_32()/100 * (id + 1)) & 0x1f;
-	k_disable_sys_clock_always_on();
 
 	/* add 1 to not generate a delay of 0 */
 	s32_t ms = (delay + 1) * period_in_ms;
@@ -164,7 +145,7 @@ void philosopher(void *id, void *unused1, void *unused2)
 	fork_t fork1;
 	fork_t fork2;
 
-	int my_id = (int)id;
+	int my_id = POINTER_TO_INT(id);
 
 	/* Djkstra's solution: always pick up the lowest numbered fork first */
 	if (is_last_philosopher(my_id)) {
@@ -236,8 +217,8 @@ static void start_threads(void)
 		int prio = new_prio(i);
 
 		k_thread_create(&threads[i], &stacks[i][0], STACK_SIZE,
-				philosopher, (void *)i, NULL, NULL, prio,
-				K_USER, K_FOREVER);
+				philosopher, INT_TO_POINTER(i), NULL, NULL,
+				prio, K_USER, K_FOREVER);
 
 		k_object_access_grant(fork(i), &threads[i]);
 		k_object_access_grant(fork((i + 1) % NUM_PHIL), &threads[i]);
@@ -259,7 +240,7 @@ static void start_threads(void)
 static void display_demo_description(void)
 {
 #if !DEBUG_PRINTF
-	PRINTF(DEMO_DESCRIPTION);
+	printk(DEMO_DESCRIPTION);
 #endif
 }
 
@@ -272,4 +253,11 @@ void main(void)
 
 	init_objects();
 	start_threads();
+
+#ifdef CONFIG_COVERAGE
+	/* Wait a few seconds before main() exit, giving the sample the
+	 * opportunity to dump some output before coverage data gets emitted
+	 */
+	k_sleep(5000);
+#endif
 }

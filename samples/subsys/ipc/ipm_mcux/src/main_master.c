@@ -5,9 +5,9 @@
  */
 
 #include <zephyr.h>
-#include <misc/printk.h>
+#include <sys/printk.h>
 #include <device.h>
-#include <ipm.h>
+#include <drivers/ipm.h>
 
 struct device *ipm;
 int gcounter;
@@ -33,7 +33,7 @@ void main(void)
 	printk("Hello World from MASTER! %s\n", CONFIG_ARCH);
 
 	/* Get IPM device handle */
-	ipm = device_get_binding(MAILBOX_0_LABEL);
+	ipm = device_get_binding(DT_INST_0_NXP_LPC_MAILBOX_LABEL);
 	if (!ipm) {
 		printk("Could not get IPM device handle!\n");
 		while (1) {

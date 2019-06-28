@@ -12,8 +12,8 @@
 #define ZEPHYR_DRIVERS_SENSOR_LSM6DS0_LSM6DS0_H_
 
 #include <zephyr/types.h>
-#include <i2c.h>
-#include <misc/util.h>
+#include <drivers/i2c.h>
+#include <sys/util.h>
 
 #define LSM6DS0_REG_ACT_THS                     0x04
 #define LSM6DS0_MASK_ACT_THS_SLEEP_ON_INACT_EN	BIT(7)
@@ -492,7 +492,4 @@ struct lsm6ds0_data {
 #endif
 };
 
-#define SYS_LOG_DOMAIN "LSM6DS0"
-#define SYS_LOG_LEVEL CONFIG_SYS_LOG_SENSOR_LEVEL
-#include <logging/sys_log.h>
 #endif /* ZEPHYR_DRIVERS_SENSOR_LSM6DS0_LSM6DS0_H_ */

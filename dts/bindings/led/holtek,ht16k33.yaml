@@ -1,0 +1,30 @@
+
+title: Holtek HT16K33 LED Driver
+version: 0.1
+
+description: Holtek HT16K33 LEDs binding
+
+inherits:
+    !include i2c-device.yaml
+
+child:
+    bus: ht16k33
+
+properties:
+    compatible:
+      constraint: "holtek,ht16k33"
+    "#address-cells":
+      type: int
+      category: required
+      description: should be 1.
+    "#size-cells":
+      type: int
+      category: required
+      description: should be 0.
+    label:
+      category: required
+    irq-gpios:
+      type: compound
+      category: optional
+      description: IRQ pin
+      generation: define

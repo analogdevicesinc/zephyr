@@ -1,6 +1,6 @@
----
+
 title: CC32XX I2C
-id: ti,cc32xx-i2c
+version: 0.1
 
 description: >
     This binding gives a base representation of the TI CC32XX I2C controller
@@ -13,15 +13,7 @@ properties:
       constraint: "ti,cc32xx-i2c"
 
     reg:
-      type: int
-      description: mmio register space
-      generation: define
       category: required
 
     interrupts:
-      type: compound
       category: required
-      description: required interrupts
-      generation: define
-
-...

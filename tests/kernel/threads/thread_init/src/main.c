@@ -8,14 +8,14 @@
 
 /*macro definition*/
 #define INIT_COOP_PRIO -2
-#define INIT_COOP_STACK_SIZE 500
+#define INIT_COOP_STACK_SIZE (500 + CONFIG_TEST_EXTRA_STACKSIZE)
 #define INIT_COOP_P1 ((void *)0xFFFF0000)
 #define INIT_COOP_P2 ((void *)0xCDEF)
 #define INIT_COOP_P3 ((void *)0x1234)
 #define INIT_COOP_OPTION (K_USER | K_INHERIT_PERMS)
 #define INIT_COOP_DELAY 2000
 #define INIT_PREEMPT_PRIO 1
-#define INIT_PREEMPT_STACK_SIZE 499
+#define INIT_PREEMPT_STACK_SIZE (499 + CONFIG_TEST_EXTRA_STACKSIZE)
 #define INIT_PREEMPT_P1 ((void *)5)
 #define INIT_PREEMPT_P2 ((void *)6)
 #define INIT_PREEMPT_P3 ((void *)7)
@@ -42,10 +42,10 @@ K_THREAD_ACCESS_GRANT(T_KDEFINE_PREEMPT_THREAD, &start_sema, &end_sema);
 /*local variables*/
 static K_THREAD_STACK_DEFINE(stack_coop, INIT_COOP_STACK_SIZE);
 static K_THREAD_STACK_DEFINE(stack_preempt, INIT_PREEMPT_STACK_SIZE);
-__kernel static struct k_thread thread_coop;
-__kernel static struct k_thread thread_preempt;
-static u64_t t_create;
-static struct thread_data {
+static struct k_thread thread_coop;
+static struct k_thread thread_preempt;
+static ZTEST_BMEM u64_t t_create;
+static ZTEST_BMEM struct thread_data {
 	int init_prio;
 	s32_t init_delay;
 	void *init_p1;
@@ -91,7 +91,7 @@ static void thread_entry(void *p1, void *p2, void *p3)
 void test_kdefine_preempt_thread(void)
 {
 	/*static thread created time unknown, skip it*/
-	t_create = 0;
+	t_create = 0U;
 	expected.init_p1 = INIT_PREEMPT_P1;
 	expected.init_p2 = INIT_PREEMPT_P2;
 	expected.init_p3 = INIT_PREEMPT_P3;
@@ -116,7 +116,7 @@ void test_kdefine_preempt_thread(void)
 void test_kdefine_coop_thread(void)
 {
 	/*static thread creation time unknown, skip it*/
-	t_create = 0;
+	t_create = 0U;
 	expected.init_p1 = INIT_COOP_P1;
 	expected.init_p2 = INIT_COOP_P2;
 	expected.init_p3 = INIT_COOP_P3;
@@ -206,7 +206,11 @@ void test_kinit_coop_thread(void)
 void test_main(void)
 {
 	k_thread_access_grant(k_current_get(), &thread_preempt, &stack_preempt,
-			      &start_sema, &end_sema, NULL);
+			      &start_sema, &end_sema);
+#ifdef CONFIG_USERSPACE
+	k_mem_domain_add_thread(&ztest_mem_domain, T_KDEFINE_COOP_THREAD);
+	k_mem_domain_add_thread(&ztest_mem_domain, T_KDEFINE_PREEMPT_THREAD);
+#endif
 
 	ztest_test_suite(thread_init,
 			 ztest_user_unit_test(test_kdefine_preempt_thread),

@@ -5,7 +5,7 @@
  */
 
 #include <init.h>
-#include <pinmux.h>
+#include <drivers/pinmux.h>
 #include <fsl_port.h>
 
 static int frdm_kl25z_pinmux_init(struct device *dev)
@@ -47,6 +47,10 @@ static int frdm_kl25z_pinmux_init(struct device *dev)
 	pinmux_pin_set(portd,  1, PORT_PCR_MUX(kPORT_MuxAsGpio));
 	pinmux_pin_set(portb, 18, PORT_PCR_MUX(kPORT_MuxAsGpio));
 	pinmux_pin_set(portb, 19, PORT_PCR_MUX(kPORT_MuxAsGpio));
+
+	/* MMA8451 INT1, INT2 */
+	pinmux_pin_set(porta, 14, PORT_PCR_MUX(kPORT_MuxAsGpio));
+	pinmux_pin_set(porta, 15, PORT_PCR_MUX(kPORT_MuxAsGpio));
 
 #if defined(CONFIG_I2C_0)
 	/* I2C0 SCL, SDA */

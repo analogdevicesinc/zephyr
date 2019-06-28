@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+
 if("${ARCH}" STREQUAL "x86")
   set_ifndef(QEMU_binary_suffix i386)
 else()
@@ -62,6 +64,9 @@ endif()
 # Add a BT serial device when building for bluetooth, unless the
 # application explicitly opts out with NO_QEMU_SERIAL_BT_SERVER.
 if(CONFIG_BT)
+  if(CONFIG_BT_NO_DRIVER)
+      set(NO_QEMU_SERIAL_BT_SERVER 1)
+  endif()
   if(NOT NO_QEMU_SERIAL_BT_SERVER)
     list(APPEND QEMU_FLAGS -serial unix:/tmp/bt-server-bredr)
   endif()
@@ -72,8 +77,10 @@ endif()
 # pass data between them. The QEMU flags are not set for standalone
 # tests defined by CONFIG_NET_TEST.
 if(CONFIG_NETWORKING)
-  if(CONFIG_NET_SLIP_TAP)
-    set(QEMU_NET_STACK 1)
+  if(CONFIG_NET_QEMU_SLIP)
+    if((CONFIG_NET_SLIP_TAP) OR (CONFIG_IEEE802154_UPIPE))
+      set(QEMU_NET_STACK 1)
+    endif()
   endif()
 endif()
 
@@ -217,8 +224,16 @@ if(CONFIG_X86_IAMCU)
     )
 endif()
 
+if(CONFIG_X86_64)
+  set(QEMU_KERNEL_FILE "${CMAKE_BINARY_DIR}/zephyr-qemu.elf")
+endif()
+
 if(NOT QEMU_PIPE)
   set(QEMU_PIPE_COMMENT "\nTo exit from QEMU enter: 'CTRL+a, x'\n")
+endif()
+
+if(CONFIG_SMP)
+  list(APPEND QEMU_SMP_FLAGS -smp cpus=${CONFIG_MP_NUM_CPUS})
 endif()
 
 # Use flags passed in from the environment
@@ -228,9 +243,15 @@ list(APPEND QEMU_EXTRA_FLAGS ${env_qemu})
 
 list(APPEND MORE_FLAGS_FOR_debugserver -s -S)
 
-set_ifndef(QEMU_KERNEL_OPTION
-  "-kernel;$<TARGET_FILE:${logical_target_for_zephyr_elf}>"
-  )
+# Architectures can define QEMU_KERNEL_FILE to use a specific output
+# file to pass to qemu (and a "qemu_kernel_target" target to generate
+# it), or set QEMU_KERNEL_OPTION if they want to replace the "-kernel
+# ..." option entirely.
+if(DEFINED QEMU_KERNEL_FILE)
+  set(QEMU_KERNEL_OPTION "-kernel;${QEMU_KERNEL_FILE}")
+elseif(NOT DEFINED QEMU_KERNEL_OPTION)
+  set(QEMU_KERNEL_OPTION "-kernel;$<TARGET_FILE:${logical_target_for_zephyr_elf}>")
+endif()
 
 foreach(target ${qemu_targets})
   add_custom_target(${target}
@@ -242,10 +263,14 @@ foreach(target ${qemu_targets})
     ${QEMU_FLAGS}
     ${QEMU_EXTRA_FLAGS}
     ${MORE_FLAGS_FOR_${target}}
+    ${QEMU_SMP_FLAGS}
     ${QEMU_KERNEL_OPTION}
     DEPENDS ${logical_target_for_zephyr_elf}
     WORKING_DIRECTORY ${APPLICATION_BINARY_DIR}
     COMMENT "${QEMU_PIPE_COMMENT}[QEMU] CPU: ${QEMU_CPU_TYPE_${ARCH}}"
     USES_TERMINAL
     )
+  if(DEFINED QEMU_KERNEL_FILE)
+    add_dependencies(${target} qemu_kernel_target)
+  endif()
 endforeach()

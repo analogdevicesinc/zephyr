@@ -13,19 +13,19 @@
  */
 
 #include <errno.h>
-#include <misc/__assert.h>
-#include <misc/util.h>
+#include <sys/__assert.h>
+#include <sys/util.h>
 #include <device.h>
 #include <init.h>
 #include <soc.h>
-#include <adc.h>
+#include <drivers/adc.h>
 
 #define ADC_CONTEXT_USES_KERNEL_TIMER
 #include "adc_context.h"
 
-#define SYS_LOG_DOMAIN "dev/adc_sam_afec"
-#define SYS_LOG_LEVEL CONFIG_SYS_LOG_ADC_LEVEL
-#include <logging/sys_log.h>
+#define LOG_LEVEL CONFIG_ADC_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_REGISTER(adc_sam_afec);
 
 #define NUM_CHANNELS 12
 
@@ -75,35 +75,35 @@ static int adc_sam_channel_setup(struct device *dev,
 	u8_t channel_id = channel_cfg->channel_id;
 
 	/* Clear the gain bits for the channel. */
-	afec->AFEC_CGR &= ~(3 << channel_id * 2);
+	afec->AFEC_CGR &= ~(3 << channel_id * 2U);
 
 	switch (channel_cfg->gain) {
 	case ADC_GAIN_1:
 		/* A value of 0 in this register is a gain of 1. */
 		break;
 	case ADC_GAIN_1_2:
-		afec->AFEC_CGR |= (1 << (channel_id * 2));
+		afec->AFEC_CGR |= (1 << (channel_id * 2U));
 		break;
 	case ADC_GAIN_1_4:
-		afec->AFEC_CGR |= (2 << (channel_id * 2));
+		afec->AFEC_CGR |= (2 << (channel_id * 2U));
 		break;
 	default:
-		SYS_LOG_ERR("Selected ADC gain is not valid");
+		LOG_ERR("Selected ADC gain is not valid");
 		return -EINVAL;
 	}
 
 	if (channel_cfg->acquisition_time != ADC_ACQ_TIME_DEFAULT) {
-		SYS_LOG_ERR("Selected ADC acquisition time is not valid");
+		LOG_ERR("Selected ADC acquisition time is not valid");
 		return -EINVAL;
 	}
 
 	if (channel_cfg->reference != ADC_REF_EXTERNAL0) {
-		SYS_LOG_ERR("Selected reference is not valid");
+		LOG_ERR("Selected reference is not valid");
 		return -EINVAL;
 	}
 
 	if (channel_cfg->differential) {
-		SYS_LOG_ERR("Differential input is not supported");
+		LOG_ERR("Differential input is not supported");
 		return -EINVAL;
 	}
 
@@ -124,7 +124,7 @@ static void adc_sam_start_conversion(struct device *dev)
 
 	data->channel_id = find_lsb_set(data->channels) - 1;
 
-	SYS_LOG_DBG("Starting channel %d", data->channel_id);
+	LOG_DBG("Starting channel %d", data->channel_id);
 
 	/* Disable all channels. */
 	afec->AFEC_CHDR = 0xfff;
@@ -150,7 +150,7 @@ static void adc_context_start_sampling(struct adc_context *ctx)
 {
 	struct adc_sam_data *data = CONTAINER_OF(ctx, struct adc_sam_data, ctx);
 
-	data->channels = ctx->sequence->channels;
+	data->channels = ctx->sequence.channels;
 
 	adc_sam_start_conversion(data->dev);
 }
@@ -174,7 +174,7 @@ static int check_buffer_size(const struct adc_sequence *sequence,
 		needed_buffer_size *= (1 + sequence->options->extra_samplings);
 	}
 	if (sequence->buffer_size < needed_buffer_size) {
-		SYS_LOG_ERR("Provided buffer is too small (%u/%u)",
+		LOG_ERR("Provided buffer is too small (%u/%u)",
 				sequence->buffer_size, needed_buffer_size);
 		return -ENOMEM;
 	}
@@ -187,33 +187,33 @@ static int start_read(struct device *dev, const struct adc_sequence *sequence)
 	int error = 0;
 	u32_t channels = sequence->channels;
 
-	data->channels = 0;
+	data->channels = 0U;
 
 	/* Signal an error if the channel selection is invalid (no channels or
 	 * a non-existing one is selected).
 	 */
-	if (channels == 0 ||
-	   (channels & (~0UL << NUM_CHANNELS))) {
-		SYS_LOG_ERR("Invalid selection of channels");
+	if (channels == 0U ||
+	    (channels & (~0UL << NUM_CHANNELS))) {
+		LOG_ERR("Invalid selection of channels");
 		return -EINVAL;
 	}
 
-	if (sequence->oversampling != 0) {
-		SYS_LOG_ERR("Oversampling is not supported");
+	if (sequence->oversampling != 0U) {
+		LOG_ERR("Oversampling is not supported");
 		return -EINVAL;
 	}
 
-	if (sequence->resolution != 12) {
+	if (sequence->resolution != 12U) {
 		/* TODO JKW: Support the Enhanced Resolution Mode 50.6.3 page
 		 * 1544.
 		 */
-		SYS_LOG_ERR("ADC resolution value %d is not valid",
+		LOG_ERR("ADC resolution value %d is not valid",
 			    sequence->resolution);
 		return -EINVAL;
 	}
 
-	u8_t num_active_channels = 0;
-	u8_t channel = 0;
+	u8_t num_active_channels = 0U;
+	u8_t channel = 0U;
 
 	while (channels > 0) {
 		if (channels & 1) {
@@ -242,8 +242,6 @@ static int start_read(struct device *dev, const struct adc_sequence *sequence)
 	adc_context_start_read(&data->ctx, sequence);
 
 	error = adc_context_wait_for_completion(&data->ctx);
-	adc_context_release(&data->ctx, error);
-
 	return error;
 }
 
@@ -251,9 +249,13 @@ static int adc_sam_read(struct device *dev,
 			const struct adc_sequence *sequence)
 {
 	struct adc_sam_data *data = DEV_DATA(dev);
+	int error;
 
 	adc_context_lock(&data->ctx, false, NULL);
-	return start_read(dev, sequence);
+	error = start_read(dev, sequence);
+	adc_context_release(&data->ctx, error);
+
+	return error;
 }
 
 static int adc_sam_init(struct device *dev)
@@ -302,9 +304,13 @@ static int adc_sam_read_async(struct device *dev,
 			      struct k_poll_signal *async)
 {
 	struct adc_sam_data *data = DEV_DATA(dev);
+	int error;
 
 	adc_context_lock(&data->ctx, true, async);
-	return start_read(dev, sequence);
+	error = start_read(dev, sequence);
+	adc_context_release(&data->ctx, error);
+
+	return error;
 }
 #endif
 
@@ -345,9 +351,9 @@ static void adc_sam_isr(void *arg)
 static void adc0_sam_cfg_func(struct device *dev);
 
 static const struct adc_sam_cfg adc0_sam_cfg = {
-	.regs = (Afec *)CONFIG_ADC_0_BASE_ADDRESS,
+	.regs = (Afec *)DT_ADC_0_BASE_ADDRESS,
 	.cfg_func = adc0_sam_cfg_func,
-	.periph_id = CONFIG_ADC_0_PERIPHERAL_ID,
+	.periph_id = DT_ADC_0_PERIPHERAL_ID,
 	.afec_trg_pin = PIN_AFE0_ADTRG,
 };
 
@@ -357,15 +363,15 @@ static struct adc_sam_data adc0_sam_data = {
 	ADC_CONTEXT_INIT_SYNC(adc0_sam_data, ctx),
 };
 
-DEVICE_AND_API_INIT(adc0_sam, CONFIG_ADC_0_NAME, adc_sam_init,
+DEVICE_AND_API_INIT(adc0_sam, DT_ADC_0_NAME, adc_sam_init,
 		    &adc0_sam_data, &adc0_sam_cfg, POST_KERNEL,
 		    CONFIG_KERNEL_INIT_PRIORITY_DEVICE, &adc_sam_api);
 
 static void adc0_sam_cfg_func(struct device *dev)
 {
-	IRQ_CONNECT(CONFIG_ADC_0_IRQ, CONFIG_ADC_0_IRQ_PRI, adc_sam_isr,
+	IRQ_CONNECT(DT_ADC_0_IRQ, DT_ADC_0_IRQ_PRI, adc_sam_isr,
 		    DEVICE_GET(adc0_sam), 0);
-	irq_enable(CONFIG_ADC_0_IRQ);
+	irq_enable(DT_ADC_0_IRQ);
 }
 
 #endif /* CONFIG_ADC_0 */
@@ -374,9 +380,9 @@ static void adc0_sam_cfg_func(struct device *dev)
 static void adc1_sam_cfg_func(struct device *dev);
 
 static const struct adc_sam_cfg adc1_sam_cfg = {
-	.regs = (Afec *)CONFIG_ADC_1_BASE_ADDRESS,
+	.regs = (Afec *)DT_ADC_1_BASE_ADDRESS,
 	.cfg_func = adc1_sam_cfg_func,
-	.periph_id = CONFIG_ADC_1_PERIPHERAL_ID,
+	.periph_id = DT_ADC_1_PERIPHERAL_ID,
 	.afec_trg_pin = PIN_AFE1_ADTRG,
 };
 
@@ -386,15 +392,15 @@ static struct adc_sam_data adc1_sam_data = {
 	ADC_CONTEXT_INIT_SYNC(adc1_sam_data, ctx),
 };
 
-DEVICE_AND_API_INIT(adc1_sam, CONFIG_ADC_1_NAME, adc_sam_init,
+DEVICE_AND_API_INIT(adc1_sam, DT_ADC_1_NAME, adc_sam_init,
 		    &adc1_sam_data, &adc1_sam_cfg, POST_KERNEL,
 		    CONFIG_KERNEL_INIT_PRIORITY_DEVICE, &adc_sam_api);
 
 static void adc1_sam_cfg_func(struct device *dev)
 {
-	IRQ_CONNECT(CONFIG_ADC_1_IRQ, CONFIG_ADC_1_IRQ_PRI, adc_sam_isr,
+	IRQ_CONNECT(DT_ADC_1_IRQ, DT_ADC_1_IRQ_PRI, adc_sam_isr,
 		    DEVICE_GET(adc1_sam), 0);
-	irq_enable(CONFIG_ADC_1_IRQ);
+	irq_enable(DT_ADC_1_IRQ);
 }
 
 #endif /* CONFIG_ADC_1 */

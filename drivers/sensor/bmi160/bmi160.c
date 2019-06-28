@@ -9,12 +9,16 @@
  */
 
 #include <init.h>
-#include <sensor.h>
-#include <misc/byteorder.h>
+#include <drivers/sensor.h>
+#include <sys/byteorder.h>
 #include <kernel.h>
-#include <misc/__assert.h>
+#include <sys/__assert.h>
+#include <logging/log.h>
 
 #include "bmi160.h"
+
+#define LOG_LEVEL CONFIG_SENSOR_LOG_LEVEL
+LOG_MODULE_REGISTER(BMI160);
 
 struct bmi160_device_data bmi160_data;
 
@@ -172,7 +176,7 @@ static int bmi160_freq_to_odr_val(u16_t freq_int, u16_t freq_milli)
 	size_t i;
 
 	/* An ODR of 0 Hz is not allowed */
-	if (freq_int == 0 && freq_milli == 0) {
+	if (freq_int == 0U && freq_milli == 0U) {
 		return -EINVAL;
 	}
 
@@ -362,7 +366,7 @@ static int  bmi160_acc_calibrate(struct device *dev, enum sensor_channel chan,
 		BMI160_FOC_ACC_Z_POS,
 	};
 	int i;
-	u8_t reg_val = 0;
+	u8_t reg_val = 0U;
 
 	/* Calibration has to be done in normal mode. */
 	if (bmi160->pmu_sts.acc != BMI160_PMU_NORMAL) {
@@ -382,13 +386,13 @@ static int  bmi160_acc_calibrate(struct device *dev, enum sensor_channel chan,
 
 		accel_g = sensor_ms2_to_g(xyz_calib_value);
 		if (accel_g == 0) {
-			accel_val = 3;
+			accel_val = 3U;
 		} else if (accel_g == 1) {
-			accel_val = 1;
+			accel_val = 1U;
 		} else if (accel_g == -1) {
-			accel_val = 2;
+			accel_val = 2U;
 		} else {
-			accel_val = 0;
+			accel_val = 0U;
 		}
 		reg_val |= (accel_val << foc_pos[i]);
 	}
@@ -426,7 +430,7 @@ static int bmi160_acc_config(struct device *dev, enum sensor_channel chan,
 		return bmi160_acc_slope_config(dev, attr, val);
 #endif
 	default:
-		SYS_LOG_DBG("Accel attribute not supported.");
+		LOG_DBG("Accel attribute not supported.");
 		return -ENOTSUP;
 	}
 
@@ -579,7 +583,7 @@ static int bmi160_gyr_config(struct device *dev, enum sensor_channel chan,
 		return bmi160_gyr_calibrate(dev, chan);
 
 	default:
-		SYS_LOG_DBG("Gyro attribute not supported.");
+		LOG_DBG("Gyro attribute not supported.");
 		return -ENOTSUP;
 	}
 
@@ -606,7 +610,7 @@ static int bmi160_attr_set(struct device *dev, enum sensor_channel chan,
 		return bmi160_acc_config(dev, chan, attr, val);
 #endif
 	default:
-		SYS_LOG_DBG("attr_set() not supported on this channel.");
+		LOG_DBG("attr_set() not supported on this channel.");
 		return -ENOTSUP;
 	}
 
@@ -627,9 +631,9 @@ static int bmi160_sample_fetch(struct device *dev, enum sensor_channel chan)
 
 	__ASSERT_NO_MSG(chan == SENSOR_CHAN_ALL);
 
-	bmi160->sample.raw[0] = 0;
+	bmi160->sample.raw[0] = 0U;
 
-	while ((bmi160->sample.raw[0] & BMI160_DATA_READY_BIT_MASK) == 0) {
+	while ((bmi160->sample.raw[0] & BMI160_DATA_READY_BIT_MASK) == 0U) {
 		if (bmi160_transceive(dev, BMI160_REG_STATUS | (1 << 7), false,
 				      bmi160->sample.raw, 1) < 0) {
 			return -EIO;
@@ -679,18 +683,18 @@ static void bmi160_channel_convert(enum sensor_channel chan,
 	switch (chan) {
 	case SENSOR_CHAN_ACCEL_X:
 	case SENSOR_CHAN_GYRO_X:
-		ofs_start = ofs_stop = 0;
+		ofs_start = ofs_stop = 0U;
 		break;
 	case SENSOR_CHAN_ACCEL_Y:
 	case SENSOR_CHAN_GYRO_Y:
-		ofs_start = ofs_stop = 1;
+		ofs_start = ofs_stop = 1U;
 		break;
 	case SENSOR_CHAN_ACCEL_Z:
 	case SENSOR_CHAN_GYRO_Z:
-		ofs_start = ofs_stop = 2;
+		ofs_start = ofs_stop = 2U;
 		break;
 	default:
-		ofs_start = 0; ofs_stop = 2;
+		ofs_start = 0U; ofs_stop = 2U;
 		break;
 	}
 
@@ -725,11 +729,11 @@ static inline void bmi160_acc_channel_get(struct device *dev,
 
 static int bmi160_temp_channel_get(struct device *dev, struct sensor_value *val)
 {
-	u16_t temp_raw = 0;
+	u16_t temp_raw = 0U;
 	s32_t temp_micro = 0;
 	struct bmi160_device_data *bmi160 = dev->driver_data;
 
-	if (bmi160->pmu_sts.raw == 0) {
+	if (bmi160->pmu_sts.raw == 0U) {
 		return -EINVAL;
 	}
 
@@ -770,7 +774,7 @@ static int bmi160_channel_get(struct device *dev,
 	case SENSOR_CHAN_DIE_TEMP:
 		return bmi160_temp_channel_get(dev, val);
 	default:
-		SYS_LOG_DBG("Channel not supported.");
+		LOG_DBG("Channel not supported.");
 		return -ENOTSUP;
 	}
 
@@ -789,23 +793,23 @@ static const struct sensor_driver_api bmi160_api = {
 int bmi160_init(struct device *dev)
 {
 	struct bmi160_device_data *bmi160 = dev->driver_data;
-	u8_t val = 0;
+	u8_t val = 0U;
 	s32_t acc_range, gyr_range;
 
-	bmi160->spi = device_get_binding(CONFIG_BMI160_SPI_PORT_NAME);
+	bmi160->spi = device_get_binding(DT_INST_0_BOSCH_BMI160_BUS_NAME);
 	if (!bmi160->spi) {
-		SYS_LOG_DBG("SPI master controller not found: %s.",
-			    CONFIG_BMI160_SPI_PORT_NAME);
+		LOG_DBG("SPI master controller not found: %s.",
+			    DT_INST_0_BOSCH_BMI160_BUS_NAME);
 		return -EINVAL;
 	}
 
 	bmi160->spi_cfg.operation = SPI_WORD_SET(8);
-	bmi160->spi_cfg.frequency = CONFIG_BMI160_SPI_BUS_FREQ;
-	bmi160->spi_cfg.slave = CONFIG_BMI160_SLAVE;
+	bmi160->spi_cfg.frequency = DT_INST_0_BOSCH_BMI160_SPI_MAX_FREQUENCY;
+	bmi160->spi_cfg.slave = DT_INST_0_BOSCH_BMI160_BASE_ADDRESS;
 
 	/* reboot the chip */
 	if (bmi160_byte_write(dev, BMI160_REG_CMD, BMI160_CMD_SOFT_RESET) < 0) {
-		SYS_LOG_DBG("Cannot reboot chip.");
+		LOG_DBG("Cannot reboot chip.");
 		return -EIO;
 	}
 
@@ -813,19 +817,19 @@ int bmi160_init(struct device *dev)
 
 	/* do a dummy read from 0x7F to activate SPI */
 	if (bmi160_byte_read(dev, 0x7F, &val) < 0) {
-		SYS_LOG_DBG("Cannot read from 0x7F..");
+		LOG_DBG("Cannot read from 0x7F..");
 		return -EIO;
 	}
 
 	k_busy_wait(100);
 
 	if (bmi160_byte_read(dev, BMI160_REG_CHIPID, &val) < 0) {
-		SYS_LOG_DBG("Failed to read chip id.");
+		LOG_DBG("Failed to read chip id.");
 		return -EIO;
 	}
 
 	if (val != BMI160_CHIP_ID) {
-		SYS_LOG_DBG("Unsupported chip detected (0x%x)!", val);
+		LOG_DBG("Unsupported chip detected (0x%x)!", val);
 		return -ENODEV;
 	}
 
@@ -842,14 +846,14 @@ int bmi160_init(struct device *dev)
 	 * called.
 	 */
 	if (bmi160_pmu_set(dev, &bmi160->pmu_sts) < 0) {
-		SYS_LOG_DBG("Failed to set power mode.");
+		LOG_DBG("Failed to set power mode.");
 		return -EIO;
 	}
 
 	/* set accelerometer default range */
 	if (bmi160_byte_write(dev, BMI160_REG_ACC_RANGE,
 				BMI160_DEFAULT_RANGE_ACC) < 0) {
-		SYS_LOG_DBG("Cannot set default range for accelerometer.");
+		LOG_DBG("Cannot set default range for accelerometer.");
 		return -EIO;
 	}
 
@@ -860,7 +864,7 @@ int bmi160_init(struct device *dev)
 	/* set gyro default range */
 	if (bmi160_byte_write(dev, BMI160_REG_GYR_RANGE,
 			      BMI160_DEFAULT_RANGE_GYR) < 0) {
-		SYS_LOG_DBG("Cannot set default range for gyroscope.");
+		LOG_DBG("Cannot set default range for gyroscope.");
 		return -EIO;
 	}
 
@@ -872,7 +876,7 @@ int bmi160_init(struct device *dev)
 				    BMI160_ACC_CONF_ODR_POS,
 				    BMI160_ACC_CONF_ODR_MASK,
 				    BMI160_DEFAULT_ODR_ACC) < 0) {
-		SYS_LOG_DBG("Failed to set accel's default ODR.");
+		LOG_DBG("Failed to set accel's default ODR.");
 		return -EIO;
 	}
 
@@ -880,28 +884,29 @@ int bmi160_init(struct device *dev)
 				    BMI160_GYR_CONF_ODR_POS,
 				    BMI160_GYR_CONF_ODR_MASK,
 				    BMI160_DEFAULT_ODR_GYR) < 0) {
-		SYS_LOG_DBG("Failed to set gyro's default ODR.");
+		LOG_DBG("Failed to set gyro's default ODR.");
 		return -EIO;
 	}
 
 #ifdef CONFIG_BMI160_TRIGGER
 	if (bmi160_trigger_mode_init(dev) < 0) {
-		SYS_LOG_DBG("Cannot set up trigger mode.");
+		LOG_DBG("Cannot set up trigger mode.");
 		return -EINVAL;
 	}
 #endif
-
-	dev->driver_api = &bmi160_api;
 
 	return 0;
 }
 
 const struct bmi160_device_config bmi160_config = {
 #if defined(CONFIG_BMI160_TRIGGER)
-	.gpio_port = CONFIG_BMI160_GPIO_DEV_NAME,
-	.int_pin = CONFIG_BMI160_GPIO_PIN_NUM,
+	.gpio_port = DT_INST_0_BOSCH_BMI160_INT_GPIOS_CONTROLLER,
+	.int_pin = DT_INST_0_BOSCH_BMI160_INT_GPIOS_PIN,
 #endif
 };
 
-DEVICE_INIT(bmi160, CONFIG_BMI160_NAME, bmi160_init, &bmi160_data,
-	    &bmi160_config, POST_KERNEL, CONFIG_SENSOR_INIT_PRIORITY);
+
+
+DEVICE_AND_API_INIT(bmi160, DT_INST_0_BOSCH_BMI160_LABEL, bmi160_init, &bmi160_data,
+		&bmi160_config, POST_KERNEL, CONFIG_SENSOR_INIT_PRIORITY,
+		&bmi160_api);

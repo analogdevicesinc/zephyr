@@ -1,15 +1,9 @@
-cmake_minimum_required(VERSION 3.8.2)
+# SPDX-License-Identifier: Apache-2.0
 
-macro(set_conf_file)
-  if(EXISTS                 ${APPLICATION_SOURCE_DIR}/boards/${BOARD}.conf)
-    set(CONF_FILE "prj.conf ${APPLICATION_SOURCE_DIR}/boards/${BOARD}.conf")
-  else()
-    set(CONF_FILE "prj.conf")
-  endif()
-endmacro()
+cmake_minimum_required(VERSION 3.13.1)
 
 include($ENV{ZEPHYR_BASE}/cmake/app/boilerplate.cmake NO_POLICY_SCOPE)
-project(NONE)
+project(sockets_echo_server)
 
 target_sources(                     app PRIVATE src/echo-server.c)
 target_sources_ifdef(CONFIG_NET_UDP app PRIVATE src/udp.c)

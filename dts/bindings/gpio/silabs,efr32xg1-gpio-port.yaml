@@ -1,0 +1,23 @@
+
+title: EFR32XG1 GPIO
+version: 0.1
+
+description: >
+    This is a representation of the EFR32XG1 GPIO Port nodes
+
+inherits:
+    !include base.yaml
+
+properties:
+    compatible:
+      constraint: "silabs,efr32xg1-gpio-port"
+
+    reg:
+      category: required
+
+    label:
+      category: required
+
+"#cells":
+  - pin
+  - flags

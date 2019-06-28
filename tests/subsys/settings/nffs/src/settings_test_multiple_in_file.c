@@ -8,17 +8,24 @@
 #include "settings_test.h"
 #include "settings/settings_file.h"
 
+#ifdef CONFIG_SETTINGS_USE_BASE64
+#define CF_MFG_TEST1 "\x10\x00myfoo/mybar=AQ=="\
+		     "\x10\x00myfoo/mybar=Dg=="
+#define CF_MFG_TEST2 "\x10\x00myfoo/mybar=AQ=="\
+		     "\x10\x00myfoo/mybar=Dw=="
+#else
+#define CF_MFG_TEST1 "\x0d\x00myfoo/mybar=\x01"\
+		     "\x0d\x00myfoo/mybar=\x0e"
+#define CF_MFG_TEST2 "\x0d\x00myfoo/mybar=\x01"\
+		     "\x0d\x00myfoo/mybar=\x0f"
+#endif
+
 void test_config_multiple_in_file(void)
 {
 	int rc;
 	struct settings_file cf_mfg;
-	const char cf_mfg_test1[] =
-		"myfoo/mybar=1\n"
-		"myfoo/mybar=14";
-	const char cf_mfg_test2[] =
-		"myfoo/mybar=1\n"
-		"myfoo/mybar=15\n"
-		"\n";
+	const char cf_mfg_test1[] = CF_MFG_TEST1;
+	const char cf_mfg_test2[] = CF_MFG_TEST2;
 
 	config_wipe_srcs();
 
@@ -32,7 +39,7 @@ void test_config_multiple_in_file(void)
 
 	settings_load();
 	zassert_true(test_set_called, "the SET handler wasn't called");
-	zassert_true(val8 == 14,
+	zassert_true(val8 == 14U,
 		     "SET handler: was called with wrong parameters");
 
 	rc = fsutil_write_file(TEST_CONFIG_DIR "/mfg", cf_mfg_test2,
@@ -41,6 +48,6 @@ void test_config_multiple_in_file(void)
 
 	settings_load();
 	zassert_true(test_set_called, "the SET handler wasn't called");
-	zassert_true(val8 == 15,
+	zassert_true(val8 == 15U,
 		     "SET handler: was called with wrong parameters");
 }

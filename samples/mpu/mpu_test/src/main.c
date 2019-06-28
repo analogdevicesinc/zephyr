@@ -1,14 +1,19 @@
 /*
  * Copyright (c) 2017 Linaro Limited.
+ * Copyright (c) 2018 Nordic Semiconductor.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 #include <stdlib.h>
 
 #include <zephyr.h>
-#include <flash.h>
-#include <misc/printk.h>
-#include <shell/legacy_shell.h>
+#include <drivers/flash.h>
+#include <shell/shell.h>
+
+#define PR_SHELL(shell, fmt, ...)				\
+	shell_fprintf(shell, SHELL_NORMAL, fmt, ##__VA_ARGS__)
+#define PR_ERROR(shell, fmt, ...)				\
+	shell_fprintf(shell, SHELL_ERROR, fmt, ##__VA_ARGS__)
 
 /* Assumption: our devices have less than 64MB of memory */
 #define RESERVED_MEM_MAP (CONFIG_SRAM_BASE_ADDRESS + 0x4000000)
@@ -19,9 +24,10 @@
 #define READ_CMD_HELP  "Read from a reserved address in the memory map"
 #define WRITE_CMD_HELP "Write in to boot FLASH/ROM"
 #define RUN_CMD_HELP   "Run code located in RAM"
-#define MTEST_CMD_HELP "Memory Test writes or reads a memory location"
+#define MTEST_CMD_HELP "Memory Test writes or reads a memory location.\n"    \
+			"Command accepts 1 (Read) or 2 (Write) parameters."
 
-static int shell_cmd_read(int argc, char *argv[])
+static int cmd_read(const struct shell *shell, size_t argc, char *argv[])
 {
 	ARG_UNUSED(argc);
 	ARG_UNUSED(argv);
@@ -29,34 +35,35 @@ static int shell_cmd_read(int argc, char *argv[])
 	u32_t *p_mem = (u32_t *) RESERVED_MEM_MAP;
 
 	/* Reads from an address that is reserved in the memory map */
-	printk("The value is: %d", *p_mem);
+	PR_SHELL(shell, "The value is: %d\n", *p_mem);
 
 	return 0;
 }
 
 #if defined(CONFIG_SOC_FLASH_MCUX)
-static int shell_cmd_write_mcux(int argc, char *argv[])
+static int cmd_write_mcux(const struct shell *shell, size_t argc, char *argv[])
 {
 	ARG_UNUSED(argc);
 	ARG_UNUSED(argv);
 
 	struct device *flash_dev;
-	flash_dev = device_get_binding(FLASH_DEV_NAME);
-
 	u32_t value[2];
+	u32_t offset;
+
+	flash_dev = device_get_binding(DT_FLASH_DEV_NAME);
 
 	/* 128K reserved to the application */
-	u32_t offset = FLASH_MEM + 0x20000;
+	offset = FLASH_MEM + 0x20000;
 	value[0] = 0xBADC0DE;
 	value[1] = 0xBADC0DE;
 
-	printk("write address: 0x%x\n", offset);
+	PR_SHELL(shell, "write address: 0x%x\n", offset);
 
 	flash_write_protection_set(flash_dev, false);
 
 	if (flash_write(flash_dev, offset, value,
 				sizeof(value)) != 0) {
-		printk("Flash write failed!\n");
+		PR_ERROR(shell, "Flash write failed!\n");
 		return 1;
 	}
 
@@ -66,25 +73,25 @@ static int shell_cmd_write_mcux(int argc, char *argv[])
 
 }
 #elif defined(CONFIG_SOC_FLASH_STM32)
-static int shell_cmd_write_stm32(int argc, char *argv[])
+static int cmd_write_stm32(const struct shell *shell, size_t argc, char *argv[])
 {
 	ARG_UNUSED(argc);
 	ARG_UNUSED(argv);
 
 	struct device *flash_dev;
-	flash_dev = device_get_binding(FLASH_DEV_NAME);
+
+	flash_dev = device_get_binding(DT_FLASH_DEV_NAME);
 
 	/* 16K reserved to the application */
 	u32_t offset = FLASH_MEM + 0x4000;
 	u32_t value = 0xBADC0DE;
 
-	printk("write address: 0x%x\n", offset);
+	PR_SHELL(shell, "write address: 0x%x\n", offset);
 
 	flash_write_protection_set(flash_dev, false);
 
-	if (flash_write(flash_dev, offset, &value,
-				sizeof(value)) != 0) {
-		printk("Flash write failed!\n");
+	if (flash_write(flash_dev, offset, &value, sizeof(value)) != 0) {
+		PR_ERROR(shell, "Flash write failed!\n");
 		return 1;
 	}
 
@@ -93,7 +100,7 @@ static int shell_cmd_write_stm32(int argc, char *argv[])
 	return 0;
 }
 #else
-static int shell_cmd_write(int argc, char *argv[])
+static int cmd_write(const struct shell *shell, size_t argc, char *argv[])
 {
 	ARG_UNUSED(argc);
 	ARG_UNUSED(argv);
@@ -101,7 +108,7 @@ static int shell_cmd_write(int argc, char *argv[])
 	/* 16K reserved to the application */
 	u32_t *p_mem = (u32_t *) (FLASH_MEM + 0x4000);
 
-	printk("write address: 0x%x\n", FLASH_MEM + 0x4000);
+	PR_SHELL(shell, "write address: 0x%x\n", FLASH_MEM + 0x4000);
 
 	/* Write in to boot FLASH/ROM */
 	*p_mem = 0xBADC0DE;
@@ -110,7 +117,7 @@ static int shell_cmd_write(int argc, char *argv[])
 }
 #endif /* SOC_FLASH_MCUX */
 
-static int shell_cmd_run(int argc, char *argv[])
+static int cmd_run(const struct shell *shell, size_t argc, char *argv[])
 {
 	ARG_UNUSED(argc);
 	ARG_UNUSED(argv);
@@ -123,19 +130,16 @@ static int shell_cmd_run(int argc, char *argv[])
 	return 0;
 }
 
-static int shell_cmd_mtest(int argc, char *argv[])
+static int cmd_mtest(const struct shell *shell, size_t argc, char *argv[])
 {
-	if (argc > 3) {
-		printk("mtest accepts 1 (Read) or 2 (Write) parameters\n");
-		return 1;
-	}
+	u32_t *mem;
+	u32_t val;
 
-	u32_t val = (u32_t)strtol(argv[1], NULL, 16);
-
-	u32_t *mem = (u32_t *) val;
+	val = (u32_t)strtol(argv[1], NULL, 16);
+	mem = (u32_t *) val;
 
 	if (argc == 2) {
-		printk("The value is: 0x%x\n", *mem);
+		PR_SHELL(shell, "The value is: 0x%x\n", *mem);
 	} else {
 		*mem = (u32_t) strtol(argv[2], NULL, 16);
 	}
@@ -143,23 +147,24 @@ static int shell_cmd_mtest(int argc, char *argv[])
 	return 0;
 }
 
-#define SHELL_MODULE "mpu_test"
-
-static struct shell_cmd commands[] = {
-	{ "read", shell_cmd_read, READ_CMD_HELP},
-#if defined(CONFIG_SOC_FLASH_MCUX)
-	{ "write", shell_cmd_write_mcux, WRITE_CMD_HELP },
-#elif defined(CONFIG_SOC_FLASH_STM32)
-	{ "write", shell_cmd_write_stm32, WRITE_CMD_HELP },
-#else
-	{ "write", shell_cmd_write, WRITE_CMD_HELP },
-#endif /* SOC_FLASH_MCUX*/
-	{ "run", shell_cmd_run, RUN_CMD_HELP },
-	{ "mtest", shell_cmd_mtest, MTEST_CMD_HELP },
-	{ NULL, NULL, NULL }
-};
-
 void main(void)
 {
-	SHELL_REGISTER(SHELL_MODULE, commands);
+
 }
+
+SHELL_STATIC_SUBCMD_SET_CREATE(sub_mpu,
+	SHELL_CMD_ARG(mtest, NULL, MTEST_CMD_HELP, cmd_mtest, 2, 1),
+	SHELL_CMD(read, NULL, READ_CMD_HELP, cmd_read),
+	SHELL_CMD(run, NULL, RUN_CMD_HELP, cmd_run),
+#if defined(CONFIG_SOC_FLASH_MCUX)
+	SHELL_CMD(write, NULL, WRITE_CMD_HELP, cmd_write_mcux),
+#elif defined(CONFIG_SOC_FLASH_STM32)
+	SHELL_CMD(write, NULL, WRITE_CMD_HELP, cmd_write_stm32),
+#else
+	SHELL_CMD(write, NULL, WRITE_CMD_HELP, cmd_write),
+#endif /* SOC_FLASH_MCUX*/
+	SHELL_SUBCMD_SET_END /* Array terminated. */
+);
+SHELL_CMD_REGISTER(mpu, &sub_mpu, "MPU related commands.", NULL);
+
+

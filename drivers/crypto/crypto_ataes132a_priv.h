@@ -8,9 +8,9 @@
 #ifndef ZEPHYR_DRIVERS_CRYPTO_CRYPTO_ATAES132A_PRIV_H_
 #define ZEPHYR_DRIVERS_CRYPTO_CRYPTO_ATAES132A_PRIV_H_
 
-#include <i2c.h>
+#include <drivers/i2c.h>
 #include <kernel.h>
-#include <misc/util.h>
+#include <sys/util.h>
 
 /* Configuration Read Only Registers */
 #define ATAES_SERIALNUM_REG	0xF000
@@ -119,7 +119,7 @@ void ataes132a_atmel_crc(u8_t *input, u8_t length,
 	u16_t double_carry;
 	u8_t higher_crc_bit;
 
-	for (i = 0, crc = 0; i < length; i++) {
+	for (i = 0, crc = 0U; i < length; i++) {
 		for (j = 7; j >=  0; j--) {
 			bit = !!(input[i] & BIT(j));
 			higher_crc_bit = crc >> 15;
@@ -147,7 +147,7 @@ static inline int burst_write_i2c(struct device *dev, u16_t dev_addr,
 	addr_buffer[1] = start_addr & 0xFF;
 	addr_buffer[0] = start_addr >> 8;
 	msg[0].buf = addr_buffer;
-	msg[0].len = 2;
+	msg[0].len = 2U;
 	msg[0].flags = I2C_MSG_WRITE;
 
 	msg[1].buf = buf;
@@ -169,7 +169,7 @@ static inline int burst_read_i2c(struct device *dev, u16_t dev_addr,
 	addr_buffer[1] = start_addr & 0xFF;
 	addr_buffer[0] = start_addr >> 8;
 	msg[0].buf = addr_buffer;
-	msg[0].len = 2;
+	msg[0].len = 2U;
 	msg[0].flags = I2C_MSG_WRITE;
 
 	msg[1].buf = buf;

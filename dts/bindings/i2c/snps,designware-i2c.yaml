@@ -3,9 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: Synopys DesignWare I2C controller
-id: snps,designware-i2c
 version: 0.1
 
 description: >
@@ -19,15 +18,13 @@ properties:
       constraint: "snps,designware-i2c"
 
     reg:
-      type: array
-      description: mmio register space
-      generation: define
       category: required
 
     interrupts:
-      type: array
       category: required
-      description: required interrupts
-      generation: define
 
-...
+    pcie:
+      type: boolean
+      category: optional
+      description: attached via PCI(e) bus
+      generation: define

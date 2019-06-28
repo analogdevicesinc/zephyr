@@ -6,27 +6,28 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define SYS_LOG_DOMAIN "SPI Intel"
-#define SYS_LOG_LEVEL CONFIG_SYS_LOG_SPI_LEVEL
-#include <logging/sys_log.h>
+#define LOG_DOMAIN "SPI Intel"
+#define LOG_LEVEL CONFIG_SPI_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_REGISTER(spi_intel);
 
 #include <errno.h>
 
 #include <kernel.h>
 #include <arch/cpu.h>
 
-#include <misc/__assert.h>
-#include <board.h>
+#include <sys/__assert.h>
+#include <soc.h>
 #include <init.h>
 
-#include <sys_io.h>
-#include <power.h>
+#include <sys/sys_io.h>
+#include <power/power.h>
 
-#include <spi.h>
+#include <drivers/spi.h>
 #include "spi_intel.h"
 
 #ifdef CONFIG_IOAPIC
-#include <drivers/ioapic.h>
+#include <drivers/interrupt_controller/ioapic.h>
 #endif
 
 static void completed(struct device *dev, u32_t error)
@@ -47,7 +48,7 @@ out:
 
 	spi_context_cs_control(&spi->ctx, false);
 
-	SYS_LOG_DBG("SPI transaction completed %s error",
+	LOG_DBG("SPI transaction completed %s error",
 		    error ? "with" : "without");
 
 	spi_context_complete(&spi->ctx, error ? -EIO : 0);
@@ -84,7 +85,7 @@ static void push_data(struct device *dev)
 	u32_t status;
 
 	while ((status = read_sssr(spi->regs)) & INTEL_SPI_SSSR_TNF) {
-		u32_t data = 0;
+		u32_t data = 0U;
 
 		if (status & INTEL_SPI_SSSR_RFS) {
 			break;
@@ -95,6 +96,7 @@ static void push_data(struct device *dev)
 			case 1:
 				data = UNALIGNED_GET((u8_t *)
 						     (spi->ctx.tx_buf));
+				break;
 			case 2:
 				data = UNALIGNED_GET((u16_t *)
 						     (spi->ctx.tx_buf));
@@ -120,7 +122,7 @@ static int spi_intel_configure(struct device *dev,
 {
 	struct spi_intel_data *spi = dev->driver_data;
 
-	SYS_LOG_DBG("%p (0x%x), %p", dev, spi->regs, config);
+	LOG_DBG("%p (0x%x), %p", dev, spi->regs, config);
 
 	if (spi_context_configured(&spi->ctx, config)) {
 		/* Nothing to do */
@@ -185,7 +187,7 @@ static int transceive(struct device *dev,
 
 	/* Check status */
 	if (test_bit_sscr0_sse(spi->regs) && test_bit_sssr_bsy(spi->regs)) {
-		SYS_LOG_DBG("Controller is busy");
+		LOG_DBG("Controller is busy");
 		return -EBUSY;
 	}
 
@@ -218,7 +220,7 @@ static int spi_intel_transceive(struct device *dev,
 				const struct spi_buf_set *tx_bufs,
 				const struct spi_buf_set *rx_bufs)
 {
-	SYS_LOG_DBG("%p, %p, %p", dev, tx_bufs, rx_bufs);
+	LOG_DBG("%p, %p, %p", dev, tx_bufs, rx_bufs);
 
 	return transceive(dev, config, tx_bufs, rx_bufs, false, NULL);
 }
@@ -230,7 +232,7 @@ static int spi_intel_transceive_async(struct device *dev,
 				      const struct spi_buf_set *rx_bufs,
 				      struct k_poll_signal *async)
 {
-	SYS_LOG_DBG("%p, %p, %p, %p", dev, tx_bufs, rx_bufs, async);
+	LOG_DBG("%p, %p, %p, %p", dev, tx_bufs, rx_bufs, async);
 
 	return transceive(dev, config, tx_bufs, rx_bufs, true, async);
 }
@@ -242,7 +244,7 @@ static int spi_intel_release(struct device *dev,
 	struct spi_intel_data *spi = dev->driver_data;
 
 	if (test_bit_sscr0_sse(spi->regs) && test_bit_sssr_bsy(spi->regs)) {
-		SYS_LOG_DBG("Controller is busy");
+		LOG_DBG("Controller is busy");
 		return -EBUSY;
 	}
 
@@ -254,16 +256,16 @@ static int spi_intel_release(struct device *dev,
 void spi_intel_isr(struct device *dev)
 {
 	struct spi_intel_data *spi = dev->driver_data;
-	u32_t error = 0;
+	u32_t error = 0U;
 	u32_t status;
 
-	SYS_LOG_DBG("%p", dev);
+	LOG_DBG("%p", dev);
 
 	status = read_sssr(spi->regs);
 	if (status & INTEL_SPI_SSSR_ROR) {
 		/* Unrecoverable error, ack it */
 		clear_bit_sssr_ror(spi->regs);
-		error = 1;
+		error = 1U;
 		goto out;
 	}
 
@@ -296,7 +298,7 @@ static inline int spi_intel_setup(struct device *dev)
 	pci_bus_scan_init();
 
 	if (!pci_bus_scan(&spi->pci_dev)) {
-		SYS_LOG_DBG("Could not find device");
+		LOG_DBG("Could not find device");
 		return 0;
 	}
 
@@ -339,7 +341,7 @@ int spi_intel_init(struct device *dev)
 
 	irq_enable(info->irq);
 
-	SYS_LOG_DBG("SPI Intel Driver initialized on device: %p", dev);
+	LOG_DBG("SPI Intel Driver initialized on device: %p", dev);
 
 	return 0;
 }
@@ -358,7 +360,7 @@ static int spi_intel_suspend(struct device *dev)
 	const struct spi_intel_config *info = dev->config->config_info;
 	struct spi_intel_data *spi = dev->driver_data;
 
-	SYS_LOG_DBG("%p", dev);
+	LOG_DBG("%p", dev);
 
 	clear_bit_sscr0_sse(spi->regs);
 	irq_disable(info->irq);
@@ -373,7 +375,7 @@ static int spi_intel_resume_from_suspend(struct device *dev)
 	const struct spi_intel_config *info = dev->config->config_info;
 	struct spi_intel_data *spi = dev->driver_data;
 
-	SYS_LOG_DBG("%p", dev);
+	LOG_DBG("%p", dev);
 
 	set_bit_sscr0_sse(spi->regs);
 	irq_enable(info->irq);
@@ -388,20 +390,25 @@ static int spi_intel_resume_from_suspend(struct device *dev)
 * the *context may include IN data or/and OUT data
 */
 static int spi_intel_device_ctrl(struct device *dev, u32_t ctrl_command,
-				 void *context)
+				 void *context, device_pm_cb cb, void *arg)
 {
+	int ret = 0;
+
 	if (ctrl_command == DEVICE_PM_SET_POWER_STATE) {
 		if (*((u32_t *)context) == DEVICE_PM_SUSPEND_STATE) {
-			return spi_intel_suspend(dev);
+			ret = spi_intel_suspend(dev);
 		} else if (*((u32_t *)context) == DEVICE_PM_ACTIVE_STATE) {
-			return spi_intel_resume_from_suspend(dev);
+			ret = spi_intel_resume_from_suspend(dev);
 		}
 	} else if (ctrl_command == DEVICE_PM_GET_POWER_STATE) {
 		*((u32_t *)context) = spi_intel_get_power_state(dev);
-		return 0;
 	}
 
-	return 0;
+	if (cb) {
+		cb(dev, ret, context, arg);
+	}
+
+	return ret;
 }
 #else
 #define spi_intel_set_power_state(...)
@@ -415,7 +422,7 @@ void spi_config_0_irq(void);
 struct spi_intel_data spi_intel_data_port_0 = {
 	SPI_CONTEXT_INIT_LOCK(spi_intel_data_port_0, ctx),
 	SPI_CONTEXT_INIT_SYNC(spi_intel_data_port_0, ctx),
-	.regs = SPI_INTEL_PORT_0_REGS,
+	.regs = DT_SPI_0_BASE_ADDRESS,
 #if CONFIG_PCI
 	.pci_dev.class_type = SPI_INTEL_CLASS,
 	.pci_dev.bus = SPI_INTEL_PORT_0_BUS,
@@ -427,20 +434,20 @@ struct spi_intel_data spi_intel_data_port_0 = {
 };
 
 const struct spi_intel_config spi_intel_config_0 = {
-	.irq = SPI_INTEL_PORT_0_IRQ,
+	.irq = DT_SPI_0_IRQ,
 	.config_func = spi_config_0_irq
 };
 
-DEVICE_DEFINE(spi_intel_port_0, CONFIG_SPI_0_NAME, spi_intel_init,
+DEVICE_DEFINE(spi_intel_port_0, DT_SPI_0_NAME, spi_intel_init,
 	      spi_intel_device_ctrl, &spi_intel_data_port_0,
 	      &spi_intel_config_0, POST_KERNEL, CONFIG_SPI_INIT_PRIORITY,
 	      &intel_spi_api);
 
 void spi_config_0_irq(void)
 {
-	IRQ_CONNECT(SPI_INTEL_PORT_0_IRQ, CONFIG_SPI_0_IRQ_PRI,
+	IRQ_CONNECT(DT_SPI_0_IRQ, DT_SPI_0_IRQ_PRI,
 		    spi_intel_isr, DEVICE_GET(spi_intel_port_0),
-		    SPI_INTEL_IRQ_FLAGS);
+		    DT_SPI_0_IRQ_FLAGS);
 }
 
 #endif /* CONFIG_SPI_0 */
@@ -451,7 +458,7 @@ void spi_config_1_irq(void);
 struct spi_intel_data spi_intel_data_port_1 = {
 	SPI_CONTEXT_INIT_LOCK(spi_intel_data_port_1, ctx),
 	SPI_CONTEXT_INIT_SYNC(spi_intel_data_port_1, ctx),
-	.regs = SPI_INTEL_PORT_1_REGS,
+	.regs = DT_SPI_1_BASE_ADDRESS,
 #if CONFIG_PCI
 	.pci_dev.class_type = SPI_INTEL_CLASS,
 	.pci_dev.bus = SPI_INTEL_PORT_1_BUS,
@@ -463,20 +470,20 @@ struct spi_intel_data spi_intel_data_port_1 = {
 };
 
 const struct spi_intel_config spi_intel_config_1 = {
-	.irq = SPI_INTEL_PORT_1_IRQ,
+	.irq = DT_SPI_1_IRQ,
 	.config_func = spi_config_1_irq
 };
 
-DEVICE_DEFINE(spi_intel_port_1, CONFIG_SPI_1_NAME, spi_intel_init,
+DEVICE_DEFINE(spi_intel_port_1, DT_SPI_1_NAME, spi_intel_init,
 	      spi_intel_device_ctrl, &spi_intel_data_port_1,
 	      &spi_intel_config_1, POST_KERNEL, CONFIG_SPI_INIT_PRIORITY,
 	      &intel_spi_api);
 
 void spi_config_1_irq(void)
 {
-	IRQ_CONNECT(SPI_INTEL_PORT_1_IRQ, CONFIG_SPI_1_IRQ_PRI,
+	IRQ_CONNECT(DT_SPI_1_IRQ, DT_SPI_1_IRQ_PRI,
 		    spi_intel_isr, DEVICE_GET(spi_intel_port_1),
-		    SPI_INTEL_IRQ_FLAGS);
+		    DT_SPI_1_IRQ_FLAGS);
 }
 
 #endif /* CONFIG_SPI_1 */

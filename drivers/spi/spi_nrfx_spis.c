@@ -4,12 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <spi.h>
+#include <drivers/spi.h>
 #include <nrfx_spis.h>
 
-#define SYS_LOG_DOMAIN "spi_nrfx_spis"
-#define SYS_LOG_LEVEL CONFIG_SYS_LOG_SPI_LEVEL
-#include <logging/sys_log.h>
+#define LOG_DOMAIN "spi_nrfx_spis"
+#define LOG_LEVEL CONFIG_SPI_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_REGISTER(spi_nrfx_spis);
 
 #include "spi_context.h"
 
@@ -69,29 +70,29 @@ static int configure(struct device *dev,
 	}
 
 	if (SPI_OP_MODE_GET(spi_cfg->operation) == SPI_OP_MODE_MASTER) {
-		SYS_LOG_ERR("Master mode is not supported on %s",
+		LOG_ERR("Master mode is not supported on %s",
 			    dev->config->name);
 		return -EINVAL;
 	}
 
 	if (spi_cfg->operation & SPI_MODE_LOOP) {
-		SYS_LOG_ERR("Loopback mode is not supported");
+		LOG_ERR("Loopback mode is not supported");
 		return -EINVAL;
 	}
 
 	if ((spi_cfg->operation & SPI_LINES_MASK) != SPI_LINES_SINGLE) {
-		SYS_LOG_ERR("Only single line mode is supported");
+		LOG_ERR("Only single line mode is supported");
 		return -EINVAL;
 	}
 
 	if (SPI_WORD_SIZE_GET(spi_cfg->operation) != 8) {
-		SYS_LOG_ERR("Word sizes other than 8 bits"
+		LOG_ERR("Word sizes other than 8 bits"
 			    " are not supported");
 		return -EINVAL;
 	}
 
 	if (spi_cfg->cs) {
-		SYS_LOG_ERR("CS control via GPIO is not supported");
+		LOG_ERR("CS control via GPIO is not supported");
 		return -EINVAL;
 	}
 
@@ -153,11 +154,11 @@ static int transceive(struct device *dev,
 		/* Invalid configuration. */
 	} else if ((tx_bufs && tx_bufs->count > 1) ||
 		   (rx_bufs && rx_bufs->count > 1)) {
-		SYS_LOG_ERR("Scattered buffers are not supported");
+		LOG_ERR("Scattered buffers are not supported");
 		error = -ENOTSUP;
 	} else if (tx_bufs && tx_bufs->buffers[0].len &&
 		   !nrfx_is_in_ram(tx_bufs->buffers[0].buf)) {
-		SYS_LOG_ERR("Only buffers located in RAM are supported");
+		LOG_ERR("Only buffers located in RAM are supported");
 		error = -ENOTSUP;
 	} else {
 		spi_context_buffers_setup(&dev_data->ctx, tx_bufs, rx_bufs, 1);
@@ -236,7 +237,7 @@ static int init_spis(struct device *dev, const nrfx_spis_config_t *config)
 					   event_handler,
 					   dev);
 	if (result != NRFX_SUCCESS) {
-		SYS_LOG_ERR("Failed to initialize device: %s",
+		LOG_ERR("Failed to initialize device: %s",
 			    dev->config->name);
 		return -EBUSY;
 	}
@@ -246,39 +247,41 @@ static int init_spis(struct device *dev, const nrfx_spis_config_t *config)
 	return 0;
 }
 
-#define SPI_NRFX_SPIS_DEVICE(idx)					   \
-	static int spi_##idx##_init(struct device *dev)			   \
-	{								   \
-		IRQ_CONNECT(NRFX_IRQ_NUMBER_GET(NRF_SPIS##idx),		   \
-			    CONFIG_SPI_##idx##_IRQ_PRI,			   \
-			    nrfx_isr, nrfx_spis_##idx##_irq_handler, 0);   \
-		const nrfx_spis_config_t config = {			   \
-			.sck_pin    = CONFIG_SPI_##idx##_NRF_SCK_PIN,	   \
-			.mosi_pin   = CONFIG_SPI_##idx##_NRF_MOSI_PIN,	   \
-			.miso_pin   = CONFIG_SPI_##idx##_NRF_MISO_PIN,	   \
-			.csn_pin    = CONFIG_SPI_##idx##_NRF_CSN_PIN,	   \
-			.mode       = NRF_SPIS_MODE_0,			   \
-			.bit_order  = NRF_SPIS_BIT_ORDER_MSB_FIRST,	   \
-			.csn_pullup = NRFX_SPIS_DEFAULT_CSN_PULLUP,	   \
-			.miso_drive = NRFX_SPIS_DEFAULT_MISO_DRIVE,	   \
-			.orc        = CONFIG_SPI_##idx##_NRF_ORC,	   \
-			.def        = CONFIG_SPI_##idx##_NRF_DEF,	   \
-		};							   \
-		return init_spis(dev, &config);				   \
-	}								   \
-	static struct spi_nrfx_data spi_##idx##_data = {		   \
-		SPI_CONTEXT_INIT_LOCK(spi_##idx##_data, ctx),		   \
-		SPI_CONTEXT_INIT_SYNC(spi_##idx##_data, ctx),		   \
-	};								   \
-	static const struct spi_nrfx_config spi_##idx##_config = {	   \
-		.spis = NRFX_SPIS_INSTANCE(idx),			   \
-		.max_buf_len = (1 << SPIS##idx##_EASYDMA_MAXCNT_SIZE) - 1, \
-	};								   \
-	DEVICE_AND_API_INIT(spi_##idx, CONFIG_SPI_##idx##_NAME,		   \
-			    spi_##idx##_init,				   \
-			    &spi_##idx##_data,				   \
-			    &spi_##idx##_config,			   \
-			    POST_KERNEL, CONFIG_SPI_INIT_PRIORITY,	   \
+#define SPI_NRFX_SPIS_DEVICE(idx)					       \
+	static int spi_##idx##_init(struct device *dev)			       \
+	{								       \
+		IRQ_CONNECT(NRFX_IRQ_NUMBER_GET(NRF_SPIS##idx),		       \
+			    DT_NORDIC_NRF_SPIS_SPI_##idx##_IRQ_0_PRIORITY,     \
+			    nrfx_isr, nrfx_spis_##idx##_irq_handler, 0);       \
+		const nrfx_spis_config_t config = {			       \
+			.sck_pin    = DT_NORDIC_NRF_SPIS_SPI_##idx##_SCK_PIN,  \
+			.mosi_pin   = DT_NORDIC_NRF_SPIS_SPI_##idx##_MOSI_PIN, \
+			.miso_pin   = DT_NORDIC_NRF_SPIS_SPI_##idx##_MISO_PIN, \
+			.csn_pin    = DT_NORDIC_NRF_SPIS_SPI_##idx##_CSN_PIN,  \
+			.mode       = NRF_SPIS_MODE_0,			       \
+			.bit_order  = NRF_SPIS_BIT_ORDER_MSB_FIRST,	       \
+			.csn_pullup = NRFX_SPIS_DEFAULT_CSN_PULLUP,	       \
+			.miso_drive = NRFX_SPIS_DEFAULT_MISO_DRIVE,	       \
+			.orc        = CONFIG_SPI_##idx##_NRF_ORC,	       \
+			.def        = DT_NORDIC_NRF_SPIS_SPI_##idx##_DEF_CHAR, \
+		};							       \
+		return init_spis(dev, &config);				       \
+	}								       \
+	static struct spi_nrfx_data spi_##idx##_data = {		       \
+		SPI_CONTEXT_INIT_LOCK(spi_##idx##_data, ctx),		       \
+		SPI_CONTEXT_INIT_SYNC(spi_##idx##_data, ctx),		       \
+	};								       \
+	static const struct spi_nrfx_config spi_##idx##z_config = {	       \
+		.spis = NRFX_SPIS_INSTANCE(idx),			       \
+		.max_buf_len = (1 << SPIS##idx##_EASYDMA_MAXCNT_SIZE) - 1,     \
+	};								       \
+	DEVICE_AND_API_INIT(spi_##idx,					       \
+			    DT_NORDIC_NRF_SPIS_SPI_##idx##_LABEL,	       \
+			    spi_##idx##_init,				       \
+			    &spi_##idx##_data,				       \
+			    &spi_##idx##z_config,			       \
+			    POST_KERNEL,				       \
+			    CONFIG_SPI_INIT_PRIORITY,			       \
 			    &spi_nrfx_driver_api)
 
 #ifdef CONFIG_SPI_0_NRF_SPIS
@@ -291,4 +294,8 @@ SPI_NRFX_SPIS_DEVICE(1);
 
 #ifdef CONFIG_SPI_2_NRF_SPIS
 SPI_NRFX_SPIS_DEVICE(2);
+#endif
+
+#ifdef CONFIG_SPI_3_NRF_SPIS
+SPI_NRFX_SPIS_DEVICE(3);
 #endif

@@ -6,13 +6,13 @@
 
 #include <string.h>
 #include <zephyr/types.h>
-#include <misc/__assert.h>
-#include <misc/util.h>
-#include <disk_access.h>
+#include <sys/__assert.h>
+#include <sys/util.h>
+#include <disk/disk_access.h>
 #include <errno.h>
 #include <init.h>
 #include <device.h>
-#include <flash.h>
+#include <drivers/flash.h>
 
 #define SECTOR_SIZE 512
 
@@ -102,7 +102,7 @@ static int read_copy_flash_block(off_t start_addr, u32_t size,
 {
 	off_t fl_addr;
 	u32_t num_read;
-	u32_t offset = 0;
+	u32_t offset = 0U;
 
 	/* adjust offset if starting address is not erase-aligned address */
 	if (start_addr & (CONFIG_DISK_FLASH_ERASE_ALIGNMENT - 1)) {

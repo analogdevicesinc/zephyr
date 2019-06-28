@@ -14,7 +14,7 @@ from docutils.parsers.rst import directives
 # This could be as simple as generating a couple of sets of instructions, one
 # for Unix environments, and another for Windows.
 class ZephyrAppCommandsDirective(Directive):
-    '''
+    r'''
     This is a Zephyr directive for generating consistent documentation
     of the shell commands needed to manage (build, flash, etc.) an application.
 
@@ -28,13 +28,20 @@ class ZephyrAppCommandsDirective(Directive):
 
     Directive options:
 
+    \:tool:
+      which tool to use. Valid options are currently 'cmake', 'west' and 'all'.
+      The default is 'all'.
+
     \:app:
-      if set, the commands will change directories to this path to the
-      application.
+      path to the application to build.
 
     \:zephyr-app:
-      like \:app:, but includes instructions from the Zephyr base
-      directory. Cannot be given with \:app:.
+      path to the application to build, this is an app present in the upstream
+      zephyr repository. Mutually exclusive with \:app:.
+
+    \:cd-into:
+      if set, build instructions are given from within the \:app: folder,
+      instead of outside of it.
 
     \:generator:
       which build system to generate. Valid options are
@@ -47,6 +54,9 @@ class ZephyrAppCommandsDirective(Directive):
 
     \:board:
       if set, the application build will target the given board.
+
+    \:shield:
+      if set, the application build will target the given shield.
 
     \:conf:
       if set, the application build will use the given configuration
@@ -85,11 +95,14 @@ class ZephyrAppCommandsDirective(Directive):
     optional_arguments = 0
     final_argument_whitespace = False
     option_spec = {
+        'tool': directives.unchanged,
         'app': directives.unchanged,
         'zephyr-app': directives.unchanged,
+        'cd-into': directives.flag,
         'generator': directives.unchanged,
         'host-os': directives.unchanged,
         'board': directives.unchanged,
+        'shield': directives.unchanged,
         'conf': directives.unchanged,
         'gen-args': directives.unchanged,
         'build-args': directives.unchanged,
@@ -99,8 +112,10 @@ class ZephyrAppCommandsDirective(Directive):
         'compact': directives.flag
     }
 
+    TOOLS = ['cmake', 'west', 'all']
     GENERATORS = ['make', 'ninja']
     HOST_OS = ['unix', 'win', 'all']
+    IN_TREE_STR = '# From the root of the zephyr repository'
 
     def run(self):
         # Re-run on the current document if this directive's source changes.
@@ -108,11 +123,14 @@ class ZephyrAppCommandsDirective(Directive):
 
         # Parse directive options.  Don't use os.path.sep or os.path.join here!
         # That would break if building the docs on Windows.
+        tool = self.options.get('tool', 'all').lower()
         app = self.options.get('app', None)
         zephyr_app = self.options.get('zephyr-app', None)
+        cd_into = 'cd-into' in self.options
         generator = self.options.get('generator', 'ninja').lower()
         host_os = self.options.get('host-os', 'all').lower()
         board = self.options.get('board', None)
+        shield = self.options.get('shield', None)
         conf = self.options.get('conf', None)
         gen_args = self.options.get('gen-args', None)
         build_args = self.options.get('build-args', None)
@@ -120,6 +138,10 @@ class ZephyrAppCommandsDirective(Directive):
         goals = self.options.get('goals').split()
         skip_config = 'maybe-skip-config' in self.options
         compact = 'compact' in self.options
+
+        if tool not in self.TOOLS:
+            raise self.error('Unknown tool {}; choose from: {}'.format(
+                tool, self.TOOLS))
 
         if app and zephyr_app:
             raise self.error('Both app and zephyr-app options were given.')
@@ -130,74 +152,135 @@ class ZephyrAppCommandsDirective(Directive):
 
         if host_os not in self.HOST_OS:
             raise self.error('Unknown host-os {}; choose from: {}'.format(
-                generator, self.HOST_OS))
+                host_os, self.HOST_OS))
 
         if compact and skip_config:
             raise self.error('Both compact and maybe-skip-config options were given.')
 
+        app = app or zephyr_app
+        in_tree = self.IN_TREE_STR if zephyr_app else None
         # Allow build directories which are nested.
         build_dir = ('build' + '/' + build_dir_append).rstrip('/')
         num_slashes = build_dir.count('/')
-        source_dir = '/'.join(['..' for i in range(num_slashes + 1)])
-        mkdir = 'mkdir' if num_slashes == 0 else 'mkdir -p'
 
         # Create host_os array
-        host_os = [host_os] if host_os != "all" else self.HOST_OS
+        host_os = [host_os] if host_os != "all" else [v for v in self.HOST_OS
+                                                        if v != 'all']
+        # Create tools array
+        tools = [tool] if tool != "all" else [v for v in self.TOOLS
+                                                if v != 'all']
+        # Build the command content as a list, then convert to string.
+        content = []
+        tool_comment = None
+        if len(tools) > 1:
+            tool_comment = 'Using {}:'
 
         run_config = {
+            'host_os': host_os,
+            'app': app,
+            'in_tree': in_tree,
+            'cd_into': cd_into,
             'board': board,
+            'shield': shield,
             'conf': conf,
             'gen_args': gen_args,
             'build_args': build_args,
-            'source_dir': source_dir,
+            'build_dir': build_dir,
             'goals': goals,
-            'compact': compact
+            'compact': compact,
+            'skip_config': skip_config,
+            'generator': generator
             }
 
-        # Build the command content as a list, then convert to string.
-        content = []
-        cd_to = zephyr_app or app
-        comment = None
-        if len(host_os) > 1:
-            comment = '# On {}'
+        if 'west' in tools:
+            w = self._generate_west(**run_config)
+            if tool_comment:
+                paragraph = nodes.paragraph()
+                paragraph += nodes.Text(tool_comment.format('west'))
+                content.append(paragraph)
+                content.append(self._lit_block(w))
+            else:
+                content.extend(w)
 
-        for host in host_os:
-            if cd_to:
-                if host == "unix":
-                    if comment:
-                        content.append(comment.format('Linux/macOS'))
-                    prefix = '$ZEPHYR_BASE/' if zephyr_app else ''
-                    content.append('cd {}{}'.format(prefix, cd_to))
-                elif host == "win":
-                    if comment:
-                        content.append(comment.format('Windows'))
-                    prefix = '%ZEPHYR_BASE%\\' if zephyr_app else ''
-                    backslashified = cd_to.replace('/', '\\')
-                    content.append('cd {}{}'.format(prefix, backslashified))
-            content.extend(self._mkdir(mkdir, build_dir, host,
-                                       skip_config, compact))
-            if not compact:
-                content.append('')
+        if 'cmake' in tools:
+            c = self._generate_cmake(**run_config)
+            if tool_comment:
+                paragraph = nodes.paragraph()
+                paragraph += nodes.Text(tool_comment.format(
+                                    'CMake and {}'.format( generator)))
+                content.append(paragraph)
+                content.append(self._lit_block(c))
+            else:
+                content.extend(c)
 
-        if not compact:
-            content.append('# Use cmake to configure a {}-based build system:'.format(generator.capitalize()))  # noqa: E501
-        if generator == 'make':
-            content.extend(self._generate_make(**run_config))
-        elif generator == 'ninja':
-            content.extend(self._generate_ninja(**run_config))
+        if not tool_comment:
+            content = [self._lit_block(content)]
 
+        return content
+
+    def _lit_block(self, content):
         content = '\n'.join(content)
 
         # Create the nodes.
         literal = nodes.literal_block(content, content)
         self.add_name(literal)
         literal['language'] = 'console'
-        return [literal]
+        return literal
 
-    def _mkdir(self, mkdir, build_dir, host_os, skip_config, compact):
+
+    def _generate_west(self, **kwargs):
+        content = []
+        board = kwargs['board']
+        app = kwargs['app']
+        in_tree = kwargs['in_tree']
+        goals = kwargs['goals']
+        cd_into = kwargs['cd_into']
+        build_dir = kwargs['build_dir']
+        compact = kwargs['compact']
+        kwargs['board'] = None
+        cmake_args = self._cmake_args(**kwargs)
+        cmake_args = ' --{}'.format(cmake_args) if cmake_args != '' else ''
+        # ignore zephyr_app since west needs to run within
+        # the installation. Instead rely on relative path.
+        src = ' {}'.format(app) if app and not cd_into else ''
+        dst = ' -d {}'.format(build_dir) if build_dir != 'build' else ''
+
+        if in_tree and not compact:
+            content.append(in_tree)
+
+        if cd_into and app:
+            content.append('cd {}'.format(app))
+
+        if 'build' in goals:
+            build_args = ' -b {}{}{}{}'.format(board, dst, src, cmake_args)
+            content.append('west build{}'.format(build_args))
+
+        goal_args = '{}'.format(dst)
+        if 'sign' in goals:
+            content.append('west sign{}'.format(goal_args))
+
+        for goal in goals:
+            if goal == 'build' or goal == 'sign':
+                continue
+            elif goal == 'flash':
+                content.append('west flash{}'.format(goal_args))
+            elif goal == 'debug':
+                content.append('west debug{}'.format(goal_args))
+            elif goal == 'debugserver':
+                content.append('west debugserver{}'.format(goal_args))
+            elif goal == 'attach':
+                content.append('west attach{}'.format(goal_args))
+            else:
+                content.append('west build -t {}{}'.format(goal, goal_args))
+
+        return content
+
+    def _mkdir(self, mkdir, build_dir, host_os, skip_config):
         content = []
         if skip_config:
             content.append("# If you already made a build directory ({}) and ran cmake, just 'cd {}' instead.".format(build_dir, build_dir))  # noqa: E501
+        if host_os == 'all':
+            content.append('mkdir {} && cd {}'.format(build_dir, build_dir))
         if host_os == "unix":
             content.append('{} {} && cd {}'.format(mkdir, build_dir, build_dir))
         elif host_os == "win":
@@ -205,62 +288,115 @@ class ZephyrAppCommandsDirective(Directive):
             content.append('mkdir {} & cd {}'.format(build_dir, build_dir))
         return content
 
-    def _generate_make(self, **kwargs):
+    def _cmake_args(self, **kwargs):
+        generator = kwargs['generator']
         board = kwargs['board']
+        shield = kwargs['shield']
         conf = kwargs['conf']
         gen_args = kwargs['gen_args']
-        build_args = kwargs['build_args']
-        source_dir = kwargs['source_dir']
-        goals = kwargs['goals']
-        compact = kwargs['compact']
-
         board_arg = ' -DBOARD={}'.format(board) if board else ''
+        shield_arg = ' -DSHIELD={}'.format(shield) if shield else ''
         conf_arg = ' -DCONF_FILE={}'.format(conf) if conf else ''
         gen_args = ' {}'.format(gen_args) if gen_args else ''
-        build_args = ' {}'.format(build_args) if build_args else ''
 
+        return '{}{}{}{}'.format(board_arg, shield_arg, conf_arg, gen_args)
+
+    def _cd_into(self, mkdir, **kwargs):
+        app = kwargs['app']
+        host_os = kwargs['host_os']
+        compact = kwargs['compact']
+        build_dir = kwargs['build_dir']
+        skip_config = kwargs['skip_config']
         content = []
-        content.extend([
-            'cmake{}{}{} {}'.format(board_arg, conf_arg, gen_args,
-                                       source_dir)])
-        if not compact:
-            content.extend(['',
-                            '# Now run make on the generated build system:'])
-        if 'build' in goals:
-            content.append('make{}'.format(build_args))
-        for goal in goals:
-            if goal == 'build':
-                continue
-            content.append('make {}'.format(goal))
+        os_comment = None
+        if len(host_os) > 1:
+            os_comment = '# On {}'
+            num_slashes = build_dir.count('/')
+            if not app and mkdir and num_slashes == 0:
+                # When there's no app and a single level deep build dir,
+                # simplify output
+                content.extend(self._mkdir(mkdir, build_dir, 'all',
+                               skip_config))
+                if not compact:
+                    content.append('')
+                return content
+        for host in host_os:
+            if host == "unix":
+                if os_comment:
+                    content.append(os_comment.format('Linux/macOS'))
+                if app:
+                    content.append('cd {}'.format(app))
+            elif host == "win":
+                if os_comment:
+                    content.append(os_comment.format('Windows'))
+                if app:
+                    backslashified = app.replace('/', '\\')
+                    content.append('cd {}'.format(backslashified))
+            if mkdir:
+                content.extend(self._mkdir(mkdir, build_dir, host, skip_config))
+            if not compact:
+                content.append('')
         return content
 
-    def _generate_ninja(self, **kwargs):
-        board = kwargs['board']
-        conf = kwargs['conf']
-        gen_args = kwargs['gen_args']
+    def _generate_cmake(self, **kwargs):
+        generator = kwargs['generator']
+        host_os = kwargs['host_os']
+        cd_into = kwargs['cd_into']
+        app = kwargs['app']
+        in_tree = kwargs['in_tree']
+        host_os = kwargs['host_os']
+        build_dir = kwargs['build_dir']
         build_args = kwargs['build_args']
-        source_dir = kwargs['source_dir']
+        skip_config = kwargs['skip_config']
         goals = kwargs['goals']
         compact = kwargs['compact']
 
-        board_arg = ' -DBOARD={}'.format(board) if board else ''
-        conf_arg = ' -DCONF_FILE={}'.format(conf) if conf else ''
-        gen_args = ' {}'.format(gen_args) if gen_args else ''
-        build_args = ' {}'.format(build_args) if build_args else ''
-
         content = []
-        content.extend([
-            'cmake -GNinja{}{}{} {}'.format(board_arg, conf_arg, gen_args,
-                                            source_dir)])
+
+        if in_tree and not compact:
+            content.append(in_tree)
+
+        if cd_into:
+            num_slashes = build_dir.count('/')
+            mkdir = 'mkdir' if num_slashes == 0 else 'mkdir -p'
+            content.extend(self._cd_into(mkdir, **kwargs))
+            # Prepare cmake/ninja/make variables
+            source_dir = ' ' + '/'.join(['..' for i in range(num_slashes + 1)])
+            cmake_build_dir = ''
+            tool_build_dir = ''
+        else:
+            source_dir = ' {}'.format(app) if app else ' .'
+            cmake_build_dir = ' -B{}'.format(build_dir)
+            tool_build_dir = ' -C{}'.format(build_dir)
+
+        # Now generate the actual cmake and make/ninja commands
+        gen_arg = ' -GNinja' if generator == 'ninja' else ''
+        build_args = ' {}'.format(build_args) if build_args else ''
+        cmake_args = self._cmake_args(**kwargs)
+
+        if not compact:
+            if not cd_into and skip_config:
+                content.append("# If you already ran cmake with -B{}, you " \
+                               "can skip this step and run {} directly.".
+                               format(build_dir, generator))  # noqa: E501
+            else:
+                content.append('# Use cmake to configure a {}-based build' \
+                               'system:'.format(generator.capitalize()))  # noqa: E501
+
+        content.append('cmake{}{}{}{}'.format(cmake_build_dir, gen_arg,
+                                              cmake_args, source_dir))
         if not compact:
             content.extend(['',
                             '# Now run ninja on the generated build system:'])
+
         if 'build' in goals:
-            content.append('ninja{}'.format(build_args))
+            content.append('{}{}{}'.format(generator, tool_build_dir,
+                                           build_args))
         for goal in goals:
             if goal == 'build':
                 continue
-            content.append('ninja {}'.format(goal))
+            content.append('{}{} {}'.format(generator, tool_build_dir, goal))
+
         return content
 
 

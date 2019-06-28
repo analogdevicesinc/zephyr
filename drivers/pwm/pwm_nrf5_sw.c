@@ -6,11 +6,21 @@
 
 #include <soc.h>
 
-#include "pwm.h"
+#include <drivers/pwm.h>
+#include <nrf_peripherals.h>
 
-#define SYS_LOG_DOMAIN "pwm/nrf5_sw"
-#define SYS_LOG_LEVEL CONFIG_SYS_LOG_PWM_LEVEL
-#include <logging/sys_log.h>
+#define LOG_LEVEL CONFIG_PWM_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_REGISTER(pwm_nrf5_sw);
+
+/* One compare channel is needed to set the PWM period, hence +1. */
+#if ((DT_INST_0_NORDIC_NRF_SW_PWM_CHANNEL_COUNT + 1) > \
+	(_CONCAT( \
+		_CONCAT(TIMER, DT_INST_0_NORDIC_NRF_SW_PWM_TIMER_INSTANCE), \
+		_CC_NUM)))
+#error "Invalid number of PWM channels configured."
+#endif
+#define PWM_0_MAP_SIZE DT_INST_0_NORDIC_NRF_SW_PWM_CHANNEL_COUNT
 
 struct pwm_config {
 	NRF_TIMER_Type *timer;
@@ -27,7 +37,7 @@ struct chan_map {
 
 struct pwm_data {
 	u32_t period_cycles;
-	struct chan_map map[];
+	struct chan_map map[PWM_0_MAP_SIZE];
 };
 
 static u32_t pwm_period_check(struct pwm_data *data, u8_t map_size,
@@ -37,14 +47,14 @@ static u32_t pwm_period_check(struct pwm_data *data, u8_t map_size,
 	u8_t i;
 
 	/* allow 0% and 100% duty cycle, as it does not use PWM. */
-	if ((pulse_cycles == 0) || (pulse_cycles == period_cycles)) {
+	if ((pulse_cycles == 0U) || (pulse_cycles == period_cycles)) {
 		return 0;
 	}
 
 	/* fail if requested period does not match already running period */
-	for (i = 0; i < map_size; i++) {
+	for (i = 0U; i < map_size; i++) {
 		if ((data->map[i].pwm != pwm) &&
-		    (data->map[i].pulse_cycles != 0) &&
+		    (data->map[i].pulse_cycles != 0U) &&
 		    (period_cycles != data->period_cycles)) {
 			return -EINVAL;
 		}
@@ -59,7 +69,7 @@ static u8_t pwm_channel_map(struct pwm_data *data, u8_t map_size,
 	u8_t i;
 
 	/* find pin, if already present */
-	for (i = 0; i < map_size; i++) {
+	for (i = 0U; i < map_size; i++) {
 		if (pwm == data->map[i].pwm) {
 			return i;
 		}
@@ -68,7 +78,7 @@ static u8_t pwm_channel_map(struct pwm_data *data, u8_t map_size,
 	/* find a free entry */
 	i = map_size;
 	while (i--) {
-		if (data->map[i].pulse_cycles == 0) {
+		if (data->map[i].pulse_cycles == 0U) {
 			break;
 		}
 	}
@@ -97,18 +107,18 @@ static int pwm_nrf5_sw_pin_set(struct device *dev, u32_t pwm,
 	ret = pwm_period_check(data, config->map_size, pwm, period_cycles,
 			       pulse_cycles);
 	if (ret) {
-		SYS_LOG_ERR("Incompatible period");
+		LOG_ERR("Incompatible period");
 		return ret;
 	}
 
 	/* map pwm pin to GPIOTE config/channel */
 	channel = pwm_channel_map(data, config->map_size, pwm);
 	if (channel >= config->map_size) {
-		SYS_LOG_ERR("No more channels available");
+		LOG_ERR("No more channels available");
 		return -ENOMEM;
 	}
 
-	SYS_LOG_DBG("PWM %d, period %u, pulse %u", pwm,
+	LOG_DBG("PWM %d, period %u, pulse %u", pwm,
 			period_cycles, pulse_cycles);
 
 	/* clear GPIOTE config */
@@ -120,7 +130,7 @@ static int pwm_nrf5_sw_pin_set(struct device *dev, u32_t pwm,
 
 	/* configure GPIO pin as output */
 	NRF_GPIO->DIRSET = BIT(pwm);
-	if (pulse_cycles == 0) {
+	if (pulse_cycles == 0U) {
 		/* 0% duty cycle, keep pin low */
 		NRF_GPIO->OUTCLR = BIT(pwm);
 
@@ -176,11 +186,11 @@ static int pwm_nrf5_sw_pin_set(struct device *dev, u32_t pwm,
 	return 0;
 
 pin_set_pwm_off:
-	data->map[channel].pulse_cycles = 0;
+	data->map[channel].pulse_cycles = 0U;
 	bool pwm_active = false;
 
 	/* stop timer if all channels are inactive */
-	for (channel = 0; channel < config->map_size; channel++) {
+	for (channel = 0U; channel < config->map_size; channel++) {
 		if (data->map[channel].pulse_cycles) {
 			pwm_active = true;
 			break;
@@ -234,33 +244,21 @@ static int pwm_nrf5_sw_init(struct device *dev)
 	return 0;
 }
 
-#define PWM_0_MAP_SIZE 3
-/* NOTE: nRF51x BLE controller use HW tIFS hence using only PPI channels 0-6.
- * nRF52x BLE controller implements SW tIFS and uses addition 6 PPI channels.
- * Also, nRF52x requires one additional PPI channel for decryption rate boost.
- * Hence, nRF52x BLE controller uses PPI channels 0-13.
- *
- * NOTE: If PA/LNA feature is enabled for nRF52x, then additional two PPI
- * channels 14-15 are used by BLE controller.
- */
 static const struct pwm_config pwm_nrf5_sw_0_config = {
-#if defined(CONFIG_SOC_SERIES_NRF51X)
-	.timer = NRF_TIMER1,
-	.ppi_base = 7,
-#else
-	.timer = NRF_TIMER2,
-	.ppi_base = 14,
-#endif
-	.gpiote_base = 0,
+	.timer = _CONCAT(NRF_TIMER, DT_INST_0_NORDIC_NRF_SW_PWM_TIMER_INSTANCE),
+	.ppi_base = DT_INST_0_NORDIC_NRF_SW_PWM_PPI_BASE,
+	.gpiote_base = DT_INST_0_NORDIC_NRF_SW_PWM_GPIOTE_BASE,
 	.map_size = PWM_0_MAP_SIZE,
-	.prescaler = CONFIG_PWM_NRF5_SW_0_CLOCK_PRESCALER,
+	.prescaler = DT_INST_0_NORDIC_NRF_SW_PWM_CLOCK_PRESCALER,
 };
 
-#define PWM_0_DATA_SIZE (offsetof(struct pwm_data, map) + \
-			 sizeof(struct chan_map) * PWM_0_MAP_SIZE)
-static u8_t pwm_nrf5_sw_0_data[PWM_0_DATA_SIZE];
+static struct pwm_data pwm_nrf5_sw_0_data;
 
-DEVICE_AND_API_INIT(pwm_nrf5_sw_0, CONFIG_PWM_NRF5_SW_0_DEV_NAME,
-		    pwm_nrf5_sw_init, pwm_nrf5_sw_0_data, &pwm_nrf5_sw_0_config,
-		    POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
+DEVICE_AND_API_INIT(pwm_nrf5_sw_0,
+		    CONFIG_PWM_NRF5_SW_0_DEV_NAME,
+		    pwm_nrf5_sw_init,
+		    &pwm_nrf5_sw_0_data,
+		    &pwm_nrf5_sw_0_config,
+		    POST_KERNEL,
+		    CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
 		    &pwm_nrf5_sw_drv_api_funcs);

@@ -11,10 +11,6 @@
 extern "C" {
 #endif
 
-#define SYS_LOG_DOMAIN "fs/nvs"
-#define SYS_LOG_LEVEL CONFIG_NVS_LOG_LEVEL
-#include <logging/sys_log.h>
-
 /*
  * MASKS AND SHIFT FOR ADDRESSES
  * an address in nvs is an u32_t where:
@@ -30,7 +26,7 @@ extern "C" {
  */
 #define NVS_STATUS_NOSPACE 1
 
-#define NVS_BLOCK_SIZE 8
+#define NVS_BLOCK_SIZE 32
 
 /* Allocation Table Entry */
 struct nvs_ate {

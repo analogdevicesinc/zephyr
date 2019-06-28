@@ -12,8 +12,8 @@
 
 #include <kernel.h>
 
-#include <i2c.h>
-#include <pwm.h>
+#include <drivers/i2c.h>
+#include <drivers/pwm.h>
 
 #include "pwm_pca9685.h"
 
@@ -43,16 +43,17 @@
  * @param dev Device struct.
  * @return 1 if I2C master is identified, 0 if not.
  */
-static inline int _has_i2c_master(struct device *dev)
+static inline int has_i2c_master(struct device *dev)
 {
 	struct pwm_pca9685_drv_data * const drv_data =
 		(struct pwm_pca9685_drv_data * const)dev->driver_data;
 	struct device * const i2c_master = drv_data->i2c_master;
 
-	if (i2c_master)
+	if (i2c_master) {
 		return 1;
-	else
+	} else {
 		return 0;
+	}
 }
 
 /*
@@ -71,7 +72,7 @@ static int pwm_pca9685_pin_set_cycles(struct device *dev, u32_t pwm,
 	u8_t buf[] = { 0, 0, 0, 0, 0};
 
 	ARG_UNUSED(period_count);
-	if (!_has_i2c_master(dev)) {
+	if (!has_i2c_master(dev)) {
 		return -EINVAL;
 	}
 
@@ -89,7 +90,7 @@ static int pwm_pca9685_pin_set_cycles(struct device *dev, u32_t pwm,
 		buf[2] = (1 << 4);
 		buf[3] = 0x0;
 		buf[4] = 0x0;
-	} else if (pulse_count == 0) {
+	} else if (pulse_count == 0U) {
 		buf[1] = 0x0;
 		buf[2] = 0x0;
 		buf[3] = 0x0;
@@ -145,8 +146,6 @@ int pwm_pca9685_init(struct device *dev)
 		return -EPERM;
 	}
 
-	dev->driver_api = &pwm_pca9685_drv_api_funcs;
-
 	return 0;
 }
 
@@ -163,9 +162,10 @@ static const struct pwm_pca9685_config pwm_pca9685_0_cfg = {
 static struct pwm_pca9685_drv_data pwm_pca9685_0_drvdata;
 
 /* This has to init after I2C master */
-DEVICE_INIT(pwm_pca9685_0, CONFIG_PWM_PCA9685_0_DEV_NAME,
+DEVICE_AND_API_INIT(pwm_pca9685_0, CONFIG_PWM_PCA9685_0_DEV_NAME,
 			pwm_pca9685_init,
 			&pwm_pca9685_0_drvdata, &pwm_pca9685_0_cfg,
-			POST_KERNEL, CONFIG_PWM_PCA9685_INIT_PRIORITY);
+			POST_KERNEL, CONFIG_PWM_PCA9685_INIT_PRIORITY,
+			&pwm_pca9685_drv_api_funcs);
 
 #endif /* CONFIG_PWM_PCA9685_0 */

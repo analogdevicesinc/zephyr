@@ -7,7 +7,7 @@
  */
 
 #include <init.h>
-#include <misc/byteorder.h>
+#include <sys/byteorder.h>
 
 #include <usb/usb_device.h>
 #include <usb/usb_common.h>
@@ -19,13 +19,9 @@
 #include <bluetooth/hci_raw.h>
 #include <bluetooth/l2cap.h>
 
-#define SYS_LOG_LEVEL SYS_LOG_LEVEL_WARNING
-#define SYS_LOG_DOMAIN "usb/bluetooth"
-#include <logging/sys_log.h>
-
-#if !defined(CONFIG_USB_COMPOSITE_DEVICE)
-static u8_t interface_data[64];
-#endif
+#define LOG_LEVEL CONFIG_USB_DEVICE_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_REGISTER(usb_bluetooth);
 
 static K_FIFO_DEFINE(rx_queue);
 static K_FIFO_DEFINE(tx_queue);
@@ -35,10 +31,23 @@ static K_FIFO_DEFINE(tx_queue);
 NET_BUF_POOL_DEFINE(tx_pool, CONFIG_BT_HCI_CMD_COUNT, CMD_BUF_SIZE,
 		    sizeof(u8_t), NULL);
 
+/* ACL data TX buffers */
+#if defined(CONFIG_BT_CTLR_TX_BUFFERS)
+#define ACL_BUF_COUNT CONFIG_BT_CTLR_TX_BUFFERS
+#else
+#define ACL_BUF_COUNT 4
+#endif
+
+#if defined(CONFIG_BT_CTLR_TX_BUFFER_SIZE)
+#define BT_L2CAP_MTU (CONFIG_BT_CTLR_TX_BUFFER_SIZE - BT_L2CAP_HDR_SIZE)
+#else
 #define BT_L2CAP_MTU 64
+#endif
+
 /* Data size needed for ACL buffers */
 #define BT_BUF_ACL_SIZE BT_L2CAP_BUF_SIZE(BT_L2CAP_MTU)
-NET_BUF_POOL_DEFINE(acl_tx_pool, 2, BT_BUF_ACL_SIZE, sizeof(u8_t), NULL);
+NET_BUF_POOL_DEFINE(acl_tx_pool, ACL_BUF_COUNT, BT_BUF_ACL_SIZE,
+		    sizeof(u8_t), NULL);
 
 #define BLUETOOTH_INT_EP_ADDR		0x81
 #define BLUETOOTH_OUT_EP_ADDR		0x02
@@ -57,7 +66,8 @@ struct usb_bluetooth_config {
 	struct usb_ep_descriptor if0_in_ep;
 } __packed;
 
-USBD_CLASS_DESCR_DEFINE(primary) struct usb_bluetooth_config bluetooth_cfg = {
+USBD_CLASS_DESCR_DEFINE(primary, 0)
+	struct usb_bluetooth_config bluetooth_cfg = {
 	/* Interface descriptor 0 */
 	.if0 = {
 		.bLength = sizeof(struct usb_if_descriptor),
@@ -129,7 +139,7 @@ static struct usb_ep_cfg_data bluetooth_ep_data[] = {
 
 static void hci_rx_thread(void)
 {
-	SYS_LOG_DBG("Start USB Bluetooth thread");
+	LOG_DBG("Start USB Bluetooth thread");
 
 	while (true) {
 		struct net_buf *buf;
@@ -150,7 +160,7 @@ static void hci_rx_thread(void)
 				USB_TRANS_WRITE);
 			break;
 		default:
-			SYS_LOG_ERR("Unknown type %u", bt_buf_get_type(buf));
+			LOG_ERR("Unknown type %u", bt_buf_get_type(buf));
 			break;
 		}
 
@@ -166,7 +176,7 @@ static void hci_tx_thread(void)
 		buf = net_buf_get(&tx_queue, K_FOREVER);
 
 		if (bt_send(buf)) {
-			SYS_LOG_ERR("Error sending to driver");
+			LOG_ERR("Error sending to driver");
 			net_buf_unref(buf);
 		}
 	}
@@ -187,11 +197,9 @@ static void acl_read_cb(u8_t ep, int size, void *priv)
 		net_buf_unref(buf);
 	}
 
-	buf = net_buf_alloc(&acl_tx_pool, K_NO_WAIT);
-	if (!buf) {
-		SYS_LOG_ERR("Cannot get free buffer\n");
-		return;
-	}
+	buf = net_buf_alloc(&acl_tx_pool, K_FOREVER);
+	__ASSERT_NO_MSG(buf);
+
 	net_buf_reserve(buf, CONFIG_BT_HCI_RESERVE);
 
 	/* Start a new read transfer */
@@ -199,40 +207,46 @@ static void acl_read_cb(u8_t ep, int size, void *priv)
 		     BT_BUF_ACL_SIZE, USB_TRANS_READ, acl_read_cb, buf);
 }
 
-static void bluetooth_status_cb(enum usb_dc_status_code status, u8_t *param)
+static void bluetooth_status_cb(struct usb_cfg_data *cfg,
+				enum usb_dc_status_code status,
+				const u8_t *param)
 {
+	ARG_UNUSED(cfg);
+
 	/* Check the USB status and do needed action if required */
 	switch (status) {
 	case USB_DC_ERROR:
-		SYS_LOG_DBG("USB device error");
+		LOG_DBG("USB device error");
 		break;
 	case USB_DC_RESET:
-		SYS_LOG_DBG("USB device reset detected");
+		LOG_DBG("USB device reset detected");
 		break;
 	case USB_DC_CONNECTED:
-		SYS_LOG_DBG("USB device connected");
+		LOG_DBG("USB device connected");
 		break;
 	case USB_DC_CONFIGURED:
-		SYS_LOG_DBG("USB device configured");
+		LOG_DBG("USB device configured");
 		/* Start reading */
 		acl_read_cb(bluetooth_ep_data[HCI_OUT_EP_IDX].ep_addr, 0, NULL);
 		break;
 	case USB_DC_DISCONNECTED:
-		SYS_LOG_DBG("USB device disconnected");
+		LOG_DBG("USB device disconnected");
 		/* Cancel any transfer */
 		usb_cancel_transfer(bluetooth_ep_data[HCI_INT_EP_IDX].ep_addr);
 		usb_cancel_transfer(bluetooth_ep_data[HCI_IN_EP_IDX].ep_addr);
 		usb_cancel_transfer(bluetooth_ep_data[HCI_OUT_EP_IDX].ep_addr);
 		break;
 	case USB_DC_SUSPEND:
-		SYS_LOG_DBG("USB device suspended");
+		LOG_DBG("USB device suspended");
 		break;
 	case USB_DC_RESUME:
-		SYS_LOG_DBG("USB device resumed");
+		LOG_DBG("USB device resumed");
+		break;
+	case USB_DC_SOF:
 		break;
 	case USB_DC_UNKNOWN:
 	default:
-		SYS_LOG_DBG("USB unknown state");
+		LOG_DBG("USB unknown state");
 		break;
 	}
 }
@@ -242,16 +256,16 @@ static int bluetooth_class_handler(struct usb_setup_packet *setup,
 {
 	struct net_buf *buf;
 
-	SYS_LOG_DBG("len %u", *len);
+	LOG_DBG("len %u", *len);
 
 	if (!*len || *len > CMD_BUF_SIZE) {
-		SYS_LOG_ERR("Incorrect length: %d\n", *len);
+		LOG_ERR("Incorrect length: %d\n", *len);
 		return -EINVAL;
 	}
 
 	buf = net_buf_alloc(&tx_pool, K_NO_WAIT);
 	if (!buf) {
-		SYS_LOG_ERR("Cannot get free buffer\n");
+		LOG_ERR("Cannot get free buffer\n");
 		return -ENOMEM;
 	}
 
@@ -265,12 +279,15 @@ static int bluetooth_class_handler(struct usb_setup_packet *setup,
 	return 0;
 }
 
-static void bluetooth_interface_config(u8_t bInterfaceNumber)
+static void bluetooth_interface_config(struct usb_desc_header *head,
+				       u8_t bInterfaceNumber)
 {
+	ARG_UNUSED(head);
+
 	bluetooth_cfg.if0.bInterfaceNumber = bInterfaceNumber;
 }
 
-USBD_CFG_DATA_DEFINE(hci) struct usb_cfg_data bluetooth_config = {
+USBD_CFG_DATA_DEFINE(primary, hci) struct usb_cfg_data bluetooth_config = {
 	.usb_device_description = NULL,
 	.interface_config = bluetooth_interface_config,
 	.interface_descriptor = &bluetooth_cfg.if0,
@@ -279,7 +296,6 @@ USBD_CFG_DATA_DEFINE(hci) struct usb_cfg_data bluetooth_config = {
 		.class_handler = bluetooth_class_handler,
 		.custom_handler = NULL,
 		.vendor_handler = NULL,
-		.payload_data = NULL,
 	},
 	.num_endpoints = ARRAY_SIZE(bluetooth_ep_data),
 	.endpoint = bluetooth_ep_data,
@@ -289,32 +305,13 @@ static int bluetooth_init(struct device *dev)
 {
 	int ret;
 
-	SYS_LOG_DBG("Initialization");
+	LOG_DBG("Initialization");
 
 	ret = bt_enable_raw(&rx_queue);
 	if (ret) {
-		SYS_LOG_ERR("Failed to open Bluetooth raw channel: %d", ret);
+		LOG_ERR("Failed to open Bluetooth raw channel: %d", ret);
 		return ret;
 	}
-
-#ifndef CONFIG_USB_COMPOSITE_DEVICE
-	bluetooth_config.interface.payload_data = interface_data;
-	bluetooth_config.usb_device_description =
-		usb_get_device_descriptor();
-	/* Initialize the USB driver with the right configuration */
-	ret = usb_set_config(&bluetooth_config);
-	if (ret < 0) {
-		SYS_LOG_ERR("Failed to config USB");
-		return ret;
-	}
-
-	/* Enable USB driver */
-	ret = usb_enable(&bluetooth_config);
-	if (ret < 0) {
-		SYS_LOG_ERR("Failed to enable USB");
-		return ret;
-	}
-#endif
 
 	k_thread_create(&rx_thread_data, rx_thread_stack,
 			K_THREAD_STACK_SIZEOF(rx_thread_stack),

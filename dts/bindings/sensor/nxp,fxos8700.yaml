@@ -3,9 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: FXOS8700 6-axis accelerometer/magnetometer
-id: nxp,fxos8700
 version: 0.1
 
 description: >
@@ -19,13 +18,17 @@ properties:
     compatible:
       constraint: "nxp,fxos8700"
 
+    reset-gpios:
+      type: compound
+      category: optional
+      generation: define
+
     int1-gpios:
       type: compound
       category: optional
-      generation: define, use-prop-name
+      generation: define
 
     int2-gpios:
       type: compound
       category: optional
-      generation: define, use-prop-name
-...
+      generation: define

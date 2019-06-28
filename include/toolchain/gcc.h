@@ -105,25 +105,28 @@ do {                                                                    \
  * stringification
  */
 #define __GENERIC_SECTION(segment) __attribute__((section(STRINGIFY(segment))))
-#define _GENERIC_SECTION(segment) __GENERIC_SECTION(segment)
+#define Z_GENERIC_SECTION(segment) __GENERIC_SECTION(segment)
 
 #define ___in_section(a, b, c) \
-	__attribute__((section("." _STRINGIFY(a)			\
-				"." _STRINGIFY(b)			\
-				"." _STRINGIFY(c))))
+	__attribute__((section("." Z_STRINGIFY(a)			\
+				"." Z_STRINGIFY(b)			\
+				"." Z_STRINGIFY(c))))
 #define __in_section(a, b, c) ___in_section(a, b, c)
 
 #define __in_section_unique(seg) ___in_section(seg, __FILE__, __COUNTER__)
 
-#ifdef CONFIG_APPLICATION_MEMORY
-#define __kernel	__in_section_unique(kernel)
-#define __kernel_noinit	__in_section_unique(kernel_noinit)
-#define __kernel_bss	__in_section_unique(kernel_bss)
-#else
-#define __kernel
-#define __kernel_noinit	__noinit
-#define __kernel_bss
-#endif
+/* When using XIP, using '__ramfunc' places a function into RAM instead
+ * of FLASH. Make sure '__ramfunc' is defined only when
+ * CONFIG_ARCH_HAS_RAMFUNC_SUPPORT is defined, so that the compiler can
+ * report an error if '__ramfunc' is used but the architecture does not
+ * support it.
+ */
+#if !defined(CONFIG_XIP)
+#define __ramfunc
+#elif defined(CONFIG_ARCH_HAS_RAMFUNC_SUPPORT)
+#define __ramfunc	__attribute__((noinline))			\
+			__attribute__((long_call, section(".ramfunc")))
+#endif /* !CONFIG_XIP */
 
 #ifndef __packed
 #define __packed        __attribute__((__packed__))
@@ -139,8 +142,8 @@ do {                                                                    \
 #define __deprecated	__attribute__((deprecated))
 #define ARG_UNUSED(x) (void)(x)
 
-#define likely(x)   __builtin_expect((long)!!(x), true)
-#define unlikely(x) __builtin_expect((long)!!(x), false)
+#define likely(x)   __builtin_expect((bool)!!(x), true)
+#define unlikely(x) __builtin_expect((bool)!!(x), false)
 
 #define popcount(x) __builtin_popcount(x)
 
@@ -148,6 +151,22 @@ do {                                                                    \
 #define __weak __attribute__((__weak__))
 #endif
 #define __unused __attribute__((__unused__))
+
+/* Builtins with availability that depend on the compiler version. */
+#if __GNUC__ >= 5
+#define HAS_BUILTIN___builtin_add_overflow 1
+#define HAS_BUILTIN___builtin_sub_overflow 1
+#define HAS_BUILTIN___builtin_mul_overflow 1
+#define HAS_BUILTIN___builtin_div_overflow 1
+#endif
+#if __GNUC__ >= 4
+#define HAS_BUILTIN___builtin_clz 1
+#define HAS_BUILTIN___builtin_clzl 1
+#define HAS_BUILTIN___builtin_clzll 1
+#define HAS_BUILTIN___builtin_ctz 1
+#define HAS_BUILTIN___builtin_ctzl 1
+#define HAS_BUILTIN___builtin_ctzll 1
+#endif
 
 /* Be *very* careful with this, you cannot filter out with -wno-deprecated,
  * which has implications for -Werror
@@ -160,26 +179,9 @@ do {                                                                    \
 
 #ifdef CONFIG_ARM
 
-#if defined(CONFIG_ISA_THUMB)
-
-#define FUNC_CODE()				\
-	.code 16;				\
-	.thumb_func;
-
-#define FUNC_INSTR(a)				\
-	BX pc;					\
-	NOP;					\
-	.code 32;				\
-A##a:
-
-#elif defined(CONFIG_ISA_THUMB2)
+#if defined(CONFIG_ISA_THUMB2)
 
 #define FUNC_CODE() .thumb;
-#define FUNC_INSTR(a)
-
-#elif defined(CONFIG_ISA_ARM)
-
-#define FUNC_CODE() .code 32;
 #define FUNC_INSTR(a)
 
 #else
@@ -303,8 +305,6 @@ A##a:
 #if defined(CONFIG_ISA_THUMB2)
 /* '.syntax unified' is a gcc-ism used in thumb-2 asm files */
 #define _ASM_FILE_PROLOGUE .text; .syntax unified; .thumb
-#elif defined(CONFIG_ISA_THUMB)
-#define _ASM_FILE_PROLOGUE .text; .code 16
 #else
 #define _ASM_FILE_PROLOGUE .text; .code 32
 #endif
@@ -345,6 +345,13 @@ A##a:
 #define GEN_ABSOLUTE_SYM(name, value)               \
 	__asm__(".globl\t" #name "\n\t.equ\t" #name \
 		",%c0"                              \
+		"\n\t.type\t" #name ",@object" :  : "n"(value))
+
+#elif defined(CONFIG_X86_64)
+
+#define GEN_ABSOLUTE_SYM(name, value)               \
+	__asm__(".globl\t" #name "\n\t.equ\t" #name \
+		",%0"                               \
 		"\n\t.type\t" #name ",@object" :  : "n"(value))
 
 #elif defined(CONFIG_NIOS2) || defined(CONFIG_RISCV32) || defined(CONFIG_XTENSA)

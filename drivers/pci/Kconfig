@@ -14,14 +14,22 @@ menuconfig PCI
 	  This options enables support of PCI bus for device drivers.
 
 if PCI
+
+config PCI_SHELL
+	bool "Enable PCI Shell"
+	depends on SHELL
+	select PCI_ENUMERATION
+	help
+	  Enable commands for debugging PCI using the built-in shell.
+
 config PCI_ENUMERATION
 	bool "Enable PCI device enumeration"
 	help
 	  This option enables the PCI enumeration for device drivers.
-	  This might be useful along with PCI_DEBUG to find out which
-	  are the PCI settings of the devices. Once those are known and
-	  statically set in every relevant driver's configuration, it
-	  might be wise to disable this option to remove useless code.
+	  This might be useful to find out which are the PCI settings
+	  of the devices. Once those are known and statically set in
+	  every relevant driver's configuration, it might be wise to
+	  disable this option to remove useless code.
 
 config PCI_LEGACY_BRIDGE
 	bool "PCI legacy bridge device support"
@@ -50,10 +58,8 @@ config PCI_LEGACY_BRIDGE_DEVICE_ID
 	depends on PCI_LEGACY_BRIDGE
 	default 0
 
-config PCI_DEBUG
-	bool "Enable PCI debugging"
-	help
-	  This options enables PCI debugging functions
+module = PCI
+module-str = PCI
+source "subsys/logging/Kconfig.template.log_config"
 
-endif
-
+endif # PCI

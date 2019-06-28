@@ -4,10 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define LOG_MODULE_NAME wifi_simplelink
-#define LOG_LEVEL CONFIG_WIFI_LOG_LEVEL
-
-#include <logging/log.h>
+#include "simplelink_log.h"
 LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
 #include <zephyr.h>
@@ -25,6 +22,7 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #include "simplelink_sockets.h"
 
 #define SCAN_RETRY_DELAY 2000  /* ms */
+#define FC_TIMEOUT K_SECONDS(CONFIG_WIFI_SIMPLELINK_FAST_CONNECT_TIMEOUT)
 
 struct simplelink_data {
 	struct net_if *iface;
@@ -35,9 +33,11 @@ struct simplelink_data {
 	scan_result_cb_t cb;
 	int num_results_or_err;
 	int scan_retries;
+	bool initialized;
 };
 
 static struct simplelink_data simplelink_data;
+static K_SEM_DEFINE(ip_acquired, 0, 1);
 
 /* Handle connection events from the SimpleLink Event Handlers: */
 static void simplelink_wifi_cb(u32_t event, struct sl_connect_state *conn)
@@ -71,6 +71,11 @@ static void simplelink_wifi_cb(u32_t event, struct sl_connect_state *conn)
 		net_if_ipv4_set_gw(simplelink_data.iface, &gwaddr);
 		net_if_ipv4_addr_add(simplelink_data.iface, &addr,
 				     NET_ADDR_DHCP, 0);
+
+		if (!simplelink_data.initialized) {
+			simplelink_data.initialized = true;
+			k_sem_give(&ip_acquired);
+		}
 		break;
 
 	default:
@@ -87,7 +92,7 @@ static void simplelink_scan_work_handler(struct k_work *work)
 
 		/* Iterate over the table, and call the scan_result callback. */
 		while (index < simplelink_data.num_results_or_err) {
-			_simplelink_get_scan_result(index, &scan_result);
+			z_simplelink_get_scan_result(index, &scan_result);
 			simplelink_data.cb(simplelink_data.iface, 0,
 					   &scan_result);
 			/* Yield, to ensure notifications get delivered:  */
@@ -107,7 +112,7 @@ static void simplelink_scan_work_handler(struct k_work *work)
 		s32_t delay;
 
 		/* Try again: */
-		simplelink_data.num_results_or_err = _simplelink_start_scan();
+		simplelink_data.num_results_or_err = z_simplelink_start_scan();
 		simplelink_data.scan_retries++;
 		delay = (simplelink_data.num_results_or_err > 0 ? 0 :
 			 SCAN_RETRY_DELAY);
@@ -134,7 +139,7 @@ static int simplelink_mgmt_scan(struct device *dev, scan_result_cb_t cb)
 	k_delayed_work_cancel(&simplelink_data.work);
 
 	/* "Request" the scan: */
-	err = _simplelink_start_scan();
+	err = z_simplelink_start_scan();
 
 	/* Now, launch a delayed work handler to do retries and reporting.
 	 * Indicate (to the work handler) either a positive number of results
@@ -162,7 +167,7 @@ static int simplelink_mgmt_connect(struct device *dev,
 {
 	int ret;
 
-	ret = _simplelink_connect(params);
+	ret = z_simplelink_connect(params);
 
 	return ret ? -EIO : ret;
 }
@@ -171,7 +176,7 @@ static int simplelink_mgmt_disconnect(struct device *dev)
 {
 	int ret;
 
-	ret = _simplelink_disconnect();
+	ret = z_simplelink_disconnect();
 
 	return ret ? -EIO : ret;
 }
@@ -202,6 +207,30 @@ static struct net_offload simplelink_offload = {
 
 static void simplelink_iface_init(struct net_if *iface)
 {
+	int ret;
+
+	simplelink_data.iface = iface;
+
+	/* Direct socket offload used instead of net offload: */
+	iface->if_dev->offload = &simplelink_offload;
+
+	/* Initialize and configure NWP to defaults: */
+	ret = z_simplelink_init(simplelink_wifi_cb);
+	if (ret) {
+		LOG_ERR("z_simplelink_init failed!");
+		return;
+	}
+
+	ret = k_sem_take(&ip_acquired, FC_TIMEOUT);
+	if (ret < 0) {
+		simplelink_data.initialized = false;
+		LOG_ERR("FastConnect timed out connecting to previous AP.");
+		LOG_ERR("Please re-establish WiFi connection.");
+	}
+
+	/* Grab our MAC address: */
+	z_simplelink_get_mac(simplelink_data.mac);
+
 	LOG_DBG("MAC Address %02X:%02X:%02X:%02X:%02X:%02X",
 		simplelink_data.mac[0], simplelink_data.mac[1],
 		simplelink_data.mac[2],
@@ -212,10 +241,12 @@ static void simplelink_iface_init(struct net_if *iface)
 			     sizeof(simplelink_data.mac),
 			     NET_LINK_ETHERNET);
 
-	/* Direct socket offload used instead of net offload for this driver */
-	iface->if_dev->offload = &simplelink_offload;
+#ifdef CONFIG_NET_SOCKETS_OFFLOAD
+	/* Direct socket offload: */
+	socket_offload_register(&simplelink_ops);
+	simplelink_sockets_init();
+#endif
 
-	simplelink_data.iface = iface;
 }
 
 static const struct net_wifi_mgmt_offload simplelink_api = {
@@ -227,28 +258,11 @@ static const struct net_wifi_mgmt_offload simplelink_api = {
 
 static int simplelink_init(struct device *dev)
 {
-	int ret;
-
 	ARG_UNUSED(dev);
-
-	/* Initialize and configure NWP to defaults: */
-	ret = _simplelink_init(simplelink_wifi_cb);
-	if (ret) {
-		LOG_ERR("_simplelink_init failed!");
-		return(-EIO);
-	}
-
-	/* Grab our MAC address: */
-	_simplelink_get_mac(simplelink_data.mac);
 
 	/* We use system workqueue to deal with scan retries: */
 	k_delayed_work_init(&simplelink_data.work,
 			    simplelink_scan_work_handler);
-
-#ifdef CONFIG_NET_SOCKETS_OFFLOAD
-	/* Direct socket offload: */
-	socket_offload_register(&simplelink_ops);
-#endif
 
 	LOG_DBG("SimpleLink driver Initialized");
 

@@ -31,10 +31,10 @@ osStatus osKernelInitialize(void)
  */
 osStatus osKernelStart(void)
 {
-	 if (_is_in_isr()) {
-		 return osErrorISR;
-	 }
-	 return osOK;
+	if (k_is_in_isr()) {
+		return osErrorISR;
+	}
+	return osOK;
 }
 
 /**
@@ -42,5 +42,5 @@ osStatus osKernelStart(void)
  */
 int32_t osKernelRunning(void)
 {
-	return _has_thread_started(_main_thread);
+	return z_has_thread_started(_main_thread);
 }

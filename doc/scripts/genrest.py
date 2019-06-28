@@ -46,10 +46,10 @@ def expr_str(expr):
     return kconfiglib.expr_str(expr, rst_link)
 
 
-INDEX_RST_HEADER = """.. _configuration:
+INDEX_RST_HEADER = """.. _configuration_options:
 
-Configuration Symbol Reference
-##############################
+Configuration Options
+#####################
 
 Introduction
 ************
@@ -77,23 +77,30 @@ Supported Options
      - Description
 """
 
-def write_kconfig_rst():
-    # The "main" function. Writes index.rst and the symbol RST files.
+def main():
+    # Writes index.rst and the symbol RST files
+
+    # Accelerate doc building by skipping kconfig option documentation.
+    turbo_mode = os.environ.get('KCONFIG_TURBO_MODE') == "1"
 
     if len(sys.argv) != 3:
-        print("usage: {} <Kconfig> <output directory>", file=sys.stderr)
-        sys.exit(1)
+        sys.exit("usage: {} <Kconfig> <output directory>"
+                 .format(sys.argv[0]))
 
     kconf = kconfiglib.Kconfig(sys.argv[1])
     out_dir = sys.argv[2]
 
     # String with the RST for the index page
     index_rst = INDEX_RST_HEADER
+    index_def_rst = ":orphan:\n\n"
 
     # Sort the symbols by name so that they end up in sorted order in index.rst
     for sym in sorted(kconf.unique_defined_syms, key=lambda sym: sym.name):
-        # Write an RST file for the symbol
-        write_sym_rst(sym, out_dir)
+        if turbo_mode:
+            index_def_rst += ".. option:: CONFIG_{}\n".format(sym.name)
+        else:
+            # Write an RST file for the symbol
+            write_sym_rst(sym, out_dir)
 
         # Add an index entry for the symbol that links to its RST file. Also
         # list its prompt(s), if any. (A symbol can have multiple prompts if it
@@ -103,9 +110,12 @@ def write_kconfig_rst():
             " / ".join(node.prompt[0]
                        for node in sym.nodes if node.prompt))
 
-    for choice in kconf.unique_choices:
-        # Write an RST file for the choice
-        write_choice_rst(choice, out_dir)
+    if turbo_mode:
+        write_if_updated(os.path.join(out_dir, "options.rst"), index_def_rst)
+    else:
+        for choice in kconf.unique_choices:
+            # Write an RST file for the choice
+            write_choice_rst(choice, out_dir)
 
     write_if_updated(os.path.join(out_dir, "index.rst"), index_rst)
 
@@ -201,7 +211,7 @@ def direct_deps_rst(sc):
     return "Direct dependencies\n" \
            "===================\n\n" \
            "{}\n\n" \
-           "*(Includes any dependencies from if's and menus.)*\n\n" \
+           "*(Includes any dependencies from ifs and menus.)*\n\n" \
            .format(expr_str(sc.direct_dep))
 
 
@@ -218,7 +228,7 @@ def defaults_rst(sc):
           "========\n\n"
 
     if sc.defaults:
-        for value, cond in sc.defaults:
+        for value, cond in sc.orig_defaults:
             rst += "- " + expr_str(value)
             if cond is not sc.kconfig.y:
                 rst += " if " + expr_str(cond)
@@ -279,8 +289,8 @@ def select_imply_rst(sym):
 
             rst += "\n"
 
-    add_select_imply_rst("selected", sym.selects)
-    add_select_imply_rst("implied", sym.implies)
+    add_select_imply_rst("selected", sym.orig_selects)
+    add_select_imply_rst("implied", sym.orig_implies)
 
     return rst
 
@@ -343,22 +353,19 @@ def kconfig_definition_rst(sc):
     def menu_path(node):
         path = ""
 
-        while True:
-            # This excludes indented submenus created in the menuconfig
-            # interface when items depend on the preceding symbol.
-            # is_menuconfig means anything that would be shown as a separate
-            # menu (not indented): proper 'menu's, menuconfig symbols, and
-            # choices.
+        while node.parent is not node.kconfig.top_node:
             node = node.parent
-            while not node.is_menuconfig:
-                node = node.parent
 
-            if node is node.kconfig.top_node:
-                break
+            # Promptless choices can show up as parents, e.g. when people
+            # define choices in multiple locations to add symbols. Use
+            # standard_sc_expr_str() to show them. That way they show up as
+            # '<choice (name if any)>'.
+            path = arrow + \
+                   (node.prompt[0] if node.prompt else
+                    kconfiglib.standard_sc_expr_str(node.item)) + \
+                   path
 
-            path = arrow + node.prompt[0] + path
-
-        return "(top menu)" + path
+        return "(Top)" + path
 
     heading = "Kconfig definition"
     if len(sc.nodes) > 1: heading += "s"
@@ -381,8 +388,8 @@ def kconfig_definition_rst(sc):
             # Add a horizontal line between multiple definitions
             rst += "\n\n----"
 
-    rst += "\n\n*(Definitions include propagated dependencies, " \
-           "including from if's and menus.)*"
+    rst += "\n\n*(The 'depends on' condition includes propagated " \
+           "dependencies from ifs and menus.)*"
 
     return rst
 
@@ -397,7 +404,7 @@ def choice_id(choice):
     # we can't use that, and the prompt isn't guaranteed to be unique.
 
     # Pretty slow, but fast enough
-    return "choice_{}".format(choice.kconfig.choices.index(choice))
+    return "choice_{}".format(choice.kconfig.unique_choices.index(choice))
 
 
 def choice_desc(choice):
@@ -438,4 +445,4 @@ def write_if_updated(filename, s):
 
 
 if __name__ == "__main__":
-    write_kconfig_rst()
+    main()

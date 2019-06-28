@@ -22,7 +22,7 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #include <net/net_offload.h>
 #include <net/wifi_mgmt.h>
 
-#include <misc/printk.h>
+#include <sys/printk.h>
 
 /* We do not need <socket/include/socket.h>
  * It seems there is a bug in ASF side: if OS is already defining sockaddr
@@ -119,6 +119,7 @@ typedef struct {
 
 #define WINC1500_BIND_TIMEOUT 500
 #define WINC1500_LISTEN_TIMEOUT 500
+#define WINC1500_BUF_TIMEOUT 100
 
 NET_BUF_POOL_DEFINE(winc1500_tx_pool, CONFIG_WIFI_WINC1500_BUF_CTR,
 		    CONFIG_WIFI_WINC1500_MAX_PACKET_SIZE, 0, NULL);
@@ -162,7 +163,7 @@ static struct winc1500_data w1500_data;
 static void stack_stats(void)
 {
 	net_analyze_stack("WINC1500 stack",
-			  K_THREAD_STACK_BUFFER(winc1500_stack),
+			  Z_THREAD_STACK_BUFFER(winc1500_stack),
 			  K_THREAD_STACK_SIZEOF(winc1500_stack));
 }
 
@@ -330,7 +331,7 @@ static int winc1500_bind(struct net_context *context,
 	int ret;
 
 	/* FIXME atmel winc1500 don't support bind on null port */
-	if (net_sin(addr)->sin_port == 0) {
+	if (net_sin(addr)->sin_port == 0U) {
 		return 0;
 	}
 
@@ -448,45 +449,39 @@ static int winc1500_accept(struct net_context *context,
 static int winc1500_send(struct net_pkt *pkt,
 			 net_context_send_cb_t cb,
 			 s32_t timeout,
-			 void *token,
 			 void *user_data)
 {
 	struct net_context *context = pkt->context;
 	SOCKET socket = (int)context->offload_context;
-	bool first_frag;
-	struct net_buf *frag;
-	int ret;
+	int ret = 0;
+	struct net_buf *buf;
+
+	buf = net_buf_alloc(&winc1500_tx_pool, WINC1500_BUF_TIMEOUT);
+	if (!buf) {
+		return -ENOBUFS;
+	}
 
 	w1500_data.socket_data[socket].send_cb = cb;
 	w1500_data.socket_data[socket].send_user_data = user_data;
 
-	first_frag = true;
+	if (net_pkt_read(pkt, buf->data, net_pkt_get_len(pkt))) {
+		ret = -ENOBUFS;
+		goto out;
+	}
 
-	for (frag = pkt->frags; frag; frag = frag->frags) {
-		u8_t *data_ptr;
-		u16_t data_len;
+	net_buf_add(buf, net_pkt_get_len(pkt));
 
-		if (first_frag) {
-			data_ptr = net_pkt_ll(pkt);
-			data_len = net_pkt_ll_reserve(pkt) + frag->len;
-			first_frag = false;
-		} else {
-			data_ptr = frag->data;
-			data_len = frag->len;
-
-		}
-
-		ret = send(socket, data_ptr, data_len, 0);
-		if (ret) {
-			LOG_ERR("send error %d %s!",
-				ret, socket_error_string(ret));
-			return ret;
-		}
+	ret = send(socket, buf->data, buf->len, 0);
+	if (ret) {
+		LOG_ERR("send error %d %s!", ret, socket_error_string(ret));
+		goto out;
 	}
 
 	net_pkt_unref(pkt);
+out:
+	net_buf_unref(buf);
 
-	return 0;
+	return ret;
 }
 
 /**
@@ -497,45 +492,40 @@ static int winc1500_sendto(struct net_pkt *pkt,
 			   socklen_t addrlen,
 			   net_context_send_cb_t cb,
 			   s32_t timeout,
-			   void *token,
 			   void *user_data)
 {
 	struct net_context *context = pkt->context;
 	SOCKET socket = (int)context->offload_context;
-	bool first_frag;
-	struct net_buf *frag;
-	int ret;
+	int ret = 0;
+	struct net_buf *buf;
+
+	buf = net_buf_alloc(&winc1500_tx_pool, WINC1500_BUF_TIMEOUT);
+	if (!buf) {
+		return -ENOBUFS;
+	}
 
 	w1500_data.socket_data[socket].send_cb = cb;
 	w1500_data.socket_data[socket].send_user_data = user_data;
 
-	first_frag = true;
+	if (net_pkt_read(pkt, buf->data, net_pkt_get_len(pkt))) {
+		ret = -ENOBUFS;
+		goto out;
+	}
 
-	for (frag = pkt->frags; frag; frag = frag->frags) {
-		u8_t *data_ptr;
-		u16_t data_len;
+	net_buf_add(buf, net_pkt_get_len(pkt));
 
-		if (first_frag) {
-			data_ptr = net_pkt_ll(pkt);
-			data_len = net_pkt_ll_reserve(pkt) + frag->len;
-			first_frag = false;
-		} else {
-			data_ptr = frag->data;
-			data_len = frag->len;
-		}
-
-		ret = sendto(socket, data_ptr, data_len, 0,
-			     (struct sockaddr *)dst_addr, addrlen);
-		if (ret) {
-			LOG_ERR("send error %d %s!",
-				ret, socket_error_string(ret));
-			return ret;
-		}
+	ret = sendto(socket, buf->data, buf->len, 0,
+		     (struct sockaddr *)dst_addr, addrlen);
+	if (ret) {
+		LOG_ERR("sendto error %d %s!", ret, socket_error_string(ret));
+		goto out;
 	}
 
 	net_pkt_unref(pkt);
+out:
+	net_buf_unref(buf);
 
-	return 0;
+	return ret;
 }
 
 /**
@@ -543,21 +533,22 @@ static int winc1500_sendto(struct net_pkt *pkt,
 static int prepare_pkt(struct socket_data *sock_data)
 {
 	/* Get the frame from the buffer */
-	sock_data->rx_pkt = net_pkt_get_reserve_rx(0, K_NO_WAIT);
+	sock_data->rx_pkt = net_pkt_rx_alloc_on_iface(w1500_data.iface,
+						      K_NO_WAIT);
 	if (!sock_data->rx_pkt) {
 		LOG_ERR("Could not allocate rx packet");
 		return -1;
 	}
 
-	/* Reserve a data frag to receive the frame */
-	sock_data->pkt_buf = net_pkt_get_frag(sock_data->rx_pkt, K_NO_WAIT);
+	/* Reserve a data buffer to receive the frame */
+	sock_data->pkt_buf = net_buf_alloc(&winc1500_rx_pool, K_NO_WAIT);
 	if (!sock_data->pkt_buf) {
-		LOG_ERR("Could not allocate data frag");
+		LOG_ERR("Could not allocate data buffer");
 		net_pkt_unref(sock_data->rx_pkt);
 		return -1;
 	}
 
-	net_pkt_frag_insert(sock_data->rx_pkt, sock_data->pkt_buf);
+	net_pkt_append_buffer(sock_data->rx_pkt, sock_data->pkt_buf);
 
 	return 0;
 }
@@ -663,7 +654,7 @@ static void handle_wifi_dhcp_conf(void *pvMsg)
 	/* TODO at this point the standby mode should be enable
 	 * status = WiFi connected IP assigned
 	 */
-	for (i = 0; i < 4; i++) {
+	for (i = 0U; i < 4; i++) {
 		addr.s4_addr[i] = pu8IPAddress[i];
 	}
 
@@ -675,7 +666,7 @@ static void handle_wifi_dhcp_conf(void *pvMsg)
 static void reset_scan_data(void)
 {
 	w1500_data.scan_cb = NULL;
-	w1500_data.scan_result = 0;
+	w1500_data.scan_result = 0U;
 }
 
 static void handle_scan_result(void *pvMsg)
@@ -734,7 +725,7 @@ static void handle_scan_done(void *pvMsg)
 		return;
 	}
 
-	w1500_data.scan_result = 0;
+	w1500_data.scan_result = 0U;
 
 	if (pstrInfo->u8NumofCh >= 1) {
 		LOG_DBG("Requesting results (%u)",
@@ -798,15 +789,13 @@ static bool handle_socket_msg_recv(SOCKET sock,
 	tstrSocketRecvMsg *pstrRx = (tstrSocketRecvMsg *)pvMsg;
 
 	if ((pstrRx->pu8Buffer != NULL) && (pstrRx->s16BufferSize > 0)) {
-
 		net_buf_add(sd->pkt_buf, pstrRx->s16BufferSize);
-
-		net_pkt_set_appdata(sd->rx_pkt, sd->pkt_buf->data);
-		net_pkt_set_appdatalen(sd->rx_pkt, pstrRx->s16BufferSize);
+		net_pkt_cursor_init(sd->rx_pkt);
 
 		if (sd->recv_cb) {
 			sd->recv_cb(sd->context,
 				    sd->rx_pkt,
+				    NULL, NULL,
 				    0,
 				    sd->recv_user_data);
 			}
@@ -822,8 +811,11 @@ static bool handle_socket_msg_recv(SOCKET sock,
 		return false;
 	}
 
-	recv(sock, sd->pkt_buf->data,
-	     CONFIG_WIFI_WINC1500_MAX_PACKET_SIZE, K_NO_WAIT);
+	if (recv(sock, sd->pkt_buf->data,
+		 CONFIG_WIFI_WINC1500_MAX_PACKET_SIZE, K_NO_WAIT)) {
+		LOG_ERR("Could not receive packet in the buffer");
+		return false;
+	}
 
 	return true;
 }

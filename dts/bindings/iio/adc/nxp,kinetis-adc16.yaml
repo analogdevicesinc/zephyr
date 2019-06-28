@@ -3,9 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: Kinetis ADC16
-id: nxp,kinetis-adc16
 version: 0.1
 
 description: >
@@ -19,14 +18,7 @@ properties:
       constraint: "nxp,kinetis-adc16"
 
     reg:
-      type: array
-      description: mmio register space
-      generation: define
       category: required
 
     interrupts:
-      type: array
       category: required
-      description: required interrupts
-      generation: define
-...

@@ -33,42 +33,23 @@ extern "C" {
  * @{
  */
 
+/** @cond INTERNAL_HIDDEN */
+
 /* Network subsystem logging helpers */
-
-#if !defined(LOG_LEVEL)
-#if !defined(NET_LOG_LEVEL)
-#define NET_LOG_LEVEL CONFIG_NET_DEFAULT_LOG_LEVEL
-#endif /* !NET_LOG_LEVEL */
-
-#if NET_LOG_LEVEL > CONFIG_NET_MAX_LOG_LEVEL
-#undef NET_LOG_LEVEL
-#define NET_LOG_LEVEL CONFIG_NET_MAX_LOG_LEVEL
-#endif /* NET_LOG_LEVEL > CONFIG_NET_MAX_LOG_LEVEL */
-
-#define LOG_LEVEL NET_LOG_LEVEL
-#endif /* !LOG_LEVEL */
-
-#if defined(NET_LOG_LEVEL)
 #include <logging/log.h>
 
-LOG_MODULE_REGISTER(LOG_MODULE_NAME);
-#endif /* NET_LOG_LEVEL */
-
-#define NET_DBG(fmt, ...) LOG_DBG("(%p): %s: " fmt, k_current_get(), \
-				  __func__, ##__VA_ARGS__)
+#define NET_DBG(fmt, ...) LOG_DBG("(%p): " fmt, k_current_get(), \
+				  ##__VA_ARGS__)
 #define NET_ERR(fmt, ...) LOG_ERR(fmt, ##__VA_ARGS__)
 #define NET_WARN(fmt, ...) LOG_WRN(fmt, ##__VA_ARGS__)
 #define NET_INFO(fmt, ...) LOG_INF(fmt,  ##__VA_ARGS__)
 
-#define NET_ASSERT(cond) do {				     \
-		if (!(cond)) {					     \
-			NET_ERR("{assert: '" #cond "' failed}");     \
-		} } while (false)
-#define NET_ASSERT_INFO(cond, fmt, ...) do {			     \
-		if (!(cond)) {					     \
-			NET_ERR("{assert: '" #cond "' failed} " fmt, \
-				##__VA_ARGS__);			     \
-		} } while (false)
+#include <sys/__assert.h>
+
+#define NET_ASSERT(cond) __ASSERT_NO_MSG(cond)
+#define NET_ASSERT_INFO(cond, fmt, ...) __ASSERT(cond, fmt, ##__VA_ARGS__)
+
+/** @endcond */
 
 #include <kernel.h>
 
@@ -83,20 +64,33 @@ struct net_if;
  * @brief Net Verdict
  */
 enum net_verdict {
-	NET_OK,		/** Packet has been taken care of */
-	NET_CONTINUE,	/** Packet has not been touched,
-			    other part should decide about its fate */
-	NET_DROP,	/** Packet must be dropped */
+	/** Packet has been taken care of. */
+	NET_OK,
+	/** Packet has not been touched, other part should decide about its
+	 * fate.
+	 */
+	NET_CONTINUE,
+	/** Packet must be dropped. */
+	NET_DROP,
 };
 
-/* Called by lower network stack when a network packet has been received */
+/**
+ * @brief Called by lower network stack or network device driver when
+ * a network packet has been received. The function will push the packet up in
+ * the network stack for further processing.
+ *
+ * @param iface Network interface where the packet was received.
+ * @param pkt Network packet data.
+ *
+ * @return 0 if ok, <0 if error.
+ */
 int net_recv_data(struct net_if *iface, struct net_pkt *pkt);
 
 /**
  * @brief Send data to network.
  *
  * @details Send data to network. This should not be used normally by
- * applications as it requires that the pktfer and fragments are properly
+ * applications as it requires that the network packet is properly
  * constructed.
  *
  * @param pkt Network packet.
@@ -106,6 +100,7 @@ int net_recv_data(struct net_if *iface, struct net_pkt *pkt);
  */
 int net_send_data(struct net_pkt *pkt);
 
+/** @cond INTERNAL_HIDDEN */
 /*
  * The net_stack_info struct needs to be aligned to 32 byte boundary,
  * otherwise the __net_stack_end will point to wrong location and looping
@@ -191,9 +186,8 @@ struct net_stack_info {
 
 #define NET_STACK_DEFINE_EMBEDDED(name, size) char name[size]
 
-/** @cond ignore */
 #if defined(CONFIG_INIT_STACKS)
-#include <misc/stack.h>
+#include <debug/stack.h>
 
 static inline void net_analyze_stack_get_values(const char *stack,
 						size_t size,
@@ -206,24 +200,12 @@ static inline void net_analyze_stack_get_values(const char *stack,
 	*pcnt = ((size - *unused) * 100) / size;
 }
 
-static inline void net_analyze_stack(const char *name,
-				     const char *stack,
-				     size_t size)
-{
-	unsigned int pcnt, unused;
+void net_analyze_stack(const char *name, const char *stack, size_t size);
 
-	net_analyze_stack_get_values(stack, size, &pcnt, &unused);
-
-	NET_INFO("net (%p): %s stack real size %zu "
-		 "unused %u usage %zu/%zu (%u %%)",
-		 k_current_get(), name,
-		 size, unused, size - unused, size, pcnt);
-}
 #else
 #define net_analyze_stack(...)
 #define net_analyze_stack_get_values(...)
 #endif
-/* @endcond */
 
 /* Some helper defines for traffic class support */
 #if defined(CONFIG_NET_TC_TX_COUNT) && defined(CONFIG_NET_TC_RX_COUNT)
@@ -240,6 +222,8 @@ static inline void net_analyze_stack(const char *name,
 #define NET_TC_RX_COUNT 1
 #define NET_TC_COUNT 1
 #endif /* CONFIG_NET_TC_TX_COUNT && CONFIG_NET_TC_RX_COUNT */
+
+/* @endcond */
 
 /**
  * @}

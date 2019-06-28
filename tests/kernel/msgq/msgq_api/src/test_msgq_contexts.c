@@ -9,26 +9,36 @@
 /**TESTPOINT: init via K_MSGQ_DEFINE*/
 K_MSGQ_DEFINE(kmsgq, MSG_SIZE, MSGQ_LEN, 4);
 K_MSGQ_DEFINE(kmsgq_test_alloc, MSG_SIZE, MSGQ_LEN, 4);
-__kernel struct k_msgq msgq;
-__kernel struct k_msgq msgq1;
+struct k_msgq msgq;
+struct k_msgq msgq1;
 K_THREAD_STACK_DEFINE(tstack, STACK_SIZE);
 K_THREAD_STACK_DEFINE(tstack1, STACK_SIZE);
 K_THREAD_STACK_DEFINE(tstack2, STACK_SIZE);
-__kernel struct k_thread tdata;
-__kernel struct k_thread tdata1;
-__kernel struct k_thread tdata2;
-static char __aligned(4) tbuffer[MSG_SIZE * MSGQ_LEN];
-static char __aligned(4) tbuffer1[MSG_SIZE];
-static u32_t data[MSGQ_LEN] = { MSG0, MSG1 };
-__kernel struct k_sem end_sema;
+struct k_thread tdata;
+struct k_thread tdata1;
+struct k_thread tdata2;
+static ZTEST_BMEM char __aligned(4) tbuffer[MSG_SIZE * MSGQ_LEN];
+static ZTEST_DMEM char __aligned(4) tbuffer1[MSG_SIZE];
+static ZTEST_DMEM u32_t data[MSGQ_LEN] = { MSG0, MSG1 };
+struct k_sem end_sema;
 
 static void put_msgq(struct k_msgq *pmsgq)
 {
 	int ret;
+	u32_t read_data;
 
 	for (int i = 0; i < MSGQ_LEN; i++) {
 		ret = k_msgq_put(pmsgq, (void *)&data[i], K_NO_WAIT);
 		zassert_equal(ret, 0, NULL);
+
+		/**TESTPOINT: Check if k_msgq_peek reads msgq
+		 * in FIFO manner.
+		 * Everytime msg is enqueued, msg read should
+		 * always be the first message
+		 */
+		zassert_equal(k_msgq_peek(pmsgq, &read_data), 0, NULL);
+		zassert_equal(read_data, data[0], NULL);
+
 		/**TESTPOINT: msgq free get*/
 		zassert_equal(k_msgq_num_free_get(pmsgq),
 				MSGQ_LEN - 1 - i, NULL);
@@ -39,13 +49,18 @@ static void put_msgq(struct k_msgq *pmsgq)
 
 static void get_msgq(struct k_msgq *pmsgq)
 {
-	u32_t rx_data;
+	u32_t rx_data, read_data;
 	int ret;
 
 	for (int i = 0; i < MSGQ_LEN; i++) {
+		zassert_equal(k_msgq_peek(pmsgq, &read_data), 0, NULL);
+
 		ret = k_msgq_get(pmsgq, &rx_data, K_FOREVER);
 		zassert_equal(ret, 0, NULL);
 		zassert_equal(rx_data, data[i], NULL);
+
+		/**TESTPOINT: Check if msg read is the msg deleted*/
+		zassert_equal(read_data, rx_data, NULL);
 		/**TESTPOINT: msgq free get*/
 		zassert_equal(k_msgq_num_free_get(pmsgq), i + 1, NULL);
 		/**TESTPOINT: msgq used get*/
@@ -56,9 +71,12 @@ static void get_msgq(struct k_msgq *pmsgq)
 
 static void purge_msgq(struct k_msgq *pmsgq)
 {
+	u32_t read_data;
+
 	k_msgq_purge(pmsgq);
 	zassert_equal(k_msgq_num_free_get(pmsgq), MSGQ_LEN, NULL);
 	zassert_equal(k_msgq_num_used_get(pmsgq), 0, NULL);
+	zassert_equal(k_msgq_peek(pmsgq, &read_data), -ENOMSG, NULL);
 }
 
 static void tisr_entry(void *p)

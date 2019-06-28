@@ -15,21 +15,24 @@
 #include <errno.h>
 
 #include <kernel.h>
-#include <misc/printk.h>
-#include <misc/__assert.h>
+#include <sys/printk.h>
+#include <sys/__assert.h>
 #include "soc.h"
-#include <uart.h>
+#include <drivers/uart.h>
 #include <init.h>
 #include "shared_mem.h"
 #include <mmustructs.h>
 
+#define LOG_LEVEL CONFIG_SOC_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_REGISTER(soc);
 
 #ifdef CONFIG_X86_MMU
 /* loapic */
 MMU_BOOT_REGION(CONFIG_LOAPIC_BASE_ADDRESS, 4*1024, MMU_ENTRY_WRITE);
 
 /*ioapic */
-MMU_BOOT_REGION(CONFIG_IOAPIC_BASE_ADDRESS, 1024*1024, MMU_ENTRY_WRITE);
+MMU_BOOT_REGION(DT_IOAPIC_BASE_ADDRESS, 1024*1024, MMU_ENTRY_WRITE);
 
 /* peripherals */
 MMU_BOOT_REGION(0xB0000000, 128*1024, MMU_ENTRY_WRITE);
@@ -50,9 +53,6 @@ MMU_BOOT_REGION(0xB0500000, 256*1024, MMU_ENTRY_WRITE);
 #define SCSS_REG_VAL(offset) \
 	(*((volatile u32_t *)(SCSS_REGISTER_BASE+offset)))
 
-#define SYS_LOG_LEVEL CONFIG_SYS_LOG_ARC_INIT_LEVEL
-#include <logging/sys_log.h>
-
 /**
  *
  * @brief ARC Init
@@ -62,13 +62,13 @@ MMU_BOOT_REGION(0xB0500000, 256*1024, MMU_ENTRY_WRITE);
  * @return N/A
  */
 /* This function is also called at deep sleep resume. */
-int _arc_init(struct device *arg)
+int z_arc_init(struct device *arg)
 {
 	u32_t *reset_vector;
 
 	ARG_UNUSED(arg);
 
-	if (!SCSS_REG_VAL(SCSS_SS_STS)) {
+	if (SCSS_REG_VAL(SCSS_SS_STS) == 0U) {
 		/* ARC shouldn't already be running! */
 		printk("ARC core already running!");
 		return -EIO;
@@ -78,12 +78,12 @@ int _arc_init(struct device *arg)
 	 * we read the value and stick it in shared_mem->arc_start which is
 	 * the beginning of the address space at 0xA8000000 */
 	reset_vector = (u32_t *)RESET_VECTOR;
-	SYS_LOG_DBG("Reset vector address: %x", *reset_vector);
+	LOG_DBG("Reset vector address: %x", *reset_vector);
 	shared_data->arc_start = *reset_vector;
-	shared_data->flags = 0;
-	if (!shared_data->arc_start) {
+	shared_data->flags = 0U;
+	if (shared_data->arc_start == 0U) {
 		/* Reset vector points to NULL => skip ARC init. */
-		SYS_LOG_DBG("Reset vector is NULL, skipping ARC init.");
+		LOG_DBG("Reset vector is NULL, skipping ARC init.");
 		goto skip_arc_init;
 	}
 
@@ -92,15 +92,15 @@ int _arc_init(struct device *arg)
 	SCSS_REG_VAL(SCSS_SS_CFG) |= ARC_RUN_REQ_A;
 #endif
 
-	SYS_LOG_DBG("Waiting for arc to start...");
+	LOG_DBG("Waiting for arc to start...");
 	/* Block until the ARC core actually starts up */
-	while (SCSS_REG_VAL(SCSS_SS_STS) & 0x4000) {
+	while ((SCSS_REG_VAL(SCSS_SS_STS) & 0x4000) != 0U) {
 	}
 
 	/* Block until ARC's quark_se_init() sets a flag indicating it is ready,
 	 * if we get stuck here ARC has run but has exploded very early */
-	SYS_LOG_DBG("Waiting for arc to init...");
-	while (!(shared_data->flags & ARC_READY)) {
+	LOG_DBG("Waiting for arc to init...");
+	while ((shared_data->flags & ARC_READY) == 0U) {
 	}
 
 skip_arc_init:
@@ -108,7 +108,7 @@ skip_arc_init:
 	return 0;
 }
 
-SYS_INIT(_arc_init, POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);
+SYS_INIT(z_arc_init, POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);
 
 #endif /*CONFIG_ARC_INIT*/
 

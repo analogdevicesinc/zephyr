@@ -1,6 +1,5 @@
----
+
 title: Flash Partitions
-id: fixed-partition
 version: 0.1
 
 description: >
@@ -8,37 +7,27 @@ description: >
 
 properties:
     compatible:
-      type: string
+      constraint: "fixed-partitions"
+      type: string-array
       category: required
       description: compatible strings
-      constraint: "fixed-partitions"
       generation: define
 
-    partition\d+:
-      type: string
-      generation: define
-
-      properties:
-          reg:
-            type: array
-            description: partition offset and size from flash bank
-            generation: define
-            category: required
-            label: offset
-
-          label:
-            type: string
-            description: Partition label
-            generation: define
-            category: required
-
-          read-only:
-            type: boolean
-            category: optional
-            description: Denotes read only partition
-            generation: define
-
-base_label: FLASH_AREA
-use-property-label: yes
-
-...
+sub-node:
+    properties:
+       label:
+          category: required
+          type: string
+          category: optional
+          description: Human readable string describing the device (used by Zephyr for API name)
+          generation: define
+       read-only:
+          type: boolean
+          category: optional
+          description: if the partition is read-only or not
+          generation: define
+       reg:
+          type: array
+          description: register space
+          generation: define
+          category: required

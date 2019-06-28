@@ -1,0 +1,22 @@
+
+title: ARMv7-M Memory Protection Unit
+version: 0.1
+
+description: >
+    This binding describes the ARMv7-M Memory Protection Unit (MPU).
+
+inherits:
+    !include base.yaml
+
+properties:
+    compatible:
+      constraint: "arm,armv7m-mpu"
+
+    reg:
+      category: required
+
+    arm,num-mpu-regions:
+      category: required
+      type: int
+      description: number of MPU regions supported by hardware
+      generation: define

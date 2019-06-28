@@ -6,9 +6,14 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
+config HAS_SPI_DW
+	bool
+	help
+	  Signifies whether DesignWare SPI compatible HW is available
+
 menuconfig SPI_DW
 	bool "Designware SPI controller driver"
-	select HAS_DTS_SPI
+	depends on HAS_SPI_DW
 	help
 	  Enable support for Designware's SPI controllers.
 
@@ -16,7 +21,7 @@ if SPI_DW
 
 config SPI_DW_ARC_AUX_REGS
 	bool "Registers are part of ARC auxiliary registers"
-	depends on SPI_DW && ARC
+	depends on ARC
 	default y
 	help
 	  SPI IP block registers are part of user extended auxiliary

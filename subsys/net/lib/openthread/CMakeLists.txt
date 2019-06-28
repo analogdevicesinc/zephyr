@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+
 # Invoke OpenThread's external autoconf-based build system.
 include(ExternalProject)
 
@@ -23,7 +25,7 @@ if(NOT EXTERNAL_PROJECT_PATH_OPENTHREAD)
   # TODO: Point to a Zephyr fork
   # Nov. 7
   set_ifndef(ot_GIT_REPOSITORY "https://github.com/openthread/openthread.git")
-  set_ifndef(ot_GIT_TAG db4759cc41257d0572ddedbeead1e02c52033620)
+  set_ifndef(ot_GIT_TAG f9d757a161fea4775d033a1ce88cf7962fe24a93)
   set_ifndef(ot_GIT_PROGRESS 1)
 
   list(APPEND cmd
@@ -128,12 +130,22 @@ set(ZEPHYR_MBEDTLS_CPPFLAGS "${ZEPHYR_MBEDTLS_CPPFLAGS} ")
 set(ZEPHYR_MBEDTLS_CPPFLAGS "-DMBEDTLS_CONFIG_FILE='\"mbedtls-config.h\"'")
 set(ZEPHYR_MBEDTLS_CPPFLAGS "${ZEPHYR_MBEDTLS_CPPFLAGS} -DMBEDTLS_USER_CONFIG_FILE='\"${CMAKE_CURRENT_SOURCE_DIR}/zephyr-mbedtls-config.h\"'")
 set(ZEPHYR_MBEDTLS_CPPFLAGS "${ZEPHYR_MBEDTLS_CPPFLAGS} -I${ot_SOURCE_DIR}/third_party/mbedtls")
-set(ZEPHYR_MBEDTLS_CPPFLAGS "${ZEPHYR_MBEDTLS_CPPFLAGS} -I${ot_SOURCE_DIR}/third_party/mbedtls/repo.patched/include")
-set(ZEPHYR_MBEDTLS_CPPFLAGS "${ZEPHYR_MBEDTLS_CPPFLAGS} -I${ot_SOURCE_DIR}/third_party/mbedtls/repo.patched/include/mbedtls")
+set(ZEPHYR_MBEDTLS_CPPFLAGS "${ZEPHYR_MBEDTLS_CPPFLAGS} -I${ot_SOURCE_DIR}/third_party/mbedtls/repo/include")
+set(ZEPHYR_MBEDTLS_CPPFLAGS "${ZEPHYR_MBEDTLS_CPPFLAGS} -I${ot_SOURCE_DIR}/third_party/mbedtls/repo/include/mbedtls")
 
 list(APPEND configure_flags
   "MBEDTLS_CPPFLAGS=${ZEPHYR_MBEDTLS_CPPFLAGS}"
   )
+
+if(CONFIG_OPENTHREAD_FTD)
+  list(APPEND configure_flags
+    --enable-ftd
+    )
+elseif(CONFIG_OPENTHREAD_MTD)
+  list(APPEND configure_flags
+    --enable-mtd
+    )
+endif()
 
 if(CONFIG_OPENTHREAD_COMMISSIONER)
   list(APPEND configure_flags
@@ -155,7 +167,7 @@ endif()
 
 if(CONFIG_OPENTHREAD_SHELL)
   list(APPEND configure_flags
-    --enable-cli-app=all
+    --enable-cli
     )
 endif()
 
@@ -245,15 +257,9 @@ ExternalProject_Add_Step(
 
 # Create wrapper CMake libraries
 foreach(ot_lib ${ot_libs})
-  add_library(${ot_lib} STATIC IMPORTED GLOBAL)
-  add_dependencies(   # TODO: Necessary?
-    ${ot_lib}
-    ${ot_name}
-    )
-  set_target_properties(${ot_lib} PROPERTIES IMPORTED_LOCATION
+  zephyr_library_import(${ot_lib}
     ${ot_INSTALL_DIR}/${exec_prefix}/lib/lib${ot_lib}.a
     )
-  zephyr_append_cmake_library(${ot_lib})
 endforeach()
 
 add_subdirectory(platform)

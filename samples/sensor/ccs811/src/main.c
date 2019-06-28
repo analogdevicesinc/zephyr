@@ -6,8 +6,8 @@
 
 #include <zephyr.h>
 #include <device.h>
-#include <sensor.h>
-#include <misc/printk.h>
+#include <drivers/sensor.h>
+#include <sys/printk.h>
 
 static void do_main(struct device *dev)
 {
@@ -34,7 +34,7 @@ void main(void)
 {
 	struct device *dev;
 
-	dev = device_get_binding("CCS811");
+	dev = device_get_binding(DT_INST_0_AMS_CCS811_LABEL);
 	if (!dev) {
 		printk("Failed to get device binding");
 		return;

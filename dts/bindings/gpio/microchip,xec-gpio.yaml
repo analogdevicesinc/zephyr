@@ -1,0 +1,32 @@
+#
+# Copyright (c) 2019, Intel Corporation
+#
+# SPDX-License-Identifier: Apache-2.0
+#
+
+
+title: MICROCHIP GPIO
+version: 0.1
+
+description: >
+    This is a representation of the CEC/MEC GPIO nodes for Microchip
+
+inherits:
+    !include base.yaml
+
+properties:
+    compatible:
+      constraint: "microchip,xec-gpio"
+
+    reg:
+      category: required
+
+    interrupts:
+      category: optional
+
+    label:
+      category: required
+
+"#cells":
+  - pin
+  - flags

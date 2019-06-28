@@ -15,7 +15,7 @@
 #ifndef _SOC__H_
 #define _SOC__H_
 
-#include <misc/util.h>
+#include <sys/util.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -31,18 +31,11 @@ extern "C" {
 
 #define PERIPH_ADDR_BASE_WDOG 0x40052000 /* Watchdog Timer module */
 
-/* IRQs */
-
-#define IRQ_ETH_IEEE1588_TMR 82
-#define IRQ_ETH_TX 83
-#define IRQ_ETH_RX 84
-#define IRQ_ETH_ERR_MISC 85
-
 #ifndef _ASMLANGUAGE
 
 #include <fsl_common.h>
 #include <device.h>
-#include <misc/util.h>
+#include <sys/util.h>
 #include <random/rand32.h>
 
 #endif /* !_ASMLANGUAGE */

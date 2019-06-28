@@ -9,24 +9,35 @@
 #include <stdio.h>
 #include <sys/stat.h>
 #include <linker/linker-defs.h>
-#include <misc/util.h>
+#include <sys/util.h>
 #include <kernel_internal.h>
-#include <misc/errno_private.h>
-#include <misc/libc-hooks.h>
+#include <sys/errno_private.h>
+#include <sys/libc-hooks.h>
 #include <syscall_handler.h>
+#include <app_memory/app_memdomain.h>
+#include <init.h>
+
+#define LIBC_BSS	K_APP_BMEM(z_libc_partition)
+#define LIBC_DATA	K_APP_DMEM(z_libc_partition)
+
+#if CONFIG_NEWLIB_LIBC_ALIGNED_HEAP_SIZE
+K_APPMEM_PARTITION_DEFINE(z_malloc_partition);
+#define MALLOC_BSS	K_APP_BMEM(z_malloc_partition)
+
+/* Compiler will throw an error if the provided value isn't a power of two */
+MALLOC_BSS static unsigned char __aligned(CONFIG_NEWLIB_LIBC_ALIGNED_HEAP_SIZE)
+	heap_base[CONFIG_NEWLIB_LIBC_ALIGNED_HEAP_SIZE];
+#define MAX_HEAP_SIZE CONFIG_NEWLIB_LIBC_ALIGNED_HEAP_SIZE
+
+#else /* CONFIG_NEWLIB_LIBC_ALIGNED_HEAP_SIZE */
+
+/* Heap base and size are determined based on the available unused SRAM. */
 
 #define USED_RAM_END_ADDR   POINTER_TO_UINT(&_end)
 
-#if CONFIG_NEWLIB_LIBC_ALIGNED_HEAP_SIZE
-/* Compiler will throw an error if the provided value isn't a power of two */
-static unsigned char __kernel __aligned(CONFIG_NEWLIB_LIBC_ALIGNED_HEAP_SIZE)
-	heap_base[CONFIG_NEWLIB_LIBC_ALIGNED_HEAP_SIZE];
-#define MAX_HEAP_SIZE CONFIG_NEWLIB_LIBC_ALIGNED_HEAP_SIZE
-#else
-
 #if CONFIG_X86
-#define USED_RAM_SIZE  (USED_RAM_END_ADDR - CONFIG_PHYS_RAM_ADDR)
-#define MAX_HEAP_SIZE ((KB(CONFIG_RAM_SIZE)) - USED_RAM_SIZE)
+#define USED_RAM_SIZE  (USED_RAM_END_ADDR - DT_PHYS_RAM_ADDR)
+#define MAX_HEAP_SIZE ((KB(DT_RAM_SIZE)) - USED_RAM_SIZE)
 #elif CONFIG_NIOS2
 #include <layout.h>
 #define USED_RAM_SIZE  (USED_RAM_END_ADDR - _RAM_ADDR)
@@ -37,7 +48,17 @@ static unsigned char __kernel __aligned(CONFIG_NEWLIB_LIBC_ALIGNED_HEAP_SIZE)
 #define MAX_HEAP_SIZE  (RISCV_RAM_SIZE - USED_RAM_SIZE)
 #elif CONFIG_ARM
 #include <soc.h>
-#define USED_RAM_SIZE  (USED_RAM_END_ADDR - CONFIG_SRAM_BASE_ADDRESS)
+#if defined(CONFIG_USERSPACE)
+/* MPU shall program the heap area as user-accessible; therefore, heap base
+ * (and size) shall take into account the ARM MPU minimum region granularity.
+ */
+#define HEAP_BASE ((USED_RAM_END_ADDR + \
+		CONFIG_ARM_MPU_REGION_MIN_ALIGN_AND_SIZE) & \
+	(~(CONFIG_ARM_MPU_REGION_MIN_ALIGN_AND_SIZE - 1)))
+#else
+#define HEAP_BASE USED_RAM_END_ADDR
+#endif /* CONFIG_USERSPACE*/
+#define USED_RAM_SIZE  (HEAP_BASE - CONFIG_SRAM_BASE_ADDRESS)
 #define MAX_HEAP_SIZE ((KB(CONFIG_SRAM_SIZE)) - USED_RAM_SIZE)
 #elif CONFIG_XTENSA
 extern void *_heap_sentry;
@@ -47,10 +68,32 @@ extern void *_heap_sentry;
 #define MAX_HEAP_SIZE ((KB(CONFIG_SRAM_SIZE)) - USED_RAM_SIZE)
 #endif
 
-static unsigned char *heap_base = UINT_TO_POINTER(USED_RAM_END_ADDR);
+#ifndef HEAP_BASE
+#define HEAP_BASE USED_RAM_END_ADDR
+#endif
+
+#ifdef CONFIG_USERSPACE
+struct k_mem_partition z_malloc_partition;
+
+static int malloc_prepare(struct device *unused)
+{
+	ARG_UNUSED(unused);
+
+#if CONFIG_NEWLIB_LIBC_ALIGNED_HEAP_SIZE
+	z_malloc_partition.start = (u32_t)heap_base;
+#else
+	z_malloc_partition.start = HEAP_BASE;
+#endif
+	z_malloc_partition.size = MAX_HEAP_SIZE;
+	z_malloc_partition.attr = K_MEM_PARTITION_P_RW_U_RW;
+	return 0;
+}
+
+SYS_INIT(malloc_prepare, APPLICATION, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);
+#endif /* CONFIG_USERSPACE */
 #endif /* CONFIG_NEWLIB_LIBC_ALIGNED_HEAP_SIZE */
 
-static unsigned int heap_sz;
+LIBC_BSS static unsigned int heap_sz;
 
 static int _stdout_hook_default(int c)
 {
@@ -78,7 +121,7 @@ void __stdin_hook_install(unsigned char (*hook)(void))
 	_stdin_hook = hook;
 }
 
-int _impl__zephyr_read(char *buf, int nbytes)
+int z_impl_zephyr_read_stdin(char *buf, int nbytes)
 {
 	int i = 0;
 
@@ -93,15 +136,16 @@ int _impl__zephyr_read(char *buf, int nbytes)
 }
 
 #ifdef CONFIG_USERSPACE
-Z_SYSCALL_HANDLER(_zephyr_read, buf, nbytes)
+Z_SYSCALL_HANDLER(zephyr_read_stdin, buf, nbytes)
 {
 	Z_OOPS(Z_SYSCALL_MEMORY_WRITE(buf, nbytes));
-	return _impl__zephyr_read((char *)buf, nbytes);
+	return z_impl_zephyr_read_stdin((char *)buf, nbytes);
 }
 #endif
 
-int _impl__zephyr_write(char *buf, int nbytes)
+int z_impl_zephyr_write_stdout(const void *buffer, int nbytes)
 {
+	const char *buf = buffer;
 	int i;
 
 	for (i = 0; i < nbytes; i++) {
@@ -114,27 +158,27 @@ int _impl__zephyr_write(char *buf, int nbytes)
 }
 
 #ifdef CONFIG_USERSPACE
-Z_SYSCALL_HANDLER(_zephyr_write, buf, nbytes)
+Z_SYSCALL_HANDLER(zephyr_write_stdout, buf, nbytes)
 {
 	Z_OOPS(Z_SYSCALL_MEMORY_READ(buf, nbytes));
-	return _impl__zephyr_write((char *)buf, nbytes);
+	return z_impl_zephyr_write_stdout((const void *)buf, nbytes);
 }
 #endif
 
-#ifndef CONFIG_POSIX_FS
+#ifndef CONFIG_POSIX_API
 int _read(int fd, char *buf, int nbytes)
 {
 	ARG_UNUSED(fd);
 
-	return _zephyr_read(buf, nbytes);
+	return z_impl_zephyr_read_stdin(buf, nbytes);
 }
 FUNC_ALIAS(_read, read, int);
 
-int _write(int fd, char *buf, int nbytes)
+int _write(int fd, const void *buf, int nbytes)
 {
 	ARG_UNUSED(fd);
 
-	return _zephyr_write(buf, nbytes);
+	return z_impl_zephyr_write_stdout(buf, nbytes);
 }
 FUNC_ALIAS(_write, write, int);
 
@@ -156,7 +200,7 @@ int _lseek(int file, int ptr, int dir)
 }
 FUNC_ALIAS(_lseek, lseek, int);
 #else
-extern ssize_t write(int file, char *buffer, unsigned int count);
+extern ssize_t write(int file, const char *buffer, size_t count);
 #define _write	write
 #endif
 
@@ -195,7 +239,11 @@ void _exit(int status)
 
 void *_sbrk(int count)
 {
+#if CONFIG_NEWLIB_LIBC_ALIGNED_HEAP_SIZE
 	void *ptr = heap_base + heap_sz;
+#else
+	void *ptr = ((char *)HEAP_BASE) + heap_sz;
+#endif
 
 	if ((heap_sz + count) < MAX_HEAP_SIZE) {
 		heap_sz += count;
@@ -205,12 +253,6 @@ void *_sbrk(int count)
 	}
 }
 FUNC_ALIAS(_sbrk, sbrk, void *);
-
-void z_newlib_get_heap_bounds(void **base, size_t *size)
-{
-	*base = heap_base;
-	*size = MAX_HEAP_SIZE;
-}
 
 int *__errno(void)
 {

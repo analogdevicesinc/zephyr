@@ -7,21 +7,21 @@
 #include <kernel.h>
 #include <device.h>
 #include <init.h>
-#include <pinmux.h>
-#include <sys_io.h>
+#include <drivers/pinmux.h>
+#include <sys/sys_io.h>
 
 #include <pinmux/stm32/pinmux_stm32.h>
 
 /* pin assignments for NUCLEO-F401RE board */
 static const struct pin_config pinconf[] = {
-#ifdef CONFIG_UART_STM32_PORT_1
+#ifdef CONFIG_UART_1
 	{STM32_PIN_PB6, STM32F4_PINMUX_FUNC_PB6_USART1_TX},
 	{STM32_PIN_PB7, STM32F4_PINMUX_FUNC_PB7_USART1_RX},
-#endif	/* CONFIG_UART_STM32_PORT_1 */
-#ifdef CONFIG_UART_STM32_PORT_2
+#endif	/* CONFIG_UART_1 */
+#ifdef CONFIG_UART_2
 	{STM32_PIN_PA2, STM32F4_PINMUX_FUNC_PA2_USART2_TX},
 	{STM32_PIN_PA3, STM32F4_PINMUX_FUNC_PA3_USART2_RX},
-#endif	/* CONFIG_UART_STM32_PORT_2 */
+#endif	/* CONFIG_UART_2 */
 #ifdef CONFIG_PWM_STM32_2
 	{STM32_PIN_PA0, STM32F4_PINMUX_FUNC_PA0_PWM2_CH1},
 #endif /* CONFIG_PWM_STM32_2 */
@@ -41,6 +41,9 @@ static const struct pin_config pinconf[] = {
 	{STM32_PIN_PB14, STM32F4_PINMUX_FUNC_PB14_SPI2_MISO},
 	{STM32_PIN_PB15, STM32F4_PINMUX_FUNC_PB15_SPI2_MOSI},
 #endif	/* CONFIG_SPI_1 */
+#ifdef CONFIG_ADC_1
+	{STM32_PIN_PA0, STM32F4_PINMUX_FUNC_PA0_ADC123_IN0},
+#endif	/* CONFIG_ADC_1 */
 };
 
 static int pinmux_stm32_init(struct device *port)

@@ -5,11 +5,11 @@
  */
 
 #include <nrfx_wdt.h>
-#include <watchdog.h>
+#include <drivers/watchdog.h>
 
-#define SYS_LOG_DOMAIN "wdt_nrfx"
-#define SYS_LOG_LEVEL CONFIG_SYS_LOG_WDT_LEVEL
-#include <logging/sys_log.h>
+#define LOG_LEVEL CONFIG_WDT_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_REGISTER(wdt_nrfx);
 
 DEVICE_DECLARE(wdt_nrfx);
 
@@ -53,7 +53,7 @@ static int wdt_nrf_setup(struct device *dev, u8_t options)
 	 * The timeout value given in milliseconds needs to be converted here
 	 * to watchdog ticks.*/
 	nrf_wdt_reload_value_set(
-			(uint32_t)(((uint64_t)m_timeout * 32768) / 1000));
+			(uint32_t)(((uint64_t)m_timeout * 32768U) / 1000));
 
 	nrfx_wdt_enable();
 
@@ -79,18 +79,18 @@ static int wdt_nrf_install_timeout(struct device *dev,
 		return -ENOTSUP;
 	}
 
-	if (cfg->window.min != 0) {
+	if (cfg->window.min != 0U) {
 		return -EINVAL;
 	}
 
-	if (m_allocated_channels == 0) {
+	if (m_allocated_channels == 0U) {
 		/* According to relevant Product Specifications, watchdogs
 		 * in all nRF chips can use reload values (determining
 		 * the timeout) from range 0xF-0xFFFFFFFF given in 32768 Hz
 		 * clock ticks. This makes the allowed range of 0x1-0x07CFFFFF
 		 * in milliseconds. Check if the provided value is within
 		 * this range. */
-		if ((cfg->window.max == 0) || (cfg->window.max > 0x07CFFFFF)) {
+		if ((cfg->window.max == 0U) || (cfg->window.max > 0x07CFFFFF)) {
 			return -EINVAL;
 		}
 
@@ -126,46 +126,11 @@ static int wdt_nrf_feed(struct device *dev, int channel_id)
 	return 0;
 }
 
-static void wdt_nrf_enable(struct device *dev)
-{
-	ARG_UNUSED(dev);
-	/* Deprecated function. No implementation needed. */
-	SYS_LOG_ERR("Function not implemented!");
-}
-
-static int wdt_nrf_set_config(struct device *dev, struct wdt_config *config)
-{
-	ARG_UNUSED(dev);
-	ARG_UNUSED(config);
-	/* Deprecated function. No implementation needed. */
-	SYS_LOG_ERR("Function not implemented!");
-	return 0;
-}
-
-static void wdt_nrf_get_config(struct device *dev, struct wdt_config *config)
-{
-	ARG_UNUSED(dev);
-	ARG_UNUSED(config);
-	/* Deprecated function. No implementation needed. */
-	SYS_LOG_ERR("Function not implemented!");
-}
-
-static void wdt_nrf_reload(struct device *dev)
-{
-	ARG_UNUSED(dev);
-	/* Deprecated function. No implementation needed. */
-	SYS_LOG_ERR("Function not implemented!");
-}
-
 static const struct wdt_driver_api wdt_nrf_api = {
 	.setup = wdt_nrf_setup,
 	.disable = wdt_nrf_disable,
 	.install_timeout = wdt_nrf_install_timeout,
 	.feed = wdt_nrf_feed,
-	.enable = wdt_nrf_enable,
-	.get_config = wdt_nrf_get_config,
-	.set_config = wdt_nrf_set_config,
-	.reload = wdt_nrf_reload,
 };
 
 static void wdt_event_handler(void)
@@ -197,13 +162,14 @@ static int init_wdt(struct device *dev)
 		return -EBUSY;
 	}
 
-	IRQ_CONNECT(CONFIG_WDT_NRF_IRQ, CONFIG_WDT_NRF_IRQ_PRI,
+	IRQ_CONNECT(DT_NORDIC_NRF_WATCHDOG_WDT_0_IRQ_0,
+		    DT_NORDIC_NRF_WATCHDOG_WDT_0_IRQ_0_PRIORITY,
 		    nrfx_isr, nrfx_wdt_irq_handler, 0);
-	irq_enable(CONFIG_WDT_NRF_IRQ);
+	irq_enable(DT_NORDIC_NRF_WATCHDOG_WDT_0_IRQ_0);
 
 	return 0;
 }
 
-DEVICE_AND_API_INIT(wdt_nrf, CONFIG_WDT_0_NAME, init_wdt,
+DEVICE_AND_API_INIT(wdt_nrf, DT_NORDIC_NRF_WATCHDOG_WDT_0_LABEL, init_wdt,
 		    NULL, NULL, PRE_KERNEL_1,
 		    CONFIG_KERNEL_INIT_PRIORITY_DEVICE, &wdt_nrf_api);

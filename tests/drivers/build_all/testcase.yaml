@@ -11,21 +11,21 @@ tests:
     extra_args: CONF_FILE=ethernet.conf
     min_flash: 42
     min_ram: 32
-    platform_exclude: zedboard_pulpino frdm_kw41z
+    platform_exclude:  frdm_kw41z
     tags: drivers footprint
-    depends_on: adc spi
+    depends_on: spi netif
   test_build_sensors_trigger_a_h:
     build_only: true
     extra_args: CONF_FILE=sensors_trigger_a_h.conf
     min_ram: 32
-    platform_exclude: zedboard_pulpino frdm_kw41z
+    platform_exclude:  frdm_kw41z
     tags: drivers footprint
     depends_on: adc spi
   test_build_sensors_trigger_i_z:
     build_only: true
     extra_args: CONF_FILE=sensors_trigger_i_z.conf
     min_ram: 32
-    platform_exclude: zedboard_pulpino frdm_kw41z
+    platform_exclude:  frdm_kw41z
     tags: drivers footprint
     depends_on: adc spi
   test_build_sensors_a_h:
@@ -33,24 +33,30 @@ tests:
     extra_args: CONF_FILE=sensors_a_h.conf
     min_flash: 44
     min_ram: 32
-    platform_exclude: zedboard_pulpino frdm_kw41z
+    platform_exclude:  frdm_kw41z
     tags: drivers footprint
     depends_on: adc spi
-    # FIXME see #7703
-    extra_configs:
-      - CONFIG_TEST_USERSPACE=n
   test_build_sensors_i_z:
     build_only: true
     extra_args: CONF_FILE=sensors_i_z.conf
     min_ram: 32
-    platform_exclude: zedboard_pulpino frdm_kw41z
+    platform_exclude:  frdm_kw41z
     tags: drivers footprint
     depends_on: adc spi
-  test_nsim:
+  test_build_sensors_stmemsc:
     build_only: true
-    platform_whitelist: em_starterkit
-    extra_configs:
-      - CONFIG_UART_NSIM=y
+    extra_args: CONF_FILE=sensors_stmemsc.conf
+    min_ram: 32
+    platform_exclude:  frdm_kw41z
+    tags: drivers footprint
+    depends_on: adc spi
+  test_build_sensors_stmemsc_trigger:
+    build_only: true
+    extra_args: CONF_FILE=sensors_stmemsc_trigger.conf
+    min_ram: 32
+    platform_exclude:  frdm_kw41z
+    tags: drivers footprint
+    depends_on: adc spi
   test_clock:
     build_only: true
     platform_whitelist: arduino_101
@@ -61,4 +67,3 @@ tests:
     extra_args: CONF_FILE=gpio.conf
     min_ram: 32
     depends_on: gpio
-

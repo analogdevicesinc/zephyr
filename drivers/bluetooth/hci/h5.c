@@ -11,13 +11,12 @@
 
 #include <zephyr.h>
 
-#include <board.h>
 #include <init.h>
-#include <uart.h>
-#include <misc/util.h>
-#include <misc/byteorder.h>
-#include <misc/stack.h>
-#include <misc/printk.h>
+#include <drivers/uart.h>
+#include <sys/util.h>
+#include <sys/byteorder.h>
+#include <debug/stack.h>
+#include <sys/printk.h>
 #include <string.h>
 
 #include <bluetooth/bluetooth.h>
@@ -25,12 +24,13 @@
 #include <bluetooth/hci_driver.h>
 
 #define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_DEBUG_HCI_DRIVER)
+#define LOG_MODULE_NAME bt_driver
 #include "common/log.h"
 
 #include "../util.h"
 
-static BT_STACK_NOINIT(tx_stack, 256);
-static BT_STACK_NOINIT(rx_stack, 256);
+static K_THREAD_STACK_DEFINE(tx_stack, 256);
+static K_THREAD_STACK_DEFINE(rx_stack, 256);
 
 static struct k_thread tx_thread_data;
 static struct k_thread rx_thread_data;
@@ -711,7 +711,7 @@ static void h5_init(void)
 
 	h5.link_state = UNINIT;
 	h5.rx_state = START;
-	h5.tx_win = 4;
+	h5.tx_win = 4U;
 
 	/* TX thread */
 	k_fifo_init(&h5.tx_queue);
@@ -761,7 +761,7 @@ static const struct bt_hci_driver drv = {
 	.send		= h5_queue,
 };
 
-static int _bt_uart_init(struct device *unused)
+static int bt_uart_init(struct device *unused)
 {
 	ARG_UNUSED(unused);
 
@@ -776,4 +776,4 @@ static int _bt_uart_init(struct device *unused)
 	return 0;
 }
 
-SYS_INIT(_bt_uart_init, POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE);
+SYS_INIT(bt_uart_init, POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE);

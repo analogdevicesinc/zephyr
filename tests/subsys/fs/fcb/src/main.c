@@ -9,7 +9,7 @@
 #include <string.h>
 
 #include "fcb_test.h"
-#include "flash_map.h"
+#include <storage/flash_map.h>
 
 struct fcb test_fcb;
 
@@ -43,7 +43,7 @@ void fcb_test_wipe(void)
 	int rc;
 	const struct flash_area *fap;
 
-	rc = flash_area_open(2, &fap);
+	rc = flash_area_open(TEST_FCB_FLASH_AREA_ID, &fap);
 	zassert_true(rc == 0, "flash area open call failure");
 
 	for (i = 0; i < ARRAY_SIZE(test_fcb_sector); i++) {
@@ -162,9 +162,6 @@ void test_main(void)
 			 ztest_unit_test_setup_teardown(fcb_test_append_fill,
 							fcb_pretest_2_sectors,
 							teardown_nothing),
-			 ztest_unit_test_setup_teardown(fcb_test_reset,
-							fcb_pretest_2_sectors,
-							teardown_nothing),
 			 ztest_unit_test_setup_teardown(fcb_test_rotate,
 							fcb_pretest_2_sectors,
 							teardown_nothing),
@@ -173,6 +170,11 @@ void test_main(void)
 							teardown_nothing),
 			 ztest_unit_test_setup_teardown(fcb_test_last_of_n,
 							fcb_pretest_4_sectors,
+							teardown_nothing),
+			 /* Finally, run one that leaves behind a
+			  * flash.bin file without any random content */
+			 ztest_unit_test_setup_teardown(fcb_test_reset,
+							fcb_pretest_2_sectors,
 							teardown_nothing)
 			 );
 

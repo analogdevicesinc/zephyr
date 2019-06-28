@@ -23,7 +23,7 @@
 #include <string.h>
 #include <errno.h>
 
-#include <misc/printk.h>
+#include <sys/printk.h>
 #include <tc_util.h>
 #include <ztest.h>
 
@@ -462,7 +462,7 @@ const struct url_test url_tests[] = {
 	},
 
 	{
-	.name = "proxy emtpy hostname",
+	.name = "proxy empty hostname",
 	.url = "http:///fo",
 	.rv = 1 /* s_dead */
 	},
@@ -593,7 +593,7 @@ void test_parse_url(void)
 	int rv;
 
 	elements = ARRAY_SIZE(url_tests);
-	for (i = 0; i < elements; i++) {
+	for (i = 0U; i < elements; i++) {
 		test = &url_tests[i];
 		(void)memset(&u, 0, sizeof(u));
 

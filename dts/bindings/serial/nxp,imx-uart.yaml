@@ -3,9 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: iMX Uart
-id: nxp,imx-uart
 version: 0.1
 
 description: >
@@ -19,22 +18,10 @@ properties:
       constraint: "nxp,imx-uart"
 
     reg:
-      type: array
-      description: mmio register space
-      generation: define
       category: required
 
     interrupts:
-      type: array
       category: required
-      description: required interrupts
-      generation: define
-
-    pinctrl-\d+:
-      type: array
-      category: optional
-      description: pinmux information for RX, TX, CTS, RTS
-      generation: define
 
     clocks:
       type: array
@@ -53,5 +40,3 @@ properties:
      category: required
      description: Set the RDC permission for this peripheral
      generation: define
-
-...

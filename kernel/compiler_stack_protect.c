@@ -22,6 +22,7 @@
 #include <toolchain.h>
 #include <linker/sections.h>
 #include <kernel.h>
+#include <app_memory/app_memdomain.h>
 
 /**
  *
@@ -35,7 +36,7 @@ void FUNC_NORETURN _StackCheckHandler(void)
 {
 	/* Stack canary error is a software fatal condition; treat it as such.
 	 */
-	_k_except_reason(_NANO_ERR_STACK_CHK_FAIL);
+	z_except_reason(_NANO_ERR_STACK_CHK_FAIL);
 	CODE_UNREACHABLE;
 }
 
@@ -43,9 +44,13 @@ void FUNC_NORETURN _StackCheckHandler(void)
 
 /*
  * Symbol referenced by GCC compiler generated code for canary value.
- * The canary value gets initialized in _Cstart().
+ * The canary value gets initialized in z_cstart().
  */
-void __noinit *__stack_chk_guard;
+#ifdef CONFIG_USERSPACE
+K_APP_DMEM(z_libc_partition) uintptr_t __stack_chk_guard;
+#else
+__noinit uintptr_t __stack_chk_guard;
+#endif
 
 /**
  *

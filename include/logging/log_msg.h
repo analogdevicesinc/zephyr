@@ -7,7 +7,7 @@
 #define ZEPHYR_INCLUDE_LOGGING_LOG_MSG_H_
 
 #include <kernel.h>
-#include <atomic.h>
+#include <sys/atomic.h>
 #include <assert.h>
 #include <string.h>
 
@@ -22,19 +22,33 @@ extern "C" {
  * @{
  */
 
-/** @brief Maximum number of arguments in the standard log entry. */
-#define LOG_MAX_NARGS 9
+/** @brief Log argument type.
+ *
+ * Should preferably be equivalent to a native word size.
+ */
+typedef unsigned long log_arg_t;
+
+/** @brief Maximum number of arguments in the standard log entry.
+ *
+ * It is limited by 4 bit nargs field in the log message.
+ */
+#define LOG_MAX_NARGS 15
 
 /** @brief Number of arguments in the log entry which fits in one chunk.*/
+#ifdef CONFIG_64BIT
+#define LOG_MSG_NARGS_SINGLE_CHUNK 4
+#else
 #define LOG_MSG_NARGS_SINGLE_CHUNK 3
+#endif
 
 /** @brief Number of arguments in the head of extended standard log message..*/
-#define LOG_MSG_NARGS_HEAD_CHUNK (LOG_MSG_NARGS_SINGLE_CHUNK - 1)
+#define LOG_MSG_NARGS_HEAD_CHUNK \
+	(LOG_MSG_NARGS_SINGLE_CHUNK - (sizeof(void *)/sizeof(log_arg_t)))
 
 /** @brief Maximal amount of bytes in the hexdump entry which fits in one chunk.
  */
 #define LOG_MSG_HEXDUMP_BYTES_SINGLE_CHUNK \
-	(LOG_MSG_NARGS_SINGLE_CHUNK * sizeof(u32_t))
+	(LOG_MSG_NARGS_SINGLE_CHUNK * sizeof(log_arg_t))
 
 /** @brief Number of bytes in the first chunk of hexdump message if message
  *         consists of more than one chunk.
@@ -48,7 +62,7 @@ extern "C" {
 #define HEXDUMP_BYTES_CONT_MSG \
 	(sizeof(struct log_msg) - sizeof(void *))
 
-#define ARGS_CONT_MSG (HEXDUMP_BYTES_CONT_MSG / sizeof(u32_t))
+#define ARGS_CONT_MSG (HEXDUMP_BYTES_CONT_MSG / sizeof(log_arg_t))
 
 /** @brief Flag indicating standard log message. */
 #define LOG_MSG_TYPE_STD 0
@@ -62,10 +76,10 @@ extern "C" {
 	u16_t ext : 1
 
 /** @brief Number of bits used for storing length of hexdump log message. */
-#define LOG_MSG_HEXDUMP_LENGTH_BITS 13
+#define LOG_MSG_HEXDUMP_LENGTH_BITS 14
 
 /** @brief Maximum length of log hexdump message. */
-#define LOG_MSG_HEXDUMP_MAX_LENGTH ((1 << LOG_MSG_HEXDUMP_LENGTH_BITS) - 1)
+#define LOG_MSG_HEXDUMP_MAX_LENGTH (BIT(LOG_MSG_HEXDUMP_LENGTH_BITS) - 1)
 
 /** @brief Part of log message header identifying source and level. */
 struct log_msg_ids {
@@ -99,7 +113,6 @@ BUILD_ASSERT_MSG((sizeof(struct log_msg_std_hdr) == sizeof(u16_t)),
 /** Part of log message header specific to hexdump log message. */
 struct log_msg_hexdump_hdr {
 	COMMON_PARAM_HDR();
-	u16_t raw_string : 1;
 	u16_t length     : LOG_MSG_HEXDUMP_LENGTH_BITS;
 };
 
@@ -121,7 +134,7 @@ struct log_msg_hdr {
 
 /** @brief Data part of log message. */
 union log_msg_head_data {
-	u32_t args[LOG_MSG_NARGS_SINGLE_CHUNK];
+	log_arg_t args[LOG_MSG_NARGS_SINGLE_CHUNK];
 	u8_t bytes[LOG_MSG_HEXDUMP_BYTES_SINGLE_CHUNK];
 };
 
@@ -129,7 +142,7 @@ union log_msg_head_data {
 struct log_msg_ext_head_data {
 	struct log_msg_cont *next;
 	union log_msg_ext_head_data_data {
-		u32_t args[LOG_MSG_NARGS_HEAD_CHUNK];
+		log_arg_t args[LOG_MSG_NARGS_HEAD_CHUNK];
 		u8_t bytes[LOG_MSG_HEXDUMP_BYTES_HEAD_CHUNK];
 	} data;
 };
@@ -153,7 +166,7 @@ BUILD_ASSERT_MSG((sizeof(union log_msg_head_data) ==
 struct log_msg_cont {
 	struct log_msg_cont *next; /*!< Pointer to the next chunk. */
 	union log_msg_cont_data {
-		u32_t args[ARGS_CONT_MSG];
+		log_arg_t args[ARGS_CONT_MSG];
 		u8_t bytes[HEXDUMP_BYTES_CONT_MSG];
 	} payload;
 };
@@ -231,20 +244,6 @@ static inline u32_t log_msg_timestamp_get(struct log_msg *msg)
 	return msg->hdr.timestamp;
 }
 
-/** @brief Check if message is a raw string (see CONFIG_LOG_PRINTK).
- *
- * @param msg Message
- *
- * @retval true  Message contains raw string.
- * @retval false Message does not contain raw string.
- */
-static inline bool log_msg_is_raw_string(struct log_msg *msg)
-{
-	return (msg->hdr.params.generic.type == LOG_MSG_TYPE_HEXDUMP) &&
-	       (msg->hdr.params.hexdump.raw_string == 1);
-}
-
-
 /** @brief Check if message is of standard type.
  *
  * @param msg Message
@@ -270,9 +269,10 @@ u32_t log_msg_nargs_get(struct log_msg *msg);
  * @param msg		Standard log message.
  * @param arg_idx	Argument index.
  *
- * @return Argument value.
+ * @return Argument value or 0 if arg_idx exceeds number of arguments in the
+ *	   message.
  */
-u32_t log_msg_arg_get(struct log_msg *msg, u32_t arg_idx);
+log_arg_t log_msg_arg_get(struct log_msg *msg, u32_t arg_idx);
 
 
 /** @brief Gets pointer to the unformatted string from standard log message.
@@ -343,45 +343,15 @@ static inline union log_msg_chunk *log_msg_chunk_alloc(void)
  *
  *  @return Allocated chunk of NULL.
  */
-static inline struct log_msg *_log_msg_std_alloc(void)
+static inline struct log_msg *z_log_msg_std_alloc(void)
 {
 	struct  log_msg *msg = (struct  log_msg *)log_msg_chunk_alloc();
 
 	if (msg != NULL) {
 		/* all fields reset to 0, reference counter to 1 */
 		msg->hdr.ref_cnt = 1;
-		msg->hdr.params.raw = 0;
+		msg->hdr.params.raw = 0U;
 		msg->hdr.params.std.type = LOG_MSG_TYPE_STD;
-	}
-
-	return msg;
-}
-
-/** @brief Allocate chunk for extended standard log message.
- *
- *  @details Extended standard log message is used when number of arguments
- *           exceeds capacity of one chunk. Extended message consists of two
- *           chunks. Such approach is taken to optimize memory usage and
- *           performance assuming that log messages with more arguments
- *           (@ref LOG_MSG_NARGS_SINGLE_CHUNK) are less common.
- *
- *  @return Allocated chunk of NULL.
- */
-static inline struct log_msg *_log_msg_ext_std_alloc(void)
-{
-	struct log_msg_cont *cont;
-	struct  log_msg *msg = _log_msg_std_alloc();
-
-	if (msg != NULL) {
-		cont = (struct log_msg_cont *)log_msg_chunk_alloc();
-		if (cont == NULL) {
-			k_mem_slab_free(&log_msg_pool, (void **)&msg);
-			return NULL;
-		}
-
-		msg->hdr.params.generic.ext = 1;
-		msg->payload.ext.next = cont;
-		cont->next = NULL;
 	}
 
 	return msg;
@@ -397,7 +367,7 @@ static inline struct log_msg *_log_msg_ext_std_alloc(void)
  */
 static inline struct log_msg *log_msg_create_0(const char *str)
 {
-	struct log_msg *msg = _log_msg_std_alloc();
+	struct log_msg *msg = z_log_msg_std_alloc();
 
 	if (msg != NULL) {
 		msg->str = str;
@@ -420,13 +390,13 @@ static inline struct log_msg *log_msg_create_0(const char *str)
  *  @return Pointer to allocated head of the message or NULL.
  */
 static inline struct log_msg *log_msg_create_1(const char *str,
-					       u32_t arg1)
+					       log_arg_t arg1)
 {
-	struct  log_msg *msg = _log_msg_std_alloc();
+	struct  log_msg *msg = z_log_msg_std_alloc();
 
 	if (msg != NULL) {
 		msg->str = str;
-		msg->hdr.params.std.nargs = 1;
+		msg->hdr.params.std.nargs = 1U;
 		msg->payload.single.args[0] = arg1;
 	}
 
@@ -448,14 +418,14 @@ static inline struct log_msg *log_msg_create_1(const char *str,
  *  @return Pointer to allocated head of the message or NULL.
  */
 static inline struct log_msg *log_msg_create_2(const char *str,
-					       u32_t arg1,
-					       u32_t arg2)
+					       log_arg_t arg1,
+					       log_arg_t arg2)
 {
-	struct  log_msg *msg = _log_msg_std_alloc();
+	struct  log_msg *msg = z_log_msg_std_alloc();
 
 	if (msg != NULL) {
 		msg->str = str;
-		msg->hdr.params.std.nargs = 2;
+		msg->hdr.params.std.nargs = 2U;
 		msg->payload.single.args[0] = arg1;
 		msg->payload.single.args[1] = arg2;
 	}
@@ -479,15 +449,15 @@ static inline struct log_msg *log_msg_create_2(const char *str,
  *  @return Pointer to allocated head of the message or NULL.
  */
 static inline struct log_msg *log_msg_create_3(const char *str,
-					       u32_t arg1,
-					       u32_t arg2,
-					       u32_t arg3)
+					       log_arg_t arg1,
+					       log_arg_t arg2,
+					       log_arg_t arg3)
 {
-	struct  log_msg *msg = _log_msg_std_alloc();
+	struct  log_msg *msg = z_log_msg_std_alloc();
 
 	if (msg != NULL) {
 		msg->str = str;
-		msg->hdr.params.std.nargs = 3;
+		msg->hdr.params.std.nargs = 3U;
 		msg->payload.single.args[0] = arg1;
 		msg->payload.single.args[1] = arg2;
 		msg->payload.single.args[2] = arg3;
@@ -511,7 +481,7 @@ static inline struct log_msg *log_msg_create_3(const char *str,
  *  @return Pointer to allocated head of the message or NULL.
  */
 struct log_msg *log_msg_create_n(const char *str,
-				 u32_t *args,
+				 log_arg_t *args,
 				 u32_t nargs);
 
 /**

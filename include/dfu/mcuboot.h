@@ -30,6 +30,13 @@
 
 #define BOOT_IMG_VER_STRLEN_MAX 25  /* 255.255.65535.4294967295\0 */
 
+/* Trailer: */
+#define BOOT_MAX_ALIGN		8
+#define BOOT_MAGIC_SZ		16
+
+#define BOOT_TRAILER_IMG_STATUS_OFFS(bank_area) ((bank_area)->fa_size -\
+						  BOOT_MAGIC_SZ -\
+						  BOOT_MAX_ALIGN * 2)
 /**
  * @brief MCUboot image header representation for image version
  *
@@ -92,12 +99,10 @@ struct mcuboot_img_header {
 /**
  * @brief Read the MCUboot image header information from an image bank.
  *
- * This attempts to parse the image header, which must begin at offset
- * @a bank_offset from the beginning of the flash device used by
- * MCUboot.
+ * This attempts to parse the image header,
+ * From the start of the @a area_id image.
  *
- * @param bank_offset Offset of the image header from the start of the
- *                    flash device used by MCUboot to store firmware.
+ * @param area_id flash_area ID of image bank which stores the image.
  * @param header On success, the returned header information is available
  *               in this structure.
  * @param header_size Size of the header structure passed by the caller.
@@ -105,7 +110,7 @@ struct mcuboot_img_header {
  *                    necessary information, an error is returned.
  * @return Zero on success, a negative value on error.
  */
-int boot_read_bank_header(u32_t bank_offset,
+int boot_read_bank_header(u8_t area_id,
 			  struct mcuboot_img_header *header,
 			  size_t header_size);
 
@@ -145,7 +150,12 @@ int boot_write_img_confirmed(void);
  * @return a BOOT_SWAP_TYPE_[...] constant on success, negative errno code on
  * fail.
  */
-int boot_swap_type(void);
+int mcuboot_swap_type(void);
+
+
+/** Boot upgrade request modes */
+#define BOOT_UPGRADE_TEST       0
+#define BOOT_UPGRADE_PERMANENT  1
 
 /**
  * @brief Marks the image in slot 1 as pending. On the next reboot, the system
@@ -153,8 +163,8 @@ int boot_swap_type(void);
  *
  * @param permanent Whether the image should be used permanently or
  * only tested once:
- *   0=run image once, then confirm or revert.
- *   1=run image forever.
+ *   BOOT_UPGRADE_TEST=run image once, then confirm or revert.
+ *   BOOT_UPGRADE_PERMANENT=run image forever.
  * @return 0 on success, negative errno code on fail.
  */
 int boot_request_upgrade(int permanent);
@@ -162,9 +172,9 @@ int boot_request_upgrade(int permanent);
 /**
  * @brief Erase the image Bank.
  *
- * @param bank_offset address of the image bank
+ * @param area_id flash_area ID of image bank to be erased.
  * @return 0 on success, negative errno code on fail.
  */
-int boot_erase_img_bank(u32_t bank_offset);
+int boot_erase_img_bank(u8_t area_id);
 
 #endif  /* ZEPHYR_INCLUDE_DFU_MCUBOOT_H_ */

@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 #include <dt-bindings/gpio/gpio.h>
 
 / {
@@ -72,6 +74,7 @@
 				26 27 28 29 30 31 32 33 34 35 36 37 38 39>;
 			reg = <0x10012000 0x1000>;
 			reg-names = "control";
+			label = "gpio_0";
 			status = "disabled";
 			#gpio-cells = <2>;
 		};
@@ -81,15 +84,20 @@
 			interrupts = <52>;
 			reg = <0x10016000 0x1000>;
 			reg-names = "control";
+			label = "i2c_0";
 			status = "disabled";
+			#address-cells = <1>;
+			#size-cells = <0>;
 		};
 		plic: interrupt-controller@c000000 {
 			#interrupt-cells = <1>;
 			compatible = "riscv,plic0";
 			interrupt-controller;
 			interrupts-extended = <&hlic 11>;
-			reg = <0xc000000 0x4000000>;
-			reg-names = "control";
+			reg = <0xc000000 0x2000
+			       0xc002000 0x1fe000
+			       0xc200000 0x2000000>;
+			reg-names = "prio", "irq_en", "reg";
 			riscv,max-priority = <7>;
 			riscv,ndev = <52>;
 		};
@@ -114,7 +122,10 @@
 			interrupts = <40 41 42 43>;
 			reg = <0x10015000 0x1000>;
 			reg-names = "control";
+			label = "pwm_0";
 			status = "disabled";
+			sifive,compare-width = <8>;
+			#pwm-cells = <2>;
 		};
 		pwm1: pwm@10025000 {
 			compatible = "sifive,pwm0";
@@ -122,7 +133,10 @@
 			interrupts = <44 45 46 47>;
 			reg = <0x10025000 0x1000>;
 			reg-names = "control";
+			label = "pwm_1";
 			status = "disabled";
+			sifive,compare-width = <16>;
+			#pwm-cells = <2>;
 		};
 		pwm2: pwm@10035000 {
 			compatible = "sifive,pwm0";
@@ -130,7 +144,10 @@
 			interrupts = <48 49 50 51>;
 			reg = <0x10035000 0x1000>;
 			reg-names = "control";
+			label = "pwm_2";
 			status = "disabled";
+			sifive,compare-width = <16>;
+			#pwm-cells = <2>;
 		};
 		modeselect: rom@1000 {
 			compatible = "sifive,modeselect0";
@@ -157,6 +174,7 @@
 			interrupts = <4>;
 			reg = <0x10023000 0x1000>;
 			reg-names = "control";
+			label = "uart_1";
 			status = "disabled";
 		};
 		spi0: spi@10014000 {
@@ -165,7 +183,10 @@
 			interrupts = <5>;
 			reg = <0x10014000 0x1000 0x20000000 0x20000000>;
 			reg-names = "control", "mem";
+			label = "spi_0";
 			status = "disabled";
+			#address-cells = <1>;
+			#size-cells = <0>;
 		};
 		spi1: spi@10024000 {
 			compatible = "sifive,spi0";
@@ -173,7 +194,10 @@
 			interrupts = <6>;
 			reg = <0x10024000 0x1000>;
 			reg-names = "control";
+			label = "spi_1";
 			status = "disabled";
+			#address-cells = <1>;
+			#size-cells = <0>;
 		};
 		spi2: spi@10034000 {
 			compatible = "sifive,spi0";
@@ -181,7 +205,10 @@
 			interrupts = <7>;
 			reg = <0x10034000 0x1000>;
 			reg-names = "control";
+			label = "spi_2";
 			status = "disabled";
+			#address-cells = <1>;
+			#size-cells = <0>;
 		};
 		teststatus: teststatus@4000 {
 			compatible = "sifive,test0";

@@ -11,14 +11,18 @@
  */
 
 #include <zephyr.h>
-#include <misc/printk.h>
+#include <sys/printk.h>
 #include <device.h>
-#include <pwm.h>
+#include <drivers/pwm.h>
 
-#if defined(CONFIG_SOC_QUARK_SE_C1000) || defined(CONFIG_SOC_QUARK_D2000)
+#if defined(CONFIG_SOC_QUARK_SE_C1000)
 #define PWM_DEV CONFIG_PWM_QMSI_DEV_NAME
-#elif defined(CONFIG_PWM_NRF5_SW)
+#elif defined(CONFIG_SOC_FAMILY_NRF)
+#if defined(CONFIG_PWM_NRF5_SW)
 #define PWM_DEV CONFIG_PWM_NRF5_SW_0_DEV_NAME
+#else
+#define PWM_DEV DT_NORDIC_NRF_PWM_PWM_0_LABEL
+#endif  /* CONFIG_PWM_NRF5_SW */
 #else
 #error "Choose supported board or add new board for the application"
 #endif
@@ -27,7 +31,7 @@
  * Unlike pulse width, period is not a critical parameter for
  * motor control. 20ms is commonly used.
  */
-#define PERIOD (USEC_PER_SEC / 50)
+#define PERIOD (USEC_PER_SEC / 50U)
 
 /* all in micro second */
 #define STEPSIZE 100
@@ -38,7 +42,7 @@ void main(void)
 {
 	struct device *pwm_dev;
 	u32_t pulse_width = MINPULSEWIDTH;
-	u8_t dir = 0;
+	u8_t dir = 0U;
 
 	printk("PWM demo app-servo control\n");
 
@@ -56,7 +60,7 @@ void main(void)
 
 		if (dir) {
 			if (pulse_width <= MINPULSEWIDTH) {
-				dir = 0;
+				dir = 0U;
 				pulse_width = MINPULSEWIDTH;
 			} else {
 				pulse_width -= STEPSIZE;
@@ -65,7 +69,7 @@ void main(void)
 			pulse_width += STEPSIZE;
 
 			if (pulse_width >= MAXPULSEWIDTH) {
-				dir = 1;
+				dir = 1U;
 				pulse_width = MAXPULSEWIDTH;
 			}
 		}

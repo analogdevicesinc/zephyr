@@ -7,8 +7,8 @@
 #include <zephyr.h>
 
 #include <device.h>
-#include <rtc.h>
-#include <misc/printk.h>
+#include <drivers/rtc.h>
+#include <sys/printk.h>
 
 #define ALARM (RTC_ALARM_SECOND)
 
@@ -28,8 +28,8 @@ void main(void)
 	printk("Test RTC driver\n");
 	rtc_dev = device_get_binding(CONFIG_RTC_0_NAME);
 
-	config.init_val = 0;
-	config.alarm_enable = 1;
+	config.init_val = 0U;
+	config.alarm_enable = 1U;
 	config.alarm_val = ALARM;
 	config.cb_fn = test_rtc_interrupt_fn;
 

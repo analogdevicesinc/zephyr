@@ -21,10 +21,8 @@
  * Note: Currently support mcuboot only.
  * */
 
-#include <board.h>
 #include <toolchain.h>
 #include <linker/sections.h>
-#include <drivers/system_timer.h>
 
 _ASM_FILE_PROLOGUE
 

@@ -1,8 +1,7 @@
 sample:
   description: Demonstration of the lpd880x LED driver
   name: LPD880x sample
-  platforms: all
 tests:
-  test:
+  sample.driver.led_lpd8806:
     platform_whitelist: 96b_carbon
-    tags: samples
+    tags: LED

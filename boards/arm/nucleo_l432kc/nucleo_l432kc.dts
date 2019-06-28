@@ -13,6 +13,7 @@
 
 	chosen {
 		zephyr,console = &usart2;
+		zephyr,shell-uart = &usart2;
 		zephyr,sram = &sram0;
 		zephyr,flash = &flash0;
 	};
@@ -40,30 +41,30 @@
 	current-speed = <115200>;
 	pinctrl-0 = <&usart2_pins_b>;
 	pinctrl-names = "default";
-	status = "ok";
+	status = "okay";
 };
 
 &spi1 {
-	status = "ok";
+	status = "okay";
 };
 
 &timers2 {
-	status = "ok";
+	status = "okay";
 
 	pwm {
-		status = "ok";
+		status = "okay";
 	};
 };
 
 &can1 {
 	pinctrl-0 = <&can_pins_a>;
 	pinctrl-names = "default";
-	bus-speed = <250000>;
-	status = "ok";
+	bus-speed = <125000>;
+	status = "okay";
 };
 
 &rtc {
-	status = "ok";
+	status = "okay";
 };
 
 &flash0 {
@@ -72,14 +73,12 @@
 		#address-cells = <1>;
 		#size-cells = <1>;
 
-#if defined(CONFIG_FS_FLASH_STORAGE_PARTITION)
 		/*
-		 * Reserve the final 16 KiB for the application.
+		 * Reserve the final 16 KiB for file system partition
 		 */
 		storage_partition: partition@3c000 {
 			label = "storage";
 			reg = <0x0003c000 0x00004000>;
 		};
-#endif
 	};
 };

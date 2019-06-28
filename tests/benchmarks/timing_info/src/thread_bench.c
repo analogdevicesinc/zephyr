@@ -20,6 +20,7 @@ char sline[256];
 
 /* location of the time stamps*/
 extern u32_t __read_swap_end_time_value;
+extern u64_t __temp_start_swap_time;
 extern u64_t __common_var_swap_end_time;
 
 volatile u64_t thread_abort_end_time;
@@ -47,7 +48,7 @@ K_THREAD_STACK_DEFINE(my_stack_area_0, STACK_SIZE);
 struct k_thread my_thread;
 struct k_thread my_thread_0;
 
-u32_t __read_swap_end_time_value_test = 1;
+u32_t __read_swap_end_time_value_test = 1U;
 u64_t dummy_time;
 u64_t start_time;
 u64_t test_end_time;
@@ -98,7 +99,7 @@ void test_thread_entry(void *p, void *p1, void *p2)
 
 void thread_swap_test(void *p1, void *p2, void *p3)
 {
-	__read_swap_end_time_value = 1;
+	__read_swap_end_time_value = 1U;
 	TIMING_INFO_PRE_READ();
 	thread_abort_start_time = TIMING_INFO_OS_GET_TIME();
 	k_thread_abort(_current);
@@ -143,7 +144,13 @@ void system_thread_bench(void)
 	k_sleep(1);
 	thread_abort_end_time = (__common_var_swap_end_time);
 	__end_swap_time = __common_var_swap_end_time;
-
+#if defined(CONFIG_X86) || defined(CONFIG_X86_64)
+	__start_swap_time = __temp_start_swap_time;
+	/* In the rest of ARCHes read_timer_start_of_swap() has already
+	 * registered the time-stamp of the start of context-switch in
+	 * __start_swap_time.
+	 */
+#endif
 	u32_t total_swap_cycles = __end_swap_time - __start_swap_time;
 
 	/* Interrupt latency*/
@@ -272,17 +279,18 @@ void thread_suspend_test(void *p1, void *p2, void *p3)
 void heap_malloc_free_bench(void)
 {
 	/* heap malloc*/
-	u64_t heap_malloc_start_time = 0;
-	u64_t heap_malloc_end_time = 0;
+	u64_t heap_malloc_start_time = 0U;
+	u64_t heap_malloc_end_time = 0U;
 
 	/* heap free*/
-	u64_t heap_free_start_time = 0;
-	u64_t heap_free_end_time = 0;
+	u64_t heap_free_start_time = 0U;
+	u64_t heap_free_end_time = 0U;
 
 	s32_t count = 0;
-	u32_t sum_malloc = 0;
-	u32_t sum_free = 0;
+	u32_t sum_malloc = 0U;
+	u32_t sum_free = 0U;
 
+	k_sleep(10);
 	while (count++ != 100) {
 		TIMING_INFO_PRE_READ();
 		heap_malloc_start_time = TIMING_INFO_OS_GET_TIME();

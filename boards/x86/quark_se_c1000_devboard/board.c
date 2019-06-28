@@ -5,23 +5,22 @@
  */
 
 #include <kernel.h>
-#include "board.h"
-#include <uart.h>
+#include <drivers/uart.h>
 #include <device.h>
 #include <init.h>
 
 #if defined(CONFIG_IEEE802154_CC2520)
 
 #include <ieee802154/cc2520.h>
-#include <gpio.h>
+#include <drivers/gpio.h>
 
 static struct cc2520_gpio_configuration cc2520_gpios[CC2520_GPIO_IDX_MAX] = {
-	{ .dev = NULL, .pin = CC2520_GPIO_VREG_EN, },
-	{ .dev = NULL, .pin = CC2520_GPIO_RESET, },
-	{ .dev = NULL, .pin = CC2520_GPIO_FIFO, },
-	{ .dev = NULL, .pin = CC2520_GPIO_CCA, },
-	{ .dev = NULL, .pin = CC2520_GPIO_SFD, },
-	{ .dev = NULL, .pin = CC2520_GPIO_FIFOP, },
+	{ .dev = NULL, .pin = DT_INST_0_TI_CC2520_VREG_EN_GPIOS_PIN, },
+	{ .dev = NULL, .pin = DT_INST_0_TI_CC2520_RESET_GPIOS_PIN, },
+	{ .dev = NULL, .pin = DT_INST_0_TI_CC2520_FIFO_GPIOS_PIN, },
+	{ .dev = NULL, .pin = DT_INST_0_TI_CC2520_CCA_GPIOS_PIN, },
+	{ .dev = NULL, .pin = DT_INST_0_TI_CC2520_SFD_GPIOS_PIN, },
+	{ .dev = NULL, .pin = DT_INST_0_TI_CC2520_FIFOP_GPIOS_PIN, },
 };
 
 struct cc2520_gpio_configuration *cc2520_configure_gpios(void)
@@ -32,59 +31,37 @@ struct cc2520_gpio_configuration *cc2520_configure_gpios(void)
 				  GPIO_INT_ACTIVE_HIGH | GPIO_INT_DEBOUNCE);
 	struct device *gpio;
 
-	gpio = device_get_binding(CONFIG_IEEE802154_CC2520_GPIO_1_NAME);
+	gpio = device_get_binding(DT_INST_0_TI_CC2520_VREG_EN_GPIOS_CONTROLLER);
 	gpio_pin_configure(gpio, cc2520_gpios[CC2520_GPIO_IDX_VREG_EN].pin,
 			   flags_noint_out);
+	cc2520_gpios[CC2520_GPIO_IDX_VREG_EN].dev = gpio;
+
+	gpio = device_get_binding(DT_INST_0_TI_CC2520_RESET_GPIOS_CONTROLLER);
 	gpio_pin_configure(gpio, cc2520_gpios[CC2520_GPIO_IDX_RESET].pin,
 			   flags_noint_out);
-
-	cc2520_gpios[CC2520_GPIO_IDX_VREG_EN].dev = gpio;
 	cc2520_gpios[CC2520_GPIO_IDX_RESET].dev = gpio;
 
-	gpio = device_get_binding(CONFIG_IEEE802154_CC2520_GPIO_0_NAME);
+	gpio = device_get_binding(DT_INST_0_TI_CC2520_SFD_GPIOS_CONTROLLER);
 	gpio_pin_configure(gpio, cc2520_gpios[CC2520_GPIO_IDX_SFD].pin,
 			   flags_int_in);
+	cc2520_gpios[CC2520_GPIO_IDX_SFD].dev = gpio;
+
+	gpio = device_get_binding(DT_INST_0_TI_CC2520_FIFOP_GPIOS_CONTROLLER);
 	gpio_pin_configure(gpio, cc2520_gpios[CC2520_GPIO_IDX_FIFOP].pin,
 			   flags_int_in);
+	cc2520_gpios[CC2520_GPIO_IDX_FIFOP].dev = gpio;
+
+	gpio = device_get_binding(DT_INST_0_TI_CC2520_FIFO_GPIOS_CONTROLLER);
 	gpio_pin_configure(gpio, cc2520_gpios[CC2520_GPIO_IDX_FIFO].pin,
 			   flags_noint_in);
+	cc2520_gpios[CC2520_GPIO_IDX_FIFO].dev = gpio;
+
+	gpio = device_get_binding(DT_INST_0_TI_CC2520_CCA_GPIOS_CONTROLLER);
 	gpio_pin_configure(gpio, cc2520_gpios[CC2520_GPIO_IDX_CCA].pin,
 			   flags_noint_in);
-
-	cc2520_gpios[CC2520_GPIO_IDX_FIFOP].dev = gpio;
-	cc2520_gpios[CC2520_GPIO_IDX_FIFO].dev = gpio;
-	cc2520_gpios[CC2520_GPIO_IDX_SFD].dev = gpio;
 	cc2520_gpios[CC2520_GPIO_IDX_CCA].dev = gpio;
 
 	return cc2520_gpios;
 }
 
 #endif /* CONFIG_IEEE802154_CC2520 */
-
-#if defined(CONFIG_IEEE802154_CC1200)
-
-#include <ieee802154/cc1200.h>
-#include <gpio.h>
-
-static struct cc1200_gpio_configuration cc1200_gpios[CC1200_GPIO_IDX_MAX] = {
-	{ .dev = NULL, .pin = CC1200_GPIO_GPIO0, },
-};
-
-struct cc1200_gpio_configuration *cc1200_configure_gpios(void)
-{
-	const int flags_int_in = (GPIO_DIR_IN | GPIO_INT |
-				  GPIO_INT_EDGE |
-				  GPIO_INT_DOUBLE_EDGE |
-				  GPIO_INT_DEBOUNCE);
-	struct device *gpio;
-
-	gpio = device_get_binding(CONFIG_IEEE802154_CC1200_GPIO_0_NAME);
-	gpio_pin_configure(gpio, cc1200_gpios[CC1200_GPIO_IDX_GPIO0].pin,
-			   flags_int_in);
-
-	cc1200_gpios[CC1200_GPIO_IDX_GPIO0].dev = gpio;
-
-	return cc1200_gpios;
-}
-
-#endif /* CONFIG_IEEE802154_CC1200 */

@@ -39,10 +39,10 @@ static void mdio_bus_disable(Gmac *gmac)
 /* Wait PHY operation complete. */
 static int mdio_bus_wait(Gmac *gmac)
 {
-	u32_t retries = 100;  /* will wait up to 1 s */
+	u32_t retries = 100U;  /* will wait up to 1 s */
 
 	while (!(gmac->GMAC_NSR & GMAC_NSR_IDLE))   {
-		if (retries-- == 0) {
+		if (retries-- == 0U) {
 			LOG_ERR("timeout");
 			return -ETIMEDOUT;
 		}
@@ -109,7 +109,7 @@ static int phy_write(const struct phy_sam_gmac_dev *phy, u8_t reg_addr,
 static int phy_soft_reset(const struct phy_sam_gmac_dev *phy)
 {
 	u32_t phy_reg;
-	u32_t retries = 12;
+	u32_t retries = 12U;
 	int retval;
 
 	/* Issue a soft reset */
@@ -123,7 +123,7 @@ static int phy_soft_reset(const struct phy_sam_gmac_dev *phy)
 	 * up to 0.5 s.
 	 */
 	do {
-		if (retries-- == 0) {
+		if (retries-- == 0U) {
 			return -ETIMEDOUT;
 		}
 
@@ -223,7 +223,7 @@ int phy_sam_gmac_auto_negotiate(const struct phy_sam_gmac_dev *phy,
 
 	/* Wait for the auto-negotiation process to complete */
 	do {
-		if (retries-- == 0) {
+		if (retries-- == 0U) {
 			retval = -ETIMEDOUT;
 			goto auto_negotiate_exit;
 		}

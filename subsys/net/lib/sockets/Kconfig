@@ -15,6 +15,7 @@ if NET_SOCKETS
 
 config NET_SOCKETS_POSIX_NAMES
 	bool "Standard POSIX names for Sockets API"
+	depends on !POSIX_API
 	help
 	  By default, Sockets API function are prefixed with ``zsock_`` to avoid
 	  namespacing issues. If this option is enabled, they will be provided
@@ -29,6 +30,16 @@ config NET_SOCKETS_POLL_MAX
 	help
 	  Maximum number of entries supported for poll() call.
 
+config NET_SOCKETS_DNS_TIMEOUT
+	int "Timeout value in milliseconds for DNS queries"
+	default 2000
+	range 1000 300000
+	depends on DNS_RESOLVER
+	help
+	  This variable specifies time in milliseconds after which DNS
+	  query is considered timeout. Minimum timeout is 1 second and
+	  maximum timeout is 5 min.
+
 config NET_SOCKETS_SOCKOPT_TLS
 	bool "Enable TCP TLS socket option support [EXPERIMENTAL]"
 	select TLS_CREDENTIALS
@@ -39,7 +50,7 @@ config NET_SOCKETS_SOCKOPT_TLS
 config NET_SOCKETS_ENABLE_DTLS
 	bool "Enable DTLS socket support [EXPERIMENTAL]"
 	depends on NET_SOCKETS_SOCKOPT_TLS
-	select TLS_DTLS
+	select MBEDTLS_DTLS
 	help
 	  Enable DTLS socket support. By default only TLS over TCP is supported.
 
@@ -95,6 +106,31 @@ config NET_SOCKETS_OFFLOAD
 	  provide between multiple network interfaces.
 	  See NET_OFFLOAD for a more deeply integrated approach which offloads
 	  from the net_context() API within the Zephyr IP stack.
+
+config NET_SOCKETS_PACKET
+	bool "Enable packet socket support"
+	depends on NET_L2_ETHERNET
+	help
+	  This is an initial version of packet socket support (special type
+	  raw socket). Packets are passed to and from the device driver
+	  without any changes in the packet headers. It's API caller
+	  responsibility to provide all the headers (e.g L2, L3 and so on)
+	  while sending. While receiving, packets (including all the headers)
+	  will be feed to sockets as it as from the driver.
+
+config NET_SOCKETS_CAN
+	bool "Enable socket CAN support [EXPERIMENTAL]"
+	select NET_L2_CANBUS
+	help
+	  The value depends on your network needs.
+
+config NET_SOCKETS_CAN_RECEIVERS
+	int "How many simultaneous SocketCAN receivers are allowed"
+	default 1
+	depends on NET_SOCKETS_CAN
+	help
+	  The value tells how many sockets can receive data from same
+	  Socket-CAN interface.
 
 module = NET_SOCKETS
 module-dep = NET_LOG

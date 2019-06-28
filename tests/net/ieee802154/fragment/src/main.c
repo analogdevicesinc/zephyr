@@ -6,10 +6,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define LOG_MODULE_NAME net_test
-#define NET_LOG_LEVEL CONFIG_NET_L2_IEEE802154_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_REGISTER(net_test, CONFIG_NET_L2_IEEE802154_LOG_LEVEL);
 
 #include <zephyr.h>
+#include <ztest.h>
 #include <linker/sections.h>
 
 #include <zephyr/types.h>
@@ -19,10 +20,11 @@
 #include <errno.h>
 #include <device.h>
 #include <init.h>
-#include <misc/printk.h>
+#include <sys/printk.h>
 #include <net/net_core.h>
 #include <net/net_pkt.h>
 #include <net/net_ip.h>
+#include <net/dummy.h>
 
 #include <tc_util.h>
 
@@ -132,6 +134,21 @@ static const char user_data[] =
 		"0123456789012345678901234567890123456789"
 		"0123456789012345678901234567890123456789"
 		"0123456789012345678901234567890123456789"
+		"0123456789012345678901234567890123456789"
+		"0123456789012345678901234567890123456789"
+		"0123456789012345678901234567890123456789"
+		"0123456789012345678901234567890123456789"
+		"0123456789012345678901234567890123456789"
+		"0123456789012345678901234567890123456789"
+		"0123456789012345678901234567890123456789"
+		"0123456789012345678901234567890123456789"
+		"0123456789012345678901234567890123456789"
+		"0123456789012345678901234567890123456789"
+		"0123456789012345678901234567890123456789"
+		"0123456789012345678901234567890123456789"
+		"0123456789012345678901234567890123456789"
+		"0123456789012345678901234567890123456789"
+		"0123456789012345678901234567890123456789"
 		"0123456789012345678901234567890123456789";
 
 struct net_fragment_data {
@@ -144,10 +161,6 @@ struct net_fragment_data {
 
 int net_fragment_dev_init(struct device *dev)
 {
-	struct net_fragment_context *net_fragment_context = dev->driver_data;
-
-	net_fragment_context = net_fragment_context;
-
 	return 0;
 }
 
@@ -158,14 +171,13 @@ static void net_fragment_iface_init(struct net_if *iface)
 	net_if_set_link_addr(iface, mac, 8, NET_LINK_IEEE802154);
 }
 
-static int tester_send(struct net_if *iface, struct net_pkt *pkt)
+static int tester_send(struct device *dev, struct net_pkt *pkt)
 {
-	net_pkt_unref(pkt);
-	return NET_OK;
+	return 0;
 }
 
-static struct net_if_api net_fragment_if_api = {
-	.init = net_fragment_iface_init,
+static struct dummy_api net_fragment_if_api = {
+	.iface_api.init = net_fragment_iface_init,
 	.send = tester_send,
 };
 
@@ -177,9 +189,9 @@ NET_DEVICE_INIT(net_fragment_test, "net_fragment_test",
 
 static bool compare_data(struct net_pkt *pkt, struct net_fragment_data *data)
 {
-	struct net_buf *frag;
-	u8_t bytes, pos, compare, offset = 0;
 	int remaining = data->len;
+	u32_t bytes, pos, compare, offset;
+	struct net_buf *frag;
 
 	if (net_pkt_get_len(pkt) != (NET_IPV6UDPH_LEN + remaining)) {
 		printk("mismatch lengths, expected %d received %zd\n",
@@ -195,11 +207,10 @@ static bool compare_data(struct net_pkt *pkt, struct net_fragment_data *data)
 		return false;
 	}
 
-	pos = 0;
+	pos = 0U;
 	offset = NET_IPV6UDPH_LEN;
 
 	while (remaining > 0 && frag) {
-
 		bytes = frag->len - offset;
 		compare = remaining > bytes ? bytes : remaining;
 
@@ -211,7 +222,7 @@ static bool compare_data(struct net_pkt *pkt, struct net_fragment_data *data)
 		pos += compare;
 		remaining -= compare;
 		frag = frag->frags;
-		offset = 0;
+		offset = 0U;
 	}
 
 	return true;
@@ -220,61 +231,59 @@ static bool compare_data(struct net_pkt *pkt, struct net_fragment_data *data)
 static struct net_pkt *create_pkt(struct net_fragment_data *data)
 {
 	struct net_pkt *pkt;
-	struct net_buf *frag;
-	u8_t bytes, pos;
+	struct net_buf *buf;
+	u32_t bytes, pos;
 	u16_t len;
 	int remaining;
 
-	pkt = net_pkt_get_reserve_tx(0, K_FOREVER);
+	pkt = net_pkt_alloc_on_iface(net_if_get_default(), K_FOREVER);
 	if (!pkt) {
 		return NULL;
 	}
 
-	net_pkt_set_ll_reserve(pkt, 0);
-	net_pkt_set_iface(pkt, net_if_get_default());
 	net_pkt_set_ip_hdr_len(pkt, NET_IPV6H_LEN);
 
-	frag = net_pkt_get_frag(pkt, K_FOREVER);
-	if (!frag) {
+	buf = net_pkt_get_frag(pkt, K_FOREVER);
+	if (!buf) {
 		net_pkt_unref(pkt);
 		return NULL;
 	}
 
-	memcpy(frag->data, (u8_t *) data, NET_IPV6UDPH_LEN);
-	net_buf_add(frag, NET_IPV6UDPH_LEN);
+	memcpy(buf->data, (u8_t *) data, NET_IPV6UDPH_LEN);
+	net_buf_add(buf, NET_IPV6UDPH_LEN);
 
-	pos = 0;
+	pos = 0U;
 	remaining = data->len;
 
 	len = NET_UDPH_LEN + remaining;
 	/* length is not set in net_fragment_data data pointer, calculate and set
 	 * in ipv6, udp and in data pointer too (it's required in comparison) */
-	frag->data[4] = len >> 8;
-	frag->data[5] = (u8_t) len;
-	frag->data[44] = len >> 8;
-	frag->data[45] = (u8_t) len;
+	buf->data[4] = len >> 8;
+	buf->data[5] = (u8_t) len;
+	buf->data[44] = len >> 8;
+	buf->data[45] = (u8_t) len;
 
 	data->ipv6.len = htons(len);
 	data->udp.len = htons(len);
 
 	while (remaining > 0) {
 		u8_t copy;
-		bytes = net_buf_tailroom(frag);
+		bytes = net_buf_tailroom(buf);
 		copy = remaining > bytes ? bytes : remaining;
-		memcpy(net_buf_add(frag, copy), &user_data[pos], copy);
+		memcpy(net_buf_add(buf, copy), &user_data[pos], copy);
 
 		pos += bytes;
 		remaining -= bytes;
 
-		if (net_buf_tailroom(frag) - (bytes - copy)) {
+		if (net_buf_tailroom(buf) - (bytes - copy)) {
 			net_pkt_unref(pkt);
 			return NULL;
 		}
 
-		net_pkt_frag_add(pkt, frag);
+		net_pkt_frag_add(pkt, buf);
 
 		if (remaining > 0) {
-			frag = net_pkt_get_frag(pkt, K_FOREVER);
+			buf = net_pkt_get_frag(pkt, K_FOREVER);
 		}
 	}
 
@@ -417,12 +426,24 @@ static struct net_fragment_data test_data_8 = {
 	.iphc = false
 };
 
-static int test_fragment(struct net_fragment_data *data)
+static u8_t frame_buffer_data[IEEE802154_MTU - 2];
+
+static struct net_buf frame_buf = {
+	.data = frame_buffer_data,
+	.size = IEEE802154_MTU - 2,
+	.frags = NULL,
+	.__buf = frame_buffer_data,
+};
+
+static bool test_fragment(struct net_fragment_data *data)
 {
 	struct net_pkt *rxpkt = NULL;
-	int result = TC_FAIL;
+	struct net_pkt *f_pkt = NULL;
+	int result = false;
+	struct ieee802154_fragment_ctx ctx;
+	struct net_buf *buf, *dfrag;
 	struct net_pkt *pkt;
-	struct net_buf *frag, *dfrag;
+	int hdr_diff;
 
 	pkt = create_pkt(data);
 	if (!pkt) {
@@ -432,44 +453,81 @@ static int test_fragment(struct net_fragment_data *data)
 
 #if DEBUG > 0
 	printk("length before compression %zd\n", net_pkt_get_len(pkt));
-	net_hexdump_frags("before-compression", pkt, false);
+	net_pkt_hexdump(pkt, "before-compression");
 #endif
 
-	if (!net_6lo_compress(pkt, data->iphc,
-			      ieee802154_fragment)) {
+	hdr_diff = net_6lo_compress(pkt, data->iphc);
+	if (hdr_diff < 0) {
 		TC_PRINT("compression failed\n");
 		goto end;
 	}
 
-#if DEBUG > 0
-	printk("length after compression and fragmentation %zd\n",
-	       net_pkt_get_len(pkt));
-	net_hexdump_frags("after-compression", pkt, false);
-#endif
+	if (!ieee802154_fragment_is_needed(pkt, 0)) {
+		f_pkt = pkt;
+		pkt = NULL;
 
-	frag = pkt->frags;
+		goto reassemble;
+	}
 
-	while (frag) {
-		rxpkt = net_pkt_get_reserve_rx(0, K_FOREVER);
-		if (!rxpkt) {
+	f_pkt = net_pkt_alloc(K_FOREVER);
+	if (!f_pkt) {
+		goto end;
+	}
+
+	ieee802154_fragment_ctx_init(&ctx, pkt, hdr_diff, data->iphc);
+	frame_buf.len = 0U;
+
+	buf = pkt->buffer;
+	while (buf) {
+		ieee802154_fragment(&ctx, &frame_buf, data->iphc);
+		buf = ctx.buf;
+
+		dfrag = net_pkt_get_frag(f_pkt, K_FOREVER);
+		if (!dfrag) {
 			goto end;
 		}
 
-		net_pkt_set_ll_reserve(rxpkt, 0);
+		memcpy(dfrag->data, frame_buf.data, frame_buf.len);
+		dfrag->len = frame_buf.len;
+
+		net_pkt_frag_add(f_pkt, dfrag);
+
+		frame_buf.len = 0U;
+	}
+
+	net_pkt_unref(pkt);
+	pkt = NULL;
+
+reassemble:
+
+#if DEBUG > 0
+	printk("length after compression and fragmentation %zd\n",
+	       net_pkt_get_len(f_pkt));
+	net_pkt_hexdump(f_pkt, "after-compression");
+#endif
+
+	buf = f_pkt->buffer;
+	while (buf) {
+		rxpkt = net_pkt_rx_alloc(K_FOREVER);
+		if (!rxpkt) {
+			goto end;
+		}
 
 		dfrag = net_pkt_get_frag(rxpkt, K_FOREVER);
 		if (!dfrag) {
 			goto end;
 		}
 
-		memcpy(dfrag->data, frag->data, frag->len);
-		dfrag->len = frag->len;
+		memcpy(dfrag->data, buf->data, buf->len);
+		dfrag->len = buf->len;
 
 		net_pkt_frag_add(rxpkt, dfrag);
 
+		net_pkt_set_overwrite(rxpkt, true);
+
 		switch (ieee802154_reassemble(rxpkt)) {
 		case NET_OK:
-			frag = frag->frags;
+			buf = buf->frags;
 			break;
 		case NET_CONTINUE:
 			goto compare;
@@ -483,53 +541,98 @@ compare:
 #if DEBUG > 0
 	printk("length after reassembly and uncompression %zd\n",
 	       net_pkt_get_len(rxpkt));
-	net_hexdump_frags("after-uncompression", rxpkt, false);
+	net_pkt_hexdump(rxpkt, "after-uncompression");
 #endif
 
 	if (compare_data(rxpkt, data)) {
-		result = TC_PASS;
+		result = true;
 	}
 
 end:
-	net_pkt_unref(rxpkt);
-	net_pkt_unref(pkt);
+	if (pkt) {
+		net_pkt_unref(pkt);
+	}
+
+	if (f_pkt) {
+		net_pkt_unref(f_pkt);
+	}
+
+	if (rxpkt) {
+		net_pkt_unref(rxpkt);
+	}
 
 	return result;
 }
 
-/* tests names are based on traffic class, flow label, source address mode
- * (sam), destination address mode (dam), based on udp source and destination
- * ports compressible type.
- */
-static const struct {
-	const char *name;
-	struct net_fragment_data *data;
-} tests[] = {
-	{ "test_fragment_sam00_dam00", &test_data_1},
-	{ "test_fragment_sam01_dam01", &test_data_2},
-	{ "test_fragment_sam10_dam10", &test_data_3},
-	{ "test_fragment_sam00_m1_dam00", &test_data_4},
-	{ "test_fragment_sam01_m1_dam01", &test_data_5},
-	{ "test_fragment_sam10_m1_dam10", &test_data_6},
-	{ "test_fragment_ipv6_dispatch_small", &test_data_7},
-	{ "test_fragment_ipv6_dispatch_big", &test_data_8},
-};
-
-void main(void)
+static void test_fragment_sam00_dam00(void)
 {
-	int count, pass;
-	k_thread_priority_set(k_current_get(), K_PRIO_COOP(7));
+	bool ret = test_fragment(&test_data_1);
 
-	for (count = 0, pass = 0; count < ARRAY_SIZE(tests); count++) {
-		TC_START(tests[count].name);
+	zassert_true(ret, NULL);
+}
 
-		if (test_fragment(tests[count].data)) {
-			TC_END(FAIL, "failed\n");
-		} else {
-			TC_END(PASS, "passed\n");
-			pass++;
-		}
-	}
+static void test_fragment_sam01_dam01(void)
+{
+	bool ret = test_fragment(&test_data_2);
 
-	TC_END_REPORT(((pass != ARRAY_SIZE(tests)) ? TC_FAIL : TC_PASS));
+	zassert_true(ret, NULL);
+}
+
+static void test_fragment_sam10_dam10(void)
+{
+	bool ret = test_fragment(&test_data_3);
+
+	zassert_true(ret, NULL);
+}
+
+static void test_fragment_sam00_m1_dam00(void)
+{
+	bool ret = test_fragment(&test_data_4);
+
+	zassert_true(ret, NULL);
+}
+
+static void test_fragment_sam01_m1_dam01(void)
+{
+	bool ret = test_fragment(&test_data_5);
+
+	zassert_true(ret, NULL);
+}
+
+static void test_fragment_sam10_m1_dam10(void)
+{
+	bool ret = test_fragment(&test_data_6);
+
+	zassert_true(ret, NULL);
+}
+
+static void test_fragment_ipv6_dispatch_small(void)
+{
+	bool ret = test_fragment(&test_data_7);
+
+	zassert_true(ret, NULL);
+}
+
+static void test_fragment_ipv6_dispatch_big(void)
+{
+	bool ret = test_fragment(&test_data_8);
+
+	zassert_true(ret, NULL);
+}
+
+
+void test_main(void)
+{
+	ztest_test_suite(ieee802154_fragment,
+			 ztest_unit_test(test_fragment_sam00_dam00),
+			 ztest_unit_test(test_fragment_sam01_dam01),
+			 ztest_unit_test(test_fragment_sam10_dam10),
+			 ztest_unit_test(test_fragment_sam00_m1_dam00),
+			 ztest_unit_test(test_fragment_sam01_m1_dam01),
+			 ztest_unit_test(test_fragment_sam10_m1_dam10),
+			 ztest_unit_test(test_fragment_ipv6_dispatch_small),
+			 ztest_unit_test(test_fragment_ipv6_dispatch_big)
+		);
+
+	ztest_run_test_suite(ieee802154_fragment);
 }

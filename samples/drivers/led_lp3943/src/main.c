@@ -6,14 +6,15 @@
 
 #include <device.h>
 #include <errno.h>
-#include <led.h>
-#include <misc/util.h>
+#include <drivers/led.h>
+#include <sys/util.h>
 #include <zephyr.h>
 
-#define SYS_LOG_LEVEL SYS_LOG_LEVEL_DEBUG
-#include <logging/sys_log.h>
+#define LOG_LEVEL CONFIG_LOG_DEFAULT_LEVEL
+#include <logging/log.h>
+LOG_MODULE_REGISTER(app);
 
-#define LED_DEV_NAME CONFIG_LP3943_DEV_NAME
+#define LED_DEV_NAME DT_INST_0_TI_LP3943_LABEL
 #define NUM_LEDS 16
 
 #define DELAY_TIME K_MSEC(1000)
@@ -25,9 +26,9 @@ void main(void)
 
 	led_dev = device_get_binding(LED_DEV_NAME);
 	if (led_dev) {
-		SYS_LOG_INF("Found LED device %s", LED_DEV_NAME);
+		LOG_INF("Found LED device %s", LED_DEV_NAME);
 	} else {
-		SYS_LOG_ERR("LED device %s not found", LED_DEV_NAME);
+		LOG_ERR("LED device %s not found", LED_DEV_NAME);
 		return;
 	}
 
@@ -36,7 +37,7 @@ void main(void)
 	 * one until it reaches the end and turns off LEDs in reverse order.
 	 */
 
-	SYS_LOG_INF("Displaying the pattern");
+	LOG_INF("Displaying the pattern");
 
 	while (1) {
 		/* Turn on LEDs one by one */

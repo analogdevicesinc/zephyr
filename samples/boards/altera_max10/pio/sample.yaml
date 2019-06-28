@@ -3,7 +3,6 @@ sample:
     PIO soft IP block.
   name: Nios-II Parallel Input/Output (PIO)
 tests:
-  test:
-    build_only: true
+  sample.board.altera_max10.pio:
     platform_whitelist: altera_max10
-    tags: samples pio
+    tags: pio

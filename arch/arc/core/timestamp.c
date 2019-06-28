@@ -15,9 +15,6 @@
 #include <toolchain.h>
 #include <kernel_structs.h>
 
-extern volatile u64_t _sys_clock_tick_count;
-extern int sys_clock_hw_cycles_per_tick;
-
 /*
  * @brief Read 64-bit timestamp value
  *
@@ -26,17 +23,17 @@ extern int sys_clock_hw_cycles_per_tick;
  *
  * @return 64-bit time stamp value
  */
-u64_t _tsc_read(void)
+u64_t z_tsc_read(void)
 {
 	unsigned int key;
 	u64_t t;
 	u32_t count;
 
 	key = irq_lock();
-	t = (u64_t)_sys_clock_tick_count;
-	count = _arc_v2_aux_reg_read(_ARC_V2_TMR0_COUNT);
+	t = (u64_t)z_tick_get();
+	count = z_arc_v2_aux_reg_read(_ARC_V2_TMR0_COUNT);
 	irq_unlock(key);
-	t *= (u64_t)sys_clock_hw_cycles_per_tick;
+	t *= (u64_t)sys_clock_hw_cycles_per_tick();
 	t += (u64_t)count;
 	return t;
 }

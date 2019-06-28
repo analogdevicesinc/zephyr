@@ -1,5 +1,7 @@
-set_ifndef(BOARD_FLASH_RUNNER nios2)
-set_ifndef(BOARD_DEBUG_RUNNER nios2)
+# SPDX-License-Identifier: Apache-2.0
+
+board_set_flasher_ifnset(nios2)
+board_set_debugger_ifnset(nios2)
 
 board_finalize_runner_args(nios2
   # TODO: merge this script into nios2.py

@@ -1,6 +1,5 @@
----
+
 title: STM32 USART
-id: st,stm32-usart
 version: 0.1
 
 description: >
@@ -14,14 +13,13 @@ properties:
       constraint: "st,stm32-usart"
 
     reg:
-      type: array
-      description: mmio register space
-      generation: define
       category: required
 
     interrupts:
-      type: array
       category: required
-      description: required interrupts
+
+    hw-flow-control:
+      type: boolean
+      category: optional
+      description: Set to enable RTS/CTS flow control at boot time
       generation: define
-...

@@ -14,7 +14,10 @@
 #include <tc_util.h>
 #include <ksched.h>
 #include "timing_info.h"
+#include <app_memory/app_memdomain.h>
 
+K_APPMEM_PARTITION_DEFINE(bench_ptn);
+struct k_mem_domain bench_domain;
 
 extern char sline[256];
 extern u64_t __end_drop_to_usermode_time;
@@ -22,14 +25,14 @@ extern u64_t __end_drop_to_usermode_time;
 u32_t drop_to_user_mode_end_time, drop_to_user_mode_start_time;
 u32_t user_thread_creation_end_time, user_thread_creation_start_time;
 
-__kernel struct k_thread my_thread_user;
+struct k_thread my_thread_user;
 K_THREAD_STACK_EXTERN(my_stack_area);
 K_THREAD_STACK_EXTERN(my_stack_area_0);
 
 
 /******************************************************************************/
 /* syscall needed to read timer value when in user space */
-u32_t _impl_userspace_read_timer_value(void)
+u32_t z_impl_userspace_read_timer_value(void)
 {
 	TIMING_INFO_PRE_READ();
 	return TIMING_INFO_GET_TIMER_VALUE();
@@ -50,6 +53,13 @@ void validation_overhead(void);
 
 void userspace_bench(void)
 {
+	struct k_mem_partition *parts[] = {
+		&bench_ptn
+	};
+
+	k_mem_domain_init(&bench_domain, ARRAY_SIZE(parts), parts);
+	k_mem_domain_add_thread(&bench_domain, k_current_get());
+
 	drop_to_user_mode();
 
 	user_thread_creation();
@@ -57,13 +67,12 @@ void userspace_bench(void)
 	syscall_overhead();
 
 	validation_overhead();
-
 }
 /******************************************************************************/
 
 void test_drop_to_user_mode_1(void *p1, void *p2, void *p3)
 {
-	volatile u32_t dummy = 100;
+	volatile u32_t dummy = 100U;
 
 	dummy++;
 }
@@ -79,7 +88,7 @@ void drop_to_user_mode_thread(void *p1, void *p2, void *p3)
 void drop_to_user_mode(void)
 {
 #ifdef SysTick
-	/* Reset the counter so that a interrupt doesn't happen inbetween
+	/* Reset the counter so that a interrupt doesn't happen between
 	 * the benchmark test
 	 */
 	SysTick->VAL = 0;
@@ -146,9 +155,10 @@ void user_thread_creation(void)
 
 /******************************************************************************/
 /* dummy syscalls creation */
-u32_t syscall_overhead_start_time, syscall_overhead_end_time;
+K_APP_BMEM(bench_ptn) u32_t syscall_overhead_start_time,
+	syscall_overhead_end_time;
 
-int _impl_k_dummy_syscall(void)
+int z_impl_k_dummy_syscall(void)
 {
 	return 0;
 }
@@ -200,7 +210,7 @@ u32_t validation_overhead_obj_init_end_time;
 u32_t validation_overhead_obj_start_time;
 u32_t validation_overhead_obj_end_time;
 
-int _impl_validation_overhead_syscall(void)
+int z_impl_validation_overhead_syscall(void)
 {
 	return 0;
 }
@@ -235,8 +245,7 @@ void validation_overhead_user_thread(void *p1, void *p2, void *p3)
 
 void validation_overhead(void)
 {
-
-	k_thread_access_grant(k_current_get(), &test_sema, NULL);
+	k_thread_access_grant(k_current_get(), &test_sema);
 
 
 	k_thread_create(&my_thread_user, my_stack_area, STACK_SIZE,

@@ -22,8 +22,8 @@ _ASM_FILE_PROLOGUE
 
 GTEXT(__svc)
 GTEXT(__pendsv)
-GTEXT(_do_kernel_oops)
-GTEXT(_arm_do_syscall)
+GTEXT(z_do_kernel_oops)
+GTEXT(z_arm_do_syscall)
 GDATA(_k_neg_eagain)
 
 GDATA(_kernel)
@@ -45,25 +45,15 @@ SECTION_FUNC(TEXT, __pendsv)
 
 #ifdef CONFIG_TRACING
     /* Register the context switch */
-    push {lr}
-    bl z_sys_trace_thread_switched_in
+    push {r0, lr}
+    bl z_sys_trace_thread_switched_out
 #if defined(CONFIG_ARMV6_M_ARMV8_M_BASELINE)
-    pop {r0}
-    mov lr, r0
+    pop {r0, r1}
+    mov lr, r1
 #else
-    pop {lr}
+    pop {r0, lr}
 #endif /* CONFIG_ARMV6_M_ARMV8_M_BASELINE */
 #endif /* CONFIG_TRACING */
-
-    /* protect the kernel state while we play with the thread lists */
-#if defined(CONFIG_ARMV6_M_ARMV8_M_BASELINE)
-    cpsid i
-#elif defined(CONFIG_ARMV7_M_ARMV8_M_MAINLINE)
-    movs.n r0, #_EXC_IRQ_DEFAULT_PRIO
-    msr BASEPRI, r0
-#else
-#error Unknown ARM architecture
-#endif /* CONFIG_ARMV6_M_ARMV8_M_BASELINE */
 
     /* load _kernel into r1 and current k_thread into r2 */
     ldr r1, =_kernel
@@ -90,9 +80,36 @@ SECTION_FUNC(TEXT, __pendsv)
 #elif defined(CONFIG_ARMV7_M_ARMV8_M_MAINLINE)
     stmia r0, {v1-v8, ip}
 #ifdef CONFIG_FP_SHARING
+    /* Assess whether switched-out thread had been using the FP registers. */
+    ldr r0, =0x10 /* EXC_RETURN.F_Type Mask */
+    tst lr, r0    /* EXC_RETURN & EXC_RETURN.F_Type_Msk */
+    beq out_fp_active
+    /* FP context inactive: clear FP state */
+    ldr r0, [r2, #_thread_offset_to_mode]
+    bic r0, #0x4 /* _current->arch.mode &= ~(CONTROL_FPCA_Msk) */
+    b out_fp_endif
+
+out_fp_active:
+    /* FP context active: set FP state and store callee-saved registers */
     add r0, r2, #_thread_offset_to_preempt_float
     vstmia r0, {s16-s31}
+    ldr r0, [r2, #_thread_offset_to_mode]
+    orrs r0, r0, #0x4 /* _current->arch.mode |= CONTROL_FPCA_Msk */
+
+out_fp_endif:
+    str r0, [r2, #_thread_offset_to_mode]
 #endif /* CONFIG_FP_SHARING */
+#else
+#error Unknown ARM architecture
+#endif /* CONFIG_ARMV6_M_ARMV8_M_BASELINE */
+
+    /* Protect the kernel state while we play with the thread lists */
+#if defined(CONFIG_ARMV6_M_ARMV8_M_BASELINE)
+    cpsid i
+#elif defined(CONFIG_ARMV7_M_ARMV8_M_MAINLINE)
+    movs.n r0, #_EXC_IRQ_DEFAULT_PRIO
+    msr BASEPRI, r0
+    isb /* Make the effect of disabling interrupts be realized immediately */
 #else
 #error Unknown ARM architecture
 #endif /* CONFIG_ARMV6_M_ARMV8_M_BASELINE */
@@ -110,14 +127,14 @@ SECTION_FUNC(TEXT, __pendsv)
     /* _kernel is still in r1 */
 
     /* fetch the thread to run from the ready queue cache */
-    ldr r2, [r1, _kernel_offset_to_ready_q_cache]
+    ldr r2, [r1, #_kernel_offset_to_ready_q_cache]
 
     str r2, [r1, #_kernel_offset_to_current]
 
     /*
      * Clear PendSV so that if another interrupt comes in and
-     * decides, with the new kernel state baseed on the new thread
-     * being context-switched in, that it needs to reschedules, it
+     * decides, with the new kernel state based on the new thread
+     * being context-switched in, that it needs to reschedule, it
      * will take, but that previously pended PendSVs do not take,
      * since they were based on the previous kernel state and this
      * has been handled.
@@ -178,25 +195,45 @@ _thread_irq_disabled:
     msr BASEPRI, r0
 
 #ifdef CONFIG_FP_SHARING
+    /* Assess whether switched-in thread had been using the FP registers. */
+    ldr r0, [r2, #_thread_offset_to_mode]
+    tst r0, #0x04 /* thread.arch.mode & CONTROL.FPCA Msk */
+    bne in_fp_active
+    /* FP context inactive for swapped-in thread:
+     * - reset FPSCR to 0
+     * - set EXC_RETURN.F_Type (prevents FP frame un-stacking when returning
+     *   from pendSV)
+     */
+    movs.n r3, #0
+    vmsr fpscr, r3
+    orrs lr, lr, #0x10 /* EXC_RETURN & EXC_RETURN.F_Type_Msk */
+    b in_fp_endif
+
+in_fp_active:
+    /* FP context active:
+     * - clear EXC_RETURN.F_Type
+     * - FPSCR and caller-saved registers will be restored automatically
+     * - restore callee-saved FP registers
+     */
+    bic lr, #0x10 /* EXC_RETURN | (~EXC_RETURN.F_Type_Msk) */
     add r0, r2, #_thread_offset_to_preempt_float
     vldmia r0, {s16-s31}
+in_fp_endif:
+    /* Clear CONTROL.FPCA that may have been set by FP instructions */
+    mrs r3, CONTROL
+    bic r3, #0x4 /* CONTROL.FPCA Msk */
+    msr CONTROL, r3
+    isb
 #endif
 
-#ifdef CONFIG_MPU_STACK_GUARD
-    /* r2 contains k_thread */
-    add r0, r2, #0
-    push {r2, lr}
-    blx configure_mpu_stack_guard
-    pop {r2, lr}
-#endif /* CONFIG_MPU_STACK_GUARD */
-
-#ifdef CONFIG_BUILTIN_STACK_GUARD
-    /* r2 contains k_thread */
-    add r0, r2, #0
-    push {r2, lr}
-    blx configure_builtin_stack_guard
-    pop {r2, lr}
-#endif /* CONFIG_BUILTIN_STACK_GUARD */
+#if defined (CONFIG_ARM_MPU)
+    /* Re-program dynamic memory map */
+    push {r2,lr}
+    ldr r0, =_kernel
+    ldr r0, [r0, #_kernel_offset_to_current]
+    bl z_arch_configure_dynamic_mpu_regions
+    pop {r2,lr}
+#endif
 
 #ifdef CONFIG_USERSPACE
     /* restore mode */
@@ -212,16 +249,6 @@ _thread_irq_disabled:
      */
     isb
 
-    /* r2 contains k_thread */
-    add r0, r2, #0
-    push {r2, lr}
-    blx configure_mpu_mem_domain
-    pop {r2, lr}
-
-    add r0, r2, #0
-    push {r2, lr}
-    blx configure_mpu_user_context
-    pop {r2, lr}
 #endif
 
     /* load callee-saved + psp from thread */
@@ -231,26 +258,61 @@ _thread_irq_disabled:
 #error Unknown ARM architecture
 #endif /* CONFIG_ARMV6_M_ARMV8_M_BASELINE */
 
+#ifdef CONFIG_BUILTIN_STACK_GUARD
+    /* clear stack pointer limit before setting the PSP */
+    mov r0, #0
+    msr PSPLIM, r0
+#endif /* CONFIG_BUILTIN_STACK_GUARD */
+
     msr PSP, ip
 
-#ifdef CONFIG_EXECUTION_BENCHMARKING
-    stm sp!,{r0-r3} /* Save regs r0 to r4 on stack */
-    push {lr}
-    bl read_timer_end_of_swap
+#ifdef CONFIG_BUILTIN_STACK_GUARD
+    /* r2 contains k_thread */
+    add r0, r2, #0
+    push {r2, lr}
+    bl configure_builtin_stack_guard
+    pop {r2, lr}
+#endif /* CONFIG_BUILTIN_STACK_GUARD */
 
+#ifdef CONFIG_EXECUTION_BENCHMARKING
+    push {r0, lr}
+    bl read_timer_end_of_swap
 #if defined(CONFIG_ARMV6_M_ARMV8_M_BASELINE)
-    pop {r3}
-    mov lr,r3
+    pop {r0, r1}
+    mov lr,r1
 #else
-    pop {lr}
+    pop {r0, lr}
 #endif /* CONFIG_ARMV6_M_ARMV8_M_BASELINE */
-    ldm sp!,{r0-r3} /* Load back regs ro to r4 */
+
 #endif /* CONFIG_EXECUTION_BENCHMARKING */
+
+#ifdef CONFIG_TRACING
+    /* Register the context switch */
+    push {r0, lr}
+    bl z_sys_trace_thread_switched_in
+#if defined(CONFIG_ARMV6_M_ARMV8_M_BASELINE)
+    pop {r0, r1}
+    mov lr, r1
+#else
+    pop {r0, lr}
+#endif
+#endif /* CONFIG_TRACING */
 
     /* exc return */
     bx lr
 
 #if defined(CONFIG_ARMV6_M_ARMV8_M_BASELINE)
+
+/**
+ *
+ * @brief Service call handler
+ *
+ * The service call (svc) is used in the following occasions:
+ * - IRQ offloading
+ * - Kernel run-time exceptions
+ *
+ * @return N/A
+ */
 SECTION_FUNC(TEXT, __svc)
     /* Use EXC_RETURN state to find out if stack frame is on the
      * MSP or PSP
@@ -282,32 +344,34 @@ _stack_frame_endif:
     cmp r1, #2
     beq _oops
 
-#if CONFIG_IRQ_OFFLOAD
-    push {lr}
-    blx _irq_do_offload  /* call C routine which executes the offload */
-    pop {r3}
-    mov lr, r3
-#endif
+#if defined(CONFIG_IRQ_OFFLOAD)
+    push {r0, lr}
+    bl z_irq_do_offload  /* call C routine which executes the offload */
+    pop {r0, r1}
+    mov lr, r1
+#endif /* CONFIG_IRQ_OFFLOAD */
 
     /* exception return is done in _IntExit() */
     b _IntExit
 
 _oops:
-    push {lr}
-    blx _do_kernel_oops
-    pop {pc}
+    push {r0, lr}
+    bl z_do_kernel_oops
+    pop {r0, pc}
 
 #elif defined(CONFIG_ARMV7_M_ARMV8_M_MAINLINE)
+
 /**
  *
  * @brief Service call handler
  *
- * The service call (svc) is only used in __swap() to enter handler mode so we
- * can go through the PendSV exception to perform a context switch.
+ * The service call (svc) is used in the following occasions:
+ * - IRQ offloading
+ * - Kernel run-time exceptions
+ * - System Calls (User mode)
  *
  * @return N/A
  */
-
 SECTION_FUNC(TEXT, __svc)
     tst lr, #0x4    /* did we come from thread mode ? */
     ite eq  /* if zero (equal), came from handler mode */
@@ -315,7 +379,7 @@ SECTION_FUNC(TEXT, __svc)
         mrsne r0, PSP   /* thread mode, stack frame is on PSP */
 
     ldr r1, [r0, #24]   /* grab address of PC from stack frame */
-    /* SVC is a two-byte instruction, point to it and read  encoding */
+    /* SVC is a two-byte instruction, point to it and read encoding */
     ldrh r1, [r1, #-2]
 
    /*
@@ -323,12 +387,12 @@ SECTION_FUNC(TEXT, __svc)
     * 0: Unused
     * 1: irq_offload (if configured)
     * 2: kernel panic or oops (software generated fatal exception)
-    * 3: System call
+    * 3: System call (if user mode supported)
     * Planned implementation of system calls for memory protection will
     * expand this case.
     */
     ands r1, #0xff
-#if CONFIG_USERSPACE
+#if defined(CONFIG_USERSPACE)
     mrs r2, CONTROL
 
     cmp r1, #3
@@ -346,27 +410,27 @@ SECTION_FUNC(TEXT, __svc)
     cmp r1, #2
     beq _oops
 
-#if CONFIG_IRQ_OFFLOAD
-    push {lr}
-    blx _irq_do_offload  /* call C routine which executes the offload */
-    pop {lr}
+#if defined(CONFIG_IRQ_OFFLOAD)
+    push {r0, lr}
+    bl z_irq_do_offload  /* call C routine which executes the offload */
+    pop {r0, lr}
 
     /* exception return is done in _IntExit() */
     b _IntExit
 #endif
 
 _oops:
-    push {lr}
-    blx _do_kernel_oops
-    pop {pc}
+    push {r0, lr}
+    bl z_do_kernel_oops
+    pop {r0, pc}
 
-#if CONFIG_USERSPACE
+#if defined(CONFIG_USERSPACE)
     /*
      * System call will setup a jump to the _do_arm_syscall function
      * when the SVC returns via the bx lr.
      *
      * There is some trickery involved here because we have to preserve
-     * the original LR value so that we can return back to the caller of
+     * the original PC value so that we can return back to the caller of
      * the SVC.
      *
      * On SVC exeption, the stack looks like the following:
@@ -384,8 +448,8 @@ _oops:
      */
 _do_syscall:
     ldr r8, [r0, #24]   /* grab address of PC from stack frame */
-    ldr r1, =_arm_do_syscall
-    str r1, [r0, #24]   /* overwrite the LR to point to _arm_do_syscall */
+    ldr r1, =z_arm_do_syscall
+    str r1, [r0, #24]   /* overwrite the PC to point to z_arm_do_syscall */
 
     /* validate syscall limit, only set priv mode if valid */
     ldr ip, =K_SYSCALL_LIMIT
@@ -397,6 +461,14 @@ _do_syscall:
     ldr r6, =K_SYSCALL_BAD
 
 valid_syscall_id:
+    push {r0, r1}
+    ldr r0, =_kernel
+    ldr r0, [r0, #_kernel_offset_to_current]
+    ldr r1, [r0, #_thread_offset_to_mode]
+    bic r1, #1
+    /* Store (privileged) mode in thread's mode state variable */
+    str r1, [r0, #_thread_offset_to_mode]
+    dsb
     /* set mode to privileged, r2 still contains value from CONTROL */
     bic r2, #1
     msr CONTROL, r2
@@ -406,8 +478,9 @@ valid_syscall_id:
      * instructions with the previous privilege.
      */
     isb
+    pop {r0, r1}
 
-    /* return from SVC to the modified LR - _arm_do_syscall */
+    /* return from SVC to the modified LR - z_arm_do_syscall */
     bx lr
 #endif
 

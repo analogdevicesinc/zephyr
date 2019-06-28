@@ -15,6 +15,10 @@
 #include <init.h>
 #include <soc.h>
 #include <cortex_m/exc.h>
+#include <logging/log.h>
+
+#define LOG_LEVEL CONFIG_SOC_LOG_LEVEL
+LOG_MODULE_REGISTER(soc);
 
 /* Power Manager Controller */
 
@@ -71,7 +75,7 @@ static ALWAYS_INLINE void clock_init(void)
 	 * by a previous program i.e. bootloader
 	 */
 
-	if (PMC->PMC_SR & PMC_SR_MOSCRCS) {
+	if (!(PMC->CKGR_MOR & CKGR_MOR_MOSCSEL_Msk)) {
 		/* Start the external crystal oscillator */
 		PMC->CKGR_MOR =   CKGR_MOR_KEY_PASSWD
 				/* We select maximum setup time.
@@ -100,17 +104,17 @@ static ALWAYS_INLINE void clock_init(void)
 		while (!(PMC->PMC_SR & PMC_SR_MOSCSELS)) {
 			;
 		}
+	}
 
-		/* Turn off RC OSC, not used any longer, to save power */
-		PMC->CKGR_MOR =   CKGR_MOR_KEY_PASSWD
-				| CKGR_MOR_MOSCSEL
-				| CKGR_MOR_MOSCXTST(0xFFu)
-				| CKGR_MOR_MOSCXTEN;
+	/* Turn off RC OSC, not used any longer, to save power */
+	PMC->CKGR_MOR =   CKGR_MOR_KEY_PASSWD
+			| CKGR_MOR_MOSCSEL
+			| CKGR_MOR_MOSCXTST(0xFFu)
+			| CKGR_MOR_MOSCXTEN;
 
-		/* Wait for RC OSC to be turned off */
-		while (PMC->PMC_SR & PMC_SR_MOSCRCS) {
-			;
-		}
+	/* Wait for RC OSC to be turned off */
+	while (PMC->PMC_SR & PMC_SR_MOSCRCS) {
+		;
 	}
 
 #ifdef CONFIG_SOC_ATMEL_SAME70_WAIT_MODE
@@ -227,8 +231,11 @@ static int atmel_same70_init(struct device *arg)
 
 	key = irq_lock();
 
-	/* Clear all faults */
-	_ClearFaults();
+	SCB_EnableICache();
+
+	if (!(SCB->CCR & SCB_CCR_DC_Msk)) {
+		SCB_EnableDCache();
+	}
 
 	/*
 	 * Set FWS (Flash Wait State) value before increasing Master Clock
@@ -247,6 +254,12 @@ static int atmel_same70_init(struct device *arg)
 	NMI_INIT();
 
 	irq_unlock(key);
+
+	/* Check that the CHIP CIDR matches the HAL one */
+	if (CHIPID->CHIPID_CIDR != CHIP_CIDR) {
+		LOG_WRN("CIDR mismatch: chip = 0x%08x vs HAL = 0x%08x",
+			(u32_t)CHIPID->CHIPID_CIDR, (u32_t)CHIP_CIDR);
+	}
 
 	return 0;
 }

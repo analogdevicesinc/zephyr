@@ -5,4 +5,7 @@ arch: arm
 toolchain:
   - zephyr
   - gnuarmemb
+  - xtools
 ram: 8
+supported:
+  - watchdog

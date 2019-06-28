@@ -1,7 +1,8 @@
 sample:
   name: SPI FRAM Module Sample
 tests:
-  test:
-    platform_whitelist: arduino_101
-    tags: apps
+  sample.driver.spi_fujitsu_fram:
+    tags: drivers fram
     harness: fram
+    depends_on: spi
+    filter: CONFIG_SPI_1

@@ -3,22 +3,24 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: SPI Base Structure
-id: spi
 version: 0.1
 
 description: >
     This binding gives the base structures for all SPI devices
 
+inherits:
+    !include base.yaml
+
 child:
     bus: spi
 
 properties:
-    compatible:
-      type: string
-      category: required
-      description: compatible strings
+    clock-frequency:
+      type: int
+      category: optional
+      description: Clock frequency the SPI peripheral is being driven at
       generation: define
     "#address-cells":
       type: int
@@ -29,10 +31,7 @@ properties:
       category: required
       description: should be 0.
     label:
-      type: string
       category: required
-      description: Human readable string describing the device (used by Zephyr for API name)
-      generation: define
     clocks:
       type: array
       category: optional
@@ -41,7 +40,4 @@ properties:
     cs-gpios:
       type: compound
       category: optional
-      generation: define, use-prop-name
-
-
-...
+      generation: define

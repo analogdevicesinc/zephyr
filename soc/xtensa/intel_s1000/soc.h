@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018 Intel Corporation
+ * Copyright (c) 2019 Intel Corporation
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -28,20 +28,26 @@
 #define INTR_CNTL_IRQ_NUM(_irq) \
 	(((_irq >> INTR_CNTL_IRQ_NUM_SHIFT) & INTR_CNTL_IRQ_NUM_MASK) - 1)
 
+/* Macro that aggregates the tri-level interrupt into an IRQ number */
+#define SOC_AGGREGATE_IRQ(ictl_irq, cavs_irq, core_irq)		\
+	(((core_irq & XTENSA_IRQ_NUM_MASK) << XTENSA_IRQ_NUM_SHIFT) |	\
+	(((cavs_irq) & CAVS_IRQ_NUM_MASK) << CAVS_IRQ_NUM_SHIFT) |	\
+	(((ictl_irq) & INTR_CNTL_IRQ_NUM_MASK) << INTR_CNTL_IRQ_NUM_SHIFT))
+
+#define CAVS_L2_AGG_INT_LEVEL2			DT_CAVS_ICTL_0_IRQ
+#define CAVS_L2_AGG_INT_LEVEL3			DT_CAVS_ICTL_1_IRQ
+#define CAVS_L2_AGG_INT_LEVEL4			DT_CAVS_ICTL_2_IRQ
+#define CAVS_L2_AGG_INT_LEVEL5			DT_CAVS_ICTL_3_IRQ
+
 #define IOAPIC_EDGE				0
 #define IOAPIC_HIGH				0
 
 /* DW interrupt controller */
-#define DW_ICTL_IRQ_CAVS_OFFSET			CAVS_IRQ_NUMBER(DW_ICTL_IRQ)
+#define DW_ICTL_IRQ_CAVS_OFFSET			CAVS_IRQ_NUMBER(DT_DW_ICTL_IRQ)
 #define DW_ICTL_NUM_IRQS			9
 
 /* GPIO */
-#define GPIO_DW_0_BASE_ADDR			0x00080C00
-#define GPIO_DW_0_BITS				32
 #define GPIO_DW_PORT_0_INT_MASK			0
-#define GPIO_DW_0_IRQ_FLAGS			0
-#define GPIO_DW_0_IRQ				0x00040706
-#define GPIO_DW_0_IRQ_ICTL_OFFSET		INTR_CNTL_IRQ_NUM(GPIO_DW_0_IRQ)
 
 /* low power DMACs */
 #define LP_GP_DMA_SIZE				0x00001000
@@ -62,6 +68,8 @@
 #define CAVS_DMA1_OWNERSHIP_REG			(0x00071A62)
 #define CAVS_DMA2_OWNERSHIP_REG			(0x00071A64)
 
+#define DMA_HANDSHAKE_DMIC_RXA			0
+#define DMA_HANDSHAKE_DMIC_RXB			1
 #define DMA_HANDSHAKE_SSP0_TX			2
 #define DMA_HANDSHAKE_SSP0_RX			3
 #define DMA_HANDSHAKE_SSP1_TX			4
@@ -71,16 +79,40 @@
 #define DMA_HANDSHAKE_SSP3_TX			8
 #define DMA_HANDSHAKE_SSP3_RX			9
 
+/* DMA Channel Allocation
+ * FIXME: I2S Driver assigns channel in Kconfig.
+ * Perhaps DTS is a better option
+ */
+#define DMIC_DMA_DEV_NAME			CONFIG_DMA_0_NAME
+#define DMA_CHANNEL_DMIC_RXA			0
+#define DMA_CHANNEL_DMIC_RXB			1
+
 /* I2S */
-#define I2S0_CAVS_IRQ				0x00000010
-#define I2S1_CAVS_IRQ				0x00000110
-#define I2S2_CAVS_IRQ				0x00000210
-#define I2S3_CAVS_IRQ				0x00000310
+#define I2S_CAVS_IRQ(i2s_num)			\
+	SOC_AGGREGATE_IRQ(0, (i2s_num) + 1, CAVS_L2_AGG_INT_LEVEL5)
+
+#define I2S0_CAVS_IRQ				I2S_CAVS_IRQ(0)
+#define I2S1_CAVS_IRQ				I2S_CAVS_IRQ(1)
+#define I2S2_CAVS_IRQ				I2S_CAVS_IRQ(2)
+#define I2S3_CAVS_IRQ				I2S_CAVS_IRQ(3)
 
 #define SSP_SIZE				0x0000200
 #define SSP_BASE(x)				(0x00077000 + (x) * SSP_SIZE)
 #define SSP_MN_DIV_SIZE				(8)
-#define SSP_MN_DIV_BASE(x)		(0x00078D00 + ((x) * SSP_MN_DIV_SIZE))
+#define SSP_MN_DIV_BASE(x)			\
+	(0x00078D00 + ((x) * SSP_MN_DIV_SIZE))
+
+/* MCLK control */
+#define SOC_MCLK_DIV_CTRL_BASE			0x78C00
+#define SOC_NUM_MCLK_OUTPUTS			2
+#define SOC_MDIVCTRL_MCLK_OUT_EN(mclk)		BIT(mclk)
+#define SOC_MDIVXR_SET_DIVIDER_BYPASS		BIT_MASK(12)
+
+struct soc_mclk_control_regs {
+	u32_t	mdivctrl;
+	u32_t	reserved[31];
+	u32_t	mdivxr[SOC_NUM_MCLK_OUTPUTS];
+};
 
 #define PDM_BASE				0x00010000
 
@@ -110,6 +142,16 @@ struct soc_resource_alloc_regs {
 	};
 	u32_t	dspiopo;
 	u32_t	geno;
+};
+
+/* DMIC SHIM Registers */
+#define SOC_DMIC_SHIM_REG_BASE			0x00071E80
+#define SOC_DMIC_SHIM_DMICLCTL_SPA		BIT(0)
+#define SOC_DMIC_SHIM_DMICLCTL_CPA		BIT(8)
+
+struct soc_dmic_shim_regs {
+	u32_t	dmiclcap;
+	u32_t	dmiclctl;
 };
 
 /* SOC DSP SHIM Registers */
@@ -146,16 +188,31 @@ struct soc_dsp_shim_regs {
 /* Global Control registers */
 #define SOC_S1000_GLB_CTRL_BASE			(0x00081C00)
 
-#define SOC_S1000_GLB_CTRL_STRAPS		(SOC_S1000_GLB_CTRL_BASE + 0x40)
+#define SOC_GNA_POWER_CONTROL_SPA		(BIT(0))
+#define SOC_GNA_POWER_CONTROL_CPA		(BIT(8))
+#define SOC_GNA_POWER_CONTROL_CLK_EN		(BIT(16))
+
 #define SOC_S1000_STRAP_REF_CLK			(BIT_MASK(2) << 3)
 #define SOC_S1000_STRAP_REF_CLK_38P4		(0 << 3)
 #define SOC_S1000_STRAP_REF_CLK_19P2		(1 << 3)
 #define SOC_S1000_STRAP_REF_CLK_24P576		(2 << 3)
 
-extern void _soc_irq_enable(u32_t irq);
-extern void _soc_irq_disable(u32_t irq);
-extern void dcache_writeback_region(void *addr, size_t size);
-extern void dcache_invalidate_region(void *addr, size_t size);
+struct soc_global_regs {
+	u32_t	reserved1[8];
+	u32_t	gna_power_control;
+	u32_t	reserved2[7];
+	u32_t	straps;
+};
+
+/* macros for data cache operations */
+#define SOC_DCACHE_FLUSH(addr, size)		\
+	xthal_dcache_region_writeback((addr), (size))
+#define SOC_DCACHE_INVALIDATE(addr, size)	\
+	xthal_dcache_region_invalidate((addr), (size))
+
+extern void z_soc_irq_enable(u32_t irq);
+extern void z_soc_irq_disable(u32_t irq);
+
 extern u32_t soc_get_ref_clk_freq(void);
 
 #endif /* __INC_SOC_H */

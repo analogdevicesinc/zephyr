@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017 Linaro Limited
+ * Copyright (c) 2018-2019 Foundries.io
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -10,7 +11,6 @@
 #include <logging/log.h>
 LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
-#include <net/coap.h>
 #include <string.h>
 #include <init.h>
 
@@ -156,12 +156,13 @@ void lwm2m_firmware_set_update_result(u8_t result)
 		lwm2m_firmware_set_update_state(STATE_IDLE);
 		break;
 	case RESULT_UPDATE_FAILED:
-		if (update_state != STATE_UPDATING) {
+		if (update_state != STATE_DOWNLOADING &&
+		    update_state != STATE_UPDATING) {
 			error = true;
 			state = update_state;
 		}
 
-		/* Next state could be idle or downloaded */
+		lwm2m_firmware_set_update_state(STATE_IDLE);
 		break;
 	default:
 		LOG_ERR("Unhandled result: %u", result);
@@ -192,7 +193,7 @@ static int package_write_cb(u16_t obj_inst_id,
 		 */
 		lwm2m_firmware_set_update_state(STATE_DOWNLOADING);
 	} else if (state != STATE_DOWNLOADING) {
-		if (data_len == 0 && state == STATE_DOWNLOADED) {
+		if (data_len == 0U && state == STATE_DOWNLOADED) {
 			/* reset to state idle and result default */
 			lwm2m_firmware_set_update_result(RESULT_DEFAULT);
 			return 0;
@@ -238,7 +239,7 @@ static int package_uri_write_cb(u16_t obj_inst_id,
 	if (state == STATE_IDLE) {
 		lwm2m_firmware_set_update_result(RESULT_DEFAULT);
 		lwm2m_firmware_start_transfer(package_uri);
-	} else if (state == STATE_DOWNLOADED && data_len == 0) {
+	} else if (state == STATE_DOWNLOADED && data_len == 0U) {
 		/* reset to state idle and result default */
 		lwm2m_firmware_set_update_result(RESULT_DEFAULT);
 	}
@@ -343,7 +344,7 @@ static int lwm2m_firmware_init(struct device *dev)
 	firmware.obj_id = LWM2M_OBJECT_FIRMWARE_ID;
 	firmware.fields = fields;
 	firmware.field_count = ARRAY_SIZE(fields);
-	firmware.max_instance_count = 1;
+	firmware.max_instance_count = 1U;
 	firmware.create_cb = firmware_create;
 	lwm2m_register_obj(&firmware);
 

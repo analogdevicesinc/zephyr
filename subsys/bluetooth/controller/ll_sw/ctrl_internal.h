@@ -164,14 +164,13 @@ struct connection {
 		} phy_upd_ind;
 #endif /* CONFIG_BT_CTLR_PHY */
 
+#if defined(CONFIG_BT_CTLR_LE_ENC)
 		struct {
 			u8_t  initiate;
 			u8_t  error_code;
-			u8_t  rand[8];
-			u8_t  ediv[2];
-			u8_t  ltk[16];
 			u8_t  skd[16];
 		} encryption;
+#endif /* CONFIG_BT_CTLR_LE_ENC */
 	} llcp;
 
 	u32_t llcp_features;
@@ -195,6 +194,16 @@ struct connection {
 		} radio_pdu_node_rx;
 	} llcp_terminate;
 
+#if defined(CONFIG_BT_CTLR_LE_ENC)
+	struct {
+		u8_t req;
+		u8_t ack;
+		u8_t ediv[2];
+		u8_t rand[8];
+		u8_t ltk[16];
+	} llcp_enc;
+#endif /* CONFIG_BT_CTLR_LE_ENC */
+
 #if defined(CONFIG_BT_CTLR_CONN_PARAM_REQ)
 	struct {
 		u8_t  req;
@@ -210,7 +219,8 @@ struct connection {
 		u8_t  cmd:1;
 		u8_t  disabled:1;
 		u8_t  status;
-		u16_t interval;
+		u16_t interval_min;
+		u16_t interval_max;
 		u16_t latency;
 		u16_t timeout;
 		u8_t  preferred_periodicity;
@@ -262,15 +272,6 @@ struct connection {
 	} llcp_phy;
 #endif /* CONFIG_BT_CTLR_PHY */
 
-	u8_t  sn:1;
-	u8_t  nesn:1;
-	u8_t  pause_rx:1;
-	u8_t  pause_tx:1;
-	u8_t  enc_rx:1;
-	u8_t  enc_tx:1;
-	u8_t  refresh:1;
-	u8_t  empty:1;
-
 	struct ccm ccm_rx;
 	struct ccm ccm_tx;
 
@@ -281,6 +282,18 @@ struct connection {
 	struct radio_pdu_node_tx *pkt_tx_last;
 	u8_t  packet_tx_head_len;
 	u8_t  packet_tx_head_offset;
+
+	u8_t  sn:1;
+	u8_t  nesn:1;
+	u8_t  pause_rx:1;
+	u8_t  pause_tx:1;
+	u8_t  enc_rx:1;
+	u8_t  enc_tx:1;
+	u8_t  refresh:1;
+	u8_t  empty:1;
+
+	/* Detect empty L2CAP start frame */
+	u8_t  start_empty:1;
 
 #if defined(CONFIG_BT_CTLR_CONN_RSSI)
 	u8_t  rssi_latest;
@@ -294,18 +307,6 @@ struct pdu_data_q_tx {
 	u16_t  handle;
 	struct radio_pdu_node_tx *node_tx;
 };
-
-/* Extra bytes for enqueued rx_node metadata: rssi (always) and resolving
- * index and directed adv report (with privacy or extended scanner filter
- * policies enabled).
- * Note: to simplify the code, both bytes are allocated even if only one of
- * the options is selected.
- */
-#if defined(CONFIG_BT_CTLR_PRIVACY) || defined(CONFIG_BT_CTLR_EXT_SCAN_FP)
-#define PDU_AC_SIZE_EXTRA 3
-#else
-#define PDU_AC_SIZE_EXTRA 1
-#endif /* CONFIG_BT_CTLR_PRIVACY */
 
 /* Minimum Rx Data allocation size */
 #define PACKET_RX_DATA_SIZE_MIN \
@@ -330,9 +331,9 @@ struct pdu_data_q_tx {
 
 #define LL_MEM_RX_POOL_SZ (MROUND(offsetof(struct radio_pdu_node_rx, \
 					   pdu_data) + \
-				  max((PDU_AC_SIZE_MAX + PDU_AC_SIZE_EXTRA), \
+				  MAX((PDU_AC_SIZE_MAX + PDU_AC_SIZE_EXTRA), \
 				      (offsetof(struct pdu_data, lldata) + \
-				       RADIO_LL_LENGTH_OCTETS_RX_MAX))) * \
+				       LL_LENGTH_OCTETS_RX_MAX))) * \
 			   (RADIO_PACKET_COUNT_RX_MAX + 3))
 
 #define LL_MEM_RX_LINK_POOL (sizeof(void *) * 2 * ((RADIO_PACKET_COUNT_RX_MAX +\

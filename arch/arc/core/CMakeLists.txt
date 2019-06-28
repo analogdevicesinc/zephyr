@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+
 zephyr_library()
 
 zephyr_library_sources(
@@ -12,7 +14,7 @@ zephyr_library_sources(
 	timestamp.c
 	isr_wrapper.S
 	regular_irq.S
-	swap.S
+	switch.S
 	sys_fatal_error_handler.c
 	prep_c.c
 	reset.S

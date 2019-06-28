@@ -7,15 +7,17 @@
  */
 #include <zephyr.h>
 #include <errno.h>
-#include <atomic.h>
-#include <misc/byteorder.h>
-#include <misc/util.h>
-#include <misc/printk.h>
+#include <sys/atomic.h>
+#include <sys/byteorder.h>
+#include <sys/util.h>
+#include <sys/printk.h>
 
 #include <bluetooth/conn.h>
 
 #define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_DEBUG_HFP_HF)
-/* FIXME: #include "common/log.h" */
+#define LOG_MODULE_NAME bt_hfp_hf
+#include "common/log.h"
+
 #include <bluetooth/rfcomm.h>
 #include <bluetooth/hfp_hf.h>
 
@@ -158,7 +160,7 @@ static void cind_handle_values(struct at_client *hf_at, u32_t index,
 
 int cind_handle(struct at_client *hf_at)
 {
-	u32_t index = 0;
+	u32_t index = 0U;
 
 	/* Parsing Example: CIND: ("call",(0,1)) etc.. */
 	while (at_has_next_list(hf_at)) {
@@ -284,7 +286,7 @@ void ag_indicator_handle_values(struct at_client *hf_at, u32_t index,
 
 int cind_status_handle(struct at_client *hf_at)
 {
-	u32_t index = 0;
+	u32_t index = 0U;
 
 	while (at_has_next_list(hf_at)) {
 		u32_t value;

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+
 add_definitions(-D__ZEPHYR_SUPERVISOR__)
 
 add_subdirectory(console)
@@ -19,6 +21,7 @@ add_subdirectory_if_kconfig(led)
 add_subdirectory_if_kconfig(led_strip)
 add_subdirectory_if_kconfig(modem)
 add_subdirectory_if_kconfig(pci)
+add_subdirectory_if_kconfig(pcie)
 add_subdirectory_if_kconfig(pinmux)
 add_subdirectory_if_kconfig(pwm)
 add_subdirectory_if_kconfig(rtc)
@@ -29,6 +32,7 @@ add_subdirectory_if_kconfig(watchdog)
 add_subdirectory_if_kconfig(wifi)
 add_subdirectory_if_kconfig(can)
 add_subdirectory_if_kconfig(audio)
+add_subdirectory_if_kconfig(hwinfo)
 
 add_subdirectory_ifdef(CONFIG_FLASH_HAS_DRIVER_ENABLED flash)
 add_subdirectory_ifdef(CONFIG_SERIAL_HAS_DRIVER serial)
@@ -38,3 +42,5 @@ add_subdirectory_ifdef(CONFIG_NETWORKING       net)
 add_subdirectory_ifdef(CONFIG_NET_L2_ETHERNET  ethernet)
 add_subdirectory_ifdef(CONFIG_ENTROPY_HAS_DRIVER entropy)
 add_subdirectory_ifdef(CONFIG_SYS_CLOCK_EXISTS timer)
+add_subdirectory_ifdef(CONFIG_NEURAL_NET_ACCEL neural_net)
+add_subdirectory_ifdef(CONFIG_PTP_CLOCK        ptp_clock)

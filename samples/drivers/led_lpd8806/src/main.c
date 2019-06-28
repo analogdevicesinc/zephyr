@@ -7,22 +7,22 @@
 #include <errno.h>
 #include <string.h>
 
-#define SYS_LOG_LEVEL SYS_LOG_LEVEL_DEBUG
-#include <logging/sys_log.h>
+#define LOG_LEVEL CONFIG_LOG_DEFAULT_LEVEL
+#include <logging/log.h>
+LOG_MODULE_REGISTER(main);
 
 #include <zephyr.h>
-#include <led_strip.h>
+#include <drivers/led_strip.h>
 #include <device.h>
-#include <spi.h>
-#include <misc/util.h>
+#include <drivers/spi.h>
+#include <sys/util.h>
 
 /*
  * Number of RGB LEDs in the LED strip, adjust as needed.
  */
 #define STRIP_NUM_LEDS 32
 
-#define SPI_DEV_NAME "lpd8806_spi"
-#define STRIP_DEV_NAME CONFIG_LPD880X_STRIP_NAME
+#define STRIP_DEV_NAME DT_INST_0_COLORWAY_LPD8806_LABEL
 #define DELAY_TIME K_MSEC(40)
 
 static const struct led_rgb colors[] = {
@@ -52,24 +52,14 @@ const struct led_rgb *color_at(size_t time, size_t i)
 
 void main(void)
 {
-	struct device *spi, *strip;
+	struct device *strip;
 	size_t i, time;
 
-	/* Double-check the configuration. */
-	spi = device_get_binding(SPI_DEV_NAME);
-	if (spi) {
-		SYS_LOG_INF("Found SPI device %s", SPI_DEV_NAME);
-	} else {
-		SYS_LOG_ERR("SPI device not found; you must choose a SPI "
-			    "device and configure its name to %s",
-			    SPI_DEV_NAME);
-		return;
-	}
 	strip = device_get_binding(STRIP_DEV_NAME);
 	if (strip) {
-		SYS_LOG_INF("Found LED strip device %s", STRIP_DEV_NAME);
+		LOG_INF("Found LED strip device %s", STRIP_DEV_NAME);
 	} else {
-		SYS_LOG_ERR("LED strip device %s not found", STRIP_DEV_NAME);
+		LOG_ERR("LED strip device %s not found", STRIP_DEV_NAME);
 		return;
 	}
 
@@ -78,7 +68,7 @@ void main(void)
 	 * down the strip until it reaches the end, then starts at the
 	 * beginning.
 	 */
-	SYS_LOG_INF("Displaying pattern on strip");
+	LOG_INF("Displaying pattern on strip");
 	time = 0;
 	while (1) {
 		for (i = 0; i < STRIP_NUM_LEDS; i++) {

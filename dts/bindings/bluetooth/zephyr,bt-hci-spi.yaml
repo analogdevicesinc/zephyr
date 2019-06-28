@@ -3,9 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: Bluetooth module based on Zephyr's Bluetooth HCI SPI driver
-id: zephyr,bt-hci-spi
 version: 0.1
 
 description: >
@@ -22,11 +21,9 @@ properties:
     irq-gpios:
       type: compound
       category: required
-      generation: define, use-prop-name
+      generation: define
 
     reset-gpios:
       type: compound
       category: required
-      generation: define, use-prop-name
-
-...
+      generation: define

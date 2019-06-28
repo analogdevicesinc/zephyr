@@ -1,0 +1,154 @@
+.. _coverage:
+
+Generating coverage reports
+###########################
+
+With Zephyr, you can generate code coverage reports to analyze which parts of
+the code are covered by a given test or application.
+
+You can do this in two ways:
+
+* In a real embedded target or QEMU, using Zephyr's gcov integration
+* Directly in your host computer, by compiling your application targeting
+  the POSIX architecture
+
+Test coverage reports in embedded devices or QEMU
+*************************************************
+
+Overview
+========
+`GCC GCOV <gcov_>`_ is a test coverage program
+used together with the GCC compiler to analyze and create test coverage reports
+for your programs, helping you create more efficient, faster running code and
+discovering untested code paths
+
+In Zephyr, gcov collects coverage profiling data in RAM (and not to a file
+system) while your application is running. Support for gcov collection and
+reporting is limited by available RAM size and so is currently enabled only
+for QEMU emulation of embedded targets.
+
+Details
+=======
+There are 2 parts to enable this feature. The first is to enable the coverage for the
+device and the second to enable in the test application. As explained earlier the
+code coverage with gcov is a function of RAM available. Therefore ensure that the
+device has enough RAM when enabling the coverage for it. For example a small device
+like frdm_k64f can run a simple test application but the more complex test
+cases which consume more RAM will crash when coverage is enabled.
+
+To enable the device for coverage, select :option:`CONFIG_HAS_COVERAGE_SUPPORT`
+in the Kconfig.board file.
+
+To report the coverage for the particular test application set :option:`CONFIG_COVERAGE`.
+
+Steps to generate code coverage reports
+=======================================
+
+These steps will produce an HTML coverage report for a single application.
+
+1. Build the code with CONFIG_COVERAGE=y. Some boards like qemu_x86_coverage
+   automatically enable this, but for boards that do not you will need to
+   enable the configuration manually:
+
+   .. zephyr-app-commands::
+      :tool: all
+      :board: mps2_an385
+      :gen-args: -DCONFIG_COVERAGE=y
+      :goals: build
+      :compact:
+
+#. Capture the emulator output into a log file. You may need to terminate
+   the emulator with :kbd:`Ctrl-A X` for this to complete after the coverage dump
+   has been printed:
+
+   .. code-block:: console
+
+      ninja -Cbuild run | tee log.log
+
+   or
+
+   .. code-block:: console
+
+      ninja -Cbuild run | tee log.log
+
+#. Generate the gcov ``.gcda`` and ``.gcno`` files from the log file that was
+   saved::
+
+     $ python3 scripts/gen_gcov_files.py -i log.log
+
+#. Find the gcov binary placed in the SDK. You will need to pass the path to
+   the gcov binary for the appropriate architecture when you later invoke
+   ``gcovr``::
+
+     $ find $ZEPHYR_SDK_INSTALL_DIR -iregex ".*gcov"
+
+#. Create an output directory for the reports::
+
+     $ mkdir -p gcov_report
+
+#. Run ``gcovr`` to get the reports::
+
+     $ gcovr -r $ZEPHYR_BASE . --html -o gcov_report/coverage.html --html-details --gcov-executable <gcov_path_in_SDK>
+
+.. _coverage_posix:
+
+Coverage reports using the POSIX architecture
+*********************************************
+
+When compiling for the POSIX architecture, you utilize your host native tooling
+to build a native executable which contains your application, the Zephyr OS,
+and some basic HW emulation.
+
+That means you can use the same tools you would while developing any
+other desktop application.
+
+To build your application with ``gcc``'s `gcov`_, simply set
+:option:`CONFIG_COVERAGE` before compiling it.
+When you run your application, ``gcov`` coverage data will be dumped into the
+respective ``gcda`` and ``gcno`` files.
+You may postprocess these with your preferred tools. For example:
+
+.. zephyr-app-commands::
+   :zephyr-app: samples/hello_world
+   :tool: cmake
+   :gen-args: -DCONFIG_COVERAGE=y
+   :host-os: unix
+   :board: native_posix
+   :goals: build
+   :compact:
+
+.. code-block:: console
+
+   $ ./build/zephyr/zephyr.exe
+   # Press Ctrl+C to exit
+   lcov --capture --directory ./ --output-file lcov.info -q --rc lcov_branch_coverage=1
+   genhtml lcov.info --output-directory lcov_html -q --ignore-errors source --branch-coverage --highlight --legend
+
+Sanitycheck coverage reports
+============================
+
+When targeting boards based on the POSIX architecture,
+Zephyr's :ref:`sanitycheck script <sanitycheck_script>` can automatically
+generate a coverage report from the tests which were executed.
+You just need to invoke it with the ``-C`` command line option.
+
+For example you may run::
+
+    $ sanitycheck -p native_posix -T tests/kernel -C
+
+which will produce ``sanity-out/coverage/index.html`` with the report.
+
+For emulated targets you will need to pass the correct ``gcov`` binary from
+the SDK, the default of using the ``gcov`` found in the default path is likely
+not going to work. For example, to produce reports using the
+``qemu_x86_coverage`` target::
+
+    $ sanitycheck --coverage --coverage-platform=qemu_x86_coverage -p qemu_x86_coverage --gcov-tool $ZEPHYR_SDK_INSTALL_DIR/i586-zephyr-elf/bin/i586-zephyr-elf-gcov
+
+You can find the paths to all the ``gcov`` binaries in the SDK with::
+
+    $ find $ZEPHYR_SDK_INSTALL_DIR -iregex ".*gcov"
+
+.. _gcov:
+   https://gcc.gnu.org/onlinedocs/gcc/Gcov.html
+

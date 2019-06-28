@@ -8,7 +8,7 @@
 #ifndef __SETTINGS_FCB_H_
 #define __SETTINGS_FCB_H_
 
-#include <fcb.h>
+#include <fs/fcb.h>
 #include "settings/settings.h"
 
 #ifdef __cplusplus
@@ -22,6 +22,7 @@ struct settings_fcb {
 
 extern int settings_fcb_src(struct settings_fcb *cf);
 extern int settings_fcb_dst(struct settings_fcb *cf);
+void settings_mount_fcb_backend(struct settings_fcb *cf);
 
 #ifdef __cplusplus
 }

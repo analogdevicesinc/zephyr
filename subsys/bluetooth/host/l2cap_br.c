@@ -9,9 +9,9 @@
 #include <zephyr.h>
 #include <string.h>
 #include <errno.h>
-#include <atomic.h>
-#include <misc/byteorder.h>
-#include <misc/util.h>
+#include <sys/atomic.h>
+#include <sys/byteorder.h>
+#include <sys/util.h>
 
 #include <bluetooth/hci.h>
 #include <bluetooth/bluetooth.h>
@@ -19,6 +19,7 @@
 #include <bluetooth/hci_driver.h>
 
 #define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_DEBUG_L2CAP)
+#define LOG_MODULE_NAME bt_l2cap_br
 #include "common/log.h"
 
 #include "hci_core.h"
@@ -77,7 +78,10 @@ enum {
 };
 
 static sys_slist_t br_servers;
-static sys_slist_t br_fixed_channels;
+
+/* Linker-defined symbols bound to the bt_l2cap_fixed_chan structs */
+extern const struct bt_l2cap_fixed_chan _bt_br_channels_start[];
+extern const struct bt_l2cap_fixed_chan _bt_br_channels_end[];
 
 /* Pool for outgoing BR/EDR signaling packets, min MTU is 48 */
 NET_BUF_POOL_DEFINE(br_sig_pool, CONFIG_BT_MAX_CONN,
@@ -311,7 +315,7 @@ static void connect_optional_fixed_channels(struct bt_l2cap_br *l2cap)
 static int l2cap_br_info_rsp(struct bt_l2cap_br *l2cap, u8_t ident,
 			     struct net_buf *buf)
 {
-	struct bt_l2cap_info_rsp *rsp = (void *)buf->data;
+	struct bt_l2cap_info_rsp *rsp;
 	u16_t type, result;
 	int err = 0;
 
@@ -340,6 +344,7 @@ static int l2cap_br_info_rsp(struct bt_l2cap_br *l2cap, u8_t ident,
 		goto done;
 	}
 
+	rsp = net_buf_pull_mem(buf, sizeof(*rsp));
 	result = sys_le16_to_cpu(rsp->result);
 	if (result != BT_L2CAP_INFO_SUCCESS) {
 		BT_WARN("Result unsuccessful");
@@ -348,7 +353,6 @@ static int l2cap_br_info_rsp(struct bt_l2cap_br *l2cap, u8_t ident,
 	}
 
 	type = sys_le16_to_cpu(rsp->type);
-	net_buf_pull(buf, sizeof(*rsp));
 
 	switch (type) {
 	case BT_L2CAP_INFO_FEAT_MASK:
@@ -376,17 +380,18 @@ static int l2cap_br_info_rsp(struct bt_l2cap_br *l2cap, u8_t ident,
 	}
 done:
 	atomic_set_bit(l2cap->chan.flags, L2CAP_FLAG_SIG_INFO_DONE);
-	l2cap->info_ident = 0;
+	l2cap->info_ident = 0U;
 	return err;
 }
 
 static u8_t get_fixed_channels_mask(void)
 {
-	struct bt_l2cap_fixed_chan *fchan;
-	u8_t mask = 0;
+	const struct bt_l2cap_fixed_chan *fchan;
+	u8_t mask = 0U;
 
 	/* this needs to be enhanced if AMP Test Manager support is added */
-	SYS_SLIST_FOR_EACH_CONTAINER(&br_fixed_channels, fchan, node) {
+	for (fchan = _bt_br_channels_start; fchan < _bt_br_channels_end;
+	     fchan++) {
 		mask |= BIT(fchan->cid);
 	}
 
@@ -449,10 +454,11 @@ static int l2cap_br_info_req(struct bt_l2cap_br *l2cap, u8_t ident,
 
 void bt_l2cap_br_connected(struct bt_conn *conn)
 {
-	struct bt_l2cap_fixed_chan *fchan;
+	const struct bt_l2cap_fixed_chan *fchan;
 	struct bt_l2cap_chan *chan;
 
-	SYS_SLIST_FOR_EACH_CONTAINER(&br_fixed_channels, fchan, node) {
+	for (fchan = _bt_br_channels_start; fchan < _bt_br_channels_end;
+	     fchan++) {
 		struct bt_l2cap_br_chan *ch;
 
 		if (!fchan->accept) {
@@ -524,7 +530,7 @@ static void l2cap_br_conf(struct bt_l2cap_chan *chan)
 	conf->dcid = sys_cpu_to_le16(BR_CHAN(chan)->tx.cid);
 	/*
 	 * Add MTU option if app set non default BR/EDR L2CAP MTU,
-	 * otherwise sent emtpy configuration data meaning default MTU
+	 * otherwise sent empty configuration data meaning default MTU
 	 * to be used.
 	 */
 	if (BR_CHAN(chan)->rx.mtu != L2CAP_BR_DEFAULT_MTU) {
@@ -663,7 +669,7 @@ static int l2cap_br_conn_req_reply(struct bt_l2cap_chan *chan, u16_t result)
 
 	l2cap_br_send_conn_rsp(chan->conn, BR_CHAN(chan)->tx.cid,
 			       BR_CHAN(chan)->rx.cid, chan->ident, result);
-	chan->ident = 0;
+	chan->ident = 0U;
 
 	return 0;
 }
@@ -739,7 +745,7 @@ static void l2cap_br_conn_req(struct bt_l2cap_br *l2cap, u8_t ident,
 	atomic_set_bit(BR_CHAN(chan)->flags, L2CAP_FLAG_CONN_ACCEPTOR);
 
 	/* Disable fragmentation of l2cap rx pdu */
-	BR_CHAN(chan)->rx.mtu = min(BR_CHAN(chan)->rx.mtu, L2CAP_BR_MAX_MTU);
+	BR_CHAN(chan)->rx.mtu = MIN(BR_CHAN(chan)->rx.mtu, L2CAP_BR_MAX_MTU);
 
 	switch (l2cap_br_conn_security(chan, psm)) {
 	case L2CAP_CONN_SECURITY_PENDING:
@@ -925,7 +931,7 @@ static void l2cap_br_conf_req(struct bt_l2cap_br *l2cap, u8_t ident,
 {
 	struct bt_conn *conn = l2cap->chan.chan.conn;
 	struct bt_l2cap_chan *chan;
-	struct bt_l2cap_conf_req *req = (void *)buf->data;
+	struct bt_l2cap_conf_req *req;
 	struct bt_l2cap_sig_hdr *hdr;
 	struct bt_l2cap_conf_rsp *rsp;
 	struct bt_l2cap_conf_opt *opt;
@@ -936,6 +942,7 @@ static void l2cap_br_conf_req(struct bt_l2cap_br *l2cap, u8_t ident,
 		return;
 	}
 
+	req = net_buf_pull_mem(buf, sizeof(*req));
 	flags = sys_le16_to_cpu(req->flags);
 	dcid = sys_le16_to_cpu(req->dcid);
 	opt_len = len - sizeof(*req);
@@ -960,15 +967,8 @@ static void l2cap_br_conf_req(struct bt_l2cap_br *l2cap, u8_t ident,
 		goto send_rsp;
 	}
 
-	/*
-	 * initialize config option data dedicated object with proper
-	 * offset set to beginnig of config options data
-	 */
-	opt = net_buf_pull(buf, sizeof(*req));
-
 	while (buf->len >= sizeof(*opt)) {
-		/* pull buf to always point to option data item */
-		net_buf_pull(buf, sizeof(*opt));
+		opt = net_buf_pull_mem(buf, sizeof(*opt));
 
 		/* make sure opt object can get safe dereference in iteration */
 		if (buf->len < opt->len) {
@@ -996,8 +996,8 @@ static void l2cap_br_conf_req(struct bt_l2cap_br *l2cap, u8_t ident,
 				goto send_rsp;
 			}
 
-			/* set opt object to next option chunk */
-			opt = net_buf_pull(buf, opt->len);
+			/* Update buffer to point at next option */
+			net_buf_pull(buf, opt->len);
 			break;
 		}
 	}
@@ -1315,7 +1315,7 @@ static void l2cap_br_conn_rsp(struct bt_l2cap_br *l2cap, u8_t ident,
 
 	switch (result) {
 	case BT_L2CAP_BR_SUCCESS:
-		chan->ident = 0;
+		chan->ident = 0U;
 		BR_CHAN(chan)->tx.cid = dcid;
 		l2cap_br_conf(chan);
 		bt_l2cap_chan_set_state(chan, BT_L2CAP_CONFIG);
@@ -1346,7 +1346,7 @@ int bt_l2cap_br_chan_send(struct bt_l2cap_chan *chan, struct net_buf *buf)
 static int l2cap_br_recv(struct bt_l2cap_chan *chan, struct net_buf *buf)
 {
 	struct bt_l2cap_br *l2cap = CONTAINER_OF(chan, struct bt_l2cap_br, chan);
-	struct bt_l2cap_sig_hdr *hdr = (void *)buf->data;
+	struct bt_l2cap_sig_hdr *hdr;
 	u16_t len;
 
 	if (buf->len < sizeof(*hdr)) {
@@ -1354,8 +1354,8 @@ static int l2cap_br_recv(struct bt_l2cap_chan *chan, struct net_buf *buf)
 		return 0;
 	}
 
+	hdr = net_buf_pull_mem(buf, sizeof(*hdr));
 	len = sys_le16_to_cpu(hdr->len);
-	net_buf_pull(buf, sizeof(*hdr));
 
 	BT_DBG("Signaling code 0x%02x ident %u len %u", hdr->code,
 	       hdr->ident, len);
@@ -1491,7 +1491,7 @@ static void check_fixed_channel(struct bt_l2cap_chan *chan)
 
 void bt_l2cap_br_recv(struct bt_conn *conn, struct net_buf *buf)
 {
-	struct bt_l2cap_hdr *hdr = (void *)buf->data;
+	struct bt_l2cap_hdr *hdr;
 	struct bt_l2cap_chan *chan;
 	u16_t cid;
 
@@ -1501,8 +1501,8 @@ void bt_l2cap_br_recv(struct bt_conn *conn, struct net_buf *buf)
 		return;
 	}
 
+	hdr = net_buf_pull_mem(buf, sizeof(*hdr));
 	cid = sys_le16_to_cpu(hdr->cid);
-	net_buf_pull(buf, sizeof(*hdr));
 
 	chan = bt_l2cap_br_lookup_rx_cid(conn, cid);
 	if (!chan) {
@@ -1550,23 +1550,11 @@ static int l2cap_br_accept(struct bt_conn *conn, struct bt_l2cap_chan **chan)
 	return -ENOMEM;
 }
 
-void bt_l2cap_br_fixed_chan_register(struct bt_l2cap_fixed_chan *chan)
-{
-	BT_DBG("CID 0x%04x", chan->cid);
-
-	sys_slist_append(&br_fixed_channels, &chan->node);
-}
+BT_L2CAP_CHANNEL_DEFINE(br_fixed_chan, BT_L2CAP_CID_BR_SIG, l2cap_br_accept);
 
 void bt_l2cap_br_init(void)
 {
-	static struct bt_l2cap_fixed_chan chan_br = {
-			.cid	= BT_L2CAP_CID_BR_SIG,
-			.accept = l2cap_br_accept,
-			};
-
 	sys_slist_init(&br_servers);
-
-	bt_l2cap_br_fixed_chan_register(&chan_br);
 
 	if (IS_ENABLED(CONFIG_BT_RFCOMM)) {
 		bt_rfcomm_init();

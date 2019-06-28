@@ -11,9 +11,9 @@
 
 #include <zephyr/types.h>
 #include <device.h>
-#include <sensor.h>
-#include <misc/util.h>
-#include <gpio.h>
+#include <drivers/sensor.h>
+#include <sys/util.h>
+#include <drivers/gpio.h>
 
 #define MCP9808_REG_CONFIG		0x01
 #define MCP9808_REG_UPPER_LIMIT		0x02
@@ -86,7 +86,4 @@ static void mcp9808_setup_interrupt(struct device *dev)
 }
 #endif /* CONFIG_MCP9808_TRIGGER */
 
-#define SYS_LOG_DOMAIN "MCP9808"
-#define SYS_LOG_LEVEL CONFIG_SYS_LOG_SENSOR_LEVEL
-#include <logging/sys_log.h>
 #endif /* ZEPHYR_DRIVERS_SENSOR_MCP9808_MCP9808_H_ */

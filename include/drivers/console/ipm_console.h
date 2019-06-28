@@ -11,14 +11,14 @@
 
 #include <kernel.h>
 #include <device.h>
-#include <ring_buffer.h>
+#include <sys/ring_buffer.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#define IPM_CONSOLE_STDOUT	(1 << 0)
-#define IPM_CONSOLE_PRINTK	(1 << 1)
+#define IPM_CONSOLE_STDOUT	(BIT(0))
+#define IPM_CONSOLE_PRINTK	(BIT(1))
 
 /*
  * Good way to determine these numbers other than trial-and-error?

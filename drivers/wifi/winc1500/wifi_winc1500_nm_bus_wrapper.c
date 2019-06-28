@@ -4,16 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define SYS_LOG_LEVEL CONFIG_SYS_LOG_WIFI_LEVEL
-#define SYS_LOG_DOMAIN "dev/winc1500"
-#include <logging/sys_log.h>
+#define LOG_LEVEL CONFIG_WIFI_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_REGISTER(winc1500);
 
 #include <stdio.h>
 #include <stdint.h>
 
-#include <board.h>
 #include <device.h>
-#include <spi.h>
+#include <drivers/spi.h>
 
 #include "wifi_winc1500_nm_bsp_internal.h"
 
@@ -79,7 +78,7 @@ static s8_t spi_rw(u8_t *mosi, u8_t *miso, u16_t size)
 	};
 
 	if (spi_transceive(winc1500.spi, &winc1500.spi_cfg, &tx, &rx)) {
-		SYS_LOG_ERR("spi_transceive fail");
+		LOG_ERR("spi_transceive fail");
 		return M2M_ERR_BUS_FAIL;
 	}
 
@@ -97,32 +96,32 @@ s8_t nm_bus_init(void *pvinit)
 	/* Not implemented */
 #elif defined CONF_WINC_USE_SPI
 	/* setup SPI device */
-	winc1500.spi = device_get_binding(CONFIG_WIFI_WINC1500_SPI_DRV_NAME);
+	winc1500.spi = device_get_binding(DT_INST_0_ATMEL_WINC1500_BUS_NAME);
 	if (!winc1500.spi) {
-		SYS_LOG_ERR("spi device binding");
+		LOG_ERR("spi device binding");
 		return -1;
 	}
 
 	winc1500.spi_cfg.operation = SPI_WORD_SET(8) | SPI_TRANSFER_MSB;
-	winc1500.spi_cfg.frequency = CONFIG_WIFI_WINC1500_SPI_FREQ;
-	winc1500.spi_cfg.slave = CONFIG_WIFI_WINC1500_SPI_SLAVE;
+	winc1500.spi_cfg.frequency = DT_INST_0_ATMEL_WINC1500_SPI_MAX_FREQUENCY;
+	winc1500.spi_cfg.slave = DT_INST_0_ATMEL_WINC1500_BASE_ADDRESS;
 
 #ifdef CONFIG_WIFI_WINC1500_GPIO_SPI_CS
 	cs_ctrl.gpio_dev = device_get_binding(
-		CONFIG_WIFI_WINC1500_GPIO_SPI_CS_DRV_NAME);
+		DT_INST_0_ATMEL_WINC1500_CS_GPIOS_CONTROLLER);
 	if (!cs_ctrl.gpio_dev) {
-		SYS_LOG_ERR("Unable to get GPIO SPI CS device");
+		LOG_ERR("Unable to get GPIO SPI CS device");
 		return -ENODEV;
 	}
 
-	cs_ctrl.gpio_pin = CONFIG_WIFI_WINC1500_GPIO_SPI_CS_PIN;
-	cs_ctrl.delay = 0;
+	cs_ctrl.gpio_pin = DT_INST_0_ATMEL_WINC1500_CS_GPIOS_PIN;
+	cs_ctrl.delay = 0U;
 
 	winc1500.spi_cfg.cs = &cs_ctrl;
 
-	SYS_LOG_DBG("SPI GPIO CS configured on %s:%u",
-		    CONFIG_WIFI_WINC1500_GPIO_SPI_CS_DRV_NAME,
-		    CONFIG_WIFI_WINC1500_GPIO_SPI_CS_PIN);
+	LOG_DBG("SPI GPIO CS configured on %s:%u",
+		    DT_INST_0_ATMEL_WINC1500_CS_GPIOS_CONTROLLER,
+		    DT_INST_0_ATMEL_WINC1500_CS_GPIOS_PIN);
 #endif /* CONFIG_WIFI_WINC1500_GPIO_SPI_CS */
 
 	nm_bsp_reset();
@@ -130,7 +129,7 @@ s8_t nm_bus_init(void *pvinit)
 
 	nm_bsp_interrupt_ctrl(1);
 
-	SYS_LOG_DBG("NOTICE:DONE");
+	LOG_DBG("NOTICE:DONE");
 #endif
 	return 0;
 }

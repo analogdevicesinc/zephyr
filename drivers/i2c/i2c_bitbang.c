@@ -19,7 +19,7 @@
 
 #include <errno.h>
 #include <kernel.h>
-#include <i2c.h>
+#include <drivers/i2c.h>
 #include "i2c_bitbang.h"
 
 /*
@@ -172,7 +172,7 @@ static bool i2c_write_byte(struct i2c_bitbang *context, u8_t byte)
 
 static u8_t i2c_read_byte(struct i2c_bitbang *context)
 {
-	unsigned int byte = 1;
+	unsigned int byte = 1U;
 
 	do {
 		byte <<= 1;

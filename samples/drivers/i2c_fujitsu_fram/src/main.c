@@ -6,12 +6,12 @@
 
 #include <errno.h>
 #include <zephyr.h>
-#include <misc/printk.h>
+#include <sys/printk.h>
 #include <device.h>
-#include <i2c.h>
+#include <drivers/i2c.h>
 
 #if defined(CONFIG_SOC_QUARK_SE_C1000_SS)
-#define I2C_DEV CONFIG_I2C_SS_0_NAME
+#define I2C_DEV DT_I2C_SS_0_NAME
 #else
 #define I2C_DEV CONFIG_I2C_0_NAME
 #endif
@@ -36,7 +36,7 @@ static int write_bytes(struct device *i2c_dev, u16_t addr,
 
 	/* Send the address to write to */
 	msgs[0].buf = wr_addr;
-	msgs[0].len = 2;
+	msgs[0].len = 2U;
 	msgs[0].flags = I2C_MSG_WRITE;
 
 	/* Data to be written, and STOP after this. */
@@ -63,7 +63,7 @@ static int read_bytes(struct device *i2c_dev, u16_t addr,
 
 	/* Send the address to read from */
 	msgs[0].buf = wr_addr;
-	msgs[0].len = 2;
+	msgs[0].len = 2U;
 	msgs[0].flags = I2C_MSG_WRITE;
 
 	/* Read from device. STOP after this. */

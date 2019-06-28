@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2017 Shawn Nock <shawn@monadnock.ca>
  * Copyright (c) 2017 Linaro Limited
- * Copyrigtt (c) 2018 Aapo Vienamo
+ * Copyright (c) 2018 Aapo Vienamo
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -16,25 +16,61 @@
 
 	chosen {
 		zephyr,console = &uart0;
+		zephyr,shell-uart = &uart0;
+		zephyr,bt-mon-uart = &uart0;
+		zephyr,bt-c2h-uart = &uart0;
 		zephyr,sram = &sram0;
 		zephyr,flash = &flash0;
+		zephyr,code-partition = &slot0_partition;
+	};
+
+	/* These aliases are provided for compatibility with samples */
+	aliases {
+		led0 = &led0;
+		sw0 = &button0;
+	};
+
+	leds {
+		compatible = "gpio-leds";
+		/* Lightwell RGB */
+		led0: led_0 {
+			gpios = <&sx1509b 5 0>;
+			label = "Green LED";
+		};
+		led1: led_1 {
+			gpios = <&sx1509b 6 0>;
+			label = "Blue LED";
+		};
+		led2: led_2 {
+			gpios = <&sx1509b 7 0>;
+			label = "Red LED";
+		};
+	};
+
+	buttons {
+		compatible = "gpio-keys";
+		button0: button_0 {
+			/* gpio flags need validation */
+			gpios = <&gpio0 11 GPIO_INT_ACTIVE_LOW>;
+			label = "Button";
+		};
 	};
 };
 
 &adc {
-	status = "ok";
+	status = "okay";
 };
 
 &gpiote {
-	status = "ok";
+	status = "okay";
 };
 
 &gpio0 {
-	status = "ok";
+	status = "okay";
 };
 
 &uart0 {
-	status = "ok";
+	status = "okay";
 	compatible = "nordic,nrf-uart";
 	current-speed = <115200>;
 	tx-pin = <3>;
@@ -42,7 +78,7 @@
 };
 
 &i2c0 {
-	status = "ok";
+	status = "okay";
 	clock-frequency = <I2C_BITRATE_FAST>;
 	sda-pin = <7>;
 	scl-pin = <8>;
@@ -51,6 +87,8 @@
 		compatible = "semtech,sx1509b";
 		reg = <0x3e>;
 		label = "GPIO_P0";
+		gpio-controller;
+		#gpio-cells = <2>;
 	};
 
 	lps22hb_press: lps22hb_press@5c {
@@ -63,6 +101,7 @@
 		compatible = "st,hts221";
 		reg = <0x5f>;
 		label = "HTS221";
+		drdy-gpios = <&gpio0 24 GPIO_INT_ACTIVE_HIGH>;
 	};
 
 	ccs811: ccs811@5a {
@@ -73,7 +112,7 @@
 };
 
 &i2c1 {
-	status = "ok";
+	status = "okay";
 	clock-frequency = <I2C_BITRATE_FAST>;
 	sda-pin = <14>;
 	scl-pin = <15>;
@@ -117,12 +156,9 @@
 		 * by the application. If enabled, partition for NFFS
 		 * will be created in this area.
 		 */
-
-#if defined(CONFIG_FS_FLASH_STORAGE_PARTITION)
 		storage_partition: partition@7a000 {
 			label = "storage";
 			reg = <0x0007a000 0x00006000>;
 		};
-#endif
 	};
 };

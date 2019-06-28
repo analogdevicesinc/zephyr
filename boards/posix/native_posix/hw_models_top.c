@@ -12,12 +12,16 @@
 #include <stdint.h>
 #include <signal.h>
 #include <stddef.h>
+#include <stdlib.h>
+#include <pthread.h>
 #include "hw_models_top.h"
 #include "timer_model.h"
 #include "irq_ctrl.h"
 #include "posix_board_if.h"
 #include "posix_soc_if.h"
 #include "posix_arch_internal.h"
+#include "sdl_events.h"
+#include <sys/util.h>
 
 
 static u64_t simu_time; /* The actual time as known by the HW models */
@@ -26,20 +30,32 @@ static u64_t end_of_time = NEVER; /* When will this device stop */
 /* List of HW model timers: */
 extern u64_t hw_timer_timer; /* When should this timer_model be called */
 extern u64_t irq_ctrl_timer;
+#ifdef CONFIG_HAS_SDL
+extern u64_t sdl_event_timer;
+#endif
 
-static enum { HWTIMER = 0, IRQCNT, NUMBER_OF_TIMERS, NONE }
-	next_timer_index = NONE;
+static enum {
+	HWTIMER = 0,
+	IRQCNT,
+#ifdef CONFIG_HAS_SDL
+	SDLEVENTTIMER,
+#endif
+	NUMBER_OF_TIMERS,
+	NONE
+} next_timer_index = NONE;
 
 static u64_t *Timer_list[NUMBER_OF_TIMERS] = {
 	&hw_timer_timer,
-	&irq_ctrl_timer
+	&irq_ctrl_timer,
+#ifdef CONFIG_HAS_SDL
+	&sdl_event_timer,
+#endif
 };
 
 static u64_t next_timer_time;
 
 /* Have we received a SIGTERM or SIGINT */
 static volatile sig_atomic_t signaled_end;
-
 
 /**
  * Handler for SIGTERM and SIGINT
@@ -69,12 +85,12 @@ void hwm_set_sig_handler(void)
 	struct sigaction act;
 
 	act.sa_handler = hwm_signal_end_handler;
-	_SAFE_CALL(sigemptyset(&act.sa_mask));
+	PC_SAFE_CALL(sigemptyset(&act.sa_mask));
 
 	act.sa_flags = SA_RESETHAND;
 
-	_SAFE_CALL(sigaction(SIGTERM, &act, NULL));
-	_SAFE_CALL(sigaction(SIGINT, &act, NULL));
+	PC_SAFE_CALL(sigaction(SIGTERM, &act, NULL));
+	PC_SAFE_CALL(sigaction(SIGINT, &act, NULL));
 }
 
 
@@ -95,7 +111,6 @@ static void hwm_sleep_until_next_timer(void)
 	if (signaled_end || (simu_time > end_of_time)) {
 		posix_print_trace("\nStopped at %.3Lfs\n",
 				((long double)simu_time)/1.0e6);
-
 		posix_exit(0);
 	}
 }
@@ -134,6 +149,11 @@ void hwm_main_loop(void)
 		case IRQCNT:
 			hw_irq_ctrl_timer_triggered();
 			break;
+#ifdef CONFIG_HAS_SDL
+		case SDLEVENTTIMER:
+			sdl_handle_events();
+			break;
+#endif
 		default:
 			/* LCOV_EXCL_START */
 			posix_print_error_and_exit(

@@ -10,9 +10,9 @@
  */
 
 #include <zephyr.h>
-#include <atomic.h>
-#include <misc/stack.h>
-#include <misc/byteorder.h>
+#include <sys/atomic.h>
+#include <debug/stack.h>
+#include <sys/byteorder.h>
 #include <tinycrypt/constants.h>
 #include <tinycrypt/utils.h>
 #include <tinycrypt/ecc.h>
@@ -24,6 +24,7 @@
 #include <bluetooth/hci_driver.h>
 
 #define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_DEBUG_HCI_CORE)
+#define LOG_MODULE_NAME bt_hci_ecc
 #include "common/log.h"
 
 #include "hci_ecc.h"
@@ -35,7 +36,7 @@
 #endif
 
 static struct k_thread ecc_thread_data;
-static BT_STACK_NOINIT(ecc_thread_stack, 1024);
+static K_THREAD_STACK_DEFINE(ecc_thread_stack, 1100);
 
 /* based on Core Specification 4.2 Vol 3. Part H 2.3.5.6.1 */
 static const u32_t debug_private_key[8] = {
@@ -91,7 +92,7 @@ static void send_cmd_status(u16_t opcode, u8_t status)
 	hdr->len = sizeof(*evt);
 
 	evt = net_buf_add(buf, sizeof(*evt));
-	evt->ncmd = 1;
+	evt->ncmd = 1U;
 	evt->opcode = sys_cpu_to_le16(opcode);
 	evt->status = status;
 
@@ -191,7 +192,7 @@ static void emulate_le_generate_dhkey(void)
 		evt->status = BT_HCI_ERR_UNSPECIFIED;
 		(void)memset(evt->dhkey, 0, sizeof(evt->dhkey));
 	} else {
-		evt->status = 0;
+		evt->status = 0U;
 		/* Convert from big-endian (provided by crypto API) to
 		 * little-endian HCI.
 		 */
@@ -321,4 +322,5 @@ void bt_hci_ecc_init(void)
 	k_thread_create(&ecc_thread_data, ecc_thread_stack,
 			K_THREAD_STACK_SIZEOF(ecc_thread_stack), ecc_thread,
 			NULL, NULL, NULL, K_PRIO_PREEMPT(10), 0, K_NO_WAIT);
+	k_thread_name_set(&ecc_thread_data, "BT ECC");
 }

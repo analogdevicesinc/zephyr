@@ -8,8 +8,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define LOG_MODULE_NAME net_ieee802154_fragment
-#define NET_LOG_LEVEL CONFIG_NET_L2_IEEE802154_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_REGISTER(net_ieee802154_fragment,
+		    CONFIG_NET_L2_IEEE802154_LOG_LEVEL);
 
 #include <errno.h>
 #include <net/net_core.h>
@@ -23,6 +24,10 @@
 #include "net_private.h"
 #include "6lo.h"
 #include "6lo_private.h"
+
+#define NET_FRAG_DISPATCH_MASK	0xF8
+#define NET_FRAG_OFFSET_POS	(NET_6LO_FRAG_DATAGRAM_SIZE_LEN +	\
+				 NET_6LO_FRAG_DATAGRAM_OFFSET_LEN)
 
 #define BUF_TIMEOUT K_MSEC(50)
 
@@ -79,28 +84,6 @@ static struct frag_cache cache[REASS_CACHE_SIZE];
  *  +-+-+-+-+-+-+-+-+
  */
 
-static inline struct net_buf *prepare_new_fragment(struct net_pkt *pkt,
-						   u8_t offset)
-{
-	struct net_buf *frag;
-
-	frag = net_pkt_get_frag(pkt, BUF_TIMEOUT);
-	if (!frag) {
-		return NULL;
-	}
-
-	/* Reserve space for fragmentation header */
-	if (!offset) {
-		net_buf_add(frag, NET_6LO_FRAG1_HDR_LEN);
-	} else {
-		net_buf_add(frag, NET_6LO_FRAGN_HDR_LEN);
-	}
-
-	net_pkt_frag_add(pkt, frag);
-
-	return frag;
-}
-
 static inline void set_datagram_size(u8_t *ptr, u16_t size)
 {
 	ptr[0] |= ((size & 0x7FF) >> 8);
@@ -116,15 +99,17 @@ static inline void set_datagram_tag(u8_t *ptr, u16_t tag)
 static inline void set_up_frag_hdr(struct net_buf *frag, u16_t size,
 				   u8_t offset)
 {
-	u8_t pos = 0;
+	u8_t pos = frag->len;
 
-	if (offset) {
-		frag->data[pos] = NET_6LO_DISPATCH_FRAGN;
-	} else {
+	if (!offset) {
+		net_buf_add(frag, NET_6LO_FRAG1_HDR_LEN);
 		frag->data[pos] = NET_6LO_DISPATCH_FRAG1;
+	} else {
+		net_buf_add(frag, NET_6LO_FRAGN_HDR_LEN);
+		frag->data[pos] = NET_6LO_DISPATCH_FRAGN;
 	}
 
-	set_datagram_size(frag->data, size);
+	set_datagram_size(frag->data + pos, size);
 	pos += NET_6LO_FRAG_DATAGRAM_SIZE_LEN;
 
 	set_datagram_tag(frag->data + pos, datagram_tag);
@@ -135,68 +120,38 @@ static inline void set_up_frag_hdr(struct net_buf *frag, u16_t size,
 	}
 }
 
-static inline u8_t calc_max_payload(struct net_pkt *pkt,
-				    struct net_buf *frag,
-				    u8_t offset)
+static inline u8_t calc_max_payload(struct net_buf *frag, u8_t offset)
 {
-	u8_t max;
-
-	max = frag->size - net_pkt_ll_reserve(pkt);
-	max -= offset ? NET_6LO_FRAGN_HDR_LEN : NET_6LO_FRAG1_HDR_LEN;
+	u8_t max = frag->size - frag->len;
 
 	return (max & 0xF8);
 }
 
-static inline u8_t move_frag_data(struct net_buf *frag,
-				  struct net_buf *next,
-				  u8_t max,
-				  bool first,
-				  int hdr_diff,
-				  u8_t *room_left)
+static inline u8_t copy_data(struct ieee802154_fragment_ctx *ctx,
+			     struct net_buf *frame_buf, u8_t max)
 {
-	u8_t room;
-	u8_t move;
-	u8_t occupied;
+	u8_t move = ctx->buf->len - (ctx->pos - ctx->buf->data);
 
-	/* First fragment */
-	if (first) {
-		occupied = frag->len - NET_6LO_FRAG1_HDR_LEN;
-	} else {
-		occupied = frag->len - NET_6LO_FRAGN_HDR_LEN;
-	}
+	move = MIN(move, max);
 
-	/* Remaining room for data */
-	room = max - occupied;
+	memcpy(frame_buf->data + frame_buf->len, ctx->pos, move);
 
-	if (first) {
-		room -= hdr_diff;
-	}
-
-	/* Calculate remaining room space for data to move */
-	move = next->len > room ? room : next->len;
-
-	memmove(frag->data + frag->len, next->data, move);
-
-	net_buf_add(frag, move);
-
-	/* Room left in current fragment */
-	*room_left = room - move;
+	net_buf_add(frame_buf, move);
 
 	return move;
 }
 
-static inline void compact_frag(struct net_buf *frag, u8_t moved)
+static inline void update_fragment_ctx(struct ieee802154_fragment_ctx *ctx,
+				       u8_t move)
 {
-	u8_t remaining = frag->len - moved;
-
-	/* Move remaining data next to fragmentation header,
-	 * (leave space for header).
-	 */
-	if (remaining) {
-		memmove(frag->data, frag->data + moved, remaining);
+	if (move == (ctx->buf->len - (ctx->pos - ctx->buf->data))) {
+		ctx->buf = ctx->buf->frags;
+		if (ctx->buf) {
+			ctx->pos = ctx->buf->data;
+		}
+	} else {
+		ctx->pos += move;
 	}
-
-	frag->len = remaining;
 }
 
 /**
@@ -204,97 +159,60 @@ static inline void compact_frag(struct net_buf *frag, u8_t moved)
  *  fh  : fragment header (dispatch + size + tag + [offset])
  *  p   : payload (first fragment holds IPv6 hdr as payload)
  *  e   : empty space
+ *  ll  : link layer
  *
- *  Input to ieee802154_fragment() buf chain looks like below
+ *  Input frame_buf to ieee802154_fragment() looks like below
  *
- *  | ch + p | p | p | p | p | p + e |
+ *  | ll |
  *
- *  After complete fragmentation buf chain looks like below
+ *  After fragment creation, frame_buf will look like:
  *
- *  |fh + p + e | fh + p + e | fh + p + e | fh + p + e | fh + p + e |
+ *  | ll + fh + p + e |
+ *
+ *  p being taken from current pkt buffer and position.
  *
  *  Space in every fragment is because fragment payload should be multiple
  *  of 8 octets (we have predefined packets at compile time, data packet mtu
  *  is set already).
  *
- *  Create the first fragment, add fragmentation header and insert
- *  fragment at beginning of pkt, move data from next fragments to
- *  previous one, from here on insert fragmentation header and adjust
- *  data on subsequent packets.
+ *  If it's the first fragment being created, fh will not own any offset
+ *  (so it will be 1 byte smaller)
  */
-bool ieee802154_fragment(struct net_pkt *pkt, int hdr_diff)
+void ieee802154_fragment(struct ieee802154_fragment_ctx *ctx,
+			 struct net_buf *frame_buf, bool iphc)
 {
-	struct net_buf *frag;
-	struct net_buf *next;
-	u16_t processed;
-	u16_t offset;
-	u16_t size;
-	u8_t room;
-	u8_t move;
 	u8_t max;
-	bool first;
 
-	if (!pkt || !pkt->frags) {
-		return false;
+	if (!ctx->offset) {
+		datagram_tag++;
 	}
 
-	/* If it is a single fragment do not add fragmentation header */
-	if (!pkt->frags->frags) {
-		return true;
-	}
+	set_up_frag_hdr(frame_buf, ctx->pkt_size, ctx->offset);
+	max = calc_max_payload(frame_buf, ctx->offset);
 
-	/* Datagram_size: total length before compression */
-	size = net_pkt_get_len(pkt) + hdr_diff;
+	ctx->processed += max;
 
-	room = 0;
-	offset = 0;
-	processed = 0;
-	first = true;
-	datagram_tag++;
-
-	next = pkt->frags;
-	pkt->frags = NULL;
-
-	/* First fragment has compressed header, but SIZE and OFFSET
-	 * values in fragmentation header are based on uncompressed
-	 * IP packet.
-	 */
-	while (1) {
-		if (!room) {
-			/* Prepare new fragment based on offset */
-			frag = prepare_new_fragment(pkt, offset);
-			if (!frag) {
-				return false;
-			}
-
-			/* Set fragmentation header in the beginning */
-			set_up_frag_hdr(frag, size, offset);
-
-			/* Calculate max payload in multiples of 8 bytes */
-			max = calc_max_payload(pkt, frag, offset);
-
-			/* Calculate how much data is processed */
-			processed += max;
-
-			offset = processed >> 3;
-		}
-
-		/* Move data from next fragment to current fragment */
-		move = move_frag_data(frag, next, max, first, hdr_diff, &room);
-		first = false;
-
-		/* Compact the next fragment */
-		compact_frag(next, move);
-
-		if (!next->len) {
-			next = net_pkt_frag_del(pkt, NULL, next);
-			if (!next) {
-				break;
-			}
+	if (!ctx->offset) {
+		/* First fragment needs to take into account 6lo */
+		if (iphc) {
+			max -= ctx->hdr_diff;
+		} else {
+			/* Adding IPv6 dispatch header */
+			max += 1U;
 		}
 	}
 
-	return true;
+	while (max && ctx->buf) {
+		u8_t move;
+
+		move = copy_data(ctx, frame_buf, max);
+
+		update_fragment_ctx(ctx, move);
+
+		max -= move;
+	}
+
+	ctx->offset = ctx->processed >> 3;
 }
 
 static inline u16_t get_datagram_size(u8_t *ptr)
@@ -307,26 +225,30 @@ static inline u16_t get_datagram_tag(u8_t *ptr)
 	return (ptr[0] << 8) | ptr[1];
 }
 
-static inline void remove_frag_header(struct net_buf *frag, u8_t hdr_len)
-{
-	memmove(frag->data, frag->data + hdr_len, frag->len - hdr_len);
-	frag->len -= hdr_len;
-}
-
 static void update_protocol_header_lengths(struct net_pkt *pkt, u16_t size)
 {
+	NET_PKT_DATA_ACCESS_DEFINE(ipv6_access, struct net_ipv6_hdr);
+	struct net_ipv6_hdr *ipv6;
+
+	ipv6 = (struct net_ipv6_hdr *)net_pkt_get_data(pkt, &ipv6_access);
+	if (!ipv6) {
+		NET_ERR("could not get IPv6 header");
+		return;
+	}
+
 	net_pkt_set_ip_hdr_len(pkt, NET_IPV6H_LEN);
+	ipv6->len = htons(size - NET_IPV6H_LEN);
 
-	NET_IPV6_HDR(pkt)->len = htons(size - NET_IPV6H_LEN);
+	net_pkt_set_data(pkt, &ipv6_access);
 
-	if (NET_IPV6_HDR(pkt)->nexthdr == IPPROTO_UDP) {
-		struct net_udp_hdr hdr, *udp_hdr;
+	if (ipv6->nexthdr == IPPROTO_UDP) {
+		NET_PKT_DATA_ACCESS_DEFINE(udp_access, struct net_udp_hdr);
+		struct net_udp_hdr *udp;
 
-		udp_hdr = net_udp_get_hdr(pkt, &hdr);
-		if (udp_hdr) {
-			udp_hdr->len = htons(size - NET_IPV6H_LEN);
-
-			net_udp_set_hdr(pkt, udp_hdr);
+		udp = (struct net_udp_hdr *)net_pkt_get_data(pkt, &udp_access);
+		if (udp) {
+			udp->len = htons(size - NET_IPV6H_LEN);
+			net_pkt_set_data(pkt, &udp_access);
 		} else {
 			NET_ERR("could not get UDP header");
 		}
@@ -337,7 +259,7 @@ static inline void clear_reass_cache(u16_t size, u16_t tag)
 {
 	u8_t i;
 
-	for (i = 0; i < REASS_CACHE_SIZE; i++) {
+	for (i = 0U; i < REASS_CACHE_SIZE; i++) {
 		if (!(cache[i].size == size && cache[i].tag == tag)) {
 			continue;
 		}
@@ -347,8 +269,8 @@ static inline void clear_reass_cache(u16_t size, u16_t tag)
 		}
 
 		cache[i].pkt = NULL;
-		cache[i].size = 0;
-		cache[i].tag = 0;
+		cache[i].size = 0U;
+		cache[i].tag = 0U;
 		cache[i].used = false;
 		k_delayed_work_cancel(&cache[i].timer);
 	}
@@ -367,8 +289,8 @@ static void reass_timeout(struct k_work *work)
 	}
 
 	cache->pkt = NULL;
-	cache->size = 0;
-	cache->tag = 0;
+	cache->size = 0U;
+	cache->tag = 0U;
 	cache->used = false;
 }
 
@@ -408,7 +330,7 @@ static inline struct frag_cache *get_reass_cache(u16_t size, u16_t tag)
 {
 	u8_t i;
 
-	for (i = 0; i < REASS_CACHE_SIZE; i++) {
+	for (i = 0U; i < REASS_CACHE_SIZE; i++) {
 		if (cache[i].used) {
 			if (cache[i].size == size &&
 			    cache[i].tag == tag) {
@@ -420,36 +342,133 @@ static inline struct frag_cache *get_reass_cache(u16_t size, u16_t tag)
 	return NULL;
 }
 
-/* Helper function to write fragment data to Rx packet based on offset. */
-static inline bool copy_frag(struct net_pkt *pkt,
-			     struct net_buf *frag,
-			     u16_t offset)
+static inline void fragment_append(struct net_pkt *pkt, struct net_buf *frag)
 {
-	struct net_buf *input = frag;
-	struct net_buf *write;
-	u16_t pos = offset;
+	if ((frag->data[0] & NET_FRAG_DISPATCH_MASK) ==
+	    NET_6LO_DISPATCH_FRAG1) {
+		/* Always make sure first fragment is inserted first
+		 * This will be useful for fragment_cached_pkt_len()
+		 */
+		frag->frags = pkt->buffer;
+		pkt->buffer = frag;
+	} else {
+		net_pkt_append_buffer(pkt, frag);
+	}
+}
 
-	write = pkt->frags;
+static inline size_t fragment_cached_pkt_len(struct net_pkt *pkt)
+{
+	size_t len = 0U;
+	struct net_buf *frag;
+	int hdr_len;
+	u8_t *data;
 
-	while (input) {
-		write = net_pkt_write(pkt, write, pos, &pos, input->len,
-				       input->data, NET_6LO_RX_PKT_TIMEOUT);
-		if (!write && pos == 0xffff) {
-			/* Free the new bufs we tried to get, we need to discard
-			 * the whole fragment chain.
-			 */
-			net_pkt_frag_unref(pkt->frags);
-			pkt->frags = NULL;
+	frag = pkt->buffer;
+	while (frag) {
+		u16_t hdr_len = NET_6LO_FRAGN_HDR_LEN;
 
-			return false;
+		if ((frag->data[0] & NET_FRAG_DISPATCH_MASK) ==
+		    NET_6LO_DISPATCH_FRAG1) {
+			hdr_len = NET_6LO_FRAG1_HDR_LEN;
 		}
 
-		input = input->frags;
+		len += frag->len - hdr_len;
+
+		frag = frag->frags;
 	}
 
-	net_pkt_frag_unref(frag);
+	/* 6lo assumes that fragment header has been removed,
+	 * and in our side we assume first buffer is always the first fragment.
+	 */
+	data = pkt->buffer->data;
+	pkt->buffer->data += NET_6LO_FRAG1_HDR_LEN;
 
-	return true;
+	hdr_len = net_6lo_uncompress_hdr_diff(pkt);
+
+	pkt->buffer->data = data;
+
+	if (hdr_len == INT_MAX) {
+		return 0;
+	}
+
+	return len + hdr_len;
+}
+
+static inline u16_t fragment_offset(struct net_buf *frag)
+{
+	if ((frag->data[0] & NET_FRAG_DISPATCH_MASK) ==
+		    NET_6LO_DISPATCH_FRAG1) {
+		return 0;
+	}
+
+	return ((u16_t)frag->data[NET_FRAG_OFFSET_POS] << 3);
+}
+
+static void fragment_move_back(struct net_pkt *pkt,
+			       struct net_buf *frag, struct net_buf *stop)
+{
+	struct net_buf *prev, *current;
+
+	prev = NULL;
+	current = pkt->buffer;
+
+	while (current && current != stop) {
+		if (fragment_offset(frag) < fragment_offset(current)) {
+			if (prev) {
+				prev->frags = frag;
+			}
+
+			frag->frags = current;
+			break;
+		}
+
+		prev = current;
+		current = current->frags;
+	}
+}
+
+static inline void fragment_remove_headers(struct net_pkt *pkt)
+{
+	struct net_buf *frag;
+
+	frag = pkt->buffer;
+	while (frag) {
+		u16_t hdr_len = NET_6LO_FRAGN_HDR_LEN;
+
+		if ((frag->data[0] & NET_FRAG_DISPATCH_MASK) ==
+		    NET_6LO_DISPATCH_FRAG1) {
+			hdr_len = NET_6LO_FRAG1_HDR_LEN;
+		}
+
+		memmove(frag->data, frag->data + hdr_len, frag->len - hdr_len);
+		frag->len -= hdr_len;
+
+		frag = frag->frags;
+	}
+}
+
+static inline void fragment_reconstruct_packet(struct net_pkt *pkt)
+{
+	struct net_buf *prev, *current, *next;
+
+	prev = NULL;
+	current = pkt->buffer;
+
+	while (current) {
+		next = current->frags;
+
+		if (!prev || (fragment_offset(prev) >
+			      fragment_offset(current))) {
+			prev = current;
+		} else {
+			fragment_move_back(pkt, current, prev);
+		}
+
+		current = next;
+	}
+
+	/* Let's remove now useless fragmentation headers */
+	fragment_remove_headers(pkt);
 }
 
 /**
@@ -460,101 +479,61 @@ static inline bool copy_frag(struct net_pkt *pkt,
  *  in the cache, remaining fragments just cache data fragment, unref
  *  RX pkt. So in both the cases caller can assume packet is consumed.
  */
-static inline enum net_verdict add_frag_to_cache(struct net_pkt *pkt,
-						 bool first)
+static inline enum net_verdict fragment_add_to_cache(struct net_pkt *pkt)
 {
+	bool first_frag = false;
 	struct frag_cache *cache;
 	struct net_buf *frag;
 	u16_t size;
 	u16_t tag;
-	u16_t offset = 0;
-	u8_t pos = 0;
 
 	/* Parse total size of packet */
-	size = get_datagram_size(pkt->frags->data);
-	pos += NET_6LO_FRAG_DATAGRAM_SIZE_LEN;
+	size = get_datagram_size(pkt->buffer->data);
 
 	/* Parse the datagram tag */
-	tag = get_datagram_tag(pkt->frags->data + pos);
-	pos += NET_6LO_FRAG_DATAGRAM_OFFSET_LEN;
-
-	if (!first) {
-		offset = ((u16_t)pkt->frags->data[pos]) << 3;
-		pos++;
-	}
-
-	/* Remove frag header and update data */
-	remove_frag_header(pkt->frags, pos);
-
-	/* Uncompress the IP headers */
-	if (first && !net_6lo_uncompress(pkt)) {
-		NET_ERR("Could not uncompress first frag's 6lo hdr");
-		clear_reass_cache(size, tag);
-
-		return NET_DROP;
-	}
+	tag = get_datagram_tag(pkt->buffer->data +
+			       NET_6LO_FRAG_DATAGRAM_SIZE_LEN);
 
 	/* If there are no fragments in the cache means this frag
 	 * is the first one. So cache Rx pkt otherwise not.
-	 * Write data fragment data to cached Rx based on offset parameter.
-	 * (Detach data fragment from incoming Rx and copy that data).
 	 */
-
-	frag = pkt->frags;
-	pkt->frags = NULL;
+	frag = pkt->buffer;
+	pkt->buffer = NULL;
 
 	cache = get_reass_cache(size, tag);
 	if (!cache) {
 		cache = set_reass_cache(pkt, size, tag);
 		if (!cache) {
 			NET_ERR("Could not get a cache entry");
-			pkt->frags = frag;
+			pkt->buffer = frag;
 			return NET_DROP;
 		}
 
-		/* If write failed, then attach frag back to incoming packet
-		 * and return NET_DROP, caller will take care of freeing it.
-		 */
-		if (!copy_frag(cache->pkt, frag, offset)) {
-			pkt->frags = frag;
-
-			/* Initialize to NULL to prevent duble free. It's only
-			 * needed here because this is the first fragment.
-			 */
-			cache->pkt = NULL;
-
-			clear_reass_cache(size, tag);
-
-			NET_ERR("Copying frag failed");
-
-			return NET_DROP;
-		}
-
-		NET_DBG("packet inserted into cache");
-
-		return NET_OK;
+		first_frag = true;
 	}
 
-	/* Add data packet to reassembly packet */
-	if (!copy_frag(cache->pkt, frag, offset)) {
-		pkt->frags = frag;
+	fragment_append(cache->pkt, frag);
 
-		clear_reass_cache(size, tag);
+	if (fragment_cached_pkt_len(cache->pkt) == cache->size) {
+		/* Assign buffer back to input packet. */
+		pkt->buffer = cache->pkt->buffer;
+		cache->pkt->buffer = NULL;
 
-		return NET_DROP;
-	}
-
-	/* Check if all the fragments are received or not */
-	if (net_pkt_get_len(cache->pkt) == size) {
-		/* Assign frags back to input packet. */
-		pkt->frags = cache->pkt->frags;
-		cache->pkt->frags = NULL;
-
-		/* Lengths are elided in compression, so calculate it. */
-		update_protocol_header_lengths(pkt, cache->size);
+		fragment_reconstruct_packet(pkt);
 
 		/* Once reassemble is done, cache is no longer needed. */
 		clear_reass_cache(size, tag);
+
+		if (!net_6lo_uncompress(pkt)) {
+			NET_ERR("Could not uncompress. Bogus packet?");
+			return NET_DROP;
+		}
+
+		net_pkt_cursor_init(pkt);
+
+		update_protocol_header_lengths(pkt, size);
+
+		net_pkt_cursor_init(pkt);
 
 		NET_DBG("All fragments received and reassembled");
 
@@ -562,27 +541,26 @@ static inline enum net_verdict add_frag_to_cache(struct net_pkt *pkt,
 	}
 
 	/* Unref Rx part of original packet */
-	net_pkt_unref(pkt);
+	if (!first_frag) {
+		net_pkt_unref(pkt);
+	}
 
 	return NET_OK;
 }
 
+
 enum net_verdict ieee802154_reassemble(struct net_pkt *pkt)
 {
-	if (!pkt || !pkt->frags) {
+	if (!pkt || !pkt->buffer) {
 		NET_ERR("Nothing to reassemble");
 		return NET_DROP;
 	}
 
-	switch (pkt->frags->data[0] & 0xF0) {
-	case NET_6LO_DISPATCH_FRAG1:
-		/* First fragment with IP headers */
-		return add_frag_to_cache(pkt, true);
-	case NET_6LO_DISPATCH_FRAGN:
-		/* Further fragments */
-		return add_frag_to_cache(pkt, false);
-	default:
-		NET_DBG("No frag dispatch (%02x)", pkt->frags->data[0]);
+	if ((pkt->buffer->data[0] & NET_FRAG_DISPATCH_MASK) >=
+	    NET_6LO_DISPATCH_FRAG1) {
+		return fragment_add_to_cache(pkt);
+	} else {
+		NET_DBG("No frag dispatch (%02x)", pkt->buffer->data[0]);
 		/* Received unfragmented packet, uncompress */
 		if (net_6lo_uncompress(pkt)) {
 			return NET_CONTINUE;

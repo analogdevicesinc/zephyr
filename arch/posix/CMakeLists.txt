@@ -1,7 +1,6 @@
-zephyr_cc_option_ifdef(CONFIG_LTO -flto)
+# SPDX-License-Identifier: Apache-2.0
 
 zephyr_compile_options(
-  -fno-freestanding
   -m32
   -MMD
   -MP
@@ -9,9 +8,15 @@ zephyr_compile_options(
   -include ${ZEPHYR_BASE}/arch/posix/include/posix_cheats.h
   )
 
+# @Intent: Obtain compiler specific flags for no freestanding compilation
+toolchain_cc_no_freestanding_options()
+
+zephyr_include_directories(${BOARD_DIR})
+
 zephyr_compile_options_ifdef(CONFIG_COVERAGE
   -fprofile-arcs
   -ftest-coverage
+  -fno-inline
 )
 zephyr_link_libraries_ifdef(CONFIG_COVERAGE
 	-lgcov

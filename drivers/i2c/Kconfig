@@ -17,15 +17,19 @@ menuconfig I2C
 if I2C
 
 # Include these first so that any properties (e.g. defaults) below can be
-# overriden (by defining symbols in multiple locations)
+# overridden (by defining symbols in multiple locations)
+source "drivers/i2c/Kconfig.cc13xx_cc26xx"
 source "drivers/i2c/Kconfig.dw"
 source "drivers/i2c/Kconfig.esp32"
 source "drivers/i2c/slave/Kconfig"
 source "drivers/i2c/Kconfig.gpio"
+source "drivers/i2c/Kconfig.xec"
 source "drivers/i2c/Kconfig.nrfx"
 source "drivers/i2c/Kconfig.qmsi"
 source "drivers/i2c/Kconfig.sbcon"
+source "drivers/i2c/Kconfig.sifive"
 source "drivers/i2c/Kconfig.stm32"
+source "drivers/i2c/Kconfig.sam0"
 
 
 config I2C_INIT_PRIORITY
@@ -34,18 +38,10 @@ config I2C_INIT_PRIORITY
 	help
 	  I2C device driver initialization priority.
 
-config SYS_LOG_I2C_LEVEL
-	int "I2C log level"
-	depends on SYS_LOG
-	default 0
-	help
-	  Sets log level for I2C drivers.
-	  Levels are:
-	  - 0 OFF, do not write
-	  - 1 ERROR, only write SYS_LOG_ERR
-	  - 2 WARNING, write SYS_LOG_WRN in addition to previous level
-	  - 3 INFO, write SYS_LOG_INF in addition to previous levels
-	  - 4 DEBUG, write SYS_LOG_DBG in addition to previous levels
+
+module = I2C
+module-str = i2c
+source "subsys/logging/Kconfig.template.log_config"
 
 config I2C_0
 	bool "Enable I2C Port 0"
@@ -247,16 +243,12 @@ config I2C_7_IRQ_PRI
 	help
 	  IRQ priority.
 
-config I2C_ATMEL_SAM3
-	bool "[deprecated] Atmel SAM3X I2C Driver"
-	depends on SOC_SERIES_SAM3X
+config I2C_GECKO
+	bool "Gecko I2C driver"
+	depends on HAS_SILABS_GECKO
+	select SOC_GECKO_I2C
 	help
-	  This driver is deprecated and will be removed. Use
-	  "Atmel SAM (TWI) I2C driver" instead.
-
-	  Enable I2C support on the Atmel SAM3 family processor.
-	  Says y to enable additional options to enable support
-	  for individual controllers.
+	  Enable the SiLabs Gecko I2C bus driver.
 
 config I2C_SAM_TWIHS
 	bool "Atmel SAM (TWIHS) I2C driver"
@@ -278,6 +270,13 @@ config I2C_MCUX
 	select HAS_DTS_I2C
 	help
 	  Enable the mcux I2C driver.
+
+config I2C_MCUX_LPI2C
+	bool "MCUX LPI2C driver"
+	depends on HAS_MCUX_LPI2C && CLOCK_CONTROL
+	select HAS_DTS_I2C
+	help
+	  Enable the mcux LPI2C driver.
 
 config I2C_IMX
 	bool "i.MX I2C driver"
@@ -301,7 +300,15 @@ config I2C_BITBANG
 config I2C_NIOS2
 	bool "Nios-II I2C driver"
 	depends on HAS_ALTERA_HAL
+	select HAS_DTS_I2C
 	help
 	  Enable the Nios-II I2C driver.
+
+config I2C_RV32M1_LPI2C
+	bool "RV32M1 LPI2C driver"
+	depends on HAS_RV32M1_LPI2C && CLOCK_CONTROL
+	select HAS_DTS_I2C
+	help
+	  Enable the RV32M1 LPI2C driver.
 
 endif # I2C

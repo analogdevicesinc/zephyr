@@ -21,14 +21,17 @@
 extern "C" {
 #endif
 
+/* These APIs are mostly meant for Zephyr internal use so do not generate
+ * documentation for them.
+ */
+/** @cond INTERNAL_HIDDEN */
+
 /**
  * @brief UDP library
  * @defgroup udp UDP Library
  * @ingroup networking
  * @{
  */
-
-#if defined(CONFIG_NET_UDP)
 
 /**
  * @brief Get UDP packet header data from net_pkt.
@@ -47,8 +50,16 @@ extern "C" {
  * @return Return pointer to header or NULL if something went wrong.
  *         Always use the returned pointer to access the UDP header.
  */
+#if defined(CONFIG_NET_UDP)
 struct net_udp_hdr *net_udp_get_hdr(struct net_pkt *pkt,
 				    struct net_udp_hdr *hdr);
+#else
+static inline struct net_udp_hdr *net_udp_get_hdr(struct net_pkt *pkt,
+						  struct net_udp_hdr *hdr)
+{
+	return NULL;
+}
+#endif /* CONFIG_NET_UDP */
 
 /**
  * @brief Set UDP packet header data in net_pkt.
@@ -65,28 +76,22 @@ struct net_udp_hdr *net_udp_get_hdr(struct net_pkt *pkt,
  *
  * @return Return pointer to header or NULL if something went wrong.
  */
+#if defined(CONFIG_NET_UDP)
 struct net_udp_hdr *net_udp_set_hdr(struct net_pkt *pkt,
 				    struct net_udp_hdr *hdr);
-
 #else
-
-static inline struct net_udp_hdr *net_udp_get_hdr(struct net_pkt *pkt,
-						  struct net_udp_hdr *hdr)
-{
-	return NULL;
-}
-
 static inline struct net_udp_hdr *net_udp_set_hdr(struct net_pkt *pkt,
 						  struct net_udp_hdr *hdr)
 {
 	return NULL;
 }
-
 #endif /* CONFIG_NET_UDP */
 
 /**
  * @}
  */
+
+/** @endcond */
 
 #ifdef __cplusplus
 }

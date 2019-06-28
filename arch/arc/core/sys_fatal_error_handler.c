@@ -8,14 +8,14 @@
  * @file
  * @brief ARCv2 system fatal error handler
  *
- * This module provides the _SysFatalErrorHandler() routine for ARCv2 BSPs.
+ * This module provides the z_SysFatalErrorHandler() routine for ARCv2 BSPs.
  */
 
 #include <kernel.h>
 #include <toolchain.h>
 #include <linker/sections.h>
 #include <kernel_structs.h>
-#include <misc/printk.h>
+#include <sys/printk.h>
 
 /**
  *
@@ -37,7 +37,7 @@
  *
  * @return N/A
  */
-__weak void _SysFatalErrorHandler(unsigned int reason,
+__weak void z_SysFatalErrorHandler(unsigned int reason,
 						const NANO_ESF *pEsf)
 {
 	ARG_UNUSED(pEsf);
@@ -52,7 +52,7 @@ __weak void _SysFatalErrorHandler(unsigned int reason,
 		goto hang_system;
 	}
 
-	if (_is_thread_essential()) {
+	if (z_is_thread_essential()) {
 		printk("Fatal fault in essential thread! Spinning...\n");
 		goto hang_system;
 	}

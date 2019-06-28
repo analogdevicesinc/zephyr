@@ -7,7 +7,7 @@
 
 menuconfig GPIO_SIFIVE
 	bool "SiFive Freedom Processor GPIO driver"
-	depends on GPIO && SOC_RISCV32_SIFIVE_FREEDOM
+	depends on SOC_RISCV32_SIFIVE_FREEDOM
 	select HAS_DTS_GPIO
 	help
 	  Enable driver for the SiFive Freedom GPIO controller.
@@ -15,10 +15,6 @@ menuconfig GPIO_SIFIVE
 	  Says n if not sure.
 
 if GPIO_SIFIVE
-
-config GPIO_SIFIVE_GPIO_NAME
-	string "GPIO driver name"
-	default "gpio0"
 
 config GPIO_SIFIVE_0_PRIORITY
 	int "GPIO 0 interrupt priority"

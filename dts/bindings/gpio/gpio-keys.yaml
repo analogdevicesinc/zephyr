@@ -3,9 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: GPIO KEYS
-id: gpio-keys
 version: 0.1
 
 description: >
@@ -13,21 +12,20 @@ description: >
 
 properties:
     compatible:
-      type: string
+      constraint: "gpio-keys"
+      type: string-array
       category: required
       description: compatible strings
-      constraint: "gpio-keys"
       generation: define
 
-    gpios:
-      type: compound
-      category: required
-      generation: define
-
-    label:
-      type: string
-      category: required
-      description: Human readable string describing the device (used by Zephyr for API name)
-      generation: define
-
-...
+sub-node:
+    properties:
+       gpios:
+          type: compound
+          category: required
+          generation: define
+       label:
+          category: required
+          type: string
+          description: Human readable string describing the device (used by Zephyr for API name)
+          generation: define

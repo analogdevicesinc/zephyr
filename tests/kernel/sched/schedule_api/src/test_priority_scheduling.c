@@ -5,8 +5,8 @@
  */
 
 #include <ztest.h>
+#include "test_sched.h"
 
-#define STACK_SIZE (384 + CONFIG_TEST_EXTRA_STACKSIZE)
 /* nrf 51 has lower ram, so creating less number of threads */
 #if CONFIG_SRAM_SIZE <= 24
 	#define NUM_THREAD 2
@@ -19,7 +19,7 @@
 #define ITRERATION_COUNT 5
 #define BASE_PRIORITY 1
 
-static K_THREAD_STACK_ARRAY_DEFINE(tstack, NUM_THREAD, STACK_SIZE);
+BUILD_ASSERT(NUM_THREAD <= MAX_NUM_THREAD);
 
 /* Semaphore on which Ztest thread wait*/
 static K_SEM_DEFINE(sema2, 0, NUM_THREAD);
@@ -33,15 +33,17 @@ static struct k_thread t[NUM_THREAD];
 /* Application thread */
 static void thread_tslice(void *p1, void *p2, void *p3)
 {
+	int idx = POINTER_TO_INT(p1);
+
 	/* Print New line for last thread */
-	int thread_parameter = ((int)p1 == (NUM_THREAD - 1)) ? '\n' :
-			       ((int)p1 + 'A');
+	int thread_parameter = (idx == (NUM_THREAD - 1)) ? '\n' :
+			       (idx + 'A');
 
 	while (1) {
 		/* Prining alphabet corresponding to thread*/
 		TC_PRINT("%c", thread_parameter);
 		/* Testing if threads are execueted as per priority*/
-		zassert_true(((int)p1 == thread_idx), NULL);
+		zassert_true((idx == thread_idx), NULL);
 		thread_idx = (thread_idx + 1) % (NUM_THREAD);
 
 		/* Realease CPU and give chance to Ztest thread to run*/
@@ -76,8 +78,8 @@ void test_priority_scheduling(void)
 
 	/* Create Threads with different Priority*/
 	for (int i = 0; i < NUM_THREAD; i++) {
-		tid[i] = k_thread_create(&t[i], tstack[i], STACK_SIZE,
-					 thread_tslice, (void *)(intptr_t) i, NULL, NULL,
+		tid[i] = k_thread_create(&t[i], tstacks[i], STACK_SIZE,
+					 thread_tslice, INT_TO_POINTER(i), NULL, NULL,
 					 K_PRIO_PREEMPT(BASE_PRIORITY + i), 0, 0);
 	}
 

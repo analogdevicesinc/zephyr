@@ -9,13 +9,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define LOG_MODULE_NAME net_route
-#define NET_LOG_LEVEL CONFIG_NET_ROUTE_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_REGISTER(net_route, CONFIG_NET_ROUTE_LOG_LEVEL);
 
 #include <kernel.h>
 #include <limits.h>
 #include <zephyr/types.h>
-#include <misc/slist.h>
+#include <sys/slist.h>
 
 #include <net/net_pkt.h>
 #include <net/net_core.h>
@@ -28,7 +28,6 @@
 #include "icmpv6.h"
 #include "nbr.h"
 #include "route.h"
-#include "rpl.h"
 
 #if !defined(NET_ROUTE_EXTRA_DATA_SIZE)
 #define NET_ROUTE_EXTRA_DATA_SIZE 0
@@ -205,9 +204,14 @@ static struct net_nbr *nbr_nexthop_get(struct net_if *iface,
 	/* Note that the nexthop host must be already in the neighbor
 	 * cache. We just increase the ref count of an existing entry.
 	 */
-	struct net_nbr *nbr = net_ipv6_nbr_lookup(iface, addr);
+	struct net_nbr *nbr;
 
-	NET_ASSERT_INFO(nbr, "Next hop neighbor not found!");
+	nbr = net_ipv6_nbr_lookup(iface, addr);
+	if (nbr == NULL) {
+		NET_DBG("Next hop neighbor not found!");
+		return NULL;
+	}
+
 	NET_ASSERT_INFO(nbr->idx != NET_NBR_LLADDR_UNKNOWN,
 			"Nexthop %s not in neighbor cache!",
 			log_strdup(net_sprint_ipv6_addr(addr)));
@@ -234,7 +238,7 @@ static int nbr_nexthop_put(struct net_nbr *nbr)
 
 
 #define net_route_info(str, route, dst)					\
-	if (NET_LOG_LEVEL >= LOG_LEVEL_DBG) {				\
+	if (CONFIG_NET_ROUTE_LOG_LEVEL >= LOG_LEVEL_DBG) {		\
 		struct in6_addr *naddr = net_route_get_nexthop(route);	\
 									\
 		NET_ASSERT_INFO(naddr, "Unknown nexthop address");	\
@@ -256,7 +260,7 @@ struct net_route_entry *net_route_lookup(struct net_if *iface,
 					 struct in6_addr *dst)
 {
 	struct net_route_entry *route, *found = NULL;
-	u8_t longest_match = 0;
+	u8_t longest_match = 0U;
 	int i;
 
 	for (i = 0; i < CONFIG_NET_MAX_ROUTES && longest_match < 128; i++) {
@@ -273,7 +277,7 @@ struct net_route_entry *net_route_lookup(struct net_if *iface,
 		route = net_route_data(nbr);
 
 		if (route->prefix_len >= longest_match &&
-		    net_is_ipv6_prefix((u8_t *)dst,
+		    net_ipv6_is_prefix((u8_t *)dst,
 				       (u8_t *)&route->addr,
 				       route->prefix_len)) {
 			found = route;
@@ -356,7 +360,7 @@ struct net_route_entry *net_route_add(struct net_if *iface,
 				     struct net_route_entry,
 				     node);
 
-		if (NET_LOG_LEVEL >= LOG_LEVEL_DBG) {
+		if (CONFIG_NET_ROUTE_LOG_LEVEL >= LOG_LEVEL_DBG) {
 			struct in6_addr *tmp;
 			struct net_linkaddr_storage *llstorage;
 
@@ -544,7 +548,7 @@ int net_route_del_by_nexthop_data(struct net_if *iface,
 				continue;
 			}
 
-			if (nbr->extra_data_size == 0) {
+			if (nbr->extra_data_size == 0U) {
 				continue;
 			}
 

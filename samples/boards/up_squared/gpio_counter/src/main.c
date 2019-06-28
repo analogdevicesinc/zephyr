@@ -7,10 +7,11 @@
 #include <zephyr.h>
 
 #include <board.h>
-#include <gpio.h>
+#include <soc.h>
+#include <drivers/gpio.h>
 
-#include <misc/printk.h>
-#include <misc/util.h>
+#include <sys/printk.h>
+#include <sys/util.h>
 
 /**
  * @file
@@ -37,18 +38,40 @@
  */
 
 struct _pin {
-	u32_t	hat_num;
-	u32_t	pin;
+	u32_t		hat_num;
+	u32_t		pin;
+	const char	*gpio_dev_name;
+	struct device	*gpio_dev;
 };
 
 struct _pin counter_pins[] = {
-	{ 35, UP2_HAT_PIN_35 },
-	{ 37, UP2_HAT_PIN_37 },
-	{ 38, UP2_HAT_PIN_38 },
-	{ 40, UP2_HAT_PIN_40 },
+	{
+		.hat_num = 35,
+		.pin = UP2_HAT_PIN_35,
+		.gpio_dev_name = UP2_HAT_PIN_35_DEV,
+	},
+	{
+		.hat_num = 37,
+		.pin = UP2_HAT_PIN_37,
+		.gpio_dev_name = UP2_HAT_PIN_37_DEV,
+	},
+	{
+		.hat_num = 38,
+		.pin = UP2_HAT_PIN_38,
+		.gpio_dev_name = UP2_HAT_PIN_38_DEV,
+	},
+	{
+		.hat_num = 40,
+		.pin = UP2_HAT_PIN_40,
+		.gpio_dev_name = UP2_HAT_PIN_40_DEV,
+	},
 };
 
-struct _pin intr_pin = { 16, UP2_HAT_PIN_16 };
+struct _pin intr_pin = {
+	.hat_num = 16,
+	.pin = UP2_HAT_PIN_16,
+	.gpio_dev_name = UP2_HAT_PIN_16_DEV,
+};
 
 static struct gpio_callback gpio_cb;
 
@@ -63,27 +86,45 @@ K_SEM_DEFINE(counter_sem, 0, 1);
 #define NUM_PINS	ARRAY_SIZE(counter_pins)
 #define MASK		(BIT(NUM_PINS) - 1)
 
+#define GPIO_DEV	DT_APL_GPIO_LABEL
+
 void button_cb(struct device *gpiodev, struct gpio_callback *cb, u32_t pin)
 {
 	counter++;
 	k_sem_give(&counter_sem);
 }
 
+int get_gpio_dev(struct _pin *pin)
+{
+	pin->gpio_dev = device_get_binding(pin->gpio_dev_name);
+	if (!pin->gpio_dev) {
+		printk("ERROR: cannot get device binding for %s\n",
+		       pin->gpio_dev_name);
+		return -1;
+	}
+
+	return 0;
+}
+
 void main(void)
 {
-	struct device *gpiodev = device_get_binding(INTEL_APL_GPIO_0_LABEL);
 	u32_t val;
 	int i, ret;
 
-	if (!gpiodev) {
-		printk("ERROR: cannot get device binding for %s\n",
-		       INTEL_APL_GPIO_0_LABEL);
+	for (i = 0; i < NUM_PINS; i++) {
+		if (get_gpio_dev(&counter_pins[i]) != 0) {
+			return;
+		}
+	}
+
+	if (get_gpio_dev(&intr_pin) != 0) {
 		return;
 	}
 
 	/* Set pins to output */
 	for (i = 0; i < NUM_PINS; i++) {
-		ret = gpio_pin_configure(gpiodev, counter_pins[i].pin,
+		ret = gpio_pin_configure(counter_pins[i].gpio_dev,
+					 counter_pins[i].pin,
 					 GPIO_DIR_OUT);
 		if (ret) {
 			printk("ERROR: cannot set HAT pin %d to OUT (%d)\n",
@@ -93,24 +134,27 @@ void main(void)
 	}
 
 	/* Setup input pin */
-	ret = gpio_pin_configure(gpiodev, intr_pin.pin, INTR_PIN_FLAGS);
+	ret = gpio_pin_configure(intr_pin.gpio_dev, intr_pin.pin,
+				 INTR_PIN_FLAGS);
 	if (ret) {
 		printk("ERROR: cannot set HAT pin %d to OUT (%d)\n",
 			       intr_pin.hat_num, ret);
 			return;
 	}
 
-	gpio_init_callback(&gpio_cb, button_cb, intr_pin.pin);
-	gpio_add_callback(gpiodev, &gpio_cb);
-	gpio_pin_enable_callback(gpiodev, intr_pin.pin);
+	/* Callback uses pin_mask, so need bit shifting */
+	gpio_init_callback(&gpio_cb, button_cb, (1 << intr_pin.pin));
+	gpio_add_callback(intr_pin.gpio_dev, &gpio_cb);
+	gpio_pin_enable_callback(intr_pin.gpio_dev, intr_pin.pin);
 
 	/* main loop */
-	val = 0;
+	val = 0U;
 	while (1) {
 		printk("counter: 0x%x\n", val);
 
 		for (i = 0; i < NUM_PINS; i++) {
-			ret = gpio_pin_write(gpiodev, counter_pins[i].pin,
+			ret = gpio_pin_write(counter_pins[i].gpio_dev,
+					     counter_pins[i].pin,
 					     (val & BIT(i)));
 			if (ret) {
 				printk("ERROR: cannot set HAT pin %d value (%d)\n",

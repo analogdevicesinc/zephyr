@@ -14,11 +14,13 @@
 
 	chosen {
 		zephyr,console = &uart0;
-#ifdef CONFIG_MCUMGR_SMP_UART
+		zephyr,shell-uart = &uart0;
 		zephyr,uart-mcumgr = &uart0;
-#endif
+		zephyr,bt-mon-uart = &uart0;
+		zephyr,bt-c2h-uart = &uart0;
 		zephyr,sram = &sram0;
 		zephyr,flash = &flash0;
+		zephyr,code-partition = &slot0_partition;
 	};
 
 	leds {
@@ -61,6 +63,33 @@
 		};
 	};
 
+	arduino_header: connector {
+		compatible = "arduino-header-r3";
+		#gpio-cells = <2>;
+		gpio-map = <0 0 &gpio0 3 0>,	/* A0 */
+			   <1 0 &gpio0 4 0>,	/* A1 */
+			   <2 0 &gpio0 28 0>,	/* A2 */
+			   <3 0 &gpio0 29 0>,	/* A3 */
+			   <4 0 &gpio0 30 0>,	/* A4 */
+			   <5 0 &gpio0 31 0>,	/* A5 */
+			   <6 0 &gpio1 1 0>,	/* D0 */
+			   <7 0 &gpio1 2 0>,	/* D1 */
+			   <8 0 &gpio1 3 0>,	/* D2 */
+			   <9 0 &gpio1 4 0>,	/* D3 */
+			   <10 0 &gpio1 5 0>,	/* D4 */
+			   <11 0 &gpio1 6 0>,	/* D5 */
+			   <12 0 &gpio1 7 0>,	/* D6 */
+			   <13 0 &gpio1 8 0>,	/* D7 */
+			   <14 0 &gpio1 10 0>,	/* D8 */
+			   <15 0 &gpio1 11 0>,	/* D9 */
+			   <16 0 &gpio1 12 0>,	/* D10 */
+			   <17 0 &gpio1 13 0>,	/* D11 */
+			   <18 0 &gpio1 14 0>,	/* D12 */
+			   <19 0 &gpio1 15 0>,	/* D13 */
+			   <20 0 &gpio0 26 0>,	/* D14 */
+			   <21 0 &gpio0 27 0>;	/* D15 */
+	};
+
 	/* These aliases are provided for compatibility with samples */
 	aliases {
 		led0 = &led0;
@@ -75,99 +104,94 @@
 };
 
 &adc {
-	status ="ok";
+	status = "okay";
 };
 
 &gpiote {
-	status ="ok";
+	status = "okay";
 };
 
 &gpio0 {
-	status ="ok";
+	status = "okay";
 };
 
 &gpio1 {
-	status ="ok";
+	status = "okay";
 };
 
 &uart0 {
 	compatible = "nordic,nrf-uart";
 	current-speed = <115200>;
-	status = "ok";
+	status = "okay";
 	tx-pin = <6>;
 	rx-pin = <8>;
 	rts-pin = <5>;
 	cts-pin = <7>;
 };
 
-#ifdef CONFIG_UART_1_NRF_UARTE
-&uart1 {
-	current-speed = <115200>;
-	status = "ok";
-	tx-pin = <46>;
-	rx-pin = <45>;
-	rts-pin = <44>;
-	cts-pin = <47>;
-
-#ifdef CONFIG_MODEM_WNCM14A2A
-	wncm14a2a {
-		compatible = "wnc,m14a2a";
-		label = "wncm14a2a";
-		mdm-boot-mode-sel-gpios = <&gpio1 2 0>;
-		mdm-power-gpios = <&gpio1 3 0>;
-		mdm-keep-awake-gpios = <&gpio1 7 0>;
-		mdm-reset-gpios = <&gpio1 10 0>;
-		mdm-shld-trans-ena-gpios = <&gpio1 11 0>;
-		status = "ok";
-	};
-#endif
-};
-#endif
-
 &i2c0 {
-	status = "ok";
+	status = "okay";
 	sda-pin = <26>;
 	scl-pin = <27>;
 };
 
 &i2c1 {
-	status = "ok";
+	/* Cannot be used together with spi1. */
+	/* status = "okay"; */
 	sda-pin = <30>;
 	scl-pin = <31>;
 };
 
+&pwm0 {
+	status = "okay";
+	ch0-pin = <13>;
+	ch0-inverted;
+};
+
 &spi0 {
-	status = "ok";
+	/* Cannot be used together with i2c0. */
+	/* status = "okay"; */
 	sck-pin = <27>;
 	mosi-pin = <26>;
 	miso-pin = <29>;
 };
 
 &spi1 {
-	status = "ok";
+	status = "okay";
 	sck-pin = <31>;
 	mosi-pin = <30>;
 	miso-pin = <40>;
 };
 
 &spi2 {
-	status = "ok";
-	sck-pin = <43>;
-	mosi-pin = <44>;
-	miso-pin = <45>;
+	status = "okay";
+	sck-pin = <19>;
+	mosi-pin = <20>;
+	miso-pin = <21>;
+	cs-gpios = <&gpio0 17 0>, <&gpio1 5 0>;
+	mx25r6435f@0 {
+		compatible = "jedec,spi-nor";
+		reg = <0>;
+		spi-max-frequency = <80000000>;
+		label = "MX25R64";
+		jedec-id = <0xc2 0x28 0x17>;
+		size = <67108864>;
+		wp-gpios = <&gpio0 22 0>;
+		hold-gpios = <&gpio0 23 0>;
+	};
 };
 
 &spi3 {
-	status = "ok";
-	sck-pin = <42>;
-	mosi-pin = <41>;
-	miso-pin = <20>;
+	status = "okay";
+	sck-pin = <41>;
+	mosi-pin = <42>;
+	miso-pin = <43>;
 };
 
 &flash0 {
 	/*
 	 * For more information, see:
-	 * http://docs.zephyrproject.org/latest/devices/dts/flash_partitions.html
+	 * http://docs.zephyrproject.org/latest/guides/dts/index.html#flash-partitions
 	 */
 	partitions {
 		compatible = "fixed-partitions";
@@ -180,27 +204,31 @@
 		};
 		slot0_partition: partition@c000 {
 			label = "image-0";
-			reg = <0x0000C000 0x000069000>;
+			reg = <0x0000C000 0x000067000>;
 		};
-		slot1_partition: partition@75000 {
+		slot1_partition: partition@73000 {
 			label = "image-1";
-			reg = <0x00075000 0x000069000>;
+			reg = <0x00073000 0x000067000>;
 		};
-		scratch_partition: partition@de000 {
+		scratch_partition: partition@da000 {
 			label = "image-scratch";
-			reg = <0x000de000 0x0001e000>;
+			reg = <0x000da000 0x0001e000>;
 		};
 
-#if defined(CONFIG_FS_FLASH_STORAGE_PARTITION)
-		storage_partition: partition@fc000 {
+		/*
+		 * The flash starting at 0x000f8000 and ending at
+		 * 0x000fffff is reserved for use by the application.
+		 */
+
+		/* Storage partition will be used by FCB/NFFS/NVS if enabled. */
+		storage_partition: partition@f8000 {
 			label = "storage";
-			reg = <0x000fc000 0x00004000>;
+			reg = <0x000f8000 0x00008000>;
 		};
-#endif
 	};
 };
 
 &usbd {
 	compatible = "nordic,nrf-usbd";
-	status = "ok";
+	status = "okay";
 };

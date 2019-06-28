@@ -6,10 +6,10 @@
 
 #include <zephyr.h>
 
-#include <misc/printk.h>
+#include <sys/printk.h>
 
 #include <device.h>
-#include <i2c.h>
+#include <drivers/i2c.h>
 
 #include <display/grove_lcd.h>
 
@@ -37,7 +37,7 @@ void main(void)
 	char str[20];
 	int rgb[] = { 0x0, 0x0, 0x0 };
 	u8_t rgb_chg[3];
-	const u8_t rgb_step = 16;
+	const u8_t rgb_step = 16U;
 	u8_t set_config;
 	int i, j, m;
 	int cnt;

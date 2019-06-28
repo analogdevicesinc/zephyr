@@ -12,10 +12,26 @@ config BOARD
 
 if UART_CONSOLE
 
-config UART_STM32_PORT_1
+config UART_1
 	default y
 
 endif # UART_CONSOLE
+
+if I2C
+
+config I2C_1
+	default y
+
+config I2C_2
+	default y
+
+config I2C_3
+	default y
+
+config I2C_STM32_INTERRUPT
+	default y
+
+endif # I2C
 
 if SPI
 

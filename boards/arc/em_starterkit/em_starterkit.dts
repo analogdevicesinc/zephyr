@@ -6,8 +6,10 @@
 
 /dts-v1/;
 
+#include <mem.h>
 #include <emsk.dtsi>
-
+#include "em_starterkit_r23.dtsi"
+#include "board.dtsi"
 
 / {
 	model = "em_starterkit-em9d";
@@ -22,10 +24,19 @@
 	chosen {
 		zephyr,sram = &dccm0;
 		zephyr,console = &uart1;
+		zephyr,shell-uart = &uart1;
+	};
+
+	iccm@0 {
+		reg = <0x0 DT_SIZE_K(256)>;
+	};
+
+	dccm@80000000 {
+		reg = <0x80000000 DT_SIZE_K(128)>;
 	};
 };
 
 &uart1 {
-	status = "ok";
+	status = "okay";
 	current-speed = <115200>;
 };

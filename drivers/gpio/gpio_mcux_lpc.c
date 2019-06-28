@@ -15,7 +15,7 @@
 
 #include <errno.h>
 #include <device.h>
-#include <gpio.h>
+#include <drivers/gpio.h>
 #include <soc.h>
 #include <fsl_common.h>
 #include "gpio_utils.h"
@@ -48,10 +48,12 @@ static int gpio_mcux_lpc_configure(struct device *dev,
 	if ((flags & GPIO_INT) && (flags & GPIO_DIR_OUT)) {
 		return -EINVAL;
 	}
+
 	/* Check if GPIO port supports interrupts */
 	if (flags & GPIO_INT) {
-		return -EINVAL;
+		return -ENOTSUP;
 	}
+
 	/* supports access by pin now,you can add access by port when needed */
 	if (access_op == GPIO_ACCESS_BY_PIN) {
 		/* input-0,output-1 */
@@ -74,6 +76,11 @@ static int gpio_mcux_lpc_write(struct device *dev,
 {
 	const struct gpio_mcux_lpc_config *config = dev->config->config_info;
 	GPIO_Type *gpio_base = config->gpio_base;
+
+	/* Check for an invalid pin number */
+	if (pin >= ARRAY_SIZE(gpio_base->B[config->port_no])) {
+		return -EINVAL;
+	}
 
 	if (access_op == GPIO_ACCESS_BY_PIN) {
 		/* Set/Clear the data output for the respective pin */

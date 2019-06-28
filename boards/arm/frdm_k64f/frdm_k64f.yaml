@@ -5,6 +5,7 @@ arch: arm
 toolchain:
   - zephyr
   - gnuarmemb
+  - xtools
 supported:
   - netif:eth
   - adc
@@ -14,5 +15,7 @@ supported:
   - gpio
   - usb_device
   - watchdog
+  - hwinfo
+  - can
 testing:
   default: true

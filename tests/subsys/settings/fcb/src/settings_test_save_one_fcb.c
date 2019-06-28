@@ -8,6 +8,11 @@
 #include "settings_test.h"
 #include "settings/settings_fcb.h"
 
+static int test_config_save_one_byte_value(const char *name, u8_t val)
+{
+	return settings_save_one(name, &val, 1);
+}
+
 void test_config_save_one_fcb(void)
 {
 	int rc;
@@ -27,21 +32,21 @@ void test_config_save_one_fcb(void)
 	zassert_true(rc == 0,
 			 "can't register FCB as configuration destination");
 
-	val8 = 33;
+	val8 = 33U;
 	rc = settings_save();
 	zassert_true(rc == 0, "fcb write error");
 
-	rc = settings_save_one("myfoo/mybar", "42");
+	rc = test_config_save_one_byte_value("myfoo/mybar", 42);
 	zassert_true(rc == 0, "fcb one item write error");
 
 	rc = settings_load();
 	zassert_true(rc == 0, "fcb read error");
-	zassert_true(val8 == 42, "bad value read");
+	zassert_true(val8 == 42U, "bad value read");
 
-	rc = settings_save_one("myfoo/mybar", "44");
+	rc = test_config_save_one_byte_value("myfoo/mybar", 44);
 	zassert_true(rc == 0, "fcb one item write error");
 
 	rc = settings_load();
 	zassert_true(rc == 0, "fcb read error");
-	zassert_true(val8 == 44, "bad value read");
+	zassert_true(val8 == 44U, "bad value read");
 }

@@ -5,7 +5,7 @@ sample:
 tests:
   samples.logger:
     tags: logging
-    platform_exclude: qemu_xtensa
+    platform_exclude: qemu_x86_64
     harness: console
     harness_config:
       type: one_line
@@ -16,3 +16,9 @@ tests:
         - Severity levels showcase
         - Logging performance showcase
         - Logs from external logging system showcase
+
+  samples.logger.rtt:
+    tags: logging
+    filter: CONFIG_HAS_SEGGER_RTT
+    harness: keyboard
+    extra_args: CONF_FILE="prj_rtt.conf"

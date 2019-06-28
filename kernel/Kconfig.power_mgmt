@@ -6,7 +6,8 @@
 #
 
 menuconfig SYS_POWER_MANAGEMENT
-	bool "Power management"
+	bool "System Power management"
+	select TICKLESS_IDLE
 	help
 	  This option enables the board to implement extra power management
 	  policies whenever the kernel becomes idle. The kernel informs the
@@ -14,32 +15,11 @@ menuconfig SYS_POWER_MANAGEMENT
 	  timer is due to expire.
 
 if SYS_POWER_MANAGEMENT
-choice POWER_MANAGEMENT_CONTROL
-	prompt "Power Management Control"
-	default PM_CONTROL_APP
-	help
-	  Select the Application managed or OS managed power saving
-	  mechanism.
-
-config PM_CONTROL_APP
-	bool
-	prompt "Handled at Application level"
-	help
-	  This option enables the Application to handle all the Power
-	  Management flows for the platform.
-
-config PM_CONTROL_OS
-	bool
-	prompt "Handle at OS level"
-	help
-	  This option allows the OS to handle all the Power
-	  Management flows for the platform.
-
-endchoice # POWER_MANAGEMENT_CONTROL
-
-config SYS_POWER_LOW_POWER_STATE
-	bool "Low power state"
-	depends on SYS_POWER_LOW_POWER_STATE_SUPPORTED
+config SYS_POWER_SLEEP_STATES
+	bool "Low Power states"
+	depends on HAS_SYS_POWER_STATE_SLEEP_1 || \
+	           HAS_SYS_POWER_STATE_SLEEP_2 || \
+	           HAS_SYS_POWER_STATE_SLEEP_3
 	help
 	  This option enables the kernel to interface with a power manager
 	  application.  This permits the system to enter a custom CPU low power
@@ -47,9 +27,11 @@ config SYS_POWER_LOW_POWER_STATE
 	  the CPU low power states supported by the processor.  Generally the one
 	  saving most power.
 
-config SYS_POWER_DEEP_SLEEP
-	bool "Deep sleep state"
-	depends on SYS_POWER_DEEP_SLEEP_SUPPORTED
+config SYS_POWER_DEEP_SLEEP_STATES
+	bool "Deep Sleep states"
+	depends on HAS_SYS_POWER_STATE_DEEP_SLEEP_1 || \
+	           HAS_SYS_POWER_STATE_DEEP_SLEEP_2 || \
+	           HAS_SYS_POWER_STATE_DEEP_SLEEP_3
 	help
 	  This option enables the kernel to interface with a power manager
 	  application. This permits the system to enter a Deep sleep state
@@ -58,6 +40,10 @@ config SYS_POWER_DEEP_SLEEP
 	  extended periods and would have a high wake latency.  Resume would be
 	  from the reset vector same as cold boot. The interface allows
 	  restoration of states that were saved at the time of suspend.
+
+source "subsys/power/Kconfig"
+
+endif # SYS_POWER_MANAGEMENT
 
 config DEVICE_POWER_MANAGEMENT
 	bool "Device power management"
@@ -69,55 +55,3 @@ config DEVICE_POWER_MANAGEMENT
 	  device drivers to do any necessary power management operations
 	  like turning off device clocks and peripherals. The device drivers
 	  may also save and restore states in these hook functions.
-
-config TICKLESS_IDLE
-	bool "Tickless idle"
-	default y
-	help
-	  This option suppresses periodic system clock interrupts whenever the
-	  kernel becomes idle. This permits the system to remain in a power
-	  saving state for extended periods without having to wake up to
-	  service each tick as it occurs.
-
-config TICKLESS_IDLE_THRESH
-	int "Tickless idle threshold"
-	default 3
-	depends on TICKLESS_IDLE
-	help
-	  This option enables clock interrupt suppression when the kernel idles
-	  for only a short period of time. It specifies the minimum number of
-	  ticks that must occur before the next kernel timer expires in order
-	  for suppression to happen.
-
-config TICKLESS_KERNEL
-	bool "Tickless kernel"
-	depends on TICKLESS_IDLE
-	help
-	  This option enables a fully event driven kernel. Periodic system
-	  clock interrupt generation would be stopped at all times. This option
-	  requires Tickless Idle option to be enabled.
-
-config TICKLESS_KERNEL_TIME_UNIT_IN_MICRO_SECS
-	int "Tickless kernel time unit in micro seconds"
-	default 1000
-	depends on TICKLESS_KERNEL
-	help
-	  This option makes the system clock and scheduling granularity.
-	  The default will be one millisecond. This option also determines
-	  the time unit passed in functions like _sys_soc_suspend. The
-	  value should be determined based what the timer hardware and driver
-	  can support. Specifying too small a time unit than what the overall
-	  system speed can support would cause scheduling errors.
-
-config BUSY_WAIT_USES_ALTERNATE_CLOCK
-	bool "Busy wait uses alternate clock in tickless kernel mode"
-	help
-	  In tickless kernel mode, the system clock will be stopped when
-	  there are no timer events programmed. If the system clock is to
-	  be used to keep time e.g. to get a delta of time cycles then it
-	  needs to be turned on using provided APIs. Some platforms have
-	  alternate clocks which can be used instead. In that case this flag
-	  would be set to true. This flag would be checked before turning
-	  on the system clock in APIs that do busy wait reading clock
-	  cycles.
-endif

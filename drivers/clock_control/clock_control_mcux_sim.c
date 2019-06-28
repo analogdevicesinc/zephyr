@@ -5,12 +5,13 @@
  */
 #include <errno.h>
 #include <soc.h>
-#include <clock_control.h>
+#include <drivers/clock_control.h>
 #include <dt-bindings/clock/kinetis_sim.h>
 #include <fsl_clock.h>
 
-#define SYS_LOG_LEVEL CONFIG_SYS_LOG_CLOCK_CONTROL_LEVEL
-#include <logging/sys_log.h>
+#define LOG_LEVEL CONFIG_CLOCK_CONTROL_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_REGISTER(clock_control);
 
 static int mcux_sim_on(struct device *dev, clock_control_subsys_t sub_system)
 {
@@ -44,6 +45,15 @@ static int mcux_sim_get_subsys_rate(struct device *dev,
 
 static int mcux_sim_init(struct device *dev)
 {
+#ifdef DT_SIM_CLKOUT_DIVIDER
+	SIM->CHIPCTL = (SIM->CHIPCTL & ~SIM_CHIPCTL_CLKOUTDIV_MASK)
+		| SIM_CHIPCTL_CLKOUTDIV(DT_SIM_CLKOUT_DIVIDER);
+#endif
+#ifdef DT_SIM_CLKOUT_SOURCE
+	SIM->CHIPCTL = (SIM->CHIPCTL & ~SIM_CHIPCTL_CLKOUTSEL_MASK)
+		| SIM_CHIPCTL_CLKOUTSEL(DT_SIM_CLKOUT_SOURCE);
+#endif
+
 	return 0;
 }
 
@@ -53,7 +63,7 @@ static const struct clock_control_driver_api mcux_sim_driver_api = {
 	.get_rate = mcux_sim_get_subsys_rate,
 };
 
-DEVICE_AND_API_INIT(mcux_sim, CONFIG_SIM_NAME,
+DEVICE_AND_API_INIT(mcux_sim, DT_SIM_NAME,
 		    &mcux_sim_init,
 		    NULL, NULL,
 		    PRE_KERNEL_1, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,

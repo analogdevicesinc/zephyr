@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016 Intel Corporation
+ * Copyright (c) 2016-2019 Intel Corporation
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -13,20 +13,16 @@
  * the browser at host.
  */
 
-#define SYS_LOG_LEVEL SYS_LOG_LEVEL_DEBUG
-#include <logging/sys_log.h>
+#define LOG_LEVEL CONFIG_USB_DEVICE_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_REGISTER(main);
 
-#include <stdio.h>
-#include <string.h>
-#include <device.h>
-#include <uart.h>
-#include <zephyr.h>
-#include <misc/byteorder.h>
+#include <sys/byteorder.h>
 #include <usb/usb_common.h>
 #include <usb/usb_device.h>
 #include <usb/bos.h>
 
-#include "webusb_serial.h"
+#include "webusb.h"
 
 /* Predefined response to control commands related to MS OS 2.0 descriptors */
 static const u8_t msos2_descriptor[] = {
@@ -211,6 +207,8 @@ int custom_handle_req(struct usb_setup_packet *pSetup,
 		*data = (u8_t *)(&msos1_string_descriptor);
 		*len = sizeof(msos1_string_descriptor);
 
+		LOG_DBG("Get MS OS Descriptor v1 string");
+
 		return 0;
 	}
 
@@ -228,23 +226,28 @@ int custom_handle_req(struct usb_setup_packet *pSetup,
  * @return  0 on success, negative errno code on fail.
  */
 int vendor_handle_req(struct usb_setup_packet *pSetup,
-		s32_t *len, u8_t **data)
+		      s32_t *len, u8_t **data)
 {
 	/* Get Allowed origins request */
 	if (pSetup->bRequest == 0x01 && pSetup->wIndex == 0x01) {
 		*data = (u8_t *)(&webusb_allowed_origins);
 		*len = sizeof(webusb_allowed_origins);
 
+		LOG_DBG("Get webusb_allowed_origins");
+
 		return 0;
 	} else if (pSetup->bRequest == 0x01 && pSetup->wIndex == 0x02) {
 		/* Get URL request */
 		u8_t index = GET_DESC_INDEX(pSetup->wValue);
 
-		if (index == 0 || index > NUMBER_OF_ALLOWED_ORIGINS)
+		if (index == 0U || index > NUMBER_OF_ALLOWED_ORIGINS) {
 			return -ENOTSUP;
+		}
 
 		*data = (u8_t *)(&webusb_origin_url);
 		*len = sizeof(webusb_origin_url);
+
+		LOG_DBG("Get webusb_origin_url");
 
 		return 0;
 	} else if (pSetup->bRequest == 0x02 && pSetup->wIndex == 0x07) {
@@ -252,6 +255,8 @@ int vendor_handle_req(struct usb_setup_packet *pSetup,
 		/* 0x07 means "MS_OS_20_DESCRIPTOR_INDEX" */
 		*data = (u8_t *)(&msos2_descriptor);
 		*len = sizeof(msos2_descriptor);
+
+		LOG_DBG("Get MS OS Descriptors v2");
 
 		return 0;
 	} else if (pSetup->bRequest == 0x03 && pSetup->wIndex == 0x04) {
@@ -261,6 +266,8 @@ int vendor_handle_req(struct usb_setup_packet *pSetup,
 		 */
 		*data = (u8_t *)(&msos1_compatid_descriptor);
 		*len = sizeof(msos1_compatid_descriptor);
+
+		LOG_DBG("Get MS OS Descriptors CompatibeID");
 
 		return 0;
 	}
@@ -276,13 +283,11 @@ static struct webusb_req_handlers req_handlers = {
 
 void main(void)
 {
-	SYS_LOG_DBG("");
+	LOG_DBG("");
 
 	/* Set the custom and vendor request handlers */
 	webusb_register_request_handlers(&req_handlers);
 
 	usb_bos_register_cap((void *)&bos_cap_webusb);
 	usb_bos_register_cap((void *)&bos_cap_msosv2);
-
-	webusb_serial_init();
 }

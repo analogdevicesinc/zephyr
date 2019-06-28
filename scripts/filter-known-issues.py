@@ -3,7 +3,7 @@
 Filters a file, classifying output in errors, warnings and discarding
 the rest.
 
-Given a set of regular expresions read from files named *.conf in the
+Given a set of regular expressions read from files named *.conf in the
 given configuration path(s), of the format:
 
   #
@@ -43,13 +43,13 @@ exclude_regexs = []
 # first is a list of one or more comment lines
 # followed by a list of non-comments which describe a multiline regex
 config_regex = \
-    b"(?P<comment>(^\s*#.*\n)+)" \
+    b"(?P<comment>(^\\s*#.*\n)+)" \
     b"(?P<regex>(^[^#].*\n)+)"
 
 
 def config_import_file(filename):
     """
-    Imports regular expresions from any file *.conf in the given path,
+    Imports regular expression from any file *.conf in the given path,
     format as given in the main doc
     """
     try:
@@ -85,11 +85,11 @@ def config_import_file(filename):
 
 def config_import_path(path):
     """
-    Imports regular expresions from any file *.conf in the given path
+    Imports regular expression from any file *.conf in the given path
     """
-    file_regex = re.compile(".*\.conf$")
+    file_regex = re.compile(r".*\.conf$")
     try:
-        for dirpath, dirnames, filenames in os.walk(path):
+        for dirpath, _, filenames in os.walk(path):
             for _filename in sorted(filenames):
                 filename = os.path.join(dirpath, _filename)
                 if not file_regex.search(_filename):
@@ -104,7 +104,7 @@ def config_import_path(path):
 
 def config_import(paths):
     """
-    Imports regular expresions from any file *.conf in the list of paths.
+    Imports regular expression from any file *.conf in the list of paths.
 
     If a path is "" or None, the list of paths until then is flushed
     and only the new ones are considered.
@@ -236,7 +236,8 @@ if warnings or errors:
         errors.flush()
     if ((os.path.isfile(args.warnings) and os.path.getsize(args.warnings) > 0) or
         (os.path.isfile(args.errors) and os.path.getsize(args.errors) > 0)):
-        print("\n\nNew errors/warnings found, please fix them:\n")
+        print('''\n\n ---- New errors/warnings not tracked as .known-issues/, \
+please fix them ----\n''')
         if args.warnings:
             print(open(args.warnings, "r").read())
         if args.errors and (args.errors != args.warnings):
@@ -244,3 +245,5 @@ if warnings or errors:
     else:
         print("\n\nNo new errors/warnings.\n")
 
+    print('''\nTo see *all* new error/warnings you must make/ninja clean and \
+rebuild from scratch.''')

@@ -3,9 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: ADT7420 16-Bit Digital I2C Temperature Sensor
-id: adi,adt7420
 version: 0.1
 
 description: >
@@ -21,6 +20,4 @@ properties:
     int-gpios:
       type: compound
       category: optional
-      generation: define, use-prop-name
-
-...
+      generation: define

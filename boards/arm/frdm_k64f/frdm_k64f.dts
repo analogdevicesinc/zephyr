@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
 /dts-v1/;
 
 #include <nxp/nxp_k6x.dtsi>
@@ -33,15 +35,16 @@
 		led2 = &red_led;
 		sw0 = &user_button_3;
 		sw1 = &user_button_2;
+		eth = &eth;
+		can-0 = &can0;
 	};
 
 	chosen {
 		zephyr,sram = &sram0;
 		zephyr,flash = &flash0;
+		zephyr,code-partition = &slot0_partition;
 		zephyr,console = &uart0;
-#ifdef CONFIG_BT
-		zephyr,bt-uart = &uart3;
-#endif
+		zephyr,shell-uart = &uart0;
 		zephyr,uart-pipe = &uart0;
 	};
 
@@ -69,21 +72,53 @@
 		};
 		user_button_3: button_1 {
 			label = "User SW3";
-			gpios = <&gpioa 4 GPIO_INT_ACTIVE_LOW>;
+			gpios = <&gpioa 4 (GPIO_INT_ACTIVE_LOW | GPIO_PUD_PULL_UP)>;
 		};
+	};
+
+	arduino_header: connector {
+		compatible = "arduino-header-r3";
+		#gpio-cells = <2>;
+		gpio-map = <0 0 &gpiob 2 0>,	/* A0 */
+			   <1 0 &gpiob 3 0>,	/* A1 */
+			   <2 0 &gpiob 10 0>,	/* A2 */
+			   <3 0 &gpiob 11 0>,	/* A3 */
+			   <4 0 &gpioc 11 0>,	/* A4 */
+			   <5 0 &gpioc 10 0>,	/* A5 */
+			   <6 0 &gpioc 16 0>,	/* D0 */
+			   <7 0 &gpioc 17 0>,	/* D1 */
+			   <8 0 &gpiob 9 0>,	/* D2 */
+			   <9 0 &gpioa 1 0>,	/* D3 */
+			   <10 0 &gpiob 23 0>,	/* D4 */
+			   <11 0 &gpioa 2 0>,	/* D5 */
+			   <12 0 &gpioc 2 0>,	/* D6 */
+			   <13 0 &gpioc 3 0>,	/* D7 */
+			   /* NOTE: HW Rev D and below use: */
+			   /* <14 0 &gpioa 0 0>, */
+			   /* NOTE: HW Rev E and on use: */
+			   <14 0 &gpioc 12 0>,	/* D8 */
+			   <15 0 &gpioc 4 0>,	/* D9 */
+			   <16 0 &gpiod 0 0>,	/* D10 */
+			   <17 0 &gpiod 2 0>,	/* D11 */
+			   <18 0 &gpiod 3 0>,	/* D12 */
+			   <19 0 &gpiod 1 0>,	/* D13 */
+			   <20 0 &gpioe 25 0>,	/* D14 */
+			   <21 0 &gpioe 24 0>;	/* D15 */
 	};
 };
 
+arduino_serial: &uart3 {};
+
 &adc0 {
-	status = "ok";
+	status = "okay";
 };
 
 &adc1 {
-	status = "ok";
+	status = "okay";
 };
 
 &i2c0 {
-	status = "ok";
+	status = "okay";
 
 	fxos8700@1d {
 		compatible = "nxp,fxos8700";
@@ -95,8 +130,7 @@
 };
 
 &spi0 {
-	status = "ok";
-	cs-gpios = <&gpiod 0 0>;
+	status = "okay";
 
 	mcr20a@0 {
 		compatible = "nxp,mcr20a";
@@ -105,57 +139,29 @@
 		spi-max-frequency = <4000000>;
 		irqb-gpios = <&gpiob 9 0>;
 		reset-gpios = <&gpioa 2 0>;
-		status = "ok";
+		status = "okay";
 	};
 };
 
 &pwm3 {
-	status = "ok";
+	status = "okay";
 };
 
 &uart0 {
-	status = "ok";
+	status = "okay";
 	current-speed = <115200>;
 };
-
-#ifdef CONFIG_UART_MCUX_2
-&uart2 {
-	status = "ok";
-	current-speed = <115200>;
-
-#ifdef CONFIG_MODEM_WNCM14A2A
-	wncm14a2a {
-		compatible = "wnc,m14a2a";
-		label = "wncm14a2a";
-		mdm-boot-mode-sel-gpios = <&gpioc 17 0>;
-		mdm-power-gpios = <&gpiob 9 0>;
-		mdm-keep-awake-gpios = <&gpioc 2 0>;
-		mdm-reset-gpios = <&gpioc 12 0>;
-		mdm-shld-trans-ena-gpios = <&gpioc 4 0>;
-		mdm-send-ok-gpios = <&gpiod 0 0>;
-		status = "ok";
-	};
-#endif
-};
-#endif
-
-#ifdef CONFIG_BT
-&uart3 {
-	status = "ok";
-	current-speed = <115200>;
-};
-#endif
 
 &usbd {
 	compatible = "nxp,kinetis-usbd";
-	status = "ok";
+	status = "okay";
 	num-bidir-endpoints = <8>;
 };
 
 &flash0 {
 	/*
 	 * For more information, see:
-	 * http://docs.zephyrproject.org/latest/devices/dts/flash_partitions.html
+	 * http://docs.zephyrproject.org/latest/guides/dts/index.html#flash-partitions
 	 */
 	partitions {
 		compatible = "fixed-partitions";
@@ -173,12 +179,10 @@
 		 * 0x0001ffff (sectors 16-31) is reserved for use
 		 * by the application.
 		 */
-#if defined(CONFIG_FS_FLASH_STORAGE_PARTITION)
-		 storage_partition: partition@1e000 {
+		storage_partition: partition@1e000 {
 			label = "storage";
 			reg = <0x0001e000 0x00002000>;
 		};
-#endif
 
 		slot0_partition: partition@20000 {
 			label = "image-0";
@@ -193,4 +197,17 @@
 			reg = <0x000e0000 0x00020000>;
 		};
 	};
+};
+
+&eth {
+	status = "okay";
+	ptp {
+		status = "okay";
+	};
+};
+
+
+&can0 {
+	status = "okay";
+	bus-speed = <125000>;
 };

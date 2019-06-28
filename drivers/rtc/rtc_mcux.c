@@ -4,15 +4,18 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/sys_log.h>
+#define LOG_LEVEL CONFIG_RTC_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_REGISTER(rtc_mcux);
+
 #include <errno.h>
 #include <device.h>
 #include <init.h>
 #include <kernel.h>
-#include <rtc.h>
-#include <power.h>
+#include <drivers/rtc.h>
+#include <power/power.h>
 #include <soc.h>
-#include <misc/util.h>
+#include <sys/util.h>
 #include <fsl_rtc.h>
 
 struct mcux_rtc_config {
@@ -59,7 +62,7 @@ static int mcux_rtc_set_alarm(struct device *dev, const u32_t alarm_val)
 	const struct mcux_rtc_config *config = dev->config->config_info;
 
 	if (alarm_val < config->base->TSR) {
-		SYS_LOG_ERR("alarm cannot be earlier than current time\n");
+		LOG_ERR("alarm cannot be earlier than current time");
 		return -EINVAL;
 	}
 
@@ -187,18 +190,18 @@ static struct mcux_rtc_data rtc_mcux_data_0;
 static void rtc_mcux_irq_config_0(struct device *dev);
 
 static struct mcux_rtc_config rtc_mcux_config_0 = {
-	.base = (RTC_Type *)CONFIG_RTC_MCUX_0_BASE_ADDRESS,
+	.base = (RTC_Type *)DT_RTC_MCUX_0_BASE_ADDRESS,
 	.irq_config_func = rtc_mcux_irq_config_0,
 };
 
-DEVICE_DEFINE(rtc, CONFIG_RTC_MCUX_0_NAME,
+DEVICE_DEFINE(rtc, DT_RTC_MCUX_0_NAME,
 	      &mcux_rtc_init, NULL, &rtc_mcux_data_0, &rtc_mcux_config_0,
 	      POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
 	      &mcux_rtc_driver_api);
 
 static void rtc_mcux_irq_config_0(struct device *dev)
 {
-	IRQ_CONNECT(CONFIG_RTC_MCUX_0_IRQ, CONFIG_RTC_MCUX_0_IRQ_PRI,
+	IRQ_CONNECT(DT_RTC_MCUX_0_IRQ, DT_RTC_MCUX_0_IRQ_PRI,
 		    mcux_rtc_isr, DEVICE_GET(rtc), 0);
-	irq_enable(CONFIG_RTC_MCUX_0_IRQ);
+	irq_enable(DT_RTC_MCUX_0_IRQ);
 }

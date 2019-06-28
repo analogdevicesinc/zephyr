@@ -8,9 +8,8 @@
 
 #include <kernel.h>
 #include <errno.h>
-#include <i2c.h>
+#include <drivers/i2c.h>
 #include <soc.h>
-#include "i2c-priv.h"
 
 /* Driverlib includes */
 #include <inc/hw_memmap.h>
@@ -18,6 +17,12 @@
 #include <driverlib/rom.h>
 #include <driverlib/rom_map.h>
 #include <driverlib/i2c.h>
+
+#define LOG_LEVEL CONFIG_I2C_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_REGISTER(i2c_cc32xx);
+
+#include "i2c-priv.h"
 
 #define I2C_MASTER_CMD_BURST_RECEIVE_START_NACK	 I2C_MASTER_CMD_BURST_SEND_START
 #define I2C_MASTER_CMD_BURST_RECEIVE_STOP \
@@ -89,10 +94,10 @@ static int i2c_cc32xx_configure(struct device *dev, u32_t dev_config_raw)
 
 	switch (I2C_SPEED_GET(dev_config_raw)) {
 	case I2C_SPEED_STANDARD:
-		bitrate_id = 0;
+		bitrate_id = 0U;
 		break;
 	case I2C_SPEED_FAST:
-		bitrate_id = 1;
+		bitrate_id = 1U;
 		break;
 	default:
 		return -EINVAL;
@@ -104,7 +109,7 @@ static int i2c_cc32xx_configure(struct device *dev, u32_t dev_config_raw)
 	return 0;
 }
 
-static void _i2c_cc32xx_prime_transfer(struct device *dev, struct i2c_msg *msg,
+static void i2c_cc32xx_prime_transfer(struct device *dev, struct i2c_msg *msg,
 				      u16_t addr)
 {
 	struct i2c_cc32xx_data *data = DEV_DATA(dev);
@@ -162,7 +167,7 @@ static int i2c_cc32xx_transfer(struct device *dev, struct i2c_msg *msgs,
 	for (int i = 0; i < num_msgs; i++) {
 
 		/* Begin the transfer */
-		_i2c_cc32xx_prime_transfer(dev, msgs, addr);
+		i2c_cc32xx_prime_transfer(dev, msgs, addr);
 
 		/* Wait for the transfer to complete */
 		k_sem_take(&data->transfer_complete, K_FOREVER);
@@ -183,7 +188,7 @@ static int i2c_cc32xx_transfer(struct device *dev, struct i2c_msg *msgs,
 	return retval;
 }
 
-static void _i2c_cc32xx_isr_handle_write(u32_t base,
+static void i2c_cc32xx_isr_handle_write(u32_t base,
 					 struct i2c_cc32xx_data *data)
 {
 	/* Decrement write Counter */
@@ -220,7 +225,7 @@ static void _i2c_cc32xx_isr_handle_write(u32_t base,
 	}
 }
 
-static void _i2c_cc32xx_isr_handle_read(u32_t base,
+static void i2c_cc32xx_isr_handle_read(u32_t base,
 					struct i2c_cc32xx_data *data)
 {
 
@@ -269,7 +274,7 @@ static void i2c_cc32xx_isr(void *arg)
 	/* Clear interrupt source to avoid additional interrupts */
 	MAP_I2CMasterIntClearEx(base, int_status);
 
-	SYS_LOG_DBG("primed state: %d; err_status: 0x%x; int_status: 0x%x",
+	LOG_DBG("primed state: %d; err_status: 0x%x; int_status: 0x%x",
 		    data->state, err_status, int_status);
 
 	/* Handle errors: */
@@ -302,10 +307,10 @@ static void i2c_cc32xx_isr(void *arg)
 	/* Handle (read or write) transmit complete: */
 	} else if (int_status & (I2C_MASTER_INT_DATA | I2C_MASTER_INT_START)) {
 		if (data->state == I2C_CC32XX_WRITE_MODE) {
-			_i2c_cc32xx_isr_handle_write(base, data);
+			i2c_cc32xx_isr_handle_write(base, data);
 		}
 		if (data->state == I2C_CC32XX_READ_MODE) {
-			_i2c_cc32xx_isr_handle_read(base, data);
+			i2c_cc32xx_isr_handle_read(base, data);
 		}
 	/* Some unanticipated H/W state: */
 	} else {
@@ -342,7 +347,7 @@ static int i2c_cc32xx_init(struct device *dev)
 	HWREG(COMMON_REG_BASE) = regval;
 
 	/* Set to default configuration: */
-	bitrate_cfg = _i2c_map_dt_bitrate(config->bitrate);
+	bitrate_cfg = i2c_map_dt_bitrate(config->bitrate);
 	error = i2c_cc32xx_configure(dev, I2C_MODE_MASTER | bitrate_cfg);
 	if (error) {
 		return error;
@@ -367,22 +372,22 @@ static const struct i2c_driver_api i2c_cc32xx_driver_api = {
 
 
 static const struct i2c_cc32xx_config i2c_cc32xx_config = {
-	.base = CONFIG_I2C_0_BASE_ADDRESS,
-	.bitrate = CONFIG_I2C_0_BITRATE,
-	.irq_no = CONFIG_I2C_0_IRQ,
+	.base = DT_I2C_0_BASE_ADDRESS,
+	.bitrate = DT_I2C_0_BITRATE,
+	.irq_no = DT_I2C_0_IRQ,
 };
 
 static struct i2c_cc32xx_data i2c_cc32xx_data;
 
-DEVICE_AND_API_INIT(i2c_cc32xx, CONFIG_I2C_0_LABEL, &i2c_cc32xx_init,
+DEVICE_AND_API_INIT(i2c_cc32xx, DT_I2C_0_LABEL, &i2c_cc32xx_init,
 		    &i2c_cc32xx_data, &i2c_cc32xx_config,
 		    POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
 		    &i2c_cc32xx_driver_api);
 
 static void configure_i2c_irq(const struct i2c_cc32xx_config *config)
 {
-	IRQ_CONNECT(CONFIG_I2C_0_IRQ,
-		    CONFIG_I2C_0_IRQ_PRIORITY,
+	IRQ_CONNECT(DT_I2C_0_IRQ,
+		    DT_I2C_0_IRQ_PRIORITY,
 		    i2c_cc32xx_isr, DEVICE_GET(i2c_cc32xx), 0);
 
 	irq_enable(config->irq_no);

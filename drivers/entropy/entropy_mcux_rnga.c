@@ -5,7 +5,7 @@
  */
 
 #include <device.h>
-#include <entropy.h>
+#include <drivers/entropy.h>
 #include <random/rand32.h>
 #include <init.h>
 
@@ -14,7 +14,7 @@
 static u8_t entropy_mcux_rnga_get_uint8(void)
 {
 	u32_t random;
-	u8_t output = 0;
+	u8_t output = 0U;
 	int i;
 
 	RNGA_SetMode(RNG, kRNGA_ModeNormal);

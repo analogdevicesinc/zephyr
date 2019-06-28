@@ -7,25 +7,25 @@
 #include <kernel.h>
 #include <device.h>
 #include <init.h>
-#include <pinmux.h>
-#include <sys_io.h>
+#include <drivers/pinmux.h>
+#include <sys/sys_io.h>
 
 #include <pinmux/stm32/pinmux_stm32.h>
 
 /* pin assignments for NUCLEO-F103RB board */
 static const struct pin_config pinconf[] = {
-#ifdef CONFIG_UART_STM32_PORT_1
+#ifdef CONFIG_UART_1
 	{STM32_PIN_PA9,  STM32F1_PINMUX_FUNC_PA9_USART1_TX},
 	{STM32_PIN_PA10, STM32F1_PINMUX_FUNC_PA10_USART1_RX},
-#endif	/* CONFIG_UART_STM32_PORT_1 */
-#ifdef CONFIG_UART_STM32_PORT_2
+#endif	/* CONFIG_UART_1 */
+#ifdef CONFIG_UART_2
 	{STM32_PIN_PA2, STM32F1_PINMUX_FUNC_PA2_USART2_TX},
 	{STM32_PIN_PA3, STM32F1_PINMUX_FUNC_PA3_USART2_RX},
-#endif	/* CONFIG_UART_STM32_PORT_2 */
-#ifdef CONFIG_UART_STM32_PORT_3
+#endif	/* CONFIG_UART_2 */
+#ifdef CONFIG_UART_3
 	{STM32_PIN_PB10, STM32F1_PINMUX_FUNC_PB10_USART3_TX},
 	{STM32_PIN_PB11, STM32F1_PINMUX_FUNC_PB11_USART3_RX},
-#endif	/* CONFIG_UART_STM32_PORT_3 */
+#endif	/* CONFIG_UART_3 */
 #ifdef CONFIG_PWM_STM32_1
 	{STM32_PIN_PA8, STM32F1_PINMUX_FUNC_PA8_PWM1_CH1},
 #endif /* CONFIG_PWM_STM32_1 */
@@ -41,6 +41,9 @@ static const struct pin_config pinconf[] = {
 	{STM32_PIN_PB14, STM32F1_PINMUX_FUNC_PB14_SPI2_MASTER_MISO},
 	{STM32_PIN_PB15, STM32F1_PINMUX_FUNC_PB15_SPI2_MASTER_MOSI},
 #endif /* CONFIG_SPI_2 */
+#ifdef CONFIG_ADC_1
+	{STM32_PIN_PA0, STM32F1_PINMUX_FUNC_PA0_ADC123_IN0},
+#endif /* CONFIG_ADC_1 */
 };
 
 static int pinmux_stm32_init(struct device *port)

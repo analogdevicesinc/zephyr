@@ -18,6 +18,7 @@ u64_t  __end_drop_to_usermode_time;
 /* location of the time stamps*/
 u32_t __read_swap_end_time_value;
 u64_t __common_var_swap_end_time;
+u64_t __temp_start_swap_time;
 
 #if CONFIG_ARM
 #include <arch/arm/cortex_m/cmsis.h>
@@ -35,7 +36,7 @@ u64_t __common_var_swap_end_time;
 
 #elif CONFIG_X86
 #define TIMING_INFO_PRE_READ()
-#define TIMING_INFO_OS_GET_TIME()      (_tsc_read())
+#define TIMING_INFO_OS_GET_TIME()      (z_tsc_read())
 #define TIMING_INFO_GET_TIMER_VALUE()  (TIMING_INFO_OS_GET_TIME())
 #define SUBTRACT_CLOCK_CYCLES(val)     (val)
 
@@ -48,15 +49,8 @@ u64_t __common_var_swap_end_time;
 #elif CONFIG_ARC
 #define TIMING_INFO_PRE_READ()
 #define TIMING_INFO_OS_GET_TIME()     (k_cycle_get_32())
-#define TIMING_INFO_GET_TIMER_VALUE() (_arc_v2_aux_reg_read(_ARC_V2_TMR0_COUNT))
+#define TIMING_INFO_GET_TIMER_VALUE() (z_arc_v2_aux_reg_read(_ARC_V2_TMR0_COUNT))
 #define SUBTRACT_CLOCK_CYCLES(val)    ((u32_t)val)
-
-#elif CONFIG_XTENSA
-#include <xtensa_timer.h>
-#define TIMING_INFO_PRE_READ()
-#define TIMING_INFO_OS_GET_TIME()      (k_cycle_get_32())
-#define TIMING_INFO_GET_TIMER_VALUE()  (k_cycle_get_32())
-#define SUBTRACT_CLOCK_CYCLES(val)     ((u32_t)val)
 
 #elif CONFIG_NIOS2
 #include "altera_avalon_timer_regs.h"
@@ -77,22 +71,17 @@ u64_t __common_var_swap_end_time;
 	  (IORD_ALTERA_AVALON_TIMER_PERIODL(TIMER_0_BASE)))	\
 	 - ((u32_t)val))
 
-
-#elif CONFIG_RISCV32
+#else
 #define TIMING_INFO_PRE_READ()
 #define TIMING_INFO_OS_GET_TIME()      (k_cycle_get_32())
 #define TIMING_INFO_GET_TIMER_VALUE()  (k_cycle_get_32())
 #define SUBTRACT_CLOCK_CYCLES(val)     ((u32_t)val)
-
-#else
-/* Default case */
-#error "Benchmarks have not been implemented for this architecture"
 #endif	/* CONFIG_NRF_RTC_TIMER */
 
 
 void read_timer_start_of_swap(void)
 {
-	if (__read_swap_end_time_value == 1) {
+	if (__read_swap_end_time_value == 1U) {
 		TIMING_INFO_PRE_READ();
 		__start_swap_time = (u32_t) TIMING_INFO_OS_GET_TIME();
 	}
@@ -100,9 +89,9 @@ void read_timer_start_of_swap(void)
 
 void read_timer_end_of_swap(void)
 {
-	if (__read_swap_end_time_value == 1) {
+	if (__read_swap_end_time_value == 1U) {
 		TIMING_INFO_PRE_READ();
-		__read_swap_end_time_value = 2;
+		__read_swap_end_time_value = 2U;
 		__common_var_swap_end_time = (u64_t)TIMING_INFO_OS_GET_TIME();
 	}
 }

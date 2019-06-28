@@ -8,18 +8,23 @@
 
 #include <device.h>
 #include <init.h>
-#include <drivers/ioapic.h>
-#include <counter.h>
-#include <power.h>
+#include <drivers/interrupt_controller/ioapic.h>
+#include <drivers/counter.h>
+#include <power/power.h>
 #include <soc.h>
-#include <misc/util.h>
+#include <sys/util.h>
 
 #include "qm_aon_counters.h"
 #include "qm_isr.h"
 
+
 static void aonpt_int_callback(void *user_data);
 
-static counter_callback_t user_cb;
+static counter_top_callback_t user_cb;
+
+struct aonpt_config {
+	struct counter_config_info info;
+};
 
 struct aon_data {
 #ifdef CONFIG_AON_API_REENTRANCY
@@ -107,24 +112,23 @@ static u32_t aon_timer_qmsi_read(struct device *dev)
 	return value;
 }
 
-static int aon_timer_qmsi_set_alarm(struct device *dev,
-				    counter_callback_t callback,
-				    u32_t count, void *user_data)
+static int aon_timer_qmsi_set_top(struct device *dev,
+				  const struct counter_top_cfg *cfg)
 {
 	qm_aonpt_config_t qmsi_cfg;
 	int result = 0;
 
-	/* Check if timer has been started */
-	if (QM_AONC[QM_AONC_0]->aonpt_cfg == 0) {
+	/* Counter is always reset when top value is updated. */
+	if (cfg->flags & COUNTER_TOP_CFG_DONT_RESET) {
 		return -ENOTSUP;
 	}
 
-	user_cb = callback;
+	user_cb = cfg->callback;
 
 	qmsi_cfg.callback = aonpt_int_callback;
 	qmsi_cfg.int_en = true;
-	qmsi_cfg.count = count;
-	qmsi_cfg.callback_data = user_data;
+	qmsi_cfg.count = cfg->ticks;
+	qmsi_cfg.callback_data = cfg->user_data;
 
 	if (IS_ENABLED(CONFIG_AON_API_REENTRANCY)) {
 		k_sem_take(RP_GET(dev), K_FOREVER);
@@ -151,7 +155,7 @@ static const struct counter_driver_api aon_timer_qmsi_api = {
 	.start = aon_timer_qmsi_start,
 	.stop = aon_timer_qmsi_stop,
 	.read = aon_timer_qmsi_read,
-	.set_alarm = aon_timer_qmsi_set_alarm,
+	.set_top_value = aon_timer_qmsi_set_top,
 	.get_pending_int = aon_timer_qmsi_get_pending_int,
 };
 
@@ -195,20 +199,25 @@ static int aonpt_resume_device_from_suspend(struct device *dev)
 * the *context may include IN data or/and OUT data
 */
 static int aonpt_qmsi_device_ctrl(struct device *dev, u32_t ctrl_command,
-				  void *context)
+				  void *context, device_pm_cb cb, void *arg)
 {
+	int ret = 0;
+
 	if (ctrl_command == DEVICE_PM_SET_POWER_STATE) {
 		if (*((u32_t *)context) == DEVICE_PM_SUSPEND_STATE) {
-			return aonpt_suspend_device(dev);
+			ret = aonpt_suspend_device(dev);
 		} else if (*((u32_t *)context) == DEVICE_PM_ACTIVE_STATE) {
-			return aonpt_resume_device_from_suspend(dev);
+			ret = aonpt_resume_device_from_suspend(dev);
 		}
 	} else if (ctrl_command == DEVICE_PM_GET_POWER_STATE) {
 		*((u32_t *)context) = aonpt_qmsi_get_power_state(dev);
-		return 0;
 	}
 
-	return 0;
+	if (cb) {
+		cb(dev, ret, context, arg);
+	}
+
+	return ret;
 }
 #else
 #define aonpt_qmsi_set_power_state(...)
@@ -237,10 +246,18 @@ static int aon_timer_init(struct device *dev)
 	return 0;
 }
 
+static const struct aonpt_config aonpt_conf_info = {
+	.info = {
+		.max_top_value = UINT32_MAX,
+		.freq = 32768,
+		.flags = 0,
+		.channels = 0,
+	}
+};
 
-DEVICE_DEFINE(aon_timer, CONFIG_AON_TIMER_QMSI_DEV_NAME, aon_timer_init,
-	      aonpt_qmsi_device_ctrl, AONPT_CONTEXT, NULL, POST_KERNEL,
-	      CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
+DEVICE_DEFINE(aon_timer, CONFIG_COUNTER_0_NAME, aon_timer_init,
+	      aonpt_qmsi_device_ctrl, AONPT_CONTEXT, &aonpt_conf_info,
+	      POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
 	      &aon_timer_qmsi_api);
 
 static void aonpt_int_callback(void *user_data)

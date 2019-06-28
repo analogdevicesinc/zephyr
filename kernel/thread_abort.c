@@ -19,34 +19,42 @@
 #include <linker/sections.h>
 #include <wait_q.h>
 #include <ksched.h>
-#include <misc/__assert.h>
+#include <sys/__assert.h>
 #include <syscall_handler.h>
 
-extern void _k_thread_single_abort(struct k_thread *thread);
+extern void z_thread_single_abort(struct k_thread *thread);
 
 #if !defined(CONFIG_ARCH_HAS_THREAD_ABORT)
-void _impl_k_thread_abort(k_tid_t thread)
+void z_impl_k_thread_abort(k_tid_t thread)
 {
-	unsigned int key;
+	/* We aren't trying to synchronize data access here (these
+	 * APIs are internally synchronized).  The original lock seems
+	 * to have been in place to prevent the thread from waking up
+	 * due to a delivered interrupt.  Leave a dummy spinlock in
+	 * place to do that.  This API should be revisted though, it
+	 * doesn't look SMP-safe as it stands.
+	 */
+	struct k_spinlock lock = {};
+	k_spinlock_key_t key = k_spin_lock(&lock);
 
-	key = irq_lock();
-
-	__ASSERT((thread->base.user_options & K_ESSENTIAL) == 0,
+	__ASSERT((thread->base.user_options & K_ESSENTIAL) == 0U,
 		 "essential thread aborted");
 
-	_k_thread_single_abort(thread);
-	_thread_monitor_exit(thread);
+	z_thread_single_abort(thread);
+	z_thread_monitor_exit(thread);
 
-	if (_is_in_isr()) {
-		irq_unlock(key);
+	if (thread == _current && !z_is_in_isr()) {
+		z_swap(&lock, key);
 	} else {
-		if (_current == thread) {
-			(void)_Swap(key);
-			CODE_UNREACHABLE;
-		}
-
-		/* The abort handler might have altered the ready queue. */
-		_reschedule(key);
+		/* Really, there's no good reason for this to be a
+		 * scheduling point if we aren't aborting _current (by
+		 * definition, no higher priority thread is runnable,
+		 * because we're running!).  But it always has been
+		 * and is thus part of our API, and we have tests that
+		 * rely on k_thread_abort() scheduling out of
+		 * cooperative threads.
+		 */
+		z_reschedule(&lock, key);
 	}
 }
 #endif
@@ -59,7 +67,7 @@ Z_SYSCALL_HANDLER(k_thread_abort, thread_p)
 	Z_OOPS(Z_SYSCALL_VERIFY_MSG(!(thread->base.user_options & K_ESSENTIAL),
 				    "aborting essential thread %p", thread));
 
-	_impl_k_thread_abort((struct k_thread *)thread);
+	z_impl_k_thread_abort((struct k_thread *)thread);
 	return 0;
 }
 #endif

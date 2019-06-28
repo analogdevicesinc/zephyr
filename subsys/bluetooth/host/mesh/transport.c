@@ -10,8 +10,8 @@
 #include <errno.h>
 #include <string.h>
 #include <sys/types.h>
-#include <misc/util.h>
-#include <misc/byteorder.h>
+#include <sys/util.h>
+#include <sys/byteorder.h>
 
 #include <net/buf.h>
 
@@ -19,6 +19,7 @@
 #include <bluetooth/mesh.h>
 
 #define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_MESH_DEBUG_TRANS)
+#define LOG_MODULE_NAME bt_mesh_transport
 #include "common/log.h"
 
 #include "../testing.h"
@@ -174,7 +175,7 @@ static void seg_tx_reset(struct seg_tx *tx)
 
 	tx->cb = NULL;
 	tx->cb_data = NULL;
-	tx->seq_auth = 0;
+	tx->seq_auth = 0U;
 	tx->sub = NULL;
 	tx->dst = BT_MESH_ADDR_UNASSIGNED;
 
@@ -191,11 +192,10 @@ static void seg_tx_reset(struct seg_tx *tx)
 		tx->seg[i] = NULL;
 	}
 
-	tx->nack_count = 0;
+	tx->nack_count = 0U;
 
-	if (bt_mesh.pending_update) {
-		BT_DBG("Proceding with pending IV Update");
-		bt_mesh.pending_update = 0;
+	if (atomic_test_and_clear_bit(bt_mesh.flags, BT_MESH_IVU_PENDING)) {
+		BT_DBG("Proceeding with pending IV Update");
 		/* bt_mesh_net_iv_update() will re-enable the flag if this
 		 * wasn't the only transfer.
 		 */
@@ -336,9 +336,9 @@ static int send_seg(struct bt_mesh_net_tx *net_tx, struct net_buf_simple *sdu,
 		seg_hdr = SEG_HDR(1, net_tx->aid);
 	}
 
-	seg_o = 0;
+	seg_o = 0U;
 	tx->dst = net_tx->ctx->addr;
-	tx->seg_n = (sdu->len - 1) / 12;
+	tx->seg_n = (sdu->len - 1) / 12U;
 	tx->nack_count = tx->seg_n + 1;
 	tx->seq_auth = SEQ_AUTH(BT_MESH_NET_IVI_TX, bt_mesh.seq);
 	tx->sub = net_tx->sub;
@@ -356,7 +356,7 @@ static int send_seg(struct bt_mesh_net_tx *net_tx, struct net_buf_simple *sdu,
 
 	BT_DBG("SeqZero 0x%04x", seq_zero);
 
-	for (seg_o = 0; sdu->len; seg_o++) {
+	for (seg_o = 0U; sdu->len; seg_o++) {
 		struct net_buf *seg;
 		u16_t len;
 		int err;
@@ -379,7 +379,7 @@ static int send_seg(struct bt_mesh_net_tx *net_tx, struct net_buf_simple *sdu,
 				     (seg_o >> 3)));
 		net_buf_add_u8(seg, ((seg_o & 0x07) << 5) | tx->seg_n);
 
-		len = min(sdu->len, 12);
+		len = MIN(sdu->len, 12);
 		net_buf_add_mem(seg, sdu->data, len);
 		net_buf_simple_pull(sdu, len);
 
@@ -455,7 +455,7 @@ int bt_mesh_trans_send(struct bt_mesh_net_tx *tx, struct net_buf_simple *msg,
 	}
 
 	if (msg->len > 11) {
-		tx->ctx->send_rel = 1;
+		tx->ctx->send_rel = true;
 	}
 
 	BT_DBG("net_idx 0x%04x app_idx 0x%04x dst 0x%04x", tx->sub->net_idx,
@@ -464,7 +464,7 @@ int bt_mesh_trans_send(struct bt_mesh_net_tx *tx, struct net_buf_simple *msg,
 
 	if (tx->ctx->app_idx == BT_MESH_KEY_DEV) {
 		key = bt_mesh.dev_key;
-		tx->aid = 0;
+		tx->aid = 0U;
 	} else {
 		struct bt_mesh_app_key *app_key;
 
@@ -484,9 +484,9 @@ int bt_mesh_trans_send(struct bt_mesh_net_tx *tx, struct net_buf_simple *msg,
 	}
 
 	if (!tx->ctx->send_rel || net_buf_simple_tailroom(msg) < 8) {
-		tx->aszmic = 0;
+		tx->aszmic = 0U;
 	} else {
-		tx->aszmic = 1;
+		tx->aszmic = 1U;
 	}
 
 	if (BT_MESH_ADDR_IS_VIRTUAL(tx->ctx->addr)) {
@@ -531,7 +531,23 @@ int bt_mesh_trans_resend(struct bt_mesh_net_tx *tx, struct net_buf_simple *msg,
 	return err;
 }
 
-static bool is_replay(struct bt_mesh_net_rx *rx)
+static void update_rpl(struct bt_mesh_rpl *rpl, struct bt_mesh_net_rx *rx)
+{
+	rpl->src = rx->ctx.addr;
+	rpl->seq = rx->seq;
+	rpl->old_iv = rx->old_iv;
+
+	if (IS_ENABLED(CONFIG_BT_SETTINGS)) {
+		bt_mesh_store_rpl(rpl);
+	}
+}
+
+/* Check the Replay Protection List for a replay attempt. If non-NULL match
+ * parameter is given the RPL slot is returned but it is not immediately
+ * updated (needed for segmented messages), whereas if a NULL match is given
+ * the RPL is immediately updated (used for unsegmented messages).
+ */
+static bool is_replay(struct bt_mesh_net_rx *rx, struct bt_mesh_rpl **match)
 {
 	int i;
 
@@ -540,17 +556,20 @@ static bool is_replay(struct bt_mesh_net_rx *rx)
 		return false;
 	}
 
+	/* The RPL is used only for the local node */
+	if (!rx->local_match) {
+		return false;
+	}
+
 	for (i = 0; i < ARRAY_SIZE(bt_mesh.rpl); i++) {
 		struct bt_mesh_rpl *rpl = &bt_mesh.rpl[i];
 
 		/* Empty slot */
 		if (!rpl->src) {
-			rpl->src = rx->ctx.addr;
-			rpl->seq = rx->seq;
-			rpl->old_iv = rx->old_iv;
-
-			if (IS_ENABLED(CONFIG_BT_SETTINGS)) {
-				bt_mesh_store_rpl(rpl);
+			if (match) {
+				*match = rpl;
+			} else {
+				update_rpl(rpl, rx);
 			}
 
 			return false;
@@ -564,11 +583,10 @@ static bool is_replay(struct bt_mesh_net_rx *rx)
 
 			if ((!rx->old_iv && rpl->old_iv) ||
 			    rpl->seq < rx->seq) {
-				rpl->seq = rx->seq;
-				rpl->old_iv = rx->old_iv;
-
-				if (IS_ENABLED(CONFIG_BT_SETTINGS)) {
-					bt_mesh_store_rpl(rpl);
+				if (match) {
+					*match = rpl;
+				} else {
+					update_rpl(rpl, rx);
 				}
 
 				return false;
@@ -628,7 +646,7 @@ static int sdu_recv(struct bt_mesh_net_rx *rx, u32_t seq, u8_t hdr,
 		return 0;
 	}
 
-	for (i = 0; i < ARRAY_SIZE(bt_mesh.app_keys); i++) {
+	for (i = 0U; i < ARRAY_SIZE(bt_mesh.app_keys); i++) {
 		struct bt_mesh_app_key *key = &bt_mesh.app_keys[i];
 		struct bt_mesh_app_keys *keys;
 
@@ -795,7 +813,7 @@ static int trans_heartbeat(struct bt_mesh_net_rx *rx,
 
 	BT_DBG("src 0x%04x TTL %u InitTTL %u (%u hop%s) feat 0x%04x",
 	       rx->ctx.addr, rx->ctx.recv_ttl, init_ttl, hops,
-	       (hops == 1) ? "" : "s", feat);
+	       (hops == 1U) ? "" : "s", feat);
 
 	bt_mesh_heartbeat(rx->ctx.addr, rx->ctx.recv_dst, hops, feat);
 
@@ -879,7 +897,7 @@ static int trans_unseg(struct net_buf_simple *buf, struct bt_mesh_net_rx *rx,
 		return -EINVAL;
 	}
 
-	if (rx->local_match && is_replay(rx)) {
+	if (is_replay(rx, NULL)) {
 		BT_WARN("Replay: src 0x%04x dst 0x%04x seq 0x%06x",
 			rx->ctx.addr, rx->ctx.recv_dst, rx->seq);
 		return -EINVAL;
@@ -913,15 +931,15 @@ static inline s32_t ack_timeout(struct seg_rx *rx)
 	/* The acknowledgment timer shall be set to a minimum of
 	 * 150 + 50 * TTL milliseconds.
 	 */
-	to = K_MSEC(150 + (50 * ttl));
+	to = K_MSEC(150 + (ttl * 50U));
 
 	/* 100 ms for every not yet received segment */
-	to += K_MSEC(((rx->seg_n + 1) - popcount(rx->block)) * 100);
+	to += K_MSEC(((rx->seg_n + 1) - popcount(rx->block)) * 100U);
 
 	/* Make sure we don't send more frequently than the duration for
 	 * each packet (default is 300ms).
 	 */
-	return max(to, K_MSEC(400));
+	return MAX(to, K_MSEC(400));
 }
 
 int bt_mesh_ctl_send(struct bt_mesh_net_tx *tx, u8_t ctl_op, void *data,
@@ -1014,14 +1032,14 @@ static void seg_rx_reset(struct seg_rx *rx, bool full_reset)
 						&rx->seq_auth);
 	}
 
-	rx->in_use = 0;
+	rx->in_use = 0U;
 
 	/* We don't always reset these values since we need to be able to
 	 * send an ack if we receive a segment after we've already received
 	 * the full SDU.
 	 */
 	if (full_reset) {
-		rx->seq_auth = 0;
+		rx->seq_auth = 0U;
 		rx->sub = NULL;
 		rx->src = BT_MESH_ADDR_UNASSIGNED;
 		rx->dst = BT_MESH_ADDR_UNASSIGNED;
@@ -1136,7 +1154,7 @@ static struct seg_rx *seg_rx_alloc(struct bt_mesh_net_rx *net_rx,
 			continue;
 		}
 
-		rx->in_use = 1;
+		rx->in_use = 1U;
 		net_buf_simple_reset(&rx->buf);
 		rx->sub = net_rx->sub;
 		rx->ctl = net_rx->ctl;
@@ -1146,7 +1164,7 @@ static struct seg_rx *seg_rx_alloc(struct bt_mesh_net_rx *net_rx,
 		rx->ttl = net_rx->ctx.send_ttl;
 		rx->src = net_rx->ctx.addr;
 		rx->dst = net_rx->ctx.recv_dst;
-		rx->block = 0;
+		rx->block = 0U;
 
 		BT_DBG("New RX context. Block Complete 0x%08x",
 		       BLOCK_COMPLETE(seg_n));
@@ -1160,6 +1178,7 @@ static struct seg_rx *seg_rx_alloc(struct bt_mesh_net_rx *net_rx,
 static int trans_seg(struct net_buf_simple *buf, struct bt_mesh_net_rx *net_rx,
 		     enum bt_mesh_friend_pdu_type *pdu_type, u64_t *seq_auth)
 {
+	struct bt_mesh_rpl *rpl = NULL;
 	struct seg_rx *rx;
 	u8_t *hdr = buf->data;
 	u16_t seq_zero;
@@ -1169,6 +1188,12 @@ static int trans_seg(struct net_buf_simple *buf, struct bt_mesh_net_rx *net_rx,
 
 	if (buf->len < 5) {
 		BT_ERR("Too short segmented message (len %u)", buf->len);
+		return -EINVAL;
+	}
+
+	if (is_replay(net_rx, &rpl)) {
+		BT_WARN("Replay: src 0x%04x dst 0x%04x seq 0x%06x",
+			net_rx->ctx.addr, net_rx->ctx.recv_dst, net_rx->seq);
 		return -EINVAL;
 	}
 
@@ -1228,9 +1253,15 @@ static int trans_seg(struct net_buf_simple *buf, struct bt_mesh_net_rx *net_rx,
 
 		if (rx->block == BLOCK_COMPLETE(rx->seg_n)) {
 			BT_WARN("Got segment for already complete SDU");
+
 			send_ack(net_rx->sub, net_rx->ctx.recv_dst,
 				 net_rx->ctx.addr, net_rx->ctx.send_ttl,
 				 seq_auth, rx->block, rx->obo);
+
+			if (rpl) {
+				update_rpl(rpl, net_rx);
+			}
+
 			return -EALREADY;
 		}
 
@@ -1318,12 +1349,8 @@ found_rx:
 
 	BT_DBG("Complete SDU");
 
-	if (net_rx->local_match && is_replay(net_rx)) {
-		BT_WARN("Replay: src 0x%04x dst 0x%04x seq 0x%06x",
-			net_rx->ctx.addr, net_rx->ctx.recv_dst, net_rx->seq);
-		/* Clear the segment's bit */
-		rx->block &= ~BIT(seg_o);
-		return -EINVAL;
+	if (rpl) {
+		update_rpl(rpl, net_rx);
 	}
 
 	*pdu_type = BT_MESH_FRIEND_PDU_COMPLETE;

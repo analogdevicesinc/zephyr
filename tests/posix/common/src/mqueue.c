@@ -6,12 +6,12 @@
 
 #include <ztest.h>
 #include <zephyr.h>
-#include <misc/printk.h>
+#include <sys/printk.h>
 #include <mqueue.h>
 #include <pthread.h>
 
 #define N_THR 2
-#define STACKSZ 1024
+#define STACKSZ (1024 + CONFIG_TEST_EXTRA_STACKSIZE)
 #define SENDER_THREAD 0
 #define RECEIVER_THREAD 1
 #define MESSAGE_SIZE 16
@@ -75,7 +75,7 @@ void test_posix_mqueue(void)
 	for (i = 0; i < N_THR; i++) {
 		/* Creating threads */
 		if (pthread_attr_init(&attr[i]) != 0) {
-			pthread_attr_destroy(&attr[i]);
+			zassert_equal(pthread_attr_destroy(&attr[i]), 0, NULL);
 			zassert_false(pthread_attr_init(&attr[i]),
 				      "pthread attr init failed");
 		}
@@ -92,10 +92,10 @@ void test_posix_mqueue(void)
 		}
 
 		zassert_false(ret, "Not enough space to create new thread");
-		pthread_attr_destroy(&attr[i]);
+		zassert_equal(pthread_attr_destroy(&attr[i]), 0, NULL);
 	}
 
-	usleep(10 * USEC_PER_MSEC);
+	usleep(USEC_PER_MSEC * 10U);
 
 	for (i = 0; i < N_THR; i++) {
 		pthread_join(newthread[i], &retval);

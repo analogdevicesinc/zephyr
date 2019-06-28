@@ -7,22 +7,50 @@
 
 #include <kernel.h>
 #include <string.h>
-#include <misc/printk.h>
-#include <misc/rb.h>
+#include <sys/math_extras.h>
+#include <sys/printk.h>
+#include <sys/rb.h>
 #include <kernel_structs.h>
-#include <sys_io.h>
+#include <sys/sys_io.h>
 #include <ksched.h>
 #include <syscall.h>
 #include <syscall_handler.h>
 #include <device.h>
 #include <init.h>
-#include <logging/sys_log.h>
-#if defined(CONFIG_NETWORKING) && defined (CONFIG_DYNAMIC_OBJECTS)
-/* Used by auto-generated obj_size_get() switch body, as we need to
- * know the size of struct net_context
- */
-#include <net/net_context.h>
+#include <stdbool.h>
+#include <app_memory/app_memdomain.h>
+#include <sys/libc-hooks.h>
+#include <sys/mutex.h>
+
+#ifdef Z_LIBC_PARTITION_EXISTS
+K_APPMEM_PARTITION_DEFINE(z_libc_partition);
 #endif
+
+/* TODO: Find a better place to put this. Since we pull the entire
+ * lib..__modules__crypto__mbedtls.a  globals into app shared memory
+ * section, we can't put this in zephyr_init.c of the mbedtls module.
+ */
+#ifdef CONFIG_MBEDTLS
+K_APPMEM_PARTITION_DEFINE(k_mbedtls_partition);
+#endif
+
+#define LOG_LEVEL CONFIG_KERNEL_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_DECLARE(os);
+
+/* The originally synchronization strategy made heavy use of recursive
+ * irq_locking, which ports poorly to spinlocks which are
+ * non-recursive.  Rather than try to redesign as part of
+ * spinlockification, this uses multiple locks to preserve the
+ * original semantics exactly.  The locks are named for the data they
+ * protect where possible, or just for the code that uses them where
+ * not.
+ */
+#ifdef CONFIG_DYNAMIC_OBJECTS
+static struct k_spinlock lists_lock;       /* kobj rbtree/dlist */
+static struct k_spinlock objfree_lock;     /* k_object_free */
+#endif
+static struct k_spinlock obj_lock;         /* kobj struct data */
 
 #define MAX_THREAD_BITS		(CONFIG_MAX_THREAD_BYTES * 8)
 
@@ -70,8 +98,8 @@ struct dyn_obj {
 	u8_t data[]; /* The object itself */
 };
 
-extern struct _k_object *_k_object_gperf_find(void *obj);
-extern void _k_object_gperf_wordlist_foreach(_wordlist_cb_func_t func,
+extern struct _k_object *z_object_gperf_find(void *obj);
+extern void z_object_gperf_wordlist_foreach(_wordlist_cb_func_t func,
 					     void *context);
 
 static bool node_lessthan(struct rbnode *a, struct rbnode *b);
@@ -123,7 +151,6 @@ static struct dyn_obj *dyn_object_find(void *obj)
 {
 	struct rbnode *node;
 	struct dyn_obj *ret;
-	unsigned int key;
 
 	/* For any dynamically allocated kernel object, the object
 	 * pointer is just a member of the conatining struct dyn_obj,
@@ -132,13 +159,13 @@ static struct dyn_obj *dyn_object_find(void *obj)
 	 */
 	node = (struct rbnode *)((char *)obj - sizeof(struct rbnode));
 
-	key = irq_lock();
+	k_spinlock_key_t key = k_spin_lock(&lists_lock);
 	if (rb_contains(&obj_rb_tree, node)) {
 		ret = node_to_dyn_obj(node);
 	} else {
 		ret = NULL;
 	}
-	irq_unlock(key);
+	k_spin_unlock(&lists_lock, key);
 
 	return ret;
 }
@@ -157,9 +184,9 @@ static struct dyn_obj *dyn_object_find(void *obj)
  *
  * @param tidx The new thread index if successful
  *
- * @return 1 if successful, 0 if failed
+ * @return true if successful, false if failed
  **/
-static int _thread_idx_alloc(u32_t *tidx)
+static bool thread_idx_alloc(u32_t *tidx)
 {
 	int i;
 	int idx;
@@ -169,23 +196,23 @@ static int _thread_idx_alloc(u32_t *tidx)
 	for (i = 0; i < CONFIG_MAX_THREAD_BYTES; i++) {
 		idx = find_lsb_set(_thread_idx_map[i]);
 
-		if (idx) {
+		if (idx != 0) {
 			*tidx = base + (idx - 1);
 
 			sys_bitfield_clear_bit((mem_addr_t)_thread_idx_map,
 					       *tidx);
 
 			/* Clear permission from all objects */
-			_k_object_wordlist_foreach(clear_perms_cb,
+			z_object_wordlist_foreach(clear_perms_cb,
 						   (void *)*tidx);
 
-			return 1;
+			return true;
 		}
 
 		base += 8;
 	}
 
-	return 0;
+	return false;
 }
 
 /**
@@ -198,18 +225,17 @@ static int _thread_idx_alloc(u32_t *tidx)
  *
  * @param tidx The thread index to be freed
  **/
-static void _thread_idx_free(u32_t tidx)
+static void thread_idx_free(u32_t tidx)
 {
 	/* To prevent leaked permission when index is recycled */
-	_k_object_wordlist_foreach(clear_perms_cb, (void *)tidx);
+	z_object_wordlist_foreach(clear_perms_cb, (void *)tidx);
 
 	sys_bitfield_set_bit((mem_addr_t)_thread_idx_map, tidx);
 }
 
-void *_impl_k_object_alloc(enum k_objects otype)
+void *z_impl_k_object_alloc(enum k_objects otype)
 {
 	struct dyn_obj *dyn_obj;
-	unsigned int key;
 	u32_t tidx;
 
 	/* Stacks are not supported, we don't yet have mem pool APIs
@@ -221,7 +247,7 @@ void *_impl_k_object_alloc(enum k_objects otype)
 
 	dyn_obj = z_thread_malloc(sizeof(*dyn_obj) + obj_size_get(otype));
 	if (dyn_obj == NULL) {
-		SYS_LOG_WRN("could not allocate kernel object");
+		LOG_WRN("could not allocate kernel object");
 		return NULL;
 	}
 
@@ -232,7 +258,7 @@ void *_impl_k_object_alloc(enum k_objects otype)
 
 	/* Need to grab a new thread index for k_thread */
 	if (otype == K_OBJ_THREAD) {
-		if (!_thread_idx_alloc(&tidx)) {
+		if (!thread_idx_alloc(&tidx)) {
 			k_free(dyn_obj);
 			return NULL;
 		}
@@ -243,12 +269,13 @@ void *_impl_k_object_alloc(enum k_objects otype)
 	/* The allocating thread implicitly gets permission on kernel objects
 	 * that it allocates
 	 */
-	_thread_perms_set(&dyn_obj->kobj, _current);
+	z_thread_perms_set(&dyn_obj->kobj, _current);
 
-	key = irq_lock();
+	k_spinlock_key_t key = k_spin_lock(&lists_lock);
+
 	rb_insert(&obj_rb_tree, &dyn_obj->node);
 	sys_dlist_append(&obj_list, &dyn_obj->obj_list);
-	irq_unlock(key);
+	k_spin_unlock(&lists_lock, key);
 
 	return dyn_obj->kobj.name;
 }
@@ -256,60 +283,60 @@ void *_impl_k_object_alloc(enum k_objects otype)
 void k_object_free(void *obj)
 {
 	struct dyn_obj *dyn_obj;
-	unsigned int key;
 
 	/* This function is intentionally not exposed to user mode.
 	 * There's currently no robust way to track that an object isn't
 	 * being used by some other thread
 	 */
 
-	key = irq_lock();
+	k_spinlock_key_t key = k_spin_lock(&objfree_lock);
+
 	dyn_obj = dyn_object_find(obj);
 	if (dyn_obj != NULL) {
 		rb_remove(&obj_rb_tree, &dyn_obj->node);
 		sys_dlist_remove(&dyn_obj->obj_list);
 
 		if (dyn_obj->kobj.type == K_OBJ_THREAD) {
-			_thread_idx_free(dyn_obj->kobj.data);
+			thread_idx_free(dyn_obj->kobj.data);
 		}
 	}
-	irq_unlock(key);
+	k_spin_unlock(&objfree_lock, key);
 
 	if (dyn_obj != NULL) {
 		k_free(dyn_obj);
 	}
 }
 
-struct _k_object *_k_object_find(void *obj)
+struct _k_object *z_object_find(void *obj)
 {
 	struct _k_object *ret;
 
-	ret = _k_object_gperf_find(obj);
+	ret = z_object_gperf_find(obj);
 
 	if (ret == NULL) {
-		struct dyn_obj *dyn_obj;
+		struct dyn_obj *dynamic_obj;
 
-		dyn_obj = dyn_object_find(obj);
-		if (dyn_obj != NULL) {
-			ret = &dyn_obj->kobj;
+		dynamic_obj = dyn_object_find(obj);
+		if (dynamic_obj != NULL) {
+			ret = &dynamic_obj->kobj;
 		}
 	}
 
 	return ret;
 }
 
-void _k_object_wordlist_foreach(_wordlist_cb_func_t func, void *context)
+void z_object_wordlist_foreach(_wordlist_cb_func_t func, void *context)
 {
-	unsigned int key;
 	struct dyn_obj *obj, *next;
 
-	_k_object_gperf_wordlist_foreach(func, context);
+	z_object_gperf_wordlist_foreach(func, context);
 
-	key = irq_lock();
+	k_spinlock_key_t key = k_spin_lock(&lists_lock);
+
 	SYS_DLIST_FOR_EACH_CONTAINER_SAFE(&obj_list, obj, next, obj_list) {
 		func(&obj->kobj, context);
 	}
-	irq_unlock(key);
+	k_spin_unlock(&lists_lock, key);
 }
 #endif /* CONFIG_DYNAMIC_OBJECTS */
 
@@ -317,7 +344,7 @@ static int thread_index_get(struct k_thread *t)
 {
 	struct _k_object *ko;
 
-	ko = _k_object_find(t);
+	ko = z_object_find(t);
 
 	if (ko == NULL) {
 		return -1;
@@ -326,11 +353,23 @@ static int thread_index_get(struct k_thread *t)
 	return ko->data;
 }
 
-static void unref_check(struct _k_object *ko)
+static void unref_check(struct _k_object *ko, int index)
 {
+	k_spinlock_key_t key = k_spin_lock(&obj_lock);
+
+	sys_bitfield_clear_bit((mem_addr_t)&ko->perms, index);
+
+#ifdef CONFIG_DYNAMIC_OBJECTS
+	struct dyn_obj *dyn_obj =
+			CONTAINER_OF(ko, struct dyn_obj, kobj);
+
+	if ((ko->flags & K_OBJ_FLAG_ALLOC) == 0U) {
+		goto out;
+	}
+
 	for (int i = 0; i < CONFIG_MAX_THREAD_BYTES; i++) {
-		if (ko->perms[i]) {
-			return;
+		if (ko->perms[i] != 0U) {
+			goto out;
 		}
 	}
 
@@ -354,15 +393,12 @@ static void unref_check(struct _k_object *ko)
 		break;
 	}
 
-#ifdef CONFIG_DYNAMIC_OBJECTS
-	if (ko->flags & K_OBJ_FLAG_ALLOC) {
-		struct dyn_obj *dyn_obj =
-			CONTAINER_OF(ko, struct dyn_obj, kobj);
-		rb_remove(&obj_rb_tree, &dyn_obj->node);
-		sys_dlist_remove(&dyn_obj->obj_list);
-		k_free(dyn_obj);
-	}
+	rb_remove(&obj_rb_tree, &dyn_obj->node);
+	sys_dlist_remove(&dyn_obj->obj_list);
+	k_free(dyn_obj);
+out:
 #endif
+	k_spin_unlock(&obj_lock, key);
 }
 
 static void wordlist_cb(struct _k_object *ko, void *ctx_ptr)
@@ -375,7 +411,7 @@ static void wordlist_cb(struct _k_object *ko, void *ctx_ptr)
 	}
 }
 
-void _thread_perms_inherit(struct k_thread *parent, struct k_thread *child)
+void z_thread_perms_inherit(struct k_thread *parent, struct k_thread *child)
 {
 	struct perm_ctx ctx = {
 		thread_index_get(parent),
@@ -384,11 +420,11 @@ void _thread_perms_inherit(struct k_thread *parent, struct k_thread *child)
 	};
 
 	if ((ctx.parent_id != -1) && (ctx.child_id != -1)) {
-		_k_object_wordlist_foreach(wordlist_cb, &ctx);
+		z_object_wordlist_foreach(wordlist_cb, &ctx);
 	}
 }
 
-void _thread_perms_set(struct _k_object *ko, struct k_thread *thread)
+void z_thread_perms_set(struct _k_object *ko, struct k_thread *thread)
 {
 	int index = thread_index_get(thread);
 
@@ -397,35 +433,29 @@ void _thread_perms_set(struct _k_object *ko, struct k_thread *thread)
 	}
 }
 
-void _thread_perms_clear(struct _k_object *ko, struct k_thread *thread)
+void z_thread_perms_clear(struct _k_object *ko, struct k_thread *thread)
 {
 	int index = thread_index_get(thread);
 
 	if (index != -1) {
-		unsigned int key = irq_lock();
-
 		sys_bitfield_clear_bit((mem_addr_t)&ko->perms, index);
-		unref_check(ko);
-		irq_unlock(key);
+		unref_check(ko, index);
 	}
 }
 
 static void clear_perms_cb(struct _k_object *ko, void *ctx_ptr)
 {
 	int id = (int)ctx_ptr;
-	unsigned int key = irq_lock();
 
-	sys_bitfield_clear_bit((mem_addr_t)&ko->perms, id);
-	unref_check(ko);
-	irq_unlock(key);
+	unref_check(ko, id);
 }
 
-void _thread_perms_all_clear(struct k_thread *thread)
+void z_thread_perms_all_clear(struct k_thread *thread)
 {
 	int index = thread_index_get(thread);
 
 	if (index != -1) {
-		_k_object_wordlist_foreach(clear_perms_cb, (void *)index);
+		z_object_wordlist_foreach(clear_perms_cb, (void *)index);
 	}
 }
 
@@ -433,7 +463,7 @@ static int thread_perms_test(struct _k_object *ko)
 {
 	int index;
 
-	if (ko->flags & K_OBJ_FLAG_PUBLIC) {
+	if ((ko->flags & K_OBJ_FLAG_PUBLIC) != 0U) {
 		return 1;
 	}
 
@@ -456,7 +486,7 @@ static void dump_permission_error(struct _k_object *ko)
 	printk("]\n");
 }
 
-void _dump_object_error(int retval, void *obj, struct _k_object *ko,
+void z_dump_object_error(int retval, void *obj, struct _k_object *ko,
 			enum k_objects otype)
 {
 	switch (retval) {
@@ -478,39 +508,39 @@ void _dump_object_error(int retval, void *obj, struct _k_object *ko,
 	}
 }
 
-void _impl_k_object_access_grant(void *object, struct k_thread *thread)
+void z_impl_k_object_access_grant(void *object, struct k_thread *thread)
 {
-	struct _k_object *ko = _k_object_find(object);
+	struct _k_object *ko = z_object_find(object);
 
 	if (ko != NULL) {
-		_thread_perms_set(ko, thread);
+		z_thread_perms_set(ko, thread);
 	}
 }
 
 void k_object_access_revoke(void *object, struct k_thread *thread)
 {
-	struct _k_object *ko = _k_object_find(object);
+	struct _k_object *ko = z_object_find(object);
 
 	if (ko != NULL) {
-		_thread_perms_clear(ko, thread);
+		z_thread_perms_clear(ko, thread);
 	}
 }
 
-void _impl_k_object_release(void *object)
+void z_impl_k_object_release(void *object)
 {
 	k_object_access_revoke(object, _current);
 }
 
 void k_object_access_all_grant(void *object)
 {
-	struct _k_object *ko = _k_object_find(object);
+	struct _k_object *ko = z_object_find(object);
 
 	if (ko != NULL) {
 		ko->flags |= K_OBJ_FLAG_PUBLIC;
 	}
 }
 
-int _k_object_validate(struct _k_object *ko, enum k_objects otype,
+int z_object_validate(struct _k_object *ko, enum k_objects otype,
 		       enum _obj_init_check init)
 {
 	if (unlikely((ko == NULL) ||
@@ -521,19 +551,19 @@ int _k_object_validate(struct _k_object *ko, enum k_objects otype,
 	/* Manipulation of any kernel objects by a user thread requires that
 	 * thread be granted access first, even for uninitialized objects
 	 */
-	if (unlikely(!thread_perms_test(ko))) {
+	if (unlikely(thread_perms_test(ko) == 0)) {
 		return -EPERM;
 	}
 
 	/* Initialization state checks. _OBJ_INIT_ANY, we don't care */
 	if (likely(init == _OBJ_INIT_TRUE)) {
 		/* Object MUST be intialized */
-		if (unlikely(!(ko->flags & K_OBJ_FLAG_INITIALIZED))) {
+		if (unlikely((ko->flags & K_OBJ_FLAG_INITIALIZED) == 0U)) {
 			return -EINVAL;
 		}
 	} else if (init < _OBJ_INIT_TRUE) { /* _OBJ_INIT_FALSE case */
 		/* Object MUST NOT be initialized */
-		if (unlikely(ko->flags & K_OBJ_FLAG_INITIALIZED)) {
+		if (unlikely((ko->flags & K_OBJ_FLAG_INITIALIZED) != 0U)) {
 			return -EADDRINUSE;
 		}
 	} else {
@@ -543,19 +573,19 @@ int _k_object_validate(struct _k_object *ko, enum k_objects otype,
 	return 0;
 }
 
-void _k_object_init(void *object)
+void z_object_init(void *obj)
 {
 	struct _k_object *ko;
 
 	/* By the time we get here, if the caller was from userspace, all the
-	 * necessary checks have been done in _k_object_validate(), which takes
+	 * necessary checks have been done in z_object_validate(), which takes
 	 * place before the object is initialized.
 	 *
 	 * This function runs after the object has been initialized and
 	 * finalizes it
 	 */
 
-	ko = _k_object_find(object);
+	ko = z_object_find(obj);
 	if (ko == NULL) {
 		/* Supervisor threads can ignore rules about kernel objects
 		 * and may declare them on stacks, etc. Such objects will never
@@ -568,23 +598,23 @@ void _k_object_init(void *object)
 	ko->flags |= K_OBJ_FLAG_INITIALIZED;
 }
 
-void _k_object_recycle(void *object)
+void z_object_recycle(void *obj)
 {
-	struct _k_object *ko = _k_object_find(object);
+	struct _k_object *ko = z_object_find(obj);
 
 	if (ko != NULL) {
 		(void)memset(ko->perms, 0, sizeof(ko->perms));
-		_thread_perms_set(ko, k_current_get());
+		z_thread_perms_set(ko, k_current_get());
 		ko->flags |= K_OBJ_FLAG_INITIALIZED;
 	}
 }
 
-void _k_object_uninit(void *object)
+void z_object_uninit(void *obj)
 {
 	struct _k_object *ko;
 
-	/* See comments in _k_object_init() */
-	ko = _k_object_find(object);
+	/* See comments in z_object_init() */
+	ko = z_object_find(obj);
 	if (ko == NULL) {
 		return;
 	}
@@ -595,12 +625,9 @@ void _k_object_uninit(void *object)
 /*
  * Copy to/from helper functions used in syscall handlers
  */
-void *z_user_alloc_from_copy(void *src, size_t size)
+void *z_user_alloc_from_copy(const void *src, size_t size)
 {
 	void *dst = NULL;
-	unsigned int key;
-
-	key = irq_lock();
 
 	/* Does the caller in user mode have access to read this memory? */
 	if (Z_SYSCALL_MEMORY_READ(src, size)) {
@@ -615,16 +642,12 @@ void *z_user_alloc_from_copy(void *src, size_t size)
 
 	(void)memcpy(dst, src, size);
 out_err:
-	irq_unlock(key);
 	return dst;
 }
 
-static int user_copy(void *dst, void *src, size_t size, bool to_user)
+static int user_copy(void *dst, const void *src, size_t size, bool to_user)
 {
 	int ret = EFAULT;
-	unsigned int key;
-
-	key = irq_lock();
 
 	/* Does the caller in user mode have access to this memory? */
 	if (to_user ? Z_SYSCALL_MEMORY_WRITE(dst, size) :
@@ -635,76 +658,99 @@ static int user_copy(void *dst, void *src, size_t size, bool to_user)
 	(void)memcpy(dst, src, size);
 	ret = 0;
 out_err:
-	irq_unlock(key);
 	return ret;
 }
 
-int z_user_from_copy(void *dst, void *src, size_t size)
+int z_user_from_copy(void *dst, const void *src, size_t size)
 {
 	return user_copy(dst, src, size, false);
 }
 
-int z_user_to_copy(void *dst, void *src, size_t size)
+int z_user_to_copy(void *dst, const void *src, size_t size)
 {
 	return user_copy(dst, src, size, true);
 }
 
-char *z_user_string_alloc_copy(char *src, size_t maxlen)
+char *z_user_string_alloc_copy(const char *src, size_t maxlen)
 {
-	unsigned long actual_len;
+	size_t actual_len;
 	int err;
-	unsigned int key;
 	char *ret = NULL;
 
-	key = irq_lock();
 	actual_len = z_user_string_nlen(src, maxlen, &err);
-	if (err) {
+	if (err != 0) {
 		goto out;
 	}
 	if (actual_len == maxlen) {
 		/* Not NULL terminated */
-		printk("string too long %p (%lu)\n", src, actual_len);
+		printk("string too long %p (%zu)\n", src, actual_len);
 		goto out;
 	}
-	if (__builtin_uaddl_overflow(actual_len, 1, &actual_len)) {
+	if (size_add_overflow(actual_len, 1, &actual_len)) {
 		printk("overflow\n");
 		goto out;
 	}
 
 	ret = z_user_alloc_from_copy(src, actual_len);
+
+	/* Someone may have modified the source string during the above
+	 * checks. Ensure what we actually copied is still terminated
+	 * properly.
+	 */
+	if (ret != NULL) {
+		ret[actual_len - 1] = '\0';
+	}
 out:
-	irq_unlock(key);
 	return ret;
 }
 
-int z_user_string_copy(char *dst, char *src, size_t maxlen)
+int z_user_string_copy(char *dst, const char *src, size_t maxlen)
 {
-	unsigned long actual_len;
+	size_t actual_len;
 	int ret, err;
-	unsigned int key;
 
-	key = irq_lock();
 	actual_len = z_user_string_nlen(src, maxlen, &err);
-	if (err) {
+	if (err != 0) {
 		ret = EFAULT;
 		goto out;
 	}
 	if (actual_len == maxlen) {
 		/* Not NULL terminated */
-		printk("string too long %p (%lu)\n", src, actual_len);
+		printk("string too long %p (%zu)\n", src, actual_len);
 		ret = EINVAL;
 		goto out;
 	}
-	if (__builtin_uaddl_overflow(actual_len, 1, &actual_len)) {
+	if (size_add_overflow(actual_len, 1, &actual_len)) {
 		printk("overflow\n");
 		ret = EINVAL;
 		goto out;
 	}
 
 	ret = z_user_from_copy(dst, src, actual_len);
+
+	/* See comment above in z_user_string_alloc_copy() */
+	dst[actual_len - 1] = '\0';
 out:
-	irq_unlock(key);
 	return ret;
+}
+
+/*
+ * Application memory region initialization
+ */
+
+extern char __app_shmem_regions_start[];
+extern char __app_shmem_regions_end[];
+
+void z_app_shmem_bss_zero(void)
+{
+	struct z_app_region *region, *end;
+
+	end = (struct z_app_region *)&__app_shmem_regions_end;
+	region = (struct z_app_region *)&__app_shmem_regions_start;
+
+	for ( ; region < end; region++) {
+		(void)memset(region->bss_start, 0, region->bss_size);
+	}
 }
 
 /*
@@ -715,16 +761,16 @@ static u32_t handler_bad_syscall(u32_t bad_id, u32_t arg2, u32_t arg3,
 				  u32_t arg4, u32_t arg5, u32_t arg6, void *ssf)
 {
 	printk("Bad system call id %u invoked\n", bad_id);
-	_arch_syscall_oops(ssf);
-	CODE_UNREACHABLE;
+	z_arch_syscall_oops(ssf);
+	CODE_UNREACHABLE; /* LCOV_EXCL_LINE */
 }
 
 static u32_t handler_no_syscall(u32_t arg1, u32_t arg2, u32_t arg3,
 				 u32_t arg4, u32_t arg5, u32_t arg6, void *ssf)
 {
 	printk("Unimplemented system call\n");
-	_arch_syscall_oops(ssf);
-	CODE_UNREACHABLE;
+	z_arch_syscall_oops(ssf);
+	CODE_UNREACHABLE; /* LCOV_EXCL_LINE */
 }
 
 #include <syscall_dispatch.c>

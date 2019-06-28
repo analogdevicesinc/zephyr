@@ -8,22 +8,28 @@
  */
 
 #include <string.h>
-#include <spi.h>
+#include <drivers/spi.h>
 #include "lsm6dsl.h"
+#include <logging/log.h>
+
+#ifdef DT_ST_LSM6DSL_BUS_SPI
 
 #define LSM6DSL_SPI_READ		(1 << 7)
 
-#if defined(CONFIG_LSM6DSL_SPI_GPIO_CS)
+#define LOG_LEVEL CONFIG_SENSOR_LOG_LEVEL
+LOG_MODULE_DECLARE(LSM6DSL);
+
+#if defined(DT_INST_0_ST_LSM6DSL_CS_GPIOS_CONTROLLER)
 static struct spi_cs_control lsm6dsl_cs_ctrl;
 #endif
 
 #define SPI_CS NULL
 
 static struct spi_config lsm6dsl_spi_conf = {
-	.frequency = CONFIG_LSM6DSL_SPI_BUS_FREQ,
+	.frequency = DT_INST_0_ST_LSM6DSL_SPI_MAX_FREQUENCY,
 	.operation = (SPI_OP_MODE_MASTER | SPI_MODE_CPOL |
 		      SPI_MODE_CPHA | SPI_WORD_SET(8) | SPI_LINES_SINGLE),
-	.slave     = CONFIG_LSM6DSL_SPI_SELECT_SLAVE,
+	.slave     = DT_INST_0_ST_LSM6DSL_BASE_ADDRESS,
 	.cs        = SPI_CS,
 };
 
@@ -141,26 +147,25 @@ int lsm6dsl_spi_init(struct device *dev)
 
 	data->hw_tf = &lsm6dsl_spi_transfer_fn;
 
-#if defined(CONFIG_LSM6DSL_SPI_GPIO_CS)
+#if defined(DT_INST_0_ST_LSM6DSL_CS_GPIOS_CONTROLLER)
 	/* handle SPI CS thru GPIO if it is the case */
-	if (IS_ENABLED(CONFIG_LSM6DSL_SPI_GPIO_CS)) {
-		lsm6dsl_cs_ctrl.gpio_dev = device_get_binding(
-			CONFIG_LSM6DSL_SPI_GPIO_CS_DRV_NAME);
-		if (!lsm6dsl_cs_ctrl.gpio_dev) {
-			SYS_LOG_ERR("Unable to get GPIO SPI CS device");
-			return -ENODEV;
-		}
-
-		lsm6dsl_cs_ctrl.gpio_pin = CONFIG_LSM6DSL_SPI_GPIO_CS_PIN;
-		lsm6dsl_cs_ctrl.delay = 0;
-
-		lsm6dsl_spi_conf.cs = &lsm6dsl_cs_ctrl;
-
-		SYS_LOG_DBG("SPI GPIO CS configured on %s:%u",
-			    CONFIG_LSM6DSL_SPI_GPIO_CS_DRV_NAME,
-			    CONFIG_LSM6DSL_SPI_GPIO_CS_PIN);
+	lsm6dsl_cs_ctrl.gpio_dev = device_get_binding(
+		DT_INST_0_ST_LSM6DSL_CS_GPIOS_CONTROLLER);
+	if (!lsm6dsl_cs_ctrl.gpio_dev) {
+		LOG_ERR("Unable to get GPIO SPI CS device");
+		return -ENODEV;
 	}
+
+	lsm6dsl_cs_ctrl.gpio_pin = DT_INST_0_ST_LSM6DSL_CS_GPIOS_PIN;
+	lsm6dsl_cs_ctrl.delay = 0U;
+
+	lsm6dsl_spi_conf.cs = &lsm6dsl_cs_ctrl;
+
+	LOG_DBG("SPI GPIO CS configured on %s:%u",
+		    DT_INST_0_ST_LSM6DSL_CS_GPIOS_CONTROLLER,
+		    DT_INST_0_ST_LSM6DSL_CS_GPIOS_PIN);
 #endif
 
 	return 0;
 }
+#endif /* DT_ST_LSM6DSL_BUS_SPI */

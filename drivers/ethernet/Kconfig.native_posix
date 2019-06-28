@@ -6,12 +6,25 @@
 
 menuconfig ETH_NATIVE_POSIX
 	bool "Native Posix Ethernet driver"
-	depends on ARCH_POSIX && NET_L2_ETHERNET
+	depends on ARCH_POSIX
 	help
 	  Enable native posix ethernet driver. Note, this driver is run inside
 	  a process in your host system.
 
 if ETH_NATIVE_POSIX
+config ETH_NATIVE_POSIX_STARTUP_AUTOMATIC
+	bool "Start network interface automatically"
+	help
+	  If set, the native_posix ethernet driver will set up the network
+	  interface, requiring ``zephyr.exe`` to be run with root privileges
+	  (needed to create and configure the TAP device).
+	  If not set (the default and recommended way), the network interface
+	  must be set up manually using ``net-setup.sh`` (from the net-tools
+	  project repo). The ``zephyr.exe`` program can then be run as a
+	  non-root user.
+
+if ETH_NATIVE_POSIX_STARTUP_AUTOMATIC
+
 config ETH_NATIVE_POSIX_SETUP_SCRIPT
 	string "Host setup script"
 	default "${ZEPHYR_BASE}/samples/net/eth_native_posix/net_setup_host"
@@ -51,6 +64,8 @@ config ETH_NATIVE_POSIX_STARTUP_SCRIPT_USER
 	  for the setup script. The setup script needs to be run always as
 	  a root user.
 
+endif # ETH_NATIVE_POSIX_STARTUP_AUTOMATIC
+
 config ETH_NATIVE_POSIX_DRV_NAME
 	string "Ethernet driver name"
 	default "zeth"
@@ -66,6 +81,7 @@ config ETH_NATIVE_POSIX_DEV_NAME
 
 config ETH_NATIVE_POSIX_PTP_CLOCK
 	bool "PTP clock driver support"
+	default y if NET_GPTP
 	select PTP_CLOCK
 	depends on NET_GPTP
 	help
@@ -77,6 +93,14 @@ config ETH_NATIVE_POSIX_RANDOM_MAC
 	default y
 	help
 	  Generate a random MAC address dynamically.
+
+config ETH_NATIVE_POSIX_VLAN_TAG_STRIP
+	bool "Strip VLAN tag from Rx frames"
+	depends on NET_VLAN
+	help
+	  Native posix ethernet driver will strip of VLAN tag from
+	  Rx Ethernet frames and sets tag information in net packet
+	  metadata.
 
 if ! ETH_NATIVE_POSIX_RANDOM_MAC
 
@@ -92,4 +116,4 @@ config	ETH_NATIVE_POSIX_MAC_ADDR
 
 endif
 
-endif
+endif # ETH_NATIVE_POSIX

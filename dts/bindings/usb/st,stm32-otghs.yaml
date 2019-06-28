@@ -3,9 +3,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 #
----
+
 title: STM32 OTGHS
-id: st,stm32-otghs
 version: 0.1
 
 description: >
@@ -19,22 +18,10 @@ properties:
       constraint: "st,stm32-otghs"
 
     reg:
-      type: array
-      description: mmio register space
-      generation: define
       category: required
 
     interrupts:
-      type: array
       category: required
-      description: required interrupts
-      generation: define
-
-    interrupt-names:
-      type: stringlist
-      category: optional
-      description: readable string describing the interrupts
-      generation: define
 
     ram-size:
       type: int
@@ -42,4 +29,9 @@ properties:
       description: Size of USB dedicated RAM. STM32 SOC's reference
                    manual defines a shared FIFO size.
       generation: define
-...
+
+    phys:
+      type: array
+      category: optional
+      generation: define
+      description: PHY provider specifier

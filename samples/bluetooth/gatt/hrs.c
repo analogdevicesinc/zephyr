@@ -12,8 +12,8 @@
 #include <stddef.h>
 #include <string.h>
 #include <errno.h>
-#include <misc/printk.h>
-#include <misc/byteorder.h>
+#include <sys/printk.h>
+#include <sys/byteorder.h>
 #include <zephyr.h>
 
 #include <bluetooth/bluetooth.h>
@@ -24,7 +24,7 @@
 
 static struct bt_gatt_ccc_cfg hrmc_ccc_cfg[BT_GATT_CCC_MAX] = {};
 static u8_t simulate_hrm;
-static u8_t heartrate = 90;
+static u8_t heartrate = 90U;
 static u8_t hrs_blsc;
 
 static void hrmc_ccc_cfg_changed(const struct bt_gatt_attr *attr,
@@ -41,7 +41,7 @@ static ssize_t read_blsc(struct bt_conn *conn, const struct bt_gatt_attr *attr,
 }
 
 /* Heart Rate Service Declaration */
-static struct bt_gatt_attr attrs[] = {
+BT_GATT_SERVICE_DEFINE(hrs_svc,
 	BT_GATT_PRIMARY_SERVICE(BT_UUID_HRS),
 	BT_GATT_CHARACTERISTIC(BT_UUID_HRS_MEASUREMENT, BT_GATT_CHRC_NOTIFY,
 			       BT_GATT_PERM_NONE, NULL, NULL, NULL),
@@ -50,15 +50,11 @@ static struct bt_gatt_attr attrs[] = {
 			       BT_GATT_PERM_READ, read_blsc, NULL, NULL),
 	BT_GATT_CHARACTERISTIC(BT_UUID_HRS_CONTROL_POINT, BT_GATT_CHRC_WRITE,
 			       BT_GATT_PERM_NONE, NULL, NULL, NULL),
-};
-
-static struct bt_gatt_service hrs_svc = BT_GATT_SERVICE(attrs);
+);
 
 void hrs_init(u8_t blsc)
 {
 	hrs_blsc = blsc;
-
-	bt_gatt_service_register(&hrs_svc);
 }
 
 void hrs_notify(void)
@@ -71,12 +67,12 @@ void hrs_notify(void)
 	}
 
 	heartrate++;
-	if (heartrate == 160) {
-		heartrate = 90;
+	if (heartrate == 160U) {
+		heartrate = 90U;
 	}
 
 	hrm[0] = 0x06; /* uint8, sensor contact */
 	hrm[1] = heartrate;
 
-	bt_gatt_notify(NULL, &attrs[1], &hrm, sizeof(hrm));
+	bt_gatt_notify(NULL, &hrs_svc.attrs[1], &hrm, sizeof(hrm));
 }

@@ -11,7 +11,7 @@ interface to the host system. One can communicate with Zephyr via this network
 interface.
 
 The source code for this sample application can be found at:
-:file:`samples/net/eth_native_posix`.
+:zephyr_file:`samples/net/eth_native_posix`.
 
 Building And Running
 ********************
@@ -28,20 +28,48 @@ below.
    :compact:
 
 Normally one needs extra privileges to create and configure the TAP device in
-the host system. Use sudo to execute the Zephyr process with admin privileges,
-like this:
+the host system. If the user has set the
+:option:`CONFIG_ETH_NATIVE_POSIX_STARTUP_AUTOMATIC` option (this is disabled
+by default), then the user needs to use ``sudo`` to execute the Zephyr process
+with admin privileges, like this:
 
 .. code-block:: console
 
-    sudo --preserve-env=ZEPHYR_BASE make run
+    sudo --preserve-env=ZEPHYR_BASE make -Cbuild run
 
 If the ``sudo --preserve-env=ZEPHYR_BASE`` gives an error,
-just use ``sudo --preserve-env`` instead:
+just use ``sudo --preserve-env`` instead.
+
+If the :option:`CONFIG_ETH_NATIVE_POSIX_STARTUP_AUTOMATIC` option
+is not enabled (this is the default), then the user should
+execute the ``net-setup.sh`` script from Zephyr `net-tools`_ repository.
+The script should be run before executing the Zephyr process. The script
+will create the zeth interface and set up IP addresses and routes.
+While running ``net-setup.sh`` requires root access, afterwards Zephyr
+process can be run as a non-root user.
+
+You can run the ``net-setup.sh`` script like this::
+
+   cd net-tools
+   sudo ./net-setup.sh
+
+or::
+
+   sudo ./net-setup.sh --config ./zeth-vlan.conf
+
+See also other command line options by typing ``net-setup.sh --help``.
+
+When the network interface is set up manually, you can leave the wireshark
+to monitor the interface, and then start and stop the zephyr process without
+stopping the wireshark.
+
+Setting things manually works the same as working with SLIP connectivity
+in QEMU.
 
 If you want to connect two Zephyr instances together, you can do it like this:
 
 Create two Zephyr config files prj1.conf and prj2.conf. You can use
-:file:`samples/net/eth_native_posix/prj.conf` as a base.
+:zephyr_file:`samples/net/eth_native_posix/prj.conf` as a base.
 
 Set prj1.conf IP address configuration like this:
 
@@ -77,15 +105,13 @@ just use ``sudo --preserve-env`` instead):
 
 .. code-block:: console
 
-    mkdir -p build1/native_posix
-    cmake -DCONF_FILE=prj1.conf -DBOARD=native_posix -Bbuild1/native_posix -H.
+    cmake -DCONF_FILE=prj1.conf -DBOARD=native_posix -Bbuild1/native_posix .
     make -s -C build1/native_posix
     sudo --preserve-env=ZEPHYR_BASE make -s -C build1/native_posix run
 
 .. code-block:: console
 
-    mkdir -p build2/native_posix
-    cmake -DCONF_FILE=prj2.conf -DBOARD=native_posix -Bbuild2/native_posix -H.
+    cmake -DCONF_FILE=prj2.conf -DBOARD=native_posix -Bbuild2/native_posix .
     make -s -C build2/native_posix
     sudo --preserve-env=ZEPHYR_BASE make -s -C build2/native_posix run
 
@@ -116,3 +142,5 @@ Note that in this setup you cannot access these two Zephyr devices from
 your host. If you want to do that, then you could create a new network
 interface with proper IP addresses and add that interface to the Zephyr
 bridge.
+
+.. _`net-tools`: https://github.com/zephyrproject-rtos/net-tools

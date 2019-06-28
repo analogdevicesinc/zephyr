@@ -2,9 +2,8 @@ sample:
   description: Hello World sample, the simplest Zephyr
     application
   name: hello world
-  platforms: all
 common:
-    tags: samples
+    tags: introduction
     harness: console
     harness_config:
       type: one_line
@@ -12,4 +11,4 @@ common:
         - "Hello World! (.*)"
 tests:
   sample.helloworld:
-    tags: samples
+    tags: introduction

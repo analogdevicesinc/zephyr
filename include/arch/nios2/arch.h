@@ -16,8 +16,11 @@
 
 #include <system.h>
 #include <arch/nios2/asm_inline.h>
+#include <arch/common/addr_types.h>
 #include <generated_dts_board.h>
 #include "nios2.h"
+#include <arch/common/sys_io.h>
+#include <arch/common/ffs.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -37,9 +40,6 @@ extern "C" {
 #include <irq.h>
 #include <sw_isr_table.h>
 
-/* physical/virtual address types required by the kernel */
-typedef unsigned int paddr_t;
-typedef unsigned int vaddr_t;
 
 /**
  * Configure a static interrupt.
@@ -69,15 +69,15 @@ typedef unsigned int vaddr_t;
  *
  * @return The vector assigned to this interrupt
  */
-#define _ARCH_IRQ_CONNECT(irq_p, priority_p, isr_p, isr_param_p, flags_p) \
+#define Z_ARCH_IRQ_CONNECT(irq_p, priority_p, isr_p, isr_param_p, flags_p) \
 ({ \
-	_ISR_DECLARE(irq_p, 0, isr_p, isr_param_p); \
+	Z_ISR_DECLARE(irq_p, 0, isr_p, isr_param_p); \
 	irq_p; \
 })
 
-extern void _irq_spurious(void *unused);
+extern void z_irq_spurious(void *unused);
 
-static ALWAYS_INLINE unsigned int _arch_irq_lock(void)
+static ALWAYS_INLINE unsigned int z_arch_irq_lock(void)
 {
 	unsigned int key, tmp;
 
@@ -92,7 +92,7 @@ static ALWAYS_INLINE unsigned int _arch_irq_lock(void)
 	return key;
 }
 
-static ALWAYS_INLINE void _arch_irq_unlock(unsigned int key)
+static ALWAYS_INLINE void z_arch_irq_unlock(unsigned int key)
 {
 	/* If the CPU is built without certain features, then
 	 * the only writable bit in the status register is PIE
@@ -124,8 +124,17 @@ static ALWAYS_INLINE void _arch_irq_unlock(unsigned int key)
 #endif
 }
 
-void _arch_irq_enable(unsigned int irq);
-void _arch_irq_disable(unsigned int irq);
+/**
+ * Returns true if interrupts were unlocked prior to the
+ * z_arch_irq_lock() call that produced the key argument.
+ */
+static ALWAYS_INLINE bool z_arch_irq_unlocked(unsigned int key)
+{
+	return key & 1;
+}
+
+void z_arch_irq_enable(unsigned int irq);
+void z_arch_irq_disable(unsigned int irq);
 
 struct __esf {
 	u32_t ra; /* return address r31 */
@@ -151,10 +160,10 @@ struct __esf {
 typedef struct __esf NANO_ESF;
 extern const NANO_ESF _default_esf;
 
-FUNC_NORETURN void _SysFatalErrorHandler(unsigned int reason,
+FUNC_NORETURN void z_SysFatalErrorHandler(unsigned int reason,
 					 const NANO_ESF *esf);
 
-FUNC_NORETURN void _NanoFatalErrorHandler(unsigned int reason,
+FUNC_NORETURN void z_NanoFatalErrorHandler(unsigned int reason,
 					  const NANO_ESF *esf);
 
 enum nios2_exception_cause {
@@ -198,8 +207,16 @@ enum nios2_exception_cause {
 	 BIT(NIOS2_EXCEPTION_ECC_DATA_ERR))
 
 
-extern u32_t _timer_cycle_get_32(void);
-#define _arch_k_cycle_get_32()	_timer_cycle_get_32()
+extern u32_t z_timer_cycle_get_32(void);
+#define z_arch_k_cycle_get_32()	z_timer_cycle_get_32()
+
+/**
+ * @brief Explicitly nop operation.
+ */
+static ALWAYS_INLINE void arch_nop(void)
+{
+	__asm__ volatile("nop");
+}
 
 #endif /* _ASMLANGUAGE */
 

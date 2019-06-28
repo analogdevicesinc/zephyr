@@ -9,23 +9,24 @@
  */
 
 #include <errno.h>
-#include <misc/__assert.h>
+#include <sys/__assert.h>
 #include <device.h>
 #include <init.h>
 #include <string.h>
 #include <soc.h>
-#include <dma.h>
+#include <drivers/dma.h>
 #include "dma_sam_xdmac.h"
 
-#define SYS_LOG_DOMAIN "dev/dma_sam_xdmac"
-#define SYS_LOG_LEVEL CONFIG_SYS_LOG_DMA_LEVEL
-#include <logging/sys_log.h>
+#define LOG_LEVEL CONFIG_DMA_LOG_LEVEL
+#include <logging/log.h>
+LOG_MODULE_REGISTER(dma_sam_xdmac);
 
 #define XDMAC_INT_ERR (XDMAC_CIE_RBIE | XDMAC_CIE_WBIE | XDMAC_CIE_ROIE)
 #define DMA_CHANNELS_NO  XDMACCHID_NUMBER
 
 /* DMA channel configuration */
 struct sam_xdmac_channel_cfg {
+	void *callback_arg;
 	dma_callback callback;
 };
 
@@ -73,7 +74,8 @@ static void sam_xdmac_isr(void *arg)
 
 		/* Execute callback */
 		if (channel_cfg->callback) {
-			channel_cfg->callback(dev, channel, err);
+			channel_cfg->callback(channel_cfg->callback_arg,
+					channel, err);
 		}
 	}
 }
@@ -189,28 +191,28 @@ static int sam_xdmac_config(struct device *dev, u32_t channel,
 	__ASSERT_NO_MSG(cfg->source_data_size == cfg->dest_data_size);
 	__ASSERT_NO_MSG(cfg->source_burst_length == cfg->dest_burst_length);
 
-	if (cfg->source_data_size != 1 && cfg->source_data_size != 2 &&
-	    cfg->source_data_size != 4) {
-		SYS_LOG_ERR("Invalid 'source_data_size' value");
+	if (cfg->source_data_size != 1U && cfg->source_data_size != 2U &&
+	    cfg->source_data_size != 4U) {
+		LOG_ERR("Invalid 'source_data_size' value");
 		return -EINVAL;
 	}
 
-	if (cfg->block_count != 1) {
-		SYS_LOG_ERR("Only single block transfer is currently supported."
+	if (cfg->block_count != 1U) {
+		LOG_ERR("Only single block transfer is currently supported."
 			    " Please submit a patch.");
 		return -EINVAL;
 	}
 
 	burst_size = find_msb_set(cfg->source_burst_length) - 1;
-	SYS_LOG_DBG("burst_size=%d", burst_size);
+	LOG_DBG("burst_size=%d", burst_size);
 	data_size = find_msb_set(cfg->source_data_size) - 1;
-	SYS_LOG_DBG("data_size=%d", data_size);
+	LOG_DBG("data_size=%d", data_size);
 
 	switch (cfg->channel_direction) {
 	case MEMORY_TO_MEMORY:
 		channel_cfg.cfg =
 			  XDMAC_CC_TYPE_MEM_TRAN
-			| XDMAC_CC_MBSIZE(burst_size == 0 ? 0 : burst_size - 1)
+			| XDMAC_CC_MBSIZE(burst_size == 0U ? 0 : burst_size - 1)
 			| XDMAC_CC_SAM_INCREMENTED_AM
 			| XDMAC_CC_DAM_INCREMENTED_AM;
 		break;
@@ -231,7 +233,7 @@ static int sam_xdmac_config(struct device *dev, u32_t channel,
 			| XDMAC_CC_DAM_INCREMENTED_AM;
 		break;
 	default:
-		SYS_LOG_ERR("'channel_direction' value %d is not supported",
+		LOG_ERR("'channel_direction' value %d is not supported",
 			    cfg->channel_direction);
 		return -EINVAL;
 	}
@@ -241,9 +243,9 @@ static int sam_xdmac_config(struct device *dev, u32_t channel,
 		| XDMAC_CC_SIF_AHB_IF1
 		| XDMAC_CC_DIF_AHB_IF1
 		| XDMAC_CC_PERID(cfg->dma_slot);
-	channel_cfg.ds_msp = 0;
-	channel_cfg.sus = 0;
-	channel_cfg.dus = 0;
+	channel_cfg.ds_msp = 0U;
+	channel_cfg.sus = 0U;
+	channel_cfg.dus = 0U;
 	channel_cfg.cie =
 		  (cfg->complete_callback_en ? XDMAC_CIE_BIE : XDMAC_CIE_LIE)
 		| (cfg->error_callback_en ? XDMAC_INT_ERR : 0);
@@ -254,6 +256,7 @@ static int sam_xdmac_config(struct device *dev, u32_t channel,
 	}
 
 	dev_data->dma_channels[channel].callback = cfg->dma_callback;
+	dev_data->dma_channels[channel].callback_arg = cfg->callback_arg;
 
 	(void)memset(&transfer_cfg, 0, sizeof(transfer_cfg));
 	transfer_cfg.sa = cfg->head_block->source_address;
@@ -330,7 +333,7 @@ static int sam_xdmac_initialize(struct device *dev)
 	/* Enable module's IRQ */
 	irq_enable(dev_cfg->irq_id);
 
-	SYS_LOG_INF("Device %s initialized", DEV_NAME(dev));
+	LOG_INF("Device %s initialized", DEV_NAME(dev));
 
 	return 0;
 }

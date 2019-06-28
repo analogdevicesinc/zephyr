@@ -56,7 +56,7 @@ struct _isr_list {
 };
 
 /** This interrupt gets put directly in the vector table */
-#define ISR_FLAG_DIRECT (1 << 0)
+#define ISR_FLAG_DIRECT BIT(0)
 
 #define _MK_ISR_NAME(x, y) __isr_ ## x ## _irq_ ## y
 
@@ -64,12 +64,16 @@ struct _isr_list {
  * section. This gets consumed by gen_isr_tables.py which creates the vector
  * and/or SW ISR tables.
  */
-#define _ISR_DECLARE(irq, flags, func, param) \
-	static struct _isr_list _GENERIC_SECTION(.intList) __used \
+#define Z_ISR_DECLARE(irq, flags, func, param) \
+	static struct _isr_list Z_GENERIC_SECTION(.intList) __used \
 		_MK_ISR_NAME(func, __COUNTER__) = \
 			{irq, flags, &func, (void *)param}
 
 #define IRQ_TABLE_SIZE (CONFIG_NUM_IRQS - CONFIG_GEN_IRQ_START_VECTOR)
+
+#ifdef CONFIG_DYNAMIC_INTERRUPTS
+void z_isr_install(unsigned int irq, void (*routine)(void *), void *param);
+#endif
 
 #endif /* _ASMLANGUAGE */
 

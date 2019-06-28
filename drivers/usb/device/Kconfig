@@ -43,18 +43,37 @@ config USB_DC_STM32
 
 config USB_DC_SAM0
 	bool "SAM0 series USB Device Controller driver"
+	default y
 	depends on SOC_FAMILY_SAM0
 	select USB_DEVICE_DRIVER
 	help
 	  SAM0 family USB device controller Driver.
 
-config USB_NRF52840
-	bool "Nordic Semiconductor nRF52840 USB Device Controller Driver"
-	depends on SOC_NRF52840
+config USB_DC_SAM
+	bool "SAM series USB HS Device Controller driver"
+	depends on SOC_SERIES_SAME70
 	select USB_DEVICE_DRIVER
 	select HAS_DTS_USB
 	help
+	  SAM family USB HS device controller Driver.
+
+menuconfig USB_NRF52840
+	bool "Nordic Semiconductor nRF52840 USB Device Controller Driver"
+	default y
+	depends on SOC_NRF52840
+	select USB_DEVICE_DRIVER
+	select HAS_DTS_USB
+	select NRFX_USBD
+	help
 	  nRF52840 USB Device Controller Driver
+
+config USB_NRFX_EVT_QUEUE_SIZE
+	int "USBD event queue size"
+	default 32
+	depends on USB_NRF52840
+	help
+	  Size of the driver's internal event queue.
+	  Required size will depend on number of endpoints (class instances) in use.
 
 config USB_KINETIS
 	bool "Kinetis USB Device Controller Driver"
@@ -62,24 +81,17 @@ config USB_KINETIS
 	help
 	  Kinetis USB Device Controller Driver.
 
-config SYS_LOG_USB_DRIVER_LEVEL
-	int "USB driver log level"
-	depends on SYS_LOG
-	default 0
+config USB_DC_NXP_EHCI
+	bool "Kinetis and RT EHCI USB Device Controller Driver"
+	depends on HAS_MCUX_USB_EHCI
+	select USB_DEVICE_DRIVER
+	select NOCACHE_MEMORY if HAS_MCUX_CACHE
 	help
-	  Sets log level for USB driver
+	  Kinetis and RT EHCI USB Device Controller Driver.
 
-	  Levels are:
-
-	  - 0 OFF, do not write
-
-	  - 1 ERROR, only write SYS_LOG_ERR
-
-	  - 2 WARNING, write SYS_LOG_WRN in addition to previous level
-
-	  - 3 INFO, write SYS_LOG_INF in addition to previous levels
-
-	  - 4 DEBUG, write SYS_LOG_DBG in addition to previous levels
+module = USB_DRIVER
+module-str = usb driver
+source "subsys/logging/Kconfig.template.log_config"
 
 config USB_DC_STM32_DISCONN_ENABLE
 	bool
@@ -87,5 +99,11 @@ config USB_DC_STM32_DISCONN_ENABLE
 	help
 	  Say Y if your board uses USB DISCONNECT pin to enable the
 	  pull-up resistor on USB DP.
+
+config USB_NATIVE_POSIX
+	bool "Native Posix USB Device Controller Driver"
+	select USB_DEVICE_DRIVER
+	help
+	  Native Posix USB Device Controller Driver.
 
 endif # USB

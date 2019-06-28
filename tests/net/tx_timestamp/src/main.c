@@ -6,15 +6,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define LOG_MODULE_NAME net_test
 #define NET_LOG_LEVEL CONFIG_NET_L2_ETHERNET_LOG_LEVEL
+
+#include <logging/log.h>
+LOG_MODULE_REGISTER(net_test, NET_LOG_LEVEL);
 
 #include <zephyr/types.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <string.h>
 #include <errno.h>
-#include <misc/printk.h>
+#include <sys/printk.h>
 #include <linker/sections.h>
 
 #include <ztest.h>
@@ -23,6 +25,7 @@
 #include <net/net_ip.h>
 #include <net/net_pkt.h>
 #include <net/ethernet.h>
+#include <net/dummy.h>
 #include <net/net_l2.h>
 
 #include "ipv6.h"
@@ -94,9 +97,9 @@ static void eth_iface_init(struct net_if *iface)
 	ethernet_init(iface);
 }
 
-static int eth_tx(struct net_if *iface, struct net_pkt *pkt)
+static int eth_tx(struct device *dev, struct net_pkt *pkt)
 {
-	if (!pkt->frags) {
+	if (!pkt->buffer) {
 		DBG("No data to send!\n");
 		return -ENODATA;
 	}
@@ -112,7 +115,6 @@ static int eth_tx(struct net_if *iface, struct net_pkt *pkt)
 		}
 	}
 
-	net_pkt_unref(pkt);
 	test_started = false;
 
 	return 0;
@@ -125,9 +127,9 @@ static enum ethernet_hw_caps eth_get_capabilities(struct device *dev)
 
 static struct ethernet_api api_funcs = {
 	.iface_api.init = eth_iface_init,
-	.iface_api.send = eth_tx,
 
 	.get_capabilities = eth_get_capabilities,
+	.send = eth_tx,
 };
 
 static void generate_mac(u8_t *mac_addr)
@@ -151,10 +153,12 @@ static int eth_init(struct device *dev)
 }
 
 ETH_NET_DEVICE_INIT(eth_test, "eth_test", eth_init, &eth_context,
-		    NULL, CONFIG_ETH_INIT_PRIORITY, &api_funcs, 1500);
+		    NULL, CONFIG_ETH_INIT_PRIORITY, &api_funcs,
+		    NET_ETH_MTU);
 
 ETH_NET_DEVICE_INIT(eth_test2, "eth_test2", eth_init, &eth_context2,
-		    NULL, CONFIG_ETH_INIT_PRIORITY, &api_funcs, 1500);
+		    NULL, CONFIG_ETH_INIT_PRIORITY, &api_funcs,
+		    NET_ETH_MTU);
 
 static void timestamp_callback(struct net_pkt *pkt)
 {
@@ -190,14 +194,13 @@ static void timestamp_setup(void)
 	timestamp_cb_called = false;
 	do_timestamp = false;
 
-	pkt = net_pkt_get_reserve_tx(0, K_FOREVER);
-	net_pkt_set_iface(pkt, iface);
+	pkt = net_pkt_alloc_on_iface(iface, K_FOREVER);
 
 	/* Make sure that the callback function is called */
 	net_if_call_timestamp_cb(pkt);
 
 	zassert_true(timestamp_cb_called, "Timestamp callback not called\n");
-	zassert_equal(pkt->ref, 0, "Pkt %p not released\n");
+	zassert_equal(atomic_get(&pkt->atomic_ref), 0, "Pkt %p not released\n");
 }
 
 static void timestamp_callback_2(struct net_pkt *pkt)
@@ -237,14 +240,13 @@ static void timestamp_setup_2nd_iface(void)
 	timestamp_cb_called = false;
 	do_timestamp = false;
 
-	pkt = net_pkt_get_reserve_tx(0, K_FOREVER);
-	net_pkt_set_iface(pkt, iface);
+	pkt = net_pkt_alloc_on_iface(iface, K_FOREVER);
 
 	/* Make sure that the callback function is called */
 	net_if_call_timestamp_cb(pkt);
 
 	zassert_true(timestamp_cb_called, "Timestamp callback not called\n");
-	zassert_equal(pkt->ref, 0, "Pkt %p not released\n");
+	zassert_equal(atomic_get(&pkt->atomic_ref), 0, "Pkt %p not released\n");
 }
 
 static void timestamp_setup_all(void)
@@ -257,8 +259,7 @@ static void timestamp_setup_all(void)
 	timestamp_cb_called = false;
 	do_timestamp = false;
 
-	pkt = net_pkt_get_reserve_tx(0, K_FOREVER);
-	net_pkt_set_iface(pkt, eth_interfaces[0]);
+	pkt = net_pkt_alloc_on_iface(eth_interfaces[0], K_FOREVER);
 
 	/* The callback is called twice because we have two matching callbacks
 	 * as the interface is set to NULL when registering cb. So we need to
@@ -270,7 +271,7 @@ static void timestamp_setup_all(void)
 	net_if_call_timestamp_cb(pkt);
 
 	zassert_true(timestamp_cb_called, "Timestamp callback not called\n");
-	zassert_equal(pkt->ref, 0, "Pkt %p not released\n");
+	zassert_equal(atomic_get(&pkt->atomic_ref), 0, "Pkt %p not released\n");
 
 	net_if_unregister_timestamp_cb(&timestamp_cb_3);
 }
@@ -287,15 +288,14 @@ static void timestamp_cleanup(void)
 	timestamp_cb_called = false;
 	do_timestamp = false;
 
-	pkt = net_pkt_get_reserve_tx(0, K_FOREVER);
-	net_pkt_set_iface(pkt, iface);
+	pkt = net_pkt_alloc_on_iface(iface, K_FOREVER);
 
 	/* Make sure that the callback function is not called after unregister
 	 */
 	net_if_call_timestamp_cb(pkt);
 
 	zassert_false(timestamp_cb_called, "Timestamp callback called\n");
-	zassert_false(pkt->ref < 1, "Pkt %p released\n");
+	zassert_false(atomic_get(&pkt->atomic_ref) < 1, "Pkt %p released\n");
 
 	net_pkt_unref(pkt);
 }
@@ -409,7 +409,7 @@ static bool add_neighbor(struct net_if *iface, struct in6_addr *addr)
 	llstorage.addr[4] = 0x05;
 	llstorage.addr[5] = 0x06;
 
-	lladdr.len = 6;
+	lladdr.len = 6U;
 	lladdr.addr = llstorage.addr;
 	lladdr.type = NET_LINK_ETHERNET;
 
@@ -424,11 +424,8 @@ static bool add_neighbor(struct net_if *iface, struct in6_addr *addr)
 	return true;
 }
 
-static struct net_pkt *send_some_data(struct net_if *iface, bool ref_pkt)
+static void send_some_data(struct net_if *iface)
 {
-	struct net_pkt *pkt;
-	struct net_buf *frag;
-	int ret, len;
 	struct sockaddr_in6 dst_addr6 = {
 		.sin6_family = AF_INET6,
 		.sin6_port = htons(PORT),
@@ -437,6 +434,8 @@ static struct net_pkt *send_some_data(struct net_if *iface, bool ref_pkt)
 		.sin6_family = AF_INET6,
 		.sin6_port = 0,
 	};
+	bool timestamp = true;
+	int ret;
 
 	ret = net_context_get(AF_INET6, SOCK_DGRAM, IPPROTO_UDP,
 			      &udp_v6_ctx);
@@ -449,81 +448,45 @@ static struct net_pkt *send_some_data(struct net_if *iface, bool ref_pkt)
 			       sizeof(struct sockaddr_in6));
 	zassert_equal(ret, 0, "Context bind failure test failed\n");
 
-	pkt = net_pkt_get_tx(udp_v6_ctx, K_FOREVER);
-	zassert_not_null(pkt, "Cannot get pkt\n");
-	frag = net_pkt_get_data(udp_v6_ctx, K_FOREVER);
-	zassert_not_null(frag, "Cannot get frag\n");
-	net_pkt_frag_add(pkt, frag);
-
-	len = strlen(test_data);
-	memcpy(net_buf_add(frag, len), test_data, len);
-	net_pkt_set_appdatalen(pkt, len);
-
 	ret = add_neighbor(iface, &dst_addr);
 	zassert_true(ret, "Cannot add neighbor\n");
 
-	if (ref_pkt) {
-		/* As the Tx function will release the pkt, try to ref it
-		 * before sending.
-		 */
-		net_pkt_ref(pkt);
-	}
+	net_context_set_option(udp_v6_ctx, NET_OPT_TIMESTAMP,
+			       &timestamp, sizeof(timestamp));
 
-	pkt->timestamp.nanosecond = 0;
-	pkt->timestamp.second = k_cycle_get_32();
-
-	ret = net_context_sendto(pkt, (struct sockaddr *)&dst_addr6,
+	ret = net_context_sendto(udp_v6_ctx, test_data, strlen(test_data),
+				 (struct sockaddr *)&dst_addr6,
 				 sizeof(struct sockaddr_in6),
-				 NULL, 0, NULL, NULL);
-	zassert_equal(ret, 0, "Send UDP pkt failed\n");
+				 NULL, K_NO_WAIT, NULL);
+	zassert_true(ret > 0, "Send UDP pkt failed\n");
 
 	net_context_unref(udp_v6_ctx);
-
-	return pkt;
 }
 
 static void check_timestamp_before_enabling(void)
 {
-	struct net_pkt *pkt;
-
 	test_started = true;
 	do_timestamp = false;
 
-	pkt = send_some_data(eth_interfaces[0], false);
+	send_some_data(eth_interfaces[0]);
 
 	if (k_sem_take(&wait_data, WAIT_TIME)) {
 		DBG("Timeout while waiting interface data\n");
 		zassert_false(true, "Timeout\n");
 	}
-
-	/* As there was no TX timestamp handler defined, the eth_tx()
-	 * should have unreffed the packet by now so the ref count
-	 * should be zero now.
-	 */
-	zassert_equal(pkt->ref, 0, "packet %p was not released (ref %d)\n",
-		      pkt, pkt->ref);
 }
 
 static void check_timestamp_after_enabling(void)
 {
-	struct net_pkt *pkt;
-
 	test_started = true;
 	do_timestamp = true;
 
-	pkt = send_some_data(eth_interfaces[0], true);
+	send_some_data(eth_interfaces[0]);
 
 	if (k_sem_take(&wait_data, WAIT_TIME)) {
 		DBG("Timeout while waiting interface data\n");
 		zassert_false(true, "Timeout\n");
 	}
-
-	/* As there is a TX timestamp handler defined, the eth_tx()
-	 * and timestamp_cb() should have unreffed the packet by now so
-	 * the ref count should be zero at this point.
-	 */
-	zassert_equal(pkt->ref, 0, "packet %p was not released (ref %d)\n",
-		      pkt, pkt->ref);
 }
 
 void test_main(void)

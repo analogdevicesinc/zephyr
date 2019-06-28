@@ -1,23 +1,18 @@
----
+
 title: Kinetis Pinmux
-id: nxp,kinetis-pinmux
 version: 0.1
 
 description: >
     This is a representation of the Kinetis Pinmux node
 
+inherits:
+    !include base.yaml
+
 properties:
     compatible:
-      type: string
-      category: required
-      description: compatible strings
       constraint: "nxp,kinetis-pinmux"
-      generation: define
 
     reg:
-      type: int
-      description: mmio register space
-      generation: define
       category: required
 
     clocks:
@@ -29,4 +24,3 @@ properties:
 "#cells":
   - pin
   - function
-...
