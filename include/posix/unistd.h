@@ -6,10 +6,6 @@
 #ifndef ZEPHYR_INCLUDE_POSIX_UNISTD_H_
 #define ZEPHYR_INCLUDE_POSIX_UNISTD_H_
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include "posix_types.h"
 #include "sys/stat.h"
 #ifdef CONFIG_NETWORKING
@@ -20,8 +16,11 @@ extern "C" {
 #ifdef CONFIG_POSIX_API
 #include <fs/fs.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* File related operations */
-extern int open(const char *name, int flags);
 extern int close(int file);
 extern ssize_t write(int file, const void *buffer, size_t count);
 extern ssize_t read(int file, void *buffer, size_t count);

@@ -4,6 +4,12 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
+# NOTE: This file is part of the old device tree scripts, which will be removed
+# later. They are kept to generate some legacy #defines via the
+# --deprecated-only flag.
+#
+# The new scripts are gen_defines.py, edtlib.py, and dtlib.py.
+
 from extract.globals import *
 from extract.directive import DTDirective
 
@@ -16,7 +22,6 @@ from extract.directive import DTDirective
 #
 class DTClocks(DTDirective):
     def _extract_consumer(self, node_path, clocks, def_label):
-        clock_consumer_bindings = get_binding(node_path)
         clock_consumer_label = 'DT_' + node_label(node_path)
 
         clock_index = 0
@@ -47,7 +52,7 @@ class DTClocks(DTDirective):
             else:
                 clock_cells.append(cell)
             clock_cell_index += 1
-            if clock_cell_index > nr_clock_cells:
+            if clock_cell_index > nr_clock_cells or nr_clock_cells == 0:
                 # clock consumer device - clocks info
                 #####################################
                 prop_def = {}
@@ -121,11 +126,6 @@ class DTClocks(DTDirective):
                 clock_provider_label_str = clock_provider['props'].get('label',
                                                                        None)
                 if clock_provider_label_str is not None:
-                    try:
-                        generation = clock_consumer_bindings['properties'][
-                            'clocks']['generation']
-                    except:
-                        generation = ''
                     clock_cell_name = 'CLOCK_CONTROLLER'
                     if clock_index == 0 and \
                         len(clocks) == (len(clock_cells) + 1):

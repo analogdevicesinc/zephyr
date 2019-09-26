@@ -172,7 +172,9 @@ static inline u32_t retry_timeout(const struct net_tcp *tcp)
 	 ((IS_ENABLED(CONFIG_NET_L2_BT) &&				\
 	   net_pkt_lladdr_dst(pkt)->type == NET_LINK_BLUETOOTH) ||	\
 	  (IS_ENABLED(CONFIG_NET_L2_IEEE802154) &&			\
-	   net_pkt_lladdr_dst(pkt)->type == NET_LINK_IEEE802154)))
+	   net_pkt_lladdr_dst(pkt)->type == NET_LINK_IEEE802154) ||	\
+	  (IS_ENABLED(CONFIG_NET_L2_CANBUS) &&			\
+	   net_pkt_lladdr_dst(pkt)->type == NET_LINK_CANBUS)))
 
 /* The ref should not be done for Bluetooth and IEEE 802.15.4 which use
  * IPv6 header compression (6lo). For BT and 802.15.4 we copy the pkt
@@ -1400,6 +1402,11 @@ int net_tcp_put(struct net_context *context)
 			return 0;
 		}
 
+		if (context->tcp &&
+		    net_tcp_get_state(context->tcp) == NET_TCP_SYN_SENT) {
+			net_context_unref(context);
+		}
+
 		return -ENOTCONN;
 	}
 
@@ -1884,6 +1891,24 @@ static int send_reset(struct net_context *context,
 	return ret;
 }
 
+static u16_t adjust_data_len(struct net_pkt *pkt, struct net_tcp_hdr *tcp_hdr,
+			     u16_t data_len)
+{
+	u8_t offset = tcp_hdr->offset >> 4;
+
+	/* We need to adjust the length of the data part if there
+	 * are TCP options.
+	 */
+	if ((offset << 2) > sizeof(struct net_tcp_hdr)) {
+		net_pkt_skip(pkt, (offset << 2) -
+			     sizeof(struct net_tcp_hdr));
+
+		data_len -= (offset << 2) - sizeof(struct net_tcp_hdr);
+	}
+
+	return data_len;
+}
+
 /* This is called when we receive data after the connection has been
  * established. The core TCP logic is located here.
  *
@@ -2043,6 +2068,8 @@ resend_ack:
 	 * release the pkt. Otherwise, release the pkt immediately.
 	 */
 	if (data_len > 0) {
+		data_len = adjust_data_len(pkt, tcp_hdr, data_len);
+
 		ret = net_context_packet_received(conn, pkt, ip_hdr, proto_hdr,
 						  context->tcp->recv_user_data);
 	} else if (data_len == 0U) {
@@ -2239,6 +2266,11 @@ NET_CONN_CB(tcp_syn_rcvd)
 
 	switch (net_tcp_get_state(tcp)) {
 	case NET_TCP_LISTEN:
+		if (net_context_get_state(context) != NET_CONTEXT_LISTENING) {
+			NET_DBG("Context %p is not listening", context);
+			return NET_DROP;
+		}
+
 		net_context_set_iface(context, net_pkt_iface(pkt));
 		break;
 	case NET_TCP_SYN_RCVD:
@@ -2425,6 +2457,14 @@ NET_CONN_CB(tcp_syn_rcvd)
 					0,
 					context->user_data);
 		net_pkt_unref(pkt);
+
+		/* Set the context in CONNECTED state, so that it can not
+		 * accept any new connections. If application is ready to
+		 * accept the connection, zsock_accept_ctx() will set
+		 * the state back to LISTENING.
+		 */
+		net_context_set_state(context, NET_CONTEXT_CONNECTED);
+
 		return NET_OK;
 	}
 

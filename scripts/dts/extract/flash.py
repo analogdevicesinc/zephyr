@@ -4,6 +4,12 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
+# NOTE: This file is part of the old device tree scripts, which will be removed
+# later. They are kept to generate some legacy #defines via the
+# --deprecated-only flag.
+#
+# The new scripts are gen_defines.py, edtlib.py, and dtlib.py.
+
 from extract.globals import *
 from extract.directive import DTDirective
 
@@ -40,6 +46,7 @@ class DTFlash(DTDirective):
 
         partition_label = str_to_label(node['props']['label'])
         prop_def["DT_FLASH_AREA_{}_LABEL".format(area_id)] = partition_label
+        deprecated_main.append("DT_FLASH_AREA_{}_LABEL".format(area_id))
         prop_def["DT_FLASH_AREA_{}_ID".format(partition_label)] = area_id
 
         reg = node['props']['reg']
@@ -60,7 +67,8 @@ class DTFlash(DTDirective):
 
         insert_defs("DT_FLASH_AREA", prop_def, prop_alias)
 
-    def _add_partition_label_entries(self, node_path):
+    @staticmethod
+    def _add_partition_label_entries(node_path):
         # Adds DT_FLASH_AREA_<label>_... entries, to the '# partition@...'
         # section
 
@@ -71,6 +79,7 @@ class DTFlash(DTDirective):
         partition_label = str_to_label(node['props']['label'])
 
         label = "DT_FLASH_AREA_{}_LABEL".format(partition_label)
+        deprecated_main.append(label)
         prop_def[label] = '"' + node['props']['label'] + '"'
         add_legacy_alias(prop_alias, label)
 
@@ -100,7 +109,8 @@ class DTFlash(DTDirective):
 
         insert_defs(node_path, prop_def, prop_alias)
 
-    def extract_flash(self):
+    @staticmethod
+    def extract_flash():
         node_path = chosen.get('zephyr,flash')
         if not node_path:
             # Add addr/size 0 for systems with no flash controller. This is
@@ -123,7 +133,8 @@ class DTFlash(DTDirective):
             nr_address_cells, nr_size_cells = get_addr_size_cells(node_path)
 
         reg = reduced[node_path]['props']['reg']
-        if type(reg) is not list: reg = [reg]
+        if not isinstance(reg, list):
+            reg = [reg]
         props = list(reg)
 
         num_reg_elem = len(props)/(nr_address_cells + nr_size_cells)
@@ -162,8 +173,8 @@ class DTFlash(DTDirective):
                 prop_alias['FLASH' + label_post] = 'DT_FLASH' + label_post
                 insert_defs(node_path, {}, prop_alias)
 
-
-    def extract_code_partition(self):
+    @staticmethod
+    def extract_code_partition():
         node_path = chosen.get('zephyr,code-partition')
         if not node_path:
             # Fall back on zephyr,flash if zephyr,code-partition isn't set.

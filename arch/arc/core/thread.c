@@ -16,9 +16,6 @@
 #include <kernel_structs.h>
 #include <offsets_short.h>
 #include <wait_q.h>
-#ifdef CONFIG_INIT_STACKS
-#include <string.h>
-#endif /* CONFIG_INIT_STACKS */
 
 #ifdef CONFIG_USERSPACE
 #include <arch/arc/v2/mpu/arc_core_mpu.h>
@@ -180,7 +177,7 @@ void z_new_thread(struct k_thread *thread, k_thread_stack_t *stack,
 	pInitCtx->pc = ((u32_t)z_thread_entry_wrapper);
 #endif
 
-#ifdef CONFIG_ARC_HAS_SECURE
+#ifdef CONFIG_ARC_SECURE_FIRMWARE
 	pInitCtx->sec_stat = z_arc_v2_aux_reg_read(_ARC_V2_SEC_STAT);
 #endif
 
@@ -191,7 +188,7 @@ void z_new_thread(struct k_thread *thread, k_thread_stack_t *stack,
 
 /* stack check configuration */
 #ifdef CONFIG_ARC_STACK_CHECKING
-#ifdef CONFIG_ARC_HAS_SECURE
+#ifdef CONFIG_ARC_SECURE_FIRMWARE
 	pInitCtx->sec_stat |= _ARC_V2_SEC_STAT_SSC;
 #else
 	pInitCtx->status32 |= _ARC_V2_STATUS32_SC;
@@ -214,6 +211,10 @@ void z_new_thread(struct k_thread *thread, k_thread_stack_t *stack,
 	thread->arch.k_stack_top = (u32_t) pStackMem;
 	thread->arch.k_stack_base = (u32_t) stackEnd;
 #endif
+#endif
+
+#ifdef CONFIG_ARC_USE_UNALIGNED_MEM_ACCESS
+	pInitCtx->status32 |= _ARC_V2_STATUS32_AD;
 #endif
 
 	thread->switch_handle = thread;
@@ -268,3 +269,38 @@ FUNC_NORETURN void z_arch_user_mode_enter(k_thread_entry_t user_entry,
 }
 
 #endif
+
+#if defined(CONFIG_FLOAT) && defined(CONFIG_FP_SHARING)
+int z_arch_float_disable(struct k_thread *thread)
+{
+	unsigned int key;
+
+	/* Ensure a preemptive context switch does not occur */
+
+	key = irq_lock();
+
+	/* Disable all floating point capabilities for the thread */
+	thread->base.user_options &= ~K_FP_REGS;
+
+	irq_unlock(key);
+
+	return 0;
+}
+
+
+int z_arch_float_enable(struct k_thread *thread)
+{
+	unsigned int key;
+
+	/* Ensure a preemptive context switch does not occur */
+
+	key = irq_lock();
+
+	/* Enable all floating point capabilities for the thread */
+	thread->base.user_options |= K_FP_REGS;
+
+	irq_unlock(key);
+
+	return 0;
+}
+#endif /* CONFIG_FLOAT && CONFIG_FP_SHARING */

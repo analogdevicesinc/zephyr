@@ -39,6 +39,11 @@ void z_sys_trace_thread_switched_out(void);
 #else
 
 /**
+ * @brief Tracing APIs
+ * @defgroup tracing_apis Tracing APIs
+ * @{
+ */
+/**
  * @brief Called before a thread has been selected to run
  */
 #define sys_trace_thread_switched_out()
@@ -95,6 +100,12 @@ void z_sys_trace_thread_switched_out(void);
 #define sys_trace_thread_info(thread)
 
 /**
+ * @brief Called when a thread name is set
+ * @param thread Thread structure
+ */
+#define sys_trace_thread_name_set(thread)
+
+/**
  * @brief Called when entering an ISR
  */
 #define sys_trace_isr_enter()
@@ -133,6 +144,9 @@ void z_sys_trace_thread_switched_out(void);
 #define z_sys_trace_thread_switched_in()
 
 #define z_sys_trace_thread_switched_out()
+/**
+ * @}
+ */
 
 #endif
 #endif

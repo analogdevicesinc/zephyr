@@ -80,7 +80,7 @@ config CODE_DATA_RELOCATION
 	  When selected this will relocate .text, data and .bss sections from
 	  the specified files and places it in the required memory region. The
 	  files should be specified in the CMakeList.txt file with
-	  a cmake API zephyr_code_relocation().
+	  a cmake API zephyr_code_relocate().
 
 config HAS_FLASH_LOAD_OFFSET
 	bool
@@ -94,9 +94,12 @@ config USE_CODE_PARTITION
 	help
 	  When selected application will be linked into chosen code-partition.
 
+# Workaround for not being able to have commas in macro arguments
+DT_CHOSEN_Z_CODE_PARTITION := zephyr,code-partition
+
 config FLASH_LOAD_OFFSET
 	hex "Kernel load offset"
-	default $(dt_hex_val,DT_CODE_PARTITION_OFFSET) if USE_CODE_PARTITION
+	default $(dt_chosen_reg_addr,$(DT_CHOSEN_Z_CODE_PARTITION)) if USE_CODE_PARTITION
 	default 0
 	depends on HAS_FLASH_LOAD_OFFSET
 	help
@@ -109,7 +112,7 @@ config FLASH_LOAD_OFFSET
 
 config FLASH_LOAD_SIZE
 	hex "Kernel load size"
-	default $(dt_hex_val,DT_CODE_PARTITION_SIZE) if USE_CODE_PARTITION
+	default $(dt_chosen_reg_size,$(DT_CHOSEN_Z_CODE_PARTITION)) if USE_CODE_PARTITION
 	default 0
 	depends on HAS_FLASH_LOAD_OFFSET
 	help
@@ -187,13 +190,6 @@ config KERNEL_ENTRY
 	default "__start"
 	help
 	  Code entry symbol, to be set at linking phase.
-
-config CHECK_LINK_MAP
-	bool "Check linker map"
-	default y
-	help
-	  Run a linker address generation validity checker at the end of the
-	  build.
 
 config LINKER_SORT_BY_ALIGNMENT
 	bool "Sort input sections by alignment"
@@ -386,13 +382,6 @@ config BOOTLOADER_ESP_IDF
 	  This option will trigger the compilation of the ESP-IDF bootloader
 	  inside the build folder.
 	  At flash time, the bootloader will be flashed with the zephyr image
-
-config REALMODE
-	bool "boot from x86 real mode"
-	depends on X86
-	help
-	  This option enabled Zephyr to start in x86 real mode, instead of
-	  protected mode.
 
 config BOOTLOADER_KEXEC
 	bool "Boot using Linux kexec() system call"

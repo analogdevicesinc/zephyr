@@ -271,6 +271,21 @@ static inline ssize_t zsock_send(int sock, const void *buf, size_t len,
 }
 
 /**
+ * @brief Send data to an arbitrary network address
+ *
+ * @details
+ * @rst
+ * See `POSIX.1-2017 article
+ * <http://pubs.opengroup.org/onlinepubs/9699919799/functions/sendmsg.html>`__
+ * for normative description.
+ * This function is also exposed as ``sendmsg()``
+ * if :option:`CONFIG_NET_SOCKETS_POSIX_NAMES` is defined.
+ * @endrst
+ */
+__syscall ssize_t zsock_sendmsg(int sock, const struct msghdr *msg,
+				int flags);
+
+/**
  * @brief Receive data from an arbitrary network address
  *
  * @details
@@ -349,8 +364,8 @@ __syscall int zsock_poll(struct zsock_pollfd *fds, int nfds, int timeout);
  * if :option:`CONFIG_NET_SOCKETS_POSIX_NAMES` is defined.
  * @endrst
  */
-int zsock_getsockopt(int sock, int level, int optname,
-		     void *optval, socklen_t *optlen);
+__syscall int zsock_getsockopt(int sock, int level, int optname,
+			       void *optval, socklen_t *optlen);
 
 /**
  * @brief Set various socket options
@@ -367,8 +382,8 @@ int zsock_getsockopt(int sock, int level, int optname,
  * if :option:`CONFIG_NET_SOCKETS_POSIX_NAMES` is defined.
  * @endrst
  */
-int zsock_setsockopt(int sock, int level, int optname,
-		     const void *optval, socklen_t optlen);
+__syscall int zsock_setsockopt(int sock, int level, int optname,
+			       const void *optval, socklen_t optlen);
 
 /**
  * @brief Get socket name
@@ -597,6 +612,12 @@ static inline ssize_t sendto(int sock, const void *buf, size_t len, int flags,
 	return zsock_sendto(sock, buf, len, flags, dest_addr, addrlen);
 }
 
+static inline ssize_t sendmsg(int sock, const struct msghdr *message,
+			      int flags)
+{
+	return zsock_sendmsg(sock, message, flags);
+}
+
 static inline ssize_t recvfrom(int sock, void *buf, size_t max_len, int flags,
 			       struct sockaddr *src_addr, socklen_t *addrlen)
 {
@@ -676,6 +697,11 @@ struct addrinfo {
 	struct addrinfo *ai_next;
 };
 
+/* Legacy case: retain containing extern "C" with C++
+ *
+ * This header requires aliases defined within this file, and can't
+ * easily be moved to the top.
+ */
 #include <net/socket_offload.h>
 
 static inline int inet_pton(sa_family_t family, const char *src, void *dst)
@@ -732,6 +758,9 @@ static inline char *inet_ntop(sa_family_t family, const void *src, char *dst,
 /** sockopt: Async error (ignored, for compatibility) */
 #define SO_ERROR 4
 
+/** sockopt: Timestamp TX packets */
+#define SO_TIMESTAMPING 37
+
 /* Socket options for IPPROTO_TCP level */
 /** sockopt: Disable TCP buffering (ignored, for compatibility) */
 #define TCP_NODELAY 1
@@ -742,6 +771,14 @@ static inline char *inet_ntop(sa_family_t family, const void *src, char *dst,
 
 /** sockopt: Socket priority */
 #define SO_PRIORITY 12
+
+/** sockopt: Socket TX time (when the data should be sent) */
+#define SO_TXTIME 61
+#define SCM_TXTIME SO_TXTIME
+
+/* Socket options for SOCKS5 proxy */
+/** sockopt: Enable SOCKS5 for Socket */
+#define SO_SOCKS5 60
 
 /** @cond INTERNAL_HIDDEN */
 /**
@@ -757,9 +794,8 @@ struct net_socket_register {
 	(__net_socket_register_##socket_name)
 
 #define NET_SOCKET_REGISTER(socket_name, _family, _is_supported, _handler) \
-	static const struct net_socket_register				\
-			(NET_SOCKET_GET_NAME(socket_name)) __used	\
-	__attribute__((__section__(".net_socket_register.init"))) = {	\
+	static const Z_STRUCT_SECTION_ITERABLE(net_socket_register,	\
+			NET_SOCKET_GET_NAME(socket_name)) = {		\
 		.family = _family,					\
 		.is_supported = _is_supported,				\
 		.handler = _handler,					\

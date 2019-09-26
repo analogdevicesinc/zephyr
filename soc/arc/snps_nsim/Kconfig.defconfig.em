@@ -16,7 +16,7 @@ config NUM_IRQ_PRIO_LEVELS
 
 config NUM_IRQS
 	# must be > the highest interrupt number used
-	default 20
+	default 30
 
 config ARC_MPU_VER
 	default 2
@@ -35,6 +35,9 @@ config ARC_FIRQ
 
 config CACHE_FLUSHING
 	default y
+
+config FP_FPU_DA
+	def_bool y
 
 if (ARC_MPU_VER = 2)
 

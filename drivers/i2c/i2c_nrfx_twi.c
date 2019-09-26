@@ -18,6 +18,9 @@ struct i2c_nrfx_twi_data {
 	struct k_sem completion_sync;
 	volatile nrfx_err_t res;
 	u32_t dev_config;
+#ifdef CONFIG_DEVICE_POWER_MANAGEMENT
+	u32_t pm_state;
+#endif
 };
 
 struct i2c_nrfx_twi_config {
@@ -57,11 +60,40 @@ static int i2c_nrfx_twi_transfer(struct device *dev, struct i2c_msg *msgs,
 			.type		= (msgs[i].flags & I2C_MSG_READ) ?
 					  NRFX_TWI_XFER_RX : NRFX_TWI_XFER_TX
 		};
+		u32_t xfer_flags = 0;
+		nrfx_err_t res;
 
-		nrfx_err_t res = nrfx_twi_xfer(&get_dev_config(dev)->twi,
-					       &cur_xfer,
-					       (msgs[i].flags & I2C_MSG_STOP) ?
-					       0 : NRFX_TWI_FLAG_TX_NO_STOP);
+		/* In case the STOP condition is not supposed to appear after
+		 * the current message, check what is requested further:
+		 */
+		if (!(msgs[i].flags & I2C_MSG_STOP)) {
+			/* - if the transfer consists of more messages
+			 *   and the I2C repeated START is not requested
+			 *   to appear before the next message, suspend
+			 *   the transfer after the current message,
+			 *   so that it can be resumed with the next one,
+			 *   resulting in the two messages merged into
+			 *   a continuous transfer on the bus
+			 */
+			if ((i < (num_msgs - 1)) &&
+			    !(msgs[i + 1].flags & I2C_MSG_RESTART)) {
+				xfer_flags |= NRFX_TWI_FLAG_SUSPEND;
+			/* - otherwise, just finish the transfer without
+			 *   generating the STOP condition, unless the current
+			 *   message is an RX request, for which such feature
+			 *   is not supported
+			 */
+			} else if (msgs[i].flags & I2C_MSG_READ) {
+				ret = -ENOTSUP;
+				break;
+			} else {
+				xfer_flags |= NRFX_TWI_FLAG_TX_NO_STOP;
+			}
+		}
+
+		res = nrfx_twi_xfer(&get_dev_config(dev)->twi,
+				    &cur_xfer,
+				    xfer_flags);
 		if (res != NRFX_SUCCESS) {
 			if (res == NRFX_ERROR_BUSY) {
 				ret = -EBUSY;
@@ -149,6 +181,9 @@ static int init_twi(struct device *dev)
 			    dev->config->name);
 		return -EBUSY;
 	}
+#ifdef CONFIG_DEVICE_POWER_MANAGEMENT
+	get_dev_data(dev)->pm_state = DEVICE_PM_ACTIVE_STATE;
+#endif
 
 	return 0;
 }
@@ -157,35 +192,45 @@ static int init_twi(struct device *dev)
 static int twi_nrfx_pm_control(struct device *dev, u32_t ctrl_command,
 				void *context, device_pm_cb cb, void *arg)
 {
-	static u32_t current_state = DEVICE_PM_ACTIVE_STATE;
+	int ret = 0;
 
 	if (ctrl_command == DEVICE_PM_SET_POWER_STATE) {
 		u32_t new_state = *((const u32_t *)context);
 
-		if (new_state != current_state) {
+		if (new_state != get_dev_data(dev)->pm_state) {
 			switch (new_state) {
 			case DEVICE_PM_ACTIVE_STATE:
 				init_twi(dev);
-				i2c_nrfx_twi_configure(
-					dev, get_dev_data(dev)->dev_config);
+				if (get_dev_data(dev)->dev_config) {
+					i2c_nrfx_twi_configure(
+						dev,
+						get_dev_data(dev)->dev_config);
+				}
+				break;
+
+			case DEVICE_PM_LOW_POWER_STATE:
+			case DEVICE_PM_SUSPEND_STATE:
+			case DEVICE_PM_OFF_STATE:
+				nrfx_twi_uninit(&get_dev_config(dev)->twi);
 				break;
 
 			default:
-				nrfx_twi_uninit(&get_dev_config(dev)->twi);
-				break;
+				ret = -ENOTSUP;
 			}
-			current_state = new_state;
+			if (!ret) {
+				get_dev_data(dev)->pm_state = new_state;
+			}
 		}
 	} else {
 		assert(ctrl_command == DEVICE_PM_GET_POWER_STATE);
-		*((u32_t *)context) = current_state;
+		*((u32_t *)context) = get_dev_data(dev)->pm_state;
 	}
 
 	if (cb) {
-		cb(dev, 0, context, arg);
+		cb(dev, ret, context, arg);
 	}
 
-	return 0;
+	return ret;
 }
 #endif /* CONFIG_DEVICE_POWER_MANAGEMENT */
 

@@ -72,9 +72,6 @@ const char *devices[] = {
 	DT_RTC_0_NAME,
 #endif
 
-#ifdef CONFIG_COUNTER_0_NAME
-	CONFIG_COUNTER_0_NAME,
-#endif
 };
 typedef void (*counter_test_func_t)(const char *dev_name);
 
@@ -200,7 +197,7 @@ void test_single_shot_alarm_instance(const char *dev_name, bool set_top)
 	ticks = counter_us_to_ticks(dev, COUNTER_PERIOD_US);
 	top_cfg.ticks = ticks;
 
-	alarm_cfg.absolute = false;
+	alarm_cfg.flags = 0;
 	alarm_cfg.ticks = ticks;
 	alarm_cfg.callback = alarm_handler;
 	alarm_cfg.user_data = &alarm_cfg;
@@ -312,12 +309,12 @@ void test_multiple_alarms_instance(const char *dev_name)
 	ticks = counter_us_to_ticks(dev, COUNTER_PERIOD_US);
 	top_cfg.ticks = ticks;
 
-	alarm_cfg.absolute = true;
+	alarm_cfg.flags = COUNTER_ALARM_CFG_ABSOLUTE;
 	alarm_cfg.ticks = counter_us_to_ticks(dev, 2000);
 	alarm_cfg.callback = alarm_handler2;
 	alarm_cfg.user_data = &alarm_cfg;
 
-	alarm_cfg2.absolute = false;
+	alarm_cfg2.flags = 0;
 	alarm_cfg2.ticks = counter_us_to_ticks(dev, 2000);
 	alarm_cfg2.callback = alarm_handler2;
 	alarm_cfg2.user_data = &alarm_cfg2;
@@ -346,8 +343,9 @@ void test_multiple_alarms_instance(const char *dev_name)
 
 	k_busy_wait(1.2*counter_ticks_to_us(dev, ticks * 2U));
 	tmp_alarm_cnt = alarm_cnt; /* to avoid passing volatile to the macro */
-	zassert_equal(2, tmp_alarm_cnt, "%s: Counter set alarm failed",
-			dev_name);
+	zassert_equal(2, tmp_alarm_cnt,
+			"%s: Invalid number of callbacks %d (expected: %d)",
+			dev_name, tmp_alarm_cnt, 2);
 	zassert_equal(&alarm_cfg2, clbk_data[0],
 			"%s: Expected different order or callbacks",
 			dev_name);
@@ -382,7 +380,7 @@ void test_all_channels_instance(const char *dev_name)
 	dev = device_get_binding(dev_name);
 	ticks = counter_us_to_ticks(dev, COUNTER_PERIOD_US);
 
-	alarm_cfgs.absolute = false;
+	alarm_cfgs.flags = 0;
 	alarm_cfgs.ticks = ticks;
 	alarm_cfgs.callback = alarm_handler2;
 	alarm_cfgs.user_data = NULL;

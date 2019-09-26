@@ -4,13 +4,37 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 #include <kernel.h>
+#include <logging/log.h>
 #include <logging/log_msg.h>
 #include <logging/log_ctrl.h>
 #include <logging/log_core.h>
 #include <string.h>
+#include <assert.h>
+
+BUILD_ASSERT_MSG((sizeof(struct log_msg_ids) == sizeof(u16_t)),
+		  "Structure must fit in 2 bytes");
+
+BUILD_ASSERT_MSG((sizeof(struct log_msg_generic_hdr) == sizeof(u16_t)),
+		 "Structure must fit in 2 bytes");
+
+BUILD_ASSERT_MSG((sizeof(struct log_msg_std_hdr) == sizeof(u16_t)),
+		 "Structure must fit in 2 bytes");
+
+BUILD_ASSERT_MSG((sizeof(struct log_msg_hexdump_hdr) == sizeof(u16_t)),
+		 "Structure must fit in 2 bytes");
+
+BUILD_ASSERT_MSG((sizeof(union log_msg_head_data) ==
+		  sizeof(struct log_msg_ext_head_data)),
+		  "Structure must be same size");
 
 #ifndef CONFIG_LOG_BUFFER_SIZE
 #define CONFIG_LOG_BUFFER_SIZE 0
+#endif
+
+/* Define needed when CONFIG_LOG_BLOCK_IN_THREAD is disabled to satisfy
+ * compiler. */
+#ifndef CONFIG_LOG_BLOCK_IN_THREAD_TIMEOUT_MS
+#define CONFIG_LOG_BLOCK_IN_THREAD_TIMEOUT_MS 0
 #endif
 
 #define MSG_SIZE sizeof(union log_msg_chunk)
@@ -23,6 +47,42 @@ static u8_t __noinit __aligned(sizeof(void *))
 void log_msg_pool_init(void)
 {
 	k_mem_slab_init(&log_msg_pool, log_msg_pool_buf, MSG_SIZE, NUM_OF_MSGS);
+}
+
+/* Return true if interrupts were locked in the context of this call. */
+static bool is_irq_locked(void)
+{
+	unsigned int key = z_arch_irq_lock();
+	bool ret = z_arch_irq_unlocked(key);
+
+	z_arch_irq_unlock(key);
+	return ret;
+}
+
+/* Check if context can be blocked and pend on available memory slab. Context
+ * can be blocked if in a thread and interrupts are not locked.
+ */
+static bool block_on_alloc(void)
+{
+	if (!IS_ENABLED(CONFIG_LOG_BLOCK_IN_THREAD)) {
+		return false;
+	}
+
+	return (!k_is_in_isr() && !is_irq_locked());
+}
+
+union log_msg_chunk *log_msg_chunk_alloc(void)
+{
+	union log_msg_chunk *msg = NULL;
+	int err = k_mem_slab_alloc(&log_msg_pool, (void **)&msg,
+			block_on_alloc() ?
+			CONFIG_LOG_BLOCK_IN_THREAD_TIMEOUT_MS : K_NO_WAIT);
+
+	if (err != 0) {
+		msg = log_msg_no_space_handle();
+	}
+
+	return msg;
 }
 
 void log_msg_get(struct log_msg *msg)
@@ -55,6 +115,17 @@ static void msg_free(struct log_msg *msg)
 			if (log_is_strdup(buf)) {
 				log_free(buf);
 			}
+		}
+	} else if (IS_ENABLED(CONFIG_USERSPACE) &&
+		   (log_msg_level_get(msg) != LOG_LEVEL_INTERNAL_RAW_STRING)) {
+		/*
+		 * When userspace support is enabled, the hex message metadata
+		 * might be located in log_strdup() memory pool.
+		 */
+		const char *str = log_msg_str_get(msg);
+
+		if (log_is_strdup(str)) {
+			log_free((void *)(str));
 		}
 	}
 

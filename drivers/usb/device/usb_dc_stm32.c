@@ -196,29 +196,8 @@ static int usb_dc_stm32_clock_enable(void)
 {
 	struct device *clk = device_get_binding(STM32_CLOCK_CONTROL_NAME);
 	struct stm32_pclken pclken = {
-
-#ifdef DT_USB_HS_BASE_ADDRESS
-		.bus = STM32_CLOCK_BUS_AHB1,
-		.enr = LL_AHB1_GRP1_PERIPH_OTGHS
-#else /* DT_USB_HS_BASE_ADDRESS */
-
-#ifdef USB
-		.bus = STM32_CLOCK_BUS_APB1,
-		.enr = LL_APB1_GRP1_PERIPH_USB,
-
-#else /* USB_OTG_FS */
-
-#ifdef CONFIG_SOC_SERIES_STM32F1X
-		.bus = STM32_CLOCK_BUS_AHB1,
-		.enr = LL_AHB1_GRP1_PERIPH_OTGFS,
-#else
-		.bus = STM32_CLOCK_BUS_AHB2,
-		.enr = LL_AHB2_GRP1_PERIPH_OTGFS,
-#endif /* CONFIG_SOC_SERIES_STM32F1X */
-
-#endif /* USB */
-
-#endif /* DT_USB_HS_BASE_ADDRESS */
+		.bus = DT_USB_CLOCK_BUS,
+		.enr = DT_USB_CLOCK_BITS,
 	};
 
 	/*
@@ -425,7 +404,7 @@ int usb_dc_attach(void)
 	 * For STM32F0 series SoCs on QFN28 and TSSOP20 packages enable PIN
 	 * pair PA11/12 mapped instead of PA9/10 (e.g. stm32f070x6)
 	 */
-#if defined(DT_USB_ENABLE_PIN_REMAP)
+#if DT_USB_ENABLE_PIN_REMAP == 1
 	if (LL_APB1_GRP2_IsEnabledClock(LL_APB1_GRP2_PERIPH_SYSCFG)) {
 		LL_SYSCFG_EnablePinRemap();
 	} else {
@@ -767,7 +746,7 @@ int usb_dc_ep_write(const u8_t ep, const u8_t *const data,
 		irq_enable(DT_USB_IRQ);
 	}
 
-	if (ret_bytes) {
+	if (!ret && ret_bytes) {
 		*ret_bytes = len;
 	}
 

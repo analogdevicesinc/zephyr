@@ -4,6 +4,12 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
+# NOTE: This file is part of the old device tree scripts, which will be removed
+# later. They are kept to generate some legacy #defines via the
+# --deprecated-only flag.
+#
+# The new scripts are gen_defines.py, edtlib.py, and dtlib.py.
+
 from extract.globals import *
 from extract.directive import DTDirective
 
@@ -22,6 +28,8 @@ class DTInterrupts(DTDirective):
     #                  compatible definition.
     #
     def extract(self, node_path, prop, names, def_label):
+        if prop == "interrupts-extended":
+            return
         vals = reduced[node_path]['props'][prop]
         if not isinstance(vals, list):
             vals = [vals]

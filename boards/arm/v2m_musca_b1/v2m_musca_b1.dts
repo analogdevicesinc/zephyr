@@ -13,11 +13,33 @@
 	#address-cells = <1>;
 	#size-cells = <1>;
 
+	aliases {
+		led0 = &green_led;
+		led1 = &blue_led;
+		led2 = &red_led;
+	};
+
 	chosen {
 		zephyr,console = &uart1;
 		zephyr,sram = &sram0;
 		zephyr,flash = &flash0;
 		zephyr,shell-uart = &uart1;
+	};
+
+	leds {
+		compatible = "gpio-leds";
+		red_led: led_0 {
+			gpios = <&gpio 2 0>;
+			label = "User LED1";
+		};
+		green_led: led_1 {
+			gpios = <&gpio 3 0>;
+			label = "User LED2";
+		};
+		blue_led: led_2 {
+			gpios = <&gpio 4 0>;
+			label = "User LED3";
+		};
 	};
 
 	cpus {
@@ -39,9 +61,9 @@
 		};
 	};
 
-	flash0: flash@10000000 {
-		/* QSPI flash */
-		reg = <0x10000000 0x2000000>;
+	flash0: flash@1a000000 {
+		/* Embedded flash */
+		reg = <0x1a000000 0x200000>;
 	};
 
 	sram0: memory@30000000 {
@@ -49,6 +71,11 @@
 		reg = <0x30000000 0x80000>;
 	};
 
+	sysclk: system-clock {
+		compatible = "fixed-clock";
+		clock-frequency = <40000000>;
+		#clock-cells = <0>;
+	};
 
 	scc@5010b000 {
 		compatible = "arm,scc";

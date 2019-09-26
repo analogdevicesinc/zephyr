@@ -5,6 +5,12 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
+# NOTE: This file is part of the old device tree scripts, which will be removed
+# later. They are kept to generate some legacy #defines via the
+# --deprecated-only flag.
+#
+# The new scripts are gen_defines.py, edtlib.py, and dtlib.py.
+
 import sys
 
 from collections import defaultdict
@@ -24,7 +30,8 @@ old_alias_names = False
 
 regs_config = {
     'zephyr,sram'  : 'DT_SRAM',
-    'zephyr,ccm'   : 'DT_CCM'
+    'zephyr,ccm'   : 'DT_CCM',
+    'zephyr,dtcm'  : 'DT_DTCM'
 }
 
 name_config = {
@@ -44,6 +51,7 @@ def str_to_label(s):
             .replace(',', '_') \
             .replace('@', '_') \
             .replace('/', '_') \
+            .replace('.', '_') \
             .replace('+', 'PLUS') \
             .upper()
 
@@ -144,7 +152,7 @@ def create_reduced(node, path):
     # Assign an instance ID for each compat
     compat = node['props'].get('compatible')
     if compat:
-        if type(compat) is not list:
+        if not isinstance(compat, list):
             compat = [compat]
 
         reduced[path]['instance_id'] = {}
@@ -178,7 +186,7 @@ def node_label(node_path):
             unit_addr += translate_addr(unit_addr, node_path,
                          nr_addr_cells, nr_size_cells)
             unit_addr = "%x" % unit_addr
-        except:
+        except Exception:
             unit_addr = node_path.split('@')[-1]
         def_label += '_' + str_to_label(unit_addr)
     else:
@@ -299,19 +307,46 @@ def get_binding(node_path):
     if isinstance(compat, list):
         compat = compat[0]
 
-    parent_path = get_parent_path(node_path)
-    parent_compat = get_compat(parent_path)
+    # Support two levels of recursive 'child-binding:'. The new scripts support
+    # any number of levels, but it gets a bit tricky to implement here, because
+    # nodes don't store their bindings.
 
-    if parent_compat in bindings:
-        parent_binding = bindings[parent_compat]
-        # see if we're a sub-node
-        if compat is None and 'sub-node' in parent_binding:
-            return parent_binding['sub-node']
+    parent_path = get_parent_path(node_path)
+    pparent_path = get_parent_path(parent_path)
+
+    parent_compat = get_compat(parent_path)
+    pparent_compat = get_compat(pparent_path) if pparent_path else None
+
+    if parent_compat in bindings or pparent_compat in bindings:
+        if compat is None:
+            # The node doesn't get a binding from 'compatible'. See if it gets
+            # one via 'sub-node' or 'child-binding'.
+
+            parent_binding = bindings.get(parent_compat)
+            if parent_binding:
+                for sub_key in 'sub-node', 'child-binding':
+                    if sub_key in parent_binding:
+                        return parent_binding[sub_key]
+
+            # Look for 'child-binding: child-binding: ...' in grandparent node
+
+            pparent_binding = bindings.get(pparent_compat)
+            if pparent_binding and 'child-binding' in pparent_binding:
+                pp_child_binding = pparent_binding['child-binding']
+                if 'child-binding' in pp_child_binding:
+                    return pp_child_binding['child-binding']
 
         # look for a bus-specific binding
-        if 'child' in parent_binding and 'bus' in parent_binding['child']:
-            bus = parent_binding['child']['bus']
-            return bus_bindings[bus][compat]
+
+        parent_binding = bindings.get(parent_compat)
+        if parent_binding:
+            if 'child-bus' in parent_binding:
+                bus = parent_binding['child-bus']
+                return bus_bindings[bus][compat]
+
+            if 'child' in parent_binding and 'bus' in parent_binding['child']:
+                bus = parent_binding['child']['bus']
+                return bus_bindings[bus][compat]
 
     # No bus-specific binding found, look in the main dict.
     if compat:
@@ -324,6 +359,11 @@ def get_binding_compats():
 def build_cell_array(prop_array):
     index = 0
     ret_array = []
+
+    if isinstance(prop_array, int):
+        # Work around old code generating an integer for e.g.
+        # 'pwms = <&foo>'
+        prop_array = [prop_array]
 
     while index < len(prop_array):
         handle = prop_array[index]
@@ -435,13 +475,6 @@ def extract_controller(node_path, prop, prop_values, index,
         else:
             l_idx = [str(i)]
 
-        # Check node generation requirements
-        try:
-            generation = get_binding(node_path)['properties'
-                    ][prop]['generation']
-        except:
-            generation = ''
-
         l_cellname = str_to_label(generic + '_' + 'controller')
 
         label = l_base + [l_cellname] + l_idx
@@ -499,7 +532,7 @@ def extract_cells(node_path, prop, prop_values, names, index,
 
         try:
             name = names.pop(0).upper()
-        except:
+        except Exception:
             name = ''
 
         # Get number of cells per element of current property
@@ -509,11 +542,6 @@ def extract_cells(node_path, prop, prop_values, names, index,
                     cell_yaml_names = props
                 else:
                     cell_yaml_names = '#cells'
-        try:
-            generation = get_binding(node_path)['properties'][prop
-                    ]['generation']
-        except:
-            generation = ''
 
         l_cell = [str_to_label(str(generic))]
 

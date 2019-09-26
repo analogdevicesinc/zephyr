@@ -17,9 +17,15 @@
 #include <kernel_includes.h>
 #include <errno.h>
 #include <stdbool.h>
+#include <toolchain.h>
 
 #ifdef __cplusplus
 extern "C" {
+#endif
+
+#ifdef CONFIG_BOOT_TIME_MEASUREMENT
+extern u32_t __main_time_stamp; /* timestamp when main task starts */
+extern u32_t __idle_time_stamp; /* timestamp when CPU goes idle */
 #endif
 
 /**
@@ -195,6 +201,7 @@ struct _k_object_assignment {
 #define K_OBJ_FLAG_INITIALIZED	BIT(0)
 #define K_OBJ_FLAG_PUBLIC	BIT(1)
 #define K_OBJ_FLAG_ALLOC	BIT(2)
+#define K_OBJ_FLAG_DRIVER	BIT(3)
 
 /**
  * Lookup a kernel object and init its metadata if it exists
@@ -207,7 +214,7 @@ struct _k_object_assignment {
  */
 void z_object_init(void *obj);
 #else
-
+/* LCOV_EXCL_START */
 #define K_THREAD_ACCESS_GRANT(thread, ...)
 
 /**
@@ -250,10 +257,11 @@ static inline void k_object_access_all_grant(void *object)
 {
 	ARG_UNUSED(object);
 }
+/* LCOV_EXCL_STOP */
 #endif /* !CONFIG_USERSPACE */
 
 /**
- * grant a thread access to a kernel object
+ * Grant a thread access to a kernel object
  *
  * The thread will be granted access to the object if the caller is from
  * supervisor mode, or the caller is from user mode AND has permissions
@@ -265,7 +273,7 @@ static inline void k_object_access_all_grant(void *object)
 __syscall void k_object_access_grant(void *object, struct k_thread *thread);
 
 /**
- * grant a thread access to a kernel object
+ * Revoke a thread's access to a kernel object
  *
  * The thread will lose access to the object if the caller is from
  * supervisor mode, or the caller is from user mode AND has permissions
@@ -280,7 +288,7 @@ void k_object_access_revoke(void *object, struct k_thread *thread);
 __syscall void k_object_release(void *object);
 
 /**
- * grant all present and future threads access to an object
+ * Grant all present and future threads access to an object
  *
  * If the caller is from supervisor mode, or the caller is from user mode and
  * have sufficient permissions on the object, then that object will have
@@ -326,6 +334,7 @@ __syscall void *k_object_alloc(enum k_objects otype);
  */
 void k_object_free(void *obj);
 #else
+/* LCOV_EXCL_START */
 static inline void *z_impl_k_object_alloc(enum k_objects otype)
 {
 	ARG_UNUSED(otype);
@@ -337,6 +346,7 @@ static inline void k_obj_free(void *obj)
 {
 	ARG_UNUSED(obj);
 }
+/* LCOV_EXCL_STOP */
 #endif /* CONFIG_DYNAMIC_OBJECTS */
 
 /** @} */
@@ -535,7 +545,7 @@ struct k_thread {
 
 #if defined(CONFIG_THREAD_NAME)
 	/* Thread name */
-	const char *name;
+	char name[CONFIG_THREAD_MAX_NAME_LEN];
 #endif
 
 #ifdef CONFIG_THREAD_CUSTOM_DATA
@@ -1301,8 +1311,14 @@ __syscall void *k_thread_custom_data_get(void);
  * Set the name of the thread to be used when THREAD_MONITOR is enabled for
  * tracing and debugging.
  *
+ * @param thread_id Thread to set name, or NULL to set the current thread
+ * @param value Name string
+ * @retval 0 on success
+ * @retval -EFAULT Memory access error with supplied string
+ * @retval -ENOSYS Thread name configuration option not enabled
+ * @retval -EINVAL Thread name too long
  */
-__syscall void k_thread_name_set(k_tid_t thread_id, const char *value);
+__syscall int k_thread_name_set(k_tid_t thread_id, const char *value);
 
 /**
  * @brief Get thread name
@@ -1310,9 +1326,33 @@ __syscall void k_thread_name_set(k_tid_t thread_id, const char *value);
  * Get the name of a thread
  *
  * @param thread_id Thread ID
- *
+ * @retval Thread name, or NULL if configuration not enabled
  */
-__syscall const char *k_thread_name_get(k_tid_t thread_id);
+const char *k_thread_name_get(k_tid_t thread_id);
+
+/**
+ * @brief Copy the thread name into a supplied buffer
+ *
+ * @param thread_id Thread to obtain name information
+ * @param buf Destination buffer
+ * @param size Destinatiomn buffer size
+ * @retval -ENOSPC Destination buffer too small
+ * @retval -EFAULT Memory access error
+ * @retval -ENOSYS Thread name feature not enabled
+ * @retval 0 Success
+ */
+__syscall int k_thread_name_copy(k_tid_t thread_id, char *buf,
+				 size_t size);
+
+/**
+ * @brief Get thread state string
+ *
+ * Get the human friendly thread state string
+ *
+ * @param thread_id Thread ID
+ * @retval Thread state string, empty if no state flag is set
+ */
+const char *k_thread_state_str(k_tid_t thread_id);
 
 /**
  * @}
@@ -1661,8 +1701,7 @@ static inline void *z_impl_k_timer_user_data_get(struct k_timer *timer)
  *    @rst
  *    While this function returns time in milliseconds, it does
  *    not mean it has millisecond resolution. The actual resolution depends on
- *    :option:`CONFIG_SYS_CLOCK_TICKS_PER_SEC` config option, and with the
- *    default setting of 100, system time is updated in increments of 10ms.
+ *    :option:`CONFIG_SYS_CLOCK_TICKS_PER_SEC` config option.
  *    @endrst
  *
  * @return Current uptime in milliseconds.
@@ -1672,49 +1711,62 @@ __syscall s64_t k_uptime_get(void);
 /**
  * @brief Enable clock always on in tickless kernel
  *
- * This routine enables keeping the clock running (that is, it always
- * keeps an active timer interrupt scheduled) when there are no timer
- * events programmed in tickless kernel scheduling. This is necessary
- * if the clock is used to track passage of time (e.g. via
- * k_uptime_get_32()), otherwise the internal hardware counter may
- * roll over between interrupts.
+ * Deprecated.  This does nothing (it was always just a hint).  This
+ * functionality has been migrated to the SYSTEM_CLOCK_SLOPPY_IDLE
+ * kconfig.
  *
  * @retval prev_status Previous status of always on flag
  */
-int k_enable_sys_clock_always_on(void);
+/* LCOV_EXCL_START */
+__deprecated static inline int k_enable_sys_clock_always_on(void)
+{
+	__ASSERT(IS_ENABLED(CONFIG_SYSTEM_CLOCK_SLOPPY_IDLE),
+		 "Please use CONFIG_SYSTEM_CLOCK_SLOPPY_IDLE instead");
+
+	return !IS_ENABLED(CONFIG_SYSTEM_CLOCK_SLOPPY_IDLE);
+}
+/* LCOV_EXCL_STOP */
 
 /**
  * @brief Disable clock always on in tickless kernel
  *
- * This routine disables keeping the clock running when
- * there are no timer events programmed in tickless kernel
- * scheduling. To save power, this routine should be called
- * immediately when clock is not used to track time.
+ * Deprecated.  This does nothing (it was always just a hint).  This
+ * functionality has been migrated to the SYS_CLOCK_SLOPPY_IDLE
+ * kconfig.
  */
-void k_disable_sys_clock_always_on(void);
+/* LCOV_EXCL_START */
+__deprecated static inline void k_disable_sys_clock_always_on(void)
+{
+	__ASSERT(!IS_ENABLED(CONFIG_SYSTEM_CLOCK_SLOPPY_IDLE),
+		 "Please use CONFIG_SYSTEM_CLOCK_SLOPPY_IDLE instead");
+}
+/* LCOV_EXCL_STOP */
 
 /**
  * @brief Get system uptime (32-bit version).
  *
- * This routine returns the lower 32-bits of the elapsed time since the system
- * booted, in milliseconds.
+ * This routine returns the lower 32 bits of the system uptime in
+ * milliseconds.
  *
- * This routine can be more efficient than k_uptime_get(), as it reduces the
- * need for interrupt locking and 64-bit math. However, the 32-bit result
- * cannot hold a system uptime time larger than approximately 50 days, so the
- * caller must handle possible rollovers.
+ * Because correct conversion requires full precision of the system
+ * clock there is no benefit to using this over k_uptime_get() unless
+ * you know the application will never run long enough for the system
+ * clock to approach 2^32 ticks.  Calls to this function may involve
+ * interrupt blocking and 64-bit math.
  *
  * @note
  *    @rst
  *    While this function returns time in milliseconds, it does
  *    not mean it has millisecond resolution. The actual resolution depends on
- *    :option:`CONFIG_SYS_CLOCK_TICKS_PER_SEC` config option, and with the
- *    default setting of 100, system time is updated in increments of 10ms.
+ *    :option:`CONFIG_SYS_CLOCK_TICKS_PER_SEC` config option
  *    @endrst
  *
- * @return Current uptime in milliseconds.
+ * @return The low 32 bits of the current uptime, in milliseconds.
  */
-__syscall u32_t k_uptime_get_32(void);
+static inline u32_t k_uptime_get_32(void)
+{
+	return (u32_t)k_uptime_get();
+}
 
 /**
  * @brief Get elapsed time.
@@ -1792,8 +1844,11 @@ struct k_queue {
 #define _K_QUEUE_INITIALIZER(obj) \
 	{ \
 	.data_q = SYS_SLIST_STATIC_INIT(&obj.data_q), \
-	.wait_q = Z_WAIT_Q_INIT(&obj.wait_q), \
-	_POLL_EVENT_OBJ_INIT(obj) \
+	.lock = { }, \
+	{ \
+		.wait_q = Z_WAIT_Q_INIT(&obj.wait_q), \
+		_POLL_EVENT_OBJ_INIT(obj) \
+	}, \
 	_OBJECT_TRACING_INIT \
 	}
 
@@ -2125,17 +2180,6 @@ struct z_futex_data {
  * @ingroup kernel_apis
  * @{
  */
-
-/**
- * @brief Initialize a futex.
- *
- * This routine initializes a futex object, prior to its first use.
- *
- * @param futex Address of the k_futex.
- *
- * @return N/A
- */
-__syscall void k_futex_init(struct k_futex *futex);
 
 /**
  * @brief Pend the current thread on a futex
@@ -4137,19 +4181,20 @@ struct k_mem_pool {
  * @req K-MPOOL-001
  */
 #define K_MEM_POOL_DEFINE(name, minsz, maxsz, nmax, align)		\
-	char __aligned(align) _mpool_buf_##name[_ALIGN4(maxsz) * nmax	\
+	char __aligned(WB_UP(align)) _mpool_buf_##name[WB_UP(maxsz) * nmax \
 				  + _MPOOL_BITS_SIZE(maxsz, minsz, nmax)]; \
 	struct sys_mem_pool_lvl _mpool_lvls_##name[Z_MPOOL_LVLS(maxsz, minsz)]; \
 	Z_STRUCT_SECTION_ITERABLE(k_mem_pool, name) = { \
 		.base = {						\
 			.buf = _mpool_buf_##name,			\
-			.max_sz = _ALIGN4(maxsz),			\
+			.max_sz = WB_UP(maxsz),				\
 			.n_max = nmax,					\
 			.n_levels = Z_MPOOL_LVLS(maxsz, minsz),		\
 			.levels = _mpool_lvls_##name,			\
 			.flags = SYS_MEM_POOL_KERNEL			\
 		} \
-	}
+	}; \
+	BUILD_ASSERT(WB_UP(maxsz) >= _MPOOL_MINBLK);
 
 /**
  * @brief Allocate memory from a memory pool.
@@ -4636,8 +4681,7 @@ extern void z_sys_power_save_idle_exit(s32_t ticks);
  */
 #define z_except_reason(reason) do { \
 		printk("@ %s:%d:\n", __FILE__,  __LINE__); \
-		z_NanoFatalErrorHandler(reason, &_default_esf); \
-		k_thread_abort(k_current_get()); \
+		z_fatal_error(reason, NULL); \
 	} while (false)
 
 #endif /* _ARCH__EXCEPT */
@@ -4648,13 +4692,13 @@ extern void z_sys_power_save_idle_exit(s32_t ticks);
  * This should be called when a thread has encountered an unrecoverable
  * runtime condition and needs to terminate. What this ultimately
  * means is determined by the _fatal_error_handler() implementation, which
- * will be called will reason code _NANO_ERR_KERNEL_OOPS.
+ * will be called will reason code K_ERR_KERNEL_OOPS.
  *
  * If this is called from ISR context, the default system fatal error handler
  * will treat it as an unrecoverable system error, just like k_panic().
  * @req K-MISC-003
  */
-#define k_oops()	z_except_reason(_NANO_ERR_KERNEL_OOPS)
+#define k_oops()	z_except_reason(K_ERR_KERNEL_OOPS)
 
 /**
  * @brief Fatally terminate the system
@@ -4662,10 +4706,10 @@ extern void z_sys_power_save_idle_exit(s32_t ticks);
  * This should be called when the Zephyr kernel has encountered an
  * unrecoverable runtime condition and needs to terminate. What this ultimately
  * means is determined by the _fatal_error_handler() implementation, which
- * will be called will reason code _NANO_ERR_KERNEL_PANIC.
+ * will be called will reason code K_ERR_KERNEL_PANIC.
  * @req K-MISC-004
  */
-#define k_panic()	z_except_reason(_NANO_ERR_KERNEL_PANIC)
+#define k_panic()	z_except_reason(K_ERR_KERNEL_PANIC)
 
 /*
  * private APIs that are utilized by one or more public APIs
@@ -4896,6 +4940,9 @@ struct k_mem_domain {
  *
  * Initialize a memory domain with given name and memory partitions.
  *
+ * See documentation for k_mem_domain_add_partition() for details about
+ * partition constraints.
+ *
  * @param domain The memory domain to be initialized.
  * @param num_parts The number of array items of "parts" parameter.
  * @param parts An array of pointers to the memory partitions. Can be NULL
@@ -4917,7 +4964,22 @@ extern void k_mem_domain_destroy(struct k_mem_domain *domain);
 /**
  * @brief Add a memory partition into a memory domain.
  *
- * Add a memory partition into a memory domain.
+ * Add a memory partition into a memory domain. Partitions must conform to
+ * the following constraints:
+ *
+ * - Partition bounds must be within system RAM boundaries on MMU-based
+ *   systems.
+ * - Partitions in the same memory domain may not overlap each other.
+ * - Partitions must not be defined which expose private kernel
+ *   data structures or kernel objects.
+ * - The starting address alignment, and the partition size must conform to
+ *   the constraints of the underlying memory management hardware, which
+ *   varies per architecture.
+ * - Memory domain partitions are only intended to control access to memory
+ *   from user mode threads.
+ *
+ * Violating these constraints may lead to CPU exceptions or undefined
+ * behavior.
  *
  * @param domain The memory domain to be added a memory partition.
  * @param part The memory partition to be added

@@ -73,7 +73,7 @@ from collections import OrderedDict
 # Regular dictionaries are ordered only with Python 3.6 and
 # above. Good summary and pointers to official documents at:
 # https://stackoverflow.com/questions/39980323/are-dictionaries-ordered-in-python-3-6
-kobjects = OrderedDict ([
+kobjects = OrderedDict([
     ("k_mem_slab", (None, False)),
     ("k_msgq", (None, False)),
     ("k_mutex", (None, False)),
@@ -107,7 +107,6 @@ subsystems = [
     "pinmux_driver_api",
     "pwm_driver_api",
     "entropy_driver_api",
-    "rtc_driver_api",
     "sensor_driver_api",
     "spi_driver_api",
     "uart_driver_api",
@@ -173,11 +172,11 @@ def write_gperf_table(fp, eh, objs, static_begin, static_end):
         fp.write("};\n")
 
     num_futex = eh.get_futex_counter()
-    if (num_futex != 0):
+    if num_futex != 0:
         fp.write("static struct z_futex_data futex_data[%d] = {\n" % num_futex)
         for i in range(num_futex):
             fp.write("Z_FUTEX_DATA_INITIALIZER(futex_data[%d])" % i)
-            if (i != num_futex - 1):
+            if i != num_futex - 1:
                 fp.write(", ")
         fp.write("};\n")
 
@@ -195,7 +194,8 @@ def write_gperf_table(fp, eh, objs, static_begin, static_end):
         # pre-initialized objects fall within this memory range, they are
         # either completely initialized at build time, or done automatically
         # at boot during some PRE_KERNEL_* phase
-        initialized = obj_addr >= static_begin and obj_addr < static_end
+        initialized = static_begin <= obj_addr < static_end
+        is_driver = obj_type.startswith("K_OBJ_DRIVER_")
 
         byte_str = struct.pack("<I" if eh.little_endian else ">I", obj_addr)
         fp.write("\"")
@@ -203,11 +203,13 @@ def write_gperf_table(fp, eh, objs, static_begin, static_end):
             val = "\\x%02x" % byte
             fp.write(val)
 
-        fp.write(
-            "\",{},%s,%s,%s\n" %
-            (obj_type,
-             "K_OBJ_FLAG_INITIALIZED" if initialized else "0",
-             str(ko.data)))
+        flags = "0"
+        if initialized:
+            flags += " | K_OBJ_FLAG_INITIALIZED"
+        if is_driver:
+            flags += " | K_OBJ_FLAG_DRIVER"
+
+        fp.write("\", {}, %s, %s, %s\n" % (obj_type, flags, str(ko.data)))
 
         if obj_type == "K_OBJ_THREAD":
             idx = math.floor(ko.data / 8)
@@ -302,7 +304,7 @@ def write_kobj_size_output(fp):
         dep, _ = obj_info
         # device handled by default case. Stacks are not currently handled,
         # if they eventually are it will be a special case.
-        if kobj == "device" or kobj == "_k_thread_stack_element":
+        if kobj in {"device", "_k_thread_stack_element"}:
             continue
 
         if dep:
@@ -360,10 +362,9 @@ def main():
 
         thread_counter = eh.get_thread_counter()
         if thread_counter > max_threads:
-            sys.stderr.write("Too many thread objects (%d)\n" % thread_counter)
-            sys.stderr.write("Increase CONFIG_MAX_THREAD_BYTES to %d\n" %
-                             -(-thread_counter // 8))
-            sys.exit(1)
+            sys.exit("Too many thread objects ({})\n"
+                     "Increase CONFIG_MAX_THREAD_BYTES to {}"
+                     .format(thread_counter, -(-thread_counter // 8)))
 
         with open(args.gperf_output, "w") as fp:
             write_gperf_table(fp, eh, objs,

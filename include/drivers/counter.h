@@ -61,11 +61,48 @@ extern "C" {
 
 /**@} */
 
+/**@defgroup COUNTER_ALARM_FLAGS Alarm configuration flags
+ *
+ * @brief Used in alarm configuration structure (@ref counter_alarm_cfg).
+ * @{ */
+
+/**
+ * @brief Counter alarm absolute value flag.
+ *
+ * Ticks relation to counter value. If set ticks are treated as absolute value,
+ * else it is relative to the counter reading performed during the call.
+ */
+#define COUNTER_ALARM_CFG_ABSOLUTE BIT(0)
+
+/**
+ * @brief Alarm flag enabling immediate expiration when driver detects that
+ *	  absolute alarm was set too late.
+ *
+ * Alarm callback must be called from the same context as if it was set on time.
+ */
+#define COUNTER_ALARM_CFG_EXPIRE_WHEN_LATE  BIT(1)
+
+/**@} */
+
+/**@defgroup COUNTER_GUARD_PERIOD_FLAGS Counter guard period flags
+ *
+ * @brief Used by @ref counter_set_guard_period and
+ *	  @ref counter_get_guard_period.
+ * @{ */
+
+/**
+ * @brief Identifies guard period needed for detection of late setting of
+ *	  absolute alarm (see @ref counter_set_channel_alarm).
+ */
+#define COUNTER_GUARD_PERIOD_LATE_TO_SET BIT(0)
+
+/**@} */
+
 /** @brief Alarm callback
  *
  * @param dev       Pointer to the device structure for the driver instance.
  * @param chan_id   Channel ID.
- * @param ticks     Counter value that triggered the callback.
+ * @param ticks     Counter value that triggered the alarm.
  * @param user_data User data.
  */
 typedef void (*counter_alarm_callback_t)(struct device *dev,
@@ -75,24 +112,22 @@ typedef void (*counter_alarm_callback_t)(struct device *dev,
 /** @brief Alarm callback structure.
  *
  * @param callback Callback called on alarm (cannot be NULL).
- * @param ticks Ticks that triggers the alarm. In case of absolute flag is set,
- *		maximal value that can be set equals top value
- *		(@ref counter_get_top_value). Otherwise
- *		@ref counter_get_max_relative_alarm() returns maximal value that
- *		can be set. If counter is clock driven then ticks can be
- *		converted to microseconds (see @ref counter_ticks_to_us).
- *		Alternatively, counter implementation may count asynchronous
- *		events.
+ * @param ticks Number of ticks that triggers the alarm. It can be relative (to
+ *		now) or absolute value (see @ref COUNTER_ALARM_CFG_ABSOLUTE).
+ *		Absolute alarm cannot be set further in future than top_value
+ *		decremented by the guard period. Relative alarm ticks cannot
+ *		exceed current top value (see @ref counter_get_top_value).
+ *		If counter is clock driven then ticks can be converted to
+ *		microseconds (see @ref counter_ticks_to_us). Alternatively,
+ *		counter implementation may count asynchronous events.
  * @param user_data User data returned in callback.
- * @param absolute Ticks relation to counter value. If true ticks are treated as
- *		absolute value, else it is relative to the counter reading
- *		performed during the call.
+ * @param flags	Alarm flags. See @ref COUNTER_ALARM_FLAGS.
  */
 struct counter_alarm_cfg {
 	counter_alarm_callback_t callback;
 	u32_t ticks;
 	void *user_data;
-	bool absolute;
+	u32_t flags;
 };
 
 /** @brief Callback called when counter turns around.
@@ -125,7 +160,7 @@ struct counter_top_cfg {
  *			counted.
  * @param flags		Flags. See @ref COUNTER_FLAGS.
  * @param channels	Number of channels that can be used for setting alarm,
- *			see @ref counter_set_alarm.
+ *			see @ref counter_set_channel_alarm.
  */
 struct counter_config_info {
 	u32_t max_top_value;
@@ -145,7 +180,9 @@ typedef int (*counter_api_set_top_value)(struct device *dev,
 typedef u32_t (*counter_api_get_pending_int)(struct device *dev);
 typedef u32_t (*counter_api_get_top_value)(struct device *dev);
 typedef u32_t (*counter_api_get_max_relative_alarm)(struct device *dev);
-typedef void *(*counter_api_get_user_data)(struct device *dev);
+typedef u32_t (*counter_api_get_guard_period)(struct device *dev, u32_t flags);
+typedef int (*counter_api_set_guard_period)(struct device *dev, u32_t ticks,
+						u32_t flags);
 
 struct counter_driver_api {
 	counter_api_start start;
@@ -157,7 +194,8 @@ struct counter_driver_api {
 	counter_api_get_pending_int get_pending_int;
 	counter_api_get_top_value get_top_value;
 	counter_api_get_max_relative_alarm get_max_relative_alarm;
-	counter_api_get_user_data get_user_data;
+	counter_api_get_guard_period get_guard_period;
+	counter_api_set_guard_period set_guard_period;
 };
 
 
@@ -326,6 +364,7 @@ static inline u32_t z_impl_counter_read(struct device *dev)
  * @retval -ENOTSUP if request is not supported (device does not support
  *		    interrupts or requested channel).
  * @retval -EINVAL if alarm settings are invalid.
+ * @retval -ETIME  if absolute alarm was set too late.
  */
 static inline int counter_set_channel_alarm(struct device *dev, u8_t chan_id,
 				      const struct counter_alarm_cfg *alarm_cfg)
@@ -443,14 +482,14 @@ static inline u32_t z_impl_counter_get_top_value(struct device *dev)
 }
 
 /**
- * @brief Function to retrieve maximum relative value that can be set by
- *        counter_set_alarm.
+ * @brief Function to retrieve maximum relative value that can be set by @ref
+ *        counter_set_channel_alarm.
  *
  * @param[in]  dev    Pointer to the device structure for the driver instance.
  *
  * @return Max alarm value.
  */
-__syscall u32_t counter_get_max_relative_alarm(struct device *dev);
+__deprecated __syscall u32_t counter_get_max_relative_alarm(struct device *dev);
 
 static inline u32_t z_impl_counter_get_max_relative_alarm(struct device *dev)
 {
@@ -460,47 +499,74 @@ static inline u32_t z_impl_counter_get_max_relative_alarm(struct device *dev)
 	return api->get_max_relative_alarm(dev);
 }
 
-/* Deprecated counter callback. */
-typedef void (*counter_callback_t)(struct device *dev, void *user_data);
-
 /**
- * @brief Deprecated function.
+ * @brief Set guard period in counter ticks.
+ *
+ * Setting non-zero guard period enables detection of setting absolute alarm
+ * too late. It limits how far in the future absolute alarm can be set.
+ *
+ * Detection of too late setting is vital since if it is not detected alarm
+ * is delayed by full period of the counter (up to 32 bits). Because of the
+ * wrapping, it is impossible to distinguish alarm which is short in the past
+ * from alarm which is targeted to expire after full counter period. In order to
+ * detect too late setting, longest possible alarm is limited. Absolute value
+ * cannot exceed: (now + top_value - guard_period) % top_value.
+ *
+ * Guard period depends on application and counter frequency. If it is expected
+ * that absolute alarms setting might be delayed then guard period should
+ * exceed maximal potential delay. If use case allows, guard period can be set
+ * very high (e.g. half of the counter top value).
+ *
+ * After initialization guard period is set to 0 and late detection is disabled.
+ *
+ * @param dev		Pointer to the device structure for the driver instance.
+ * @param ticks		Guard period in counter ticks.
+ * @param flags		See @ref COUNTER_GUARD_PERIOD_FLAGS.
+ *
+ * @retval 0 if successful.
+ * @retval -ENOTSUP if function or flags are not supported.
+ * @retval -EINVAL if ticks value is invalid.
  */
-__deprecated static inline int counter_set_alarm(struct device *dev,
-						 counter_callback_t callback,
-						 u32_t count, void *user_data)
-{
-	struct counter_top_cfg cfg = {
-		.ticks = count,
-		.callback = callback,
-		.user_data = user_data,
-		.flags = 0
-	};
+__syscall int counter_set_guard_period(struct device *dev, u32_t ticks,
+					u32_t flags);
 
-	return counter_set_top_value(dev, &cfg);
-}
-
-/**
- * @brief Get user data set for top alarm.
- *
- * @note Function intended to be used only by deprecated RTC driver API to
- * provide backward compatibility.
- *
- * @param dev Pointer to the device structure for the driver instance.
- *
- * @return User data.
- */
-__deprecated static inline void *counter_get_user_data(struct device *dev)
+static inline int z_impl_counter_set_guard_period(struct device *dev,
+						   u32_t ticks, u32_t flags)
 {
 	const struct counter_driver_api *api =
 				(struct counter_driver_api *)dev->driver_api;
 
-	if (api->get_user_data) {
-		return api->get_user_data(dev);
-	} else {
-		return NULL;
+	if (!api->set_guard_period) {
+		return -ENOTSUP;
 	}
+
+	return api->set_guard_period(dev, ticks, flags);
 }
+
+/**
+ * @brief Return guard period.
+ *
+ * See @ref counter_set_guard_period.
+ *
+ * @param dev	Pointer to the device structure for the driver instance.
+ * @param flags	See @ref COUNTER_GUARD_PERIOD_FLAGS.
+ *
+ * @return Guard period given in counter ticks or 0 if function or flags are
+ *	   not supported.
+ */
+__syscall u32_t counter_get_guard_period(struct device *dev, u32_t flags);
+
+static inline u32_t z_impl_counter_get_guard_period(struct device *dev,
+							u32_t flags)
+{
+	const struct counter_driver_api *api =
+				(struct counter_driver_api *)dev->driver_api;
+
+	return (api->get_guard_period) ? api->get_guard_period(dev, flags) : 0;
+}
+
+/* Deprecated counter callback. */
+typedef void (*counter_callback_t)(struct device *dev, void *user_data);
 
 #ifdef __cplusplus
 }

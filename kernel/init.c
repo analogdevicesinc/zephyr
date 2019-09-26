@@ -66,9 +66,8 @@ LOG_MODULE_REGISTER(os);
 /* boot time measurement items */
 
 #ifdef CONFIG_BOOT_TIME_MEASUREMENT
-u64_t __noinit __start_time_stamp; /* timestamp when kernel starts */
-u64_t __noinit __main_time_stamp;  /* timestamp when main task starts */
-u64_t __noinit __idle_time_stamp;  /* timestamp when CPU goes idle */
+u32_t __noinit __main_time_stamp;  /* timestamp when main task starts */
+u32_t __noinit __idle_time_stamp;  /* timestamp when CPU goes idle */
 #endif
 
 /* init/main and idle threads */
@@ -155,6 +154,10 @@ void z_bss_zero(void)
 	(void)memset(&__ccm_bss_start, 0,
 		     ((u32_t) &__ccm_bss_end - (u32_t) &__ccm_bss_start));
 #endif
+#ifdef DT_DTCM_BASE_ADDRESS
+	(void)memset(&__dtcm_bss_start, 0,
+		     ((u32_t) &__dtcm_bss_end - (u32_t) &__dtcm_bss_start));
+#endif
 #ifdef CONFIG_CODE_DATA_RELOCATION
 	extern void bss_zeroing_relocation(void);
 
@@ -191,6 +194,10 @@ void z_data_copy(void)
 #ifdef DT_CCM_BASE_ADDRESS
 	(void)memcpy(&__ccm_data_start, &__ccm_data_rom_start,
 		 __ccm_data_end - __ccm_data_start);
+#endif
+#ifdef DT_DTCM_BASE_ADDRESS
+	(void)memcpy(&__dtcm_data_start, &__dtcm_data_rom_start,
+		 __dtcm_data_end - __dtcm_data_start);
 #endif
 #ifdef CONFIG_CODE_DATA_RELOCATION
 	extern void data_copy_xip_relocation(void);
@@ -276,10 +283,7 @@ static void bg_thread_main(void *unused1, void *unused2, void *unused3)
 #endif
 
 #ifdef CONFIG_BOOT_TIME_MEASUREMENT
-	/* record timestamp for kernel's _main() function */
-	extern u64_t __main_time_stamp;
-
-	__main_time_stamp = (u64_t)k_cycle_get_32();
+	__main_time_stamp = k_cycle_get_32();
 #endif
 
 	extern void main(void);

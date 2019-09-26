@@ -401,6 +401,10 @@ static void eswifi_iface_init(struct net_if *iface)
 	eswifi_unlock(eswifi);
 
 	eswifi_offload_init(eswifi);
+#if defined(CONFIG_NET_SOCKETS_OFFLOAD)
+	eswifi_socket_offload_init(eswifi);
+#endif
+
 }
 
 static int eswifi_mgmt_scan(struct device *dev, scan_result_cb_t cb)
@@ -485,6 +489,11 @@ static int eswifi_mgmt_connect(struct device *dev,
 	eswifi_unlock(eswifi);
 
 	return err;
+}
+
+void eswifi_async_msg(struct eswifi_dev *eswifi, char *msg, size_t len)
+{
+	eswifi_offload_async_msg(eswifi, msg, len);
 }
 
 #if defined(CONFIG_NET_IPV4)

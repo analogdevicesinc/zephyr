@@ -36,6 +36,12 @@ static inline void timestamp_serialize(void)
 	/* isb is available in all Cortex-M  */
 	__ISB();
 }
+#elif defined(CONFIG_CPU_CORTEX_R)
+#include <arch/arm/cortex_r/cpu.h>
+static inline void timestamp_serialize(void)
+{
+	__ISB();
+}
 #elif defined(CONFIG_CPU_ARCV2)
 #define timestamp_serialize()
 #elif defined(CONFIG_ARCH_POSIX)
@@ -44,7 +50,7 @@ static inline void timestamp_serialize(void)
 #define timestamp_serialize()
 #elif defined(CONFIG_NIOS2)
 #define timestamp_serialize()
-#elif defined(CONFIG_RISCV32)
+#elif defined(CONFIG_RISCV)
 #define timestamp_serialize()
 #else
 #error implementation of timestamp_serialize() not provided for your CPU target
