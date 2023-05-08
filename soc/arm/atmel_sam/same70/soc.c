@@ -10,12 +10,13 @@
  * for the Atmel SAM E70 MCU.
  */
 
-#include <kernel.h>
-#include <device.h>
-#include <init.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/init.h>
 #include <soc.h>
-#include <cortex_m/exc.h>
-#include <logging/log.h>
+#include <zephyr/arch/arm/aarch32/cortex_m/cmsis.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/irq.h>
 
 #define LOG_LEVEL CONFIG_SOC_LOG_LEVEL
 LOG_MODULE_REGISTER(soc);
@@ -57,7 +58,7 @@ LOG_MODULE_REGISTER(soc);
  */
 static ALWAYS_INLINE void clock_init(void)
 {
-	u32_t reg_val;
+	uint32_t reg_val;
 
 #ifdef CONFIG_SOC_ATMEL_SAME70_EXT_SLCK
 	/* Switch slow clock to the external 32 kHz crystal oscillator */
@@ -177,6 +178,14 @@ static ALWAYS_INLINE void clock_init(void)
 		;
 	}
 
+	/* Setup UPLL */
+	PMC->CKGR_UCKR = CKGR_UCKR_UPLLCOUNT(0x3Fu) | CKGR_UCKR_UPLLEN;
+
+	/* Wait for PLL lock */
+	while (!(PMC->PMC_SR & PMC_SR_LOCKU)) {
+		;
+	}
+
 	/*
 	 * Final setup of the Master Clock
 	 */
@@ -223,11 +232,10 @@ static ALWAYS_INLINE void clock_init(void)
  *
  * @return 0
  */
-static int atmel_same70_init(struct device *arg)
+static int atmel_same70_init(void)
 {
-	u32_t key;
+	uint32_t key;
 
-	ARG_UNUSED(arg);
 
 	key = irq_lock();
 
@@ -258,7 +266,7 @@ static int atmel_same70_init(struct device *arg)
 	/* Check that the CHIP CIDR matches the HAL one */
 	if (CHIPID->CHIPID_CIDR != CHIP_CIDR) {
 		LOG_WRN("CIDR mismatch: chip = 0x%08x vs HAL = 0x%08x",
-			(u32_t)CHIPID->CHIPID_CIDR, (u32_t)CHIP_CIDR);
+			(uint32_t)CHIPID->CHIPID_CIDR, (uint32_t)CHIP_CIDR);
 	}
 
 	return 0;

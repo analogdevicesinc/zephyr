@@ -4,14 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_l2_canbus, LOG_LEVEL_NONE);
 
-#include <net/net_core.h>
-#include <net/net_l2.h>
-#include <net/net_if.h>
-#include <net/net_pkt.h>
-#include <net/socket_can.h>
+#include <zephyr/net/net_core.h>
+#include <zephyr/net/net_l2.h>
+#include <zephyr/net/net_if.h>
+#include <zephyr/net/net_pkt.h>
+#include <zephyr/net/canbus.h>
 
 static inline enum net_verdict canbus_recv(struct net_if *iface,
 					   struct net_pkt *pkt)
@@ -30,14 +30,14 @@ static inline enum net_verdict canbus_recv(struct net_if *iface,
 
 static inline int canbus_send(struct net_if *iface, struct net_pkt *pkt)
 {
-	const struct canbus_api *api = net_if_get_device(iface)->driver_api;
+	const struct canbus_api *api = net_if_get_device(iface)->api;
 	int ret;
 
 	if (!api) {
 		return -ENOENT;
 	}
 
-	ret = api->send(net_if_get_device(iface), pkt);
+	ret = net_l2_send(api->send, net_if_get_device(iface), iface, pkt);
 	if (!ret) {
 		ret = net_pkt_get_len(pkt);
 		net_pkt_unref(pkt);

@@ -6,11 +6,11 @@
  */
 
 
-#include <zephyr.h>
-#include <ztest.h>
+#include <zephyr/kernel.h>
+#include <zephyr/ztest.h>
 
 
-#define STACKSIZE       (2048 + CONFIG_TEST_EXTRA_STACKSIZE)
+#define STACKSIZE       (2048 + CONFIG_TEST_EXTRA_STACK_SIZE)
 
 ZTEST_BMEM static int count;
 ZTEST_BMEM static int ret = TC_PASS;
@@ -19,6 +19,7 @@ void k_sys_fatal_error_handler(unsigned int reason, const z_arch_esf_t *esf)
 {
 	if (reason != K_ERR_STACK_CHK_FAIL) {
 		printk("wrong error type\n");
+		printk("PROJECT EXECUTION FAILED\n");
 		k_fatal_halt(reason);
 	}
 }
@@ -34,7 +35,6 @@ void check_input(const char *name, const char *input);
  *
  * @param name    caller identification string
  *
- * @return N/A
  */
 
 void print_loop(const char *name)
@@ -59,10 +59,9 @@ void print_loop(const char *name)
  * When stack protection feature is not enabled, the system crashes with
  * error like: Trying to execute code outside RAM or ROM.
  *
- * @return N/A
  */
 
-void check_input(const char *name, const char *input)
+void __attribute__((noinline)) check_input(const char *name, const char *input)
 {
 	/* Stack will overflow when input is more than 16 characters */
 	char buf[16];
@@ -78,7 +77,6 @@ void check_input(const char *name, const char *input)
  * feature is enabled.  Hence it will not execute the print_loop function
  * and will not set ret to TC_FAIL.
  *
- * @return N/A
  */
 void alternate_thread(void)
 {
@@ -113,25 +111,31 @@ static struct k_thread alt_thread_data;
  *
  * @ingroup kernel_memprotect_tests
  */
-
-void test_stackprot(void)
+ZTEST_USER(stackprot, test_stackprot)
 {
-	zassert_true(ret == TC_PASS, NULL);
+	zassert_true(ret == TC_PASS);
 	print_loop(__func__);
 }
 
-void test_create_alt_thread(void)
+/**
+ * @brief Test optional mechanism to detect stack overflow
+ *
+ * @details Test that the system provides an optional mechanism to detect
+ * when supervisor threads overflow stack memory buffer.
+ *
+ * @ingroup kernel_memprotect_tests
+ */
+ZTEST(stackprot, test_create_alt_thread)
 {
 	/* Start thread */
 	k_thread_create(&alt_thread_data, alt_thread_stack_area, STACKSIZE,
 			(k_thread_entry_t)alternate_thread, NULL, NULL, NULL,
 			K_PRIO_COOP(1), K_USER, K_NO_WAIT);
+
+	/* Note that this sleep is required on SMP platforms where
+	 * that thread will execute asynchronously!
+	 */
+	k_sleep(K_MSEC(100));
 }
 
-void test_main(void)
-{
-	ztest_test_suite(stackprot,
-			 ztest_unit_test(test_create_alt_thread),
-			 ztest_user_unit_test(test_stackprot));
-	ztest_run_test_suite(stackprot);
-}
+ZTEST_SUITE(stackprot, NULL, NULL, NULL, NULL, NULL);

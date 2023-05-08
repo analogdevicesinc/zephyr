@@ -6,7 +6,7 @@
 
 #include "test_fifo.h"
 
-#define TIMEOUT 100
+#define TIMEOUT K_MSEC(100)
 
 /**
  * @addtogroup kernel_fifo_tests
@@ -19,9 +19,9 @@
  * it should returns NULL.
  * @see k_fifo_init(), k_fifo_get()
  */
-void test_fifo_get_fail(void *p1, void *p2, void *p3)
+ZTEST(fifo_api, test_fifo_get_fail)
 {
-	struct k_fifo fifo;
+	static struct k_fifo fifo;
 
 	k_fifo_init(&fifo);
 	/**TESTPOINT: fifo get returns NULL*/

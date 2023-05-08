@@ -18,41 +18,35 @@
 #include "timer_model.h"
 #include "irq_ctrl.h"
 #include "posix_board_if.h"
-#include "posix_soc_if.h"
+#include "hw_counter.h"
+#include <zephyr/arch/posix/posix_soc_if.h>
 #include "posix_arch_internal.h"
-#include "sdl_events.h"
-#include <sys/util.h>
+#include <zephyr/sys/util.h>
 
 
-static u64_t simu_time; /* The actual time as known by the HW models */
-static u64_t end_of_time = NEVER; /* When will this device stop */
+static uint64_t simu_time; /* The actual time as known by the HW models */
+static uint64_t end_of_time = NEVER; /* When will this device stop */
 
 /* List of HW model timers: */
-extern u64_t hw_timer_timer; /* When should this timer_model be called */
-extern u64_t irq_ctrl_timer;
-#ifdef CONFIG_HAS_SDL
-extern u64_t sdl_event_timer;
-#endif
+extern uint64_t hw_timer_timer; /* When should this timer_model be called */
+extern uint64_t irq_ctrl_timer;
+extern uint64_t hw_counter_timer;
 
 static enum {
 	HWTIMER = 0,
 	IRQCNT,
-#ifdef CONFIG_HAS_SDL
-	SDLEVENTTIMER,
-#endif
+	HW_COUNTER,
 	NUMBER_OF_TIMERS,
 	NONE
 } next_timer_index = NONE;
 
-static u64_t *Timer_list[NUMBER_OF_TIMERS] = {
+static uint64_t *Timer_list[NUMBER_OF_TIMERS] = {
 	&hw_timer_timer,
 	&irq_ctrl_timer,
-#ifdef CONFIG_HAS_SDL
-	&sdl_event_timer,
-#endif
+	&hw_counter_timer,
 };
 
-static u64_t next_timer_time;
+static uint64_t next_timer_time;
 
 /* Have we received a SIGTERM or SIGINT */
 static volatile sig_atomic_t signaled_end;
@@ -102,15 +96,15 @@ static void hwm_sleep_until_next_timer(void)
 		/* LCOV_EXCL_START */
 		posix_print_warning("next_timer_time corrupted (%"PRIu64"<= %"
 				PRIu64", timer idx=%i)\n",
-				next_timer_time,
-				simu_time,
+				(uint64_t)next_timer_time,
+				(uint64_t)simu_time,
 				next_timer_index);
 		/* LCOV_EXCL_STOP */
 	}
 
 	if (signaled_end || (simu_time > end_of_time)) {
 		posix_print_trace("\nStopped at %.3Lfs\n",
-				((long double)simu_time)/1.0e6);
+				((long double)simu_time)/1.0e6L);
 		posix_exit(0);
 	}
 }
@@ -134,42 +128,37 @@ void hwm_find_next_timer(void)
 }
 
 /**
- * Entry point for the HW models
- * The HW models execute in an infinite loop until terminated
+ * Execute the next scheduled HW event/timer
  */
-void hwm_main_loop(void)
+void hwm_one_event(void)
 {
-	while (1) {
-		hwm_sleep_until_next_timer();
+	hwm_sleep_until_next_timer();
 
-		switch (next_timer_index) { /* LCOV_EXCL_BR_LINE */
-		case HWTIMER:
-			hwtimer_timer_reached();
-			break;
-		case IRQCNT:
-			hw_irq_ctrl_timer_triggered();
-			break;
-#ifdef CONFIG_HAS_SDL
-		case SDLEVENTTIMER:
-			sdl_handle_events();
-			break;
-#endif
-		default:
-			/* LCOV_EXCL_START */
-			posix_print_error_and_exit(
-					"next_timer_index corrupted\n");
-			break;
-			/* LCOV_EXCL_STOP */
-		}
-
-		hwm_find_next_timer();
+	switch (next_timer_index) { /* LCOV_EXCL_BR_LINE */
+	case HWTIMER:
+		hwtimer_timer_reached();
+		break;
+	case IRQCNT:
+		hw_irq_ctrl_timer_triggered();
+		break;
+	case HW_COUNTER:
+		hw_counter_triggered();
+		break;
+	default:
+		/* LCOV_EXCL_START */
+		posix_print_error_and_exit(
+					   "next_timer_index corrupted\n");
+		break;
+		/* LCOV_EXCL_STOP */
 	}
+
+	hwm_find_next_timer();
 }
 
 /**
  * Set the simulated time when the process will stop
  */
-void hwm_set_end_of_time(u64_t new_end_of_time)
+void hwm_set_end_of_time(uint64_t new_end_of_time)
 {
 	end_of_time = new_end_of_time;
 }
@@ -177,12 +166,12 @@ void hwm_set_end_of_time(u64_t new_end_of_time)
 /**
  * Return the current time as known by the device
  */
-u64_t hwm_get_time(void)
+uint64_t hwm_get_time(void)
 {
 	return simu_time;
 }
 
-u64_t posix_get_hw_cycle(void)
+uint64_t posix_get_hw_cycle(void)
 {
 	return hwm_get_time();
 }
@@ -194,6 +183,7 @@ void hwm_init(void)
 {
 	hwm_set_sig_handler();
 	hwtimer_init();
+	hw_counter_init();
 	hw_irq_ctrl_init();
 
 	hwm_find_next_timer();
@@ -209,5 +199,3 @@ void hwm_cleanup(void)
 	hwtimer_cleanup();
 	hw_irq_ctrl_cleanup();
 }
-
-

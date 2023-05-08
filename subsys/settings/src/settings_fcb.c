@@ -6,32 +6,53 @@
  */
 
 #include <errno.h>
-#include <fs/fcb.h>
+#include <stdbool.h>
+#include <zephyr/fs/fcb.h>
 #include <string.h>
 
-#include "settings/settings.h"
+#include <zephyr/settings/settings.h>
 #include "settings/settings_fcb.h"
 #include "settings_priv.h"
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_DECLARE(settings, CONFIG_SETTINGS_LOG_LEVEL);
+
+#if DT_HAS_CHOSEN(zephyr_settings_partition)
+#define SETTINGS_PARTITION DT_FIXED_PARTITION_ID(DT_CHOSEN(zephyr_settings_partition))
+#else
+#define SETTINGS_PARTITION FIXED_PARTITION_ID(storage_partition)
+#endif
 
 #define SETTINGS_FCB_VERS		1
 
-struct settings_fcb_load_cb_arg {
-	line_load_cb cb;
-	void *cb_arg;
-};
+int settings_backend_init(void);
 
 static int settings_fcb_load(struct settings_store *cs,
 			     const struct settings_load_arg *arg);
 static int settings_fcb_save(struct settings_store *cs, const char *name,
 			     const char *value, size_t val_len);
+static void *settings_fcb_storage_get(struct settings_store *cs);
 
 static const struct settings_store_itf settings_fcb_itf = {
 	.csi_load = settings_fcb_load,
 	.csi_save = settings_fcb_save,
+	.csi_storage_get = settings_fcb_storage_get
 };
+
+/**
+ * @brief Get the flash area id of the storage partition
+ *
+ * The implementation of this function provided is weak to let user defines its own function.
+ * This may prove useful for devices using bank swap, in that case the flash area id changes based
+ * on the bank swap state.
+ * See #47732
+ *
+ * @return Flash area id
+ */
+__weak int settings_fcb_get_flash_area(void)
+{
+	return SETTINGS_PARTITION;
+}
 
 int settings_fcb_src(struct settings_fcb *cf)
 {
@@ -41,7 +62,7 @@ int settings_fcb_src(struct settings_fcb *cf)
 	cf->cf_fcb.f_scratch_cnt = 1;
 
 	while (1) {
-		rc = fcb_init(DT_FLASH_AREA_STORAGE_ID, &cf->cf_fcb);
+		rc = fcb_init(settings_fcb_get_flash_area(), &cf->cf_fcb);
 		if (rc) {
 			return -EINVAL;
 		}
@@ -79,41 +100,88 @@ int settings_fcb_dst(struct settings_fcb *cf)
 	return 0;
 }
 
-static int settings_fcb_load_cb(struct fcb_entry_ctx *entry_ctx, void *arg)
+/**
+ * @brief Check if there is any duplicate of the current setting
+ *
+ * This function checks if there is any duplicated data further in the buffer.
+ *
+ * @param cf        FCB handler
+ * @param entry_ctx Current entry context
+ * @param name      The name of the current entry
+ *
+ * @retval false No duplicates found
+ * @retval true  Duplicate found
+ */
+static bool settings_fcb_check_duplicate(struct settings_fcb *cf,
+					const struct fcb_entry_ctx *entry_ctx,
+					const char * const name)
 {
-	struct settings_fcb_load_cb_arg *argp;
-	char buf[SETTINGS_MAX_NAME_LEN + SETTINGS_EXTRA_LEN + 1];
-	int rc;
+	struct fcb_entry_ctx entry2_ctx = *entry_ctx;
 
-	argp = (struct settings_fcb_load_cb_arg *)arg;
+	while (fcb_getnext(&cf->cf_fcb, &entry2_ctx.loc) == 0) {
+		char name2[SETTINGS_MAX_NAME_LEN + SETTINGS_EXTRA_LEN + 1];
+		size_t name2_len;
 
-	size_t len_read;
-
-	rc = settings_line_name_read(buf, sizeof(buf), &len_read,
-				     (void *)&entry_ctx->loc);
-	if (rc) {
-		return 0;
+		if (settings_line_name_read(name2, sizeof(name2), &name2_len,
+					    &entry2_ctx)) {
+			LOG_ERR("failed to load line");
+			continue;
+		}
+		name2[name2_len] = '\0';
+		if (!strcmp(name, name2)) {
+			return true;
+		}
 	}
-	buf[len_read] = '\0';
-
-	/*name, val-read_cb-ctx, val-off*/
-	/* take into account '=' separator after the name */
-	argp->cb(buf, (void *)&entry_ctx->loc, len_read + 1, argp->cb_arg);
-	return 0;
+	return false;
 }
 
-static int settings_fcb_load_priv(struct settings_store *cs, line_load_cb cb,
-				  void *cb_arg)
+static int read_entry_len(const struct fcb_entry_ctx *entry_ctx, off_t off)
 {
-	struct settings_fcb *cf = (struct settings_fcb *)cs;
-	struct settings_fcb_load_cb_arg arg;
+	if (off >= entry_ctx->loc.fe_data_len) {
+		return 0;
+	}
+	return entry_ctx->loc.fe_data_len - off;
+}
+
+static int settings_fcb_load_priv(struct settings_store *cs,
+				  line_load_cb cb,
+				  void *cb_arg,
+				  bool filter_duplicates)
+{
+	struct settings_fcb *cf = CONTAINER_OF(cs, struct settings_fcb, cf_store);
+	struct fcb_entry_ctx entry_ctx = {
+		{.fe_sector = NULL, .fe_elem_off = 0},
+		.fap = cf->cf_fcb.fap
+	};
 	int rc;
 
-	arg.cb = cb;
-	arg.cb_arg = cb_arg;
-	rc = fcb_walk(&cf->cf_fcb, 0, settings_fcb_load_cb, &arg);
-	if (rc) {
-		return -EINVAL;
+	while ((rc = fcb_getnext(&cf->cf_fcb, &entry_ctx.loc)) == 0) {
+		char name[SETTINGS_MAX_NAME_LEN + SETTINGS_EXTRA_LEN + 1];
+		size_t name_len;
+		int rc;
+		bool pass_entry = true;
+
+		rc = settings_line_name_read(name, sizeof(name), &name_len,
+					     (void *)&entry_ctx);
+		if (rc) {
+			LOG_ERR("Failed to load line name: %d", rc);
+			continue;
+		}
+		name[name_len] = '\0';
+
+		if (filter_duplicates &&
+		    (!read_entry_len(&entry_ctx, name_len+1) ||
+		     settings_fcb_check_duplicate(cf, &entry_ctx, name))) {
+			pass_entry = false;
+		}
+		/*name, val-read_cb-ctx, val-off*/
+		/* take into account '=' separator after the name */
+		if (pass_entry) {
+			cb(name, &entry_ctx, name_len + 1, cb_arg);
+		}
+	}
+	if (rc == -ENOTSUP) {
+		rc = 0;
 	}
 	return 0;
 }
@@ -121,9 +189,12 @@ static int settings_fcb_load_priv(struct settings_store *cs, line_load_cb cb,
 static int settings_fcb_load(struct settings_store *cs,
 			     const struct settings_load_arg *arg)
 {
-	return settings_fcb_load_priv(cs, settings_line_load_cb, (void *)arg);
+	return settings_fcb_load_priv(
+		cs,
+		settings_line_load_cb,
+		(void *)arg,
+		true);
 }
-
 
 static int read_handler(void *ctx, off_t off, char *buf, size_t *len)
 {
@@ -151,7 +222,7 @@ static void settings_fcb_compress(struct settings_fcb *cf)
 	char name1[SETTINGS_MAX_NAME_LEN + SETTINGS_EXTRA_LEN];
 	char name2[SETTINGS_MAX_NAME_LEN + SETTINGS_EXTRA_LEN];
 	int copy;
-	u8_t rbs;
+	uint8_t rbs;
 
 	rc = fcb_append_to_scratch(&cf->cf_fcb);
 	if (rc) {
@@ -253,26 +324,28 @@ static int write_handler(void *ctx, off_t off, char const *buf, size_t len)
 static int settings_fcb_save_priv(struct settings_store *cs, const char *name,
 				  const char *value, size_t val_len)
 {
-	struct settings_fcb *cf = (struct settings_fcb *)cs;
+	struct settings_fcb *cf = CONTAINER_OF(cs, struct settings_fcb, cf_store);
 	struct fcb_entry_ctx loc;
 	int len;
-	int rc;
+	int rc = -EINVAL;
 	int i;
-	u8_t wbs;
 
 	if (!name) {
 		return -EINVAL;
 	}
 
-	wbs = cf->cf_fcb.f_align;
 	len = settings_line_len_calc(name, val_len);
 
-	for (i = 0; i < cf->cf_fcb.f_sector_cnt - 1; i++) {
+	for (i = 0; i < cf->cf_fcb.f_sector_cnt; i++) {
 		rc = fcb_append(&cf->cf_fcb, len, &loc.loc);
 		if (rc != -ENOSPC) {
 			break;
 		}
-		settings_fcb_compress(cf);
+
+		/* FCB can compress up to cf->cf_fcb.f_sector_cnt - 1 times. */
+		if (i < (cf->cf_fcb.f_sector_cnt - 1)) {
+			settings_fcb_compress(cf);
+		}
 	}
 	if (rc) {
 		return -EINVAL;
@@ -307,18 +380,76 @@ static int settings_fcb_save(struct settings_store *cs, const char *name,
 	cdca.val = (char *)value;
 	cdca.is_dup = 0;
 	cdca.val_len = val_len;
-	settings_fcb_load_priv(cs, settings_line_dup_check_cb, &cdca);
+	settings_fcb_load_priv(cs, settings_line_dup_check_cb, &cdca, false);
 	if (cdca.is_dup == 1) {
 		return 0;
 	}
-	return settings_fcb_save_priv(cs, name, (char *)value, val_len);
+	return settings_fcb_save_priv(cs, name, value, val_len);
 }
 
 void settings_mount_fcb_backend(struct settings_fcb *cf)
 {
-	u8_t rbs;
+	uint8_t rbs;
 
 	rbs = cf->cf_fcb.f_align;
 
 	settings_line_io_init(read_handler, write_handler, get_len_cb, rbs);
+}
+
+int settings_backend_init(void)
+{
+	static struct flash_sector
+		settings_fcb_area[CONFIG_SETTINGS_FCB_NUM_AREAS + 1];
+	static struct settings_fcb config_init_settings_fcb = {
+		.cf_fcb.f_magic = CONFIG_SETTINGS_FCB_MAGIC,
+		.cf_fcb.f_sectors = settings_fcb_area,
+	};
+	uint32_t cnt = sizeof(settings_fcb_area) /
+		    sizeof(settings_fcb_area[0]);
+	int rc;
+	const struct flash_area *fap;
+
+	rc = flash_area_get_sectors(settings_fcb_get_flash_area(), &cnt,
+				    settings_fcb_area);
+	if (rc != 0 && rc != -ENOMEM) {
+		return rc;
+	}
+
+	config_init_settings_fcb.cf_fcb.f_sector_cnt = cnt;
+
+	rc = settings_fcb_src(&config_init_settings_fcb);
+	if (rc != 0) {
+		rc = flash_area_open(settings_fcb_get_flash_area(), &fap);
+		if (rc != 0) {
+			return rc;
+		}
+
+		rc = flash_area_erase(fap, 0, fap->fa_size);
+		flash_area_close(fap);
+
+		if (rc != 0) {
+			return rc;
+		}
+
+		rc = settings_fcb_src(&config_init_settings_fcb);
+		if (rc != 0) {
+			return rc;
+		}
+	}
+
+	rc = settings_fcb_dst(&config_init_settings_fcb);
+	if (rc != 0) {
+		return rc;
+	}
+
+	settings_mount_fcb_backend(&config_init_settings_fcb);
+
+	return rc;
+}
+
+static void *settings_fcb_storage_get(struct settings_store *cs)
+{
+	struct settings_fcb *cf = CONTAINER_OF(cs, struct settings_fcb, cf_store);
+
+	return &cf->cf_fcb;
 }

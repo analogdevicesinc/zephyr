@@ -1,9 +1,7 @@
-# Kconfig - MIMXRT1064-EVK board
-#
+# MIMXRT1064-EVK board
+
 # Copyright (c) 2018, NXP
-#
 # SPDX-License-Identifier: Apache-2.0
-#
 
 if BOARD_MIMXRT1064_EVK
 
@@ -14,75 +12,44 @@ choice CODE_LOCATION
 	default CODE_FLEXSPI2
 endchoice
 
-choice DATA_LOCATION
-	default DATA_SEMC
-endchoice
+config KSCAN
+	default y if LVGL
 
-if GPIO_MCUX_IGPIO
+config INPUT
+	default y if KSCAN
 
-config GPIO_MCUX_IGPIO_1
+if INPUT
+
+config INPUT_FT5336_INTERRUPT
 	default y
 
-config GPIO_MCUX_IGPIO_5
-	default y
-
-endif # GPIO_MCUX_IGPIO
-
-if I2C_MCUX_LPI2C
-
-config I2C_1
-	default y
-
-endif # I2C_MCUX_LPI2C
-
-if UART_MCUX_LPUART
-
-config UART_MCUX_LPUART_1
-	default y
-
-endif # UART_MCUX_LPUART
+endif # INPUT
 
 if NETWORKING
 
 config NET_L2_ETHERNET
 	default y
 
-config ETH_MCUX_0
-	default y if NET_L2_ETHERNET
+config ETH_MCUX_PHY_RESET
+	default y
 
 endif # NETWORKING
 
 if LVGL
 
-config LVGL_DISPLAY_DEV_NAME
-	default "ELCDIF_1"
+config LV_Z_POINTER_KSCAN
+	default y
 
-config LVGL_HOR_RES
-	default 480
-
-config LVGL_VER_RES
-	default 272
-
-config LVGL_VDB_SIZE
+config LV_Z_VDB_SIZE
 	default 16
 
-config LVGL_DPI
+config LV_Z_DPI
 	default 128
 
-config LVGL_BITS_PER_PIXEL
-	default 0
-
-choice LVGL_COLOR_DEPTH
-	default LVGL_COLOR_DEPTH_16
+choice LV_COLOR_DEPTH
+	default LV_COLOR_DEPTH_16
 endchoice
 
 endif # LVGL
-
-if PWM_MCUX
-
-config FLEXPWM2_PWM3
-	default y
-
-endif
 
 endif # BOARD_MIMXRT1064_EVK

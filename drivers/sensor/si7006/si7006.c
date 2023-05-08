@@ -4,16 +4,18 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <sensor.h>
-#include <kernel.h>
-#include <device.h>
-#include <init.h>
+#define DT_DRV_COMPAT silabs_si7006
+
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/init.h>
 #include <string.h>
-#include <sys/byteorder.h>
-#include <sys/__assert.h>
-#include <logging/log.h>
-#include <i2c.h>
-#include <logging/log.h>
+#include <zephyr/sys/byteorder.h>
+#include <zephyr/sys/__assert.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/drivers/i2c.h>
+#include <zephyr/logging/log.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include "si7006.h"
@@ -21,9 +23,13 @@
 LOG_MODULE_REGISTER(si7006, CONFIG_SENSOR_LOG_LEVEL);
 
 struct si7006_data {
-	struct device *i2c_dev;
-	u16_t temperature;
-	u16_t humidity;
+	const struct device *i2c_dev;
+	uint16_t temperature;
+	uint16_t humidity;
+};
+
+struct si7006_config {
+	struct i2c_dt_spec i2c;
 };
 
 /**
@@ -31,14 +37,16 @@ struct si7006_data {
  *
  * @return int 0 on success
  */
-static int si7006_get_humidity(struct device *i2c_dev,
-			       struct si7006_data *si_data)
+static int si7006_get_humidity(const struct device *dev)
 {
+	struct si7006_data *si_data = dev->data;
+	const struct si7006_config *config = dev->config;
 	int retval;
-	u8_t hum[2];
+	uint8_t hum[2];
 
-	retval = i2c_burst_read(i2c_dev, DT_INST_0_SILABS_SI7006_BASE_ADDRESS,
-		SI7006_MEAS_REL_HUMIDITY_MASTER_MODE, hum, sizeof(hum));
+	retval = i2c_burst_read_dt(&config->i2c,
+				   SI7006_MEAS_REL_HUMIDITY_MASTER_MODE, hum,
+				   sizeof(hum));
 
 	if (retval == 0) {
 		si_data->humidity = (hum[0] << 8) | hum[1];
@@ -52,17 +60,21 @@ static int si7006_get_humidity(struct device *i2c_dev,
 /**
  * @brief function to get temperature
  *
+ * Note that si7006_get_humidity must be called before calling
+ * si7006_get_old_temperature.
+ *
  * @return int 0 on success
  */
 
-static int si7006_get_temperature(struct device *i2c_dev,
-				  struct si7006_data *si_data)
+static int si7006_get_old_temperature(const struct device *dev)
 {
-	u8_t temp[2];
+	struct si7006_data *si_data = dev->data;
+	const struct si7006_config *config = dev->config;
+	uint8_t temp[2];
 	int retval;
 
-	retval = i2c_burst_read(i2c_dev, DT_INST_0_SILABS_SI7006_BASE_ADDRESS,
-		SI7006_MEAS_TEMP_MASTER_MODE, temp, sizeof(temp));
+	retval = i2c_burst_read_dt(&config->i2c, SI7006_READ_OLD_TEMP, temp,
+				   sizeof(temp));
 
 	if (retval == 0) {
 		si_data->temperature = (temp[0] << 8) | temp[1];
@@ -78,14 +90,14 @@ static int si7006_get_temperature(struct device *i2c_dev,
  *
  * @return 0
  */
-static int si7006_sample_fetch(struct device *dev, enum sensor_channel chan)
+static int si7006_sample_fetch(const struct device *dev,
+			       enum sensor_channel chan)
 {
 	int retval;
-	struct si7006_data *si_data = dev->driver_data;
 
-	retval = si7006_get_temperature(si_data->i2c_dev, si_data);
+	retval = si7006_get_humidity(dev);
 	if (retval == 0) {
-		retval = si7006_get_humidity(si_data->i2c_dev, si_data);
+		retval = si7006_get_old_temperature(dev);
 	}
 
 	return retval;
@@ -96,15 +108,16 @@ static int si7006_sample_fetch(struct device *dev, enum sensor_channel chan)
  *
  * @return -ENOTSUP for unsupported channels
  */
-static int si7006_channel_get(struct device *dev, enum sensor_channel chan,
+static int si7006_channel_get(const struct device *dev,
+			      enum sensor_channel chan,
 			      struct sensor_value *val)
 {
-	struct si7006_data *si_data = dev->driver_data;
+	struct si7006_data *si_data = dev->data;
 
 	if (chan == SENSOR_CHAN_AMBIENT_TEMP) {
 
-		s32_t temp_ucelcius = ((17572 * (s32_t)si_data->temperature)
-				       / 65536) * 10000;
+		int32_t temp_ucelcius = (((17572 * (int32_t)si_data->temperature)
+					/ 65536) - 4685) * 10000;
 
 		val->val1 = temp_ucelcius / 1000000;
 		val->val2 = temp_ucelcius % 1000000;
@@ -114,7 +127,7 @@ static int si7006_channel_get(struct device *dev, enum sensor_channel chan,
 		return 0;
 	} else if (chan == SENSOR_CHAN_HUMIDITY) {
 
-		s32_t relative_humidity = (((125 * (s32_t)si_data->humidity)
+		int32_t relative_humidity = (((125 * (int32_t)si_data->humidity)
 					    / 65536) - 6) * 1000000;
 
 		val->val1 = relative_humidity / 1000000;
@@ -134,21 +147,18 @@ static const struct sensor_driver_api si7006_api = {
 };
 
 /**
- * @brief initiasize the sensor
+ * @brief initialize the sensor
  *
  * @return 0 for success
  */
 
-static int si7006_init(struct device *dev)
+static int si7006_init(const struct device *dev)
 {
-	struct si7006_data *drv_data = dev->driver_data;
+	const struct si7006_config *config = dev->config;
 
-	drv_data->i2c_dev = device_get_binding(
-		DT_INST_0_SILABS_SI7006_BUS_NAME);
-
-	if (!drv_data->i2c_dev) {
-		LOG_ERR("i2c master not found.");
-		return -EINVAL;
+	if (!device_is_ready(config->i2c.bus)) {
+		LOG_ERR("Bus device is not ready");
+		return -ENODEV;
 	}
 
 	LOG_DBG("si7006 init ok");
@@ -156,7 +166,15 @@ static int si7006_init(struct device *dev)
 	return 0;
 }
 
-static struct si7006_data si_data;
+#define SI7006_DEFINE(inst)								\
+	static struct si7006_data si7006_data_##inst;					\
+											\
+	static const struct si7006_config si7006_config_##inst = {			\
+		.i2c = I2C_DT_SPEC_INST_GET(inst),					\
+	};										\
+											\
+	SENSOR_DEVICE_DT_INST_DEFINE(inst, si7006_init, NULL,				\
+			      &si7006_data_##inst, &si7006_config_##inst,		\
+			      POST_KERNEL, CONFIG_SENSOR_INIT_PRIORITY, &si7006_api);	\
 
-DEVICE_AND_API_INIT(si7006, DT_INST_0_SILABS_SI7006_LABEL, si7006_init,
-	&si_data, NULL, POST_KERNEL, CONFIG_SENSOR_INIT_PRIORITY, &si7006_api);
+DT_INST_FOREACH_STATUS_OKAY(SI7006_DEFINE)

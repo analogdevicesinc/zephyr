@@ -1,0 +1,5 @@
+common:
+  tags: bluetooth host
+tests:
+  bluetooth.host.bt_buf_get_type.default:
+    type: unit

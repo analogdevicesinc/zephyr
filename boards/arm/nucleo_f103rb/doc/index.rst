@@ -21,8 +21,6 @@ The STM32 Nucleo board comes with the STM32 comprehensive software HAL library t
 with various packaged software examples.
 
 .. image:: img/nucleo_f103rb.jpg
-   :width: 500px
-   :height: 367px
    :align: center
    :alt: Nucleo F103RB
 
@@ -95,6 +93,14 @@ The Zephyr nucleo_f103rb board configuration supports the following hardware fea
 +-----------+------------+-------------------------------------+
 | ADC       | on-chip    | ADC Controller                      |
 +-----------+------------+-------------------------------------+
+| DMA       | on-chip    | Direct Memory Access                |
++-----------+------------+-------------------------------------+
+| die-temp  | on-chip    | die temperature sensor              |
++-----------+------------+-------------------------------------+
+| COUNTER   | on-chip    | rtc                                 |
++-----------+------------+-------------------------------------+
+| RTC       | on-chip    | rtc                                 |
++-----------+------------+-------------------------------------+
 
 Other hardware features are not yet supported in this Zephyr port.
 
@@ -111,10 +117,8 @@ capable except for analog inputs.
 
 Board connectors:
 -----------------
-.. image:: img/nucleo_f103rb_connectors.png
-   :width: 800px
+.. image:: img/nucleo_f103rb_connectors.jpg
    :align: center
-   :height: 619px
    :alt: Nucleo F103RB connectors
 
 Default Zephyr Peripheral Mapping:
@@ -122,8 +126,9 @@ Default Zephyr Peripheral Mapping:
 
 - UART_1 TX/RX : PA9/PA10
 - UART_2 TX/RX : PA2/PA3 (ST-Link Virtual COM Port)
-- SPI1 NSS/SCK/MISO/MOSI : PA4/PA5/PA6/PA7 (Arduino SPI)
+- SPI1 NSS/SCK/MISO/MOSI : PB6/PA5/PA6/PA7 (Arduino SPI)
 - SPI2 SCK/MISO/MOSI : PB12/PB13/PB14/PB15
+- I2C1 SDA/SCL: PB9/PB8 (Arduino I2C)
 - PWM1_CH1: PA8
 - USER_PB : PC13
 - LD1 : PA5
@@ -162,7 +167,7 @@ You can debug an application in the usual way.  Here is an example for the
 :ref:`blinky-sample` application.
 
 .. zephyr-app-commands::
-   :zephyr-app: samples/basic-blinky
+   :zephyr-app: samples/basic/blinky
    :board: nucleo_f103rb
    :maybe-skip-config:
    :goals: debug

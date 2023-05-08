@@ -4,19 +4,19 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_ethernet_mgmt, CONFIG_NET_L2_ETHERNET_LOG_LEVEL);
 
 #include <errno.h>
 
-#include <net/net_core.h>
-#include <net/net_if.h>
-#include <net/ethernet_mgmt.h>
+#include <zephyr/net/net_core.h>
+#include <zephyr/net/net_if.h>
+#include <zephyr/net/ethernet_mgmt.h>
 
-static inline bool is_hw_caps_supported(struct device *dev,
+static inline bool is_hw_caps_supported(const struct device *dev,
 					enum ethernet_hw_caps caps)
 {
-	const struct ethernet_api *api = dev->driver_api;
+	const struct ethernet_api *api = dev->api;
 
 	if (!api) {
 		return false;
@@ -25,13 +25,13 @@ static inline bool is_hw_caps_supported(struct device *dev,
 	return !!(api->get_capabilities(dev) & caps);
 }
 
-static int ethernet_set_config(u32_t mgmt_request,
+static int ethernet_set_config(uint32_t mgmt_request,
 			       struct net_if *iface,
 			       void *data, size_t len)
 {
 	struct ethernet_req_params *params = (struct ethernet_req_params *)data;
-	struct device *dev = net_if_get_device(iface);
-	const struct ethernet_api *api = dev->driver_api;
+	const struct device *dev = net_if_get_device(iface);
+	const struct ethernet_api *api = dev->api;
 	struct ethernet_config config = { 0 };
 	enum ethernet_config_type type;
 
@@ -56,8 +56,6 @@ static int ethernet_set_config(u32_t mgmt_request,
 		config.auto_negotiation = params->auto_negotiation;
 		type = ETHERNET_CONFIG_TYPE_AUTO_NEG;
 	} else if (mgmt_request == NET_REQUEST_ETHERNET_SET_LINK) {
-		type = ETHERNET_CONFIG_TYPE_LINK;
-
 		if (params->l.link_10bt) {
 			if (!is_hw_caps_supported(dev,
 						  ETHERNET_LINK_10BASE_T)) {
@@ -139,6 +137,54 @@ static int ethernet_set_config(u32_t mgmt_request,
 		memcpy(&config.qav_param, &params->qav_param,
 		       sizeof(struct ethernet_qav_param));
 		type = ETHERNET_CONFIG_TYPE_QAV_PARAM;
+	} else if (mgmt_request == NET_REQUEST_ETHERNET_SET_QBV_PARAM) {
+		if (!is_hw_caps_supported(dev, ETHERNET_QBV)) {
+			return -ENOTSUP;
+		}
+
+		/* Validate params which need global validating */
+		if (params->qbv_param.state == ETHERNET_QBV_STATE_TYPE_OPER) {
+			/* Read-only parameters */
+			return -EINVAL;
+		}
+
+		if (params->qbv_param.type == ETHERNET_QBV_PARAM_TYPE_TIME &&
+		    (params->qbv_param.cycle_time.nanosecond >= 1000000000 ||
+		     params->qbv_param.base_time.fract_nsecond >= 1000000000)) {
+			return -EINVAL;
+		}
+
+		memcpy(&config.qbv_param, &params->qbv_param,
+		       sizeof(struct ethernet_qbv_param));
+		type = ETHERNET_CONFIG_TYPE_QBV_PARAM;
+	} else if (mgmt_request == NET_REQUEST_ETHERNET_SET_QBU_PARAM) {
+		if (!is_hw_caps_supported(dev, ETHERNET_QBU)) {
+			return -ENOTSUP;
+		}
+
+		if (params->qbu_param.type ==
+		    ETHERNET_QBR_PARAM_TYPE_LINK_PARTNER_STATUS) {
+			/* Read only parameter */
+			return -EINVAL;
+		}
+
+		/* All other fields are rw */
+
+		memcpy(&config.qbu_param, &params->qbu_param,
+		       sizeof(struct ethernet_qbu_param));
+		type = ETHERNET_CONFIG_TYPE_QBU_PARAM;
+	} else if (mgmt_request == NET_REQUEST_ETHERNET_SET_TXTIME_PARAM) {
+		if (!is_hw_caps_supported(dev, ETHERNET_TXTIME)) {
+			return -ENOTSUP;
+		}
+
+		if (net_if_is_up(iface)) {
+			return -EACCES;
+		}
+
+		memcpy(&config.txtime_param, &params->txtime_param,
+		       sizeof(struct ethernet_txtime_param));
+		type = ETHERNET_CONFIG_TYPE_TXTIME_PARAM;
 	} else if (mgmt_request == NET_REQUEST_ETHERNET_SET_PROMISC_MODE) {
 		if (!is_hw_caps_supported(dev, ETHERNET_PROMISC_MODE)) {
 			return -ENOTSUP;
@@ -168,16 +214,25 @@ NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_ETHERNET_SET_MAC_ADDRESS,
 NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_ETHERNET_SET_QAV_PARAM,
 				  ethernet_set_config);
 
+NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_ETHERNET_SET_QBV_PARAM,
+				  ethernet_set_config);
+
+NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_ETHERNET_SET_QBU_PARAM,
+				  ethernet_set_config);
+
+NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_ETHERNET_SET_TXTIME_PARAM,
+				  ethernet_set_config);
+
 NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_ETHERNET_SET_PROMISC_MODE,
 				  ethernet_set_config);
 
-static int ethernet_get_config(u32_t mgmt_request,
+static int ethernet_get_config(uint32_t mgmt_request,
 			       struct net_if *iface,
 			       void *data, size_t len)
 {
 	struct ethernet_req_params *params = (struct ethernet_req_params *)data;
-	struct device *dev = net_if_get_device(iface);
-	const struct ethernet_api *api = dev->driver_api;
+	const struct device *dev = net_if_get_device(iface);
+	const struct ethernet_api *api = dev->api;
 	struct ethernet_config config = { 0 };
 	int ret = 0;
 	enum ethernet_config_type type;
@@ -244,6 +299,126 @@ static int ethernet_get_config(u32_t mgmt_request,
 			break;
 		}
 
+	} else if (mgmt_request == NET_REQUEST_ETHERNET_GET_PORTS_NUM) {
+		type = ETHERNET_CONFIG_TYPE_PORTS_NUM;
+
+		ret = api->get_config(dev, type, &config);
+		if (ret) {
+			return ret;
+		}
+
+		params->ports_num = config.ports_num;
+
+	} else if (mgmt_request == NET_REQUEST_ETHERNET_GET_QBV_PARAM) {
+		if (!is_hw_caps_supported(dev, ETHERNET_QBV)) {
+			return -ENOTSUP;
+		}
+
+		config.qbv_param.port_id = params->qbv_param.port_id;
+		config.qbv_param.type = params->qbv_param.type;
+		config.qbv_param.state = params->qbv_param.state;
+
+		if (config.qbv_param.type ==
+		    ETHERNET_QBV_PARAM_TYPE_GATE_CONTROL_LIST) {
+			config.qbv_param.gate_control.row =
+				params->qbv_param.gate_control.row;
+		}
+
+		type = ETHERNET_CONFIG_TYPE_QBV_PARAM;
+
+		ret = api->get_config(dev, type, &config);
+		if (ret) {
+			return ret;
+		}
+
+		switch (config.qbv_param.type) {
+		case ETHERNET_QBV_PARAM_TYPE_STATUS:
+			params->qbv_param.enabled = config.qbv_param.enabled;
+			break;
+		case ETHERNET_QBV_PARAM_TYPE_TIME:
+			memcpy(&params->qbv_param.cycle_time,
+			       &config.qbv_param.cycle_time,
+			       sizeof(params->qbv_param.cycle_time));
+			memcpy(&params->qbv_param.base_time,
+			       &config.qbv_param.base_time,
+			       sizeof(params->qbv_param.base_time));
+			params->qbv_param.extension_time =
+				config.qbv_param.extension_time;
+			break;
+		case ETHERNET_QBV_PARAM_TYPE_GATE_CONTROL_LIST_LEN:
+			params->qbv_param.gate_control_list_len =
+				config.qbv_param.gate_control_list_len;
+			break;
+		case ETHERNET_QBV_PARAM_TYPE_GATE_CONTROL_LIST:
+			memcpy(&params->qbv_param.gate_control,
+			       &config.qbv_param.gate_control,
+			       sizeof(params->qbv_param.gate_control));
+			break;
+		}
+
+	} else if (mgmt_request == NET_REQUEST_ETHERNET_GET_QBU_PARAM) {
+		if (!is_hw_caps_supported(dev, ETHERNET_QBU)) {
+			return -ENOTSUP;
+		}
+
+		config.qbu_param.port_id = params->qbu_param.port_id;
+		config.qbu_param.type = params->qbu_param.type;
+
+		type = ETHERNET_CONFIG_TYPE_QBU_PARAM;
+
+		ret = api->get_config(dev, type, &config);
+		if (ret) {
+			return ret;
+		}
+
+		switch (config.qbu_param.type) {
+		case ETHERNET_QBU_PARAM_TYPE_STATUS:
+			params->qbu_param.enabled = config.qbu_param.enabled;
+			break;
+		case ETHERNET_QBU_PARAM_TYPE_RELEASE_ADVANCE:
+			params->qbu_param.release_advance =
+				config.qbu_param.release_advance;
+			break;
+		case ETHERNET_QBU_PARAM_TYPE_HOLD_ADVANCE:
+			params->qbu_param.hold_advance =
+				config.qbu_param.hold_advance;
+			break;
+		case ETHERNET_QBR_PARAM_TYPE_LINK_PARTNER_STATUS:
+			params->qbu_param.link_partner_status =
+				config.qbu_param.link_partner_status;
+			break;
+		case ETHERNET_QBR_PARAM_TYPE_ADDITIONAL_FRAGMENT_SIZE:
+			params->qbu_param.additional_fragment_size =
+				config.qbu_param.additional_fragment_size;
+			break;
+		case ETHERNET_QBU_PARAM_TYPE_PREEMPTION_STATUS_TABLE:
+			memcpy(&params->qbu_param.frame_preempt_statuses,
+			     &config.qbu_param.frame_preempt_statuses,
+			     sizeof(params->qbu_param.frame_preempt_statuses));
+			break;
+		}
+
+	} else if (mgmt_request == NET_REQUEST_ETHERNET_GET_TXTIME_PARAM) {
+		if (!is_hw_caps_supported(dev, ETHERNET_TXTIME)) {
+			return -ENOTSUP;
+		}
+
+		config.txtime_param.queue_id = params->txtime_param.queue_id;
+		config.txtime_param.type = params->txtime_param.type;
+
+		type = ETHERNET_CONFIG_TYPE_TXTIME_PARAM;
+
+		ret = api->get_config(dev, type, &config);
+		if (ret) {
+			return ret;
+		}
+
+		switch (config.txtime_param.type) {
+		case ETHERNET_TXTIME_PARAM_TYPE_ENABLE_QUEUES:
+			params->txtime_param.enable_txtime =
+				config.txtime_param.enable_txtime;
+			break;
+		}
 	} else {
 		return -EINVAL;
 	}
@@ -257,6 +432,18 @@ NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_ETHERNET_GET_PRIORITY_QUEUES_NUM,
 NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_ETHERNET_GET_QAV_PARAM,
 				  ethernet_get_config);
 
+NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_ETHERNET_GET_PORTS_NUM,
+				  ethernet_get_config);
+
+NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_ETHERNET_GET_QBV_PARAM,
+				  ethernet_get_config);
+
+NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_ETHERNET_GET_QBU_PARAM,
+				  ethernet_get_config);
+
+NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_ETHERNET_GET_TXTIME_PARAM,
+				  ethernet_get_config);
+
 void ethernet_mgmt_raise_carrier_on_event(struct net_if *iface)
 {
 	net_mgmt_event_notify(NET_EVENT_ETHERNET_CARRIER_ON, iface);
@@ -267,7 +454,7 @@ void ethernet_mgmt_raise_carrier_off_event(struct net_if *iface)
 	net_mgmt_event_notify(NET_EVENT_ETHERNET_CARRIER_OFF, iface);
 }
 
-void ethernet_mgmt_raise_vlan_enabled_event(struct net_if *iface, u16_t tag)
+void ethernet_mgmt_raise_vlan_enabled_event(struct net_if *iface, uint16_t tag)
 {
 #if defined(CONFIG_NET_MGMT_EVENT_INFO)
 	net_mgmt_event_notify_with_info(NET_EVENT_ETHERNET_VLAN_TAG_ENABLED,
@@ -278,7 +465,7 @@ void ethernet_mgmt_raise_vlan_enabled_event(struct net_if *iface, u16_t tag)
 #endif
 }
 
-void ethernet_mgmt_raise_vlan_disabled_event(struct net_if *iface, u16_t tag)
+void ethernet_mgmt_raise_vlan_disabled_event(struct net_if *iface, uint16_t tag)
 {
 #if defined(CONFIG_NET_MGMT_EVENT_INFO)
 	net_mgmt_event_notify_with_info(NET_EVENT_ETHERNET_VLAN_TAG_DISABLED,

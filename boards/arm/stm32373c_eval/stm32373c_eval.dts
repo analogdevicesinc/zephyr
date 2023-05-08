@@ -6,10 +6,11 @@
 
 /dts-v1/;
 #include <st/f3/stm32f373Xc.dtsi>
+#include <st/f3/stm32f373v(8-b-c)tx-pinctrl.dtsi>
 
 / {
 	model = "STMicroelectronics STM32373C-EVAL board";
-	compatible = "st,stm32373c-eval", "st,stm32f373";
+	compatible = "st,stm32373c-eval";
 
 	chosen {
 		zephyr,console = &usart2;
@@ -21,7 +22,7 @@
 	leds {
 		compatible = "gpio-leds";
 		green_led_2: led_2 {
-			gpios = <&gpioc 1 GPIO_INT_ACTIVE_HIGH>;
+			gpios = <&gpioc 1 GPIO_ACTIVE_HIGH>;
 			label = "User LD2";
 		};
 	};
@@ -30,24 +31,51 @@
 		compatible = "gpio-keys";
 		user_button: button {
 			label = "Key";
-			gpios = <&gpioa 2 GPIO_INT_ACTIVE_LOW>;
+			gpios = <&gpioa 2 GPIO_ACTIVE_LOW>;
 		};
 	};
 
 	aliases {
 		led0 = &green_led_2;
 		sw0 = &user_button;
+		watchdog0 = &iwdg;
 	};
 };
 
+&clk_lsi {
+	status = "okay";
+};
+
+&clk_hse {
+	clock-frequency = <DT_FREQ_M(8)>;
+	status = "okay";
+};
+
+&pll {
+	prediv = <1>;
+	mul = <9>;
+	clocks = <&clk_hse>;
+	status = "okay";
+};
+
+&rcc {
+	clocks = <&pll>;
+	clock-frequency = <DT_FREQ_M(72)>;
+	ahb-prescaler = <1>;
+	apb1-prescaler = <2>;
+	apb2-prescaler = <2>;
+};
+
 &usart2 {
-	current-speed = <115200>;
-	pinctrl-0 = <&usart2_pins_d>;
+	pinctrl-0 = <&usart2_tx_pd5 &usart2_rx_pd6>;
 	pinctrl-names = "default";
+	current-speed = <115200>;
 	status = "okay";
 };
 
 &rtc {
+	clocks = <&rcc STM32_CLOCK_BUS_APB1 0x10000000>,
+		 <&rcc STM32_SRC_LSI RTC_SEL(2)>;
 	status = "okay";
 };
 

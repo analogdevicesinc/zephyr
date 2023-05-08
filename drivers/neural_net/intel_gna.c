@@ -13,26 +13,24 @@
  * Gaussian Mixture Model and Neural Network Accelerator (GNA)
  */
 
-#include <kernel.h>
-#include <string.h>
-#include <device.h>
-#include <drivers/gna.h>
+#define DT_DRV_COMPAT intel_gna
 
+#include <zephyr/kernel.h>
+#include <string.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/gna.h>
+
+#include <memory.h>
 #include "intel_gna.h"
 
 #define LOG_LEVEL CONFIG_NEURAL_NET_LOG_LEVEL
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/irq.h>
 LOG_MODULE_REGISTER(neural_net);
 
-#define DEV_NAME(dev) ((dev)->config->name)
-#define DEV_CFG(dev) \
-	((struct intel_gna_config *const)(dev)->config->config_info)
-#define DEV_DATA(dev) \
-	((struct intel_gna_data *const)(dev)->driver_data)
-
 #if LOG_LEVEL >= LOG_LEVEL_DBG
-static void intel_gna_regs_dump(struct device *dev);
-static void intel_gna_config_desc_dump(struct device *dev);
+static void intel_gna_regs_dump(const struct device *dev);
+static void intel_gna_config_desc_dump(const struct device *dev);
 #define INTEL_GNA_REGS_DUMP(dev)	intel_gna_regs_dump((dev))
 #define INTEL_GNA_CONFIG_DESC_DUMP(dev)	intel_gna_config_desc_dump((dev))
 #else
@@ -42,15 +40,15 @@ static void intel_gna_config_desc_dump(struct device *dev);
 
 #define GNA_MODEL_VIRT_BASE_DEFAULT	0
 
-static struct device DEVICE_NAME_GET(gna);
+DEVICE_DECLARE(gna);
 static struct intel_gna_config_desc __aligned(GNA_PG_SIZE_IN_BYTES)
 	gna_config_desc;
 static struct intel_gna_page_table __aligned(GNA_PG_SIZE_IN_BYTES)
 	gna_page_table[GNA_NUM_PG_TABLES_NEEDED];
 
-static void intel_gna_interrupt_handler(struct device *dev)
+static void intel_gna_interrupt_handler(const struct device *dev)
 {
-	struct intel_gna_data *const gna = DEV_DATA(dev);
+	struct intel_gna_data *const gna = dev->data;
 
 	volatile struct intel_gna_regs *regs = gna->regs;
 	struct intel_gna_pending_resp pending_resp;
@@ -81,9 +79,9 @@ static void intel_gna_interrupt_handler(struct device *dev)
 	if (k_msgq_get(&gna->request_queue, &pending_req, K_NO_WAIT) != 0) {
 		LOG_ERR("Pending request queue is empty");
 	} else {
-		SOC_DCACHE_INVALIDATE(pending_req.model->output,
+		sys_cache_data_invd_range(pending_req.model->output,
 				pending_req.output_len);
-		/* copy output from the model buffer to applciation buffer */
+		/* copy output from the model buffer to application buffer */
 		memcpy(pending_req.output, pending_req.model->output,
 				pending_req.output_len);
 		pending_resp.response.output = pending_req.output;
@@ -122,16 +120,16 @@ static void gna_work_handler(struct k_work *work)
 static int intel_gna_setup_page_table(void *physical, size_t size,
 		void *virtual)
 {
-	u32_t page;
-	u32_t dir_index;
-	u32_t table_index;
-	u32_t virt_addr = (u32_t)virtual;
-	u32_t phys_addr = (u32_t)physical;
+	uint32_t page;
+	uint32_t dir_index;
+	uint32_t table_index;
+	uint32_t virt_addr = (uint32_t)virtual;
+	uint32_t phys_addr = (uint32_t)physical;
 
 	LOG_DBG("physical %p size %u virtual %p", physical, size, virtual);
 
-	if (((phys_addr + size - DT_L2_SRAM_BASE) > DT_L2_SRAM_SIZE) ||
-			(phys_addr < DT_L2_SRAM_BASE)) {
+	if (((phys_addr + size - L2_SRAM_BASE) > L2_SRAM_SIZE) ||
+			(phys_addr < L2_SRAM_BASE)) {
 		LOG_ERR("model at %p of size %u exceeds L2 SRAM space",
 				physical, size);
 		return -EINVAL;
@@ -143,7 +141,7 @@ static int intel_gna_setup_page_table(void *physical, size_t size,
 	if (dir_index >= GNA_NUM_PG_TABLES_NEEDED) {
 		LOG_ERR("virtual addr %p is in page dir %u (max %u)",
 				virtual, dir_index,
-				(u32_t)GNA_NUM_PG_TABLES_NEEDED);
+				(uint32_t)GNA_NUM_PG_TABLES_NEEDED);
 		return -EINVAL;
 	}
 
@@ -165,10 +163,10 @@ static int intel_gna_setup_page_table(void *physical, size_t size,
 	return 0;
 }
 
-static int intel_gna_initialize(struct device *dev)
+static int intel_gna_initialize(const struct device *dev)
 {
-	struct intel_gna_data *const gna = DEV_DATA(dev);
-	u32_t page_dir_entry;
+	struct intel_gna_data *const gna = dev->data;
+	uint32_t page_dir_entry;
 
 	k_msgq_init(&gna->request_queue, (char *)gna->requests,
 			sizeof(struct intel_gna_pending_req),
@@ -186,31 +184,31 @@ static int intel_gna_initialize(struct device *dev)
 	/* initialize the configuration descriptor's page directory table */
 	for (int page = 0; page < GNA_CONFIG_DESC_PG_DIR_SIZE; page++) {
 		page_dir_entry = (page < GNA_NUM_PG_TABLES_NEEDED) ?
-			GNA_PG_DIR_ENTRY(&gna_page_table[page]) : (u32_t)-1;
+			GNA_PG_DIR_ENTRY(&gna_page_table[page]) : (uint32_t)-1;
 		gna_config_desc.pagedir[page] = page_dir_entry;
 		LOG_DBG("%s: page %u pagetable %08x",
-			DEV_NAME(dev), page, gna_config_desc.pagedir[page]);
+			dev->name, page, gna_config_desc.pagedir[page]);
 	}
 	gna_config_desc.vamaxaddr = GNA_ADDRESSABLE_MEM_SIZE;
 	LOG_DBG("%s: max virtual address %08x",
-			DEV_NAME(dev), gna_config_desc.vamaxaddr);
+			dev->name, gna_config_desc.vamaxaddr);
 
 	/* flush cache */
-	SOC_DCACHE_FLUSH((void *)&gna_config_desc, sizeof(gna_config_desc));
+	sys_cache_data_flush_range((void *)&gna_config_desc, sizeof(gna_config_desc));
 
 	LOG_INF("%s: initialized (max %u models & max %u pending requests)",
-			DEV_NAME(dev), GNA_MAX_NUM_MODELS,
+			dev->name, GNA_MAX_NUM_MODELS,
 			GNA_REQUEST_QUEUE_LEN);
 	LOG_INF("%s: max addressable memory %u MB",
-			DEV_NAME(dev), GNA_ADDRESSABLE_MEM_SIZE >> 20);
+			dev->name, GNA_ADDRESSABLE_MEM_SIZE >> 20);
 	LOG_INF("%s: %u page table(s) at %p and %u bytes",
-			DEV_NAME(dev), (u32_t)GNA_NUM_PG_TABLES_NEEDED,
+			dev->name, (uint32_t)GNA_NUM_PG_TABLES_NEEDED,
 			gna_page_table, sizeof(gna_page_table));
 	LOG_INF("%s: configuration descriptor at %p",
-			DEV_NAME(dev), &gna_config_desc);
+			dev->name, &gna_config_desc);
 
 	/* register interrupt handler */
-	IRQ_CONNECT(INTEL_GNA_IRQ_ID, INTEL_GNA_IRQ_PRIORITY,
+	IRQ_CONNECT(DT_INST_IRQN(0), DT_INST_IRQ(0, priority),
 			intel_gna_interrupt_handler, DEVICE_GET(gna), 0);
 	/* enable interrupt */
 	irq_enable(INTEL_GNA_IRQ_ID);
@@ -219,10 +217,10 @@ static int intel_gna_initialize(struct device *dev)
 	return 0;
 }
 
-static int intel_gna_configure(struct device *dev, struct gna_config *cfg)
+static int intel_gna_configure(const struct device *dev,
+			       struct gna_config *cfg)
 {
-	struct intel_gna_config *const dev_cfg = DEV_CFG(dev);
-	struct intel_gna_data *const gna = DEV_DATA(dev);
+	struct intel_gna_data *const gna = dev->data;
 	volatile struct intel_gna_regs *regs = gna->regs;
 
 	if (gna->state != GNA_STATE_INITIALIZED) {
@@ -236,7 +234,7 @@ static int intel_gna_configure(struct device *dev, struct gna_config *cfg)
 		return -EINVAL;
 	}
 
-	dev_cfg->config = *cfg;
+	gna->config = *cfg;
 
 	regs->gnactrl |= GNA_CTRL_OPER_MODEL_XNN |
 		GNA_CTRL_ERR_INTR_ENABLE | GNA_CTRL_COMPL_INTR_ENABLE;
@@ -267,21 +265,22 @@ static int intel_gna_configure(struct device *dev, struct gna_config *cfg)
 	INTEL_GNA_CONFIG_DESC_DUMP(dev);
 
 	LOG_INF("Device %s (version %u.%u) configured with power mode %u",
-			DEV_NAME(dev), regs->gnaversion >> 1,
-			(u32_t)(regs->gnaversion & BIT(0)),
+			dev->name, regs->gnaversion >> 1,
+			(uint32_t)(regs->gnaversion & BIT(0)),
 			CONFIG_INTEL_GNA_POWER_MODE);
 
 	gna->state = GNA_STATE_IDLE;
 	return 0;
 }
 
-static int intel_gna_register_model(struct device *dev,
-		struct gna_model_info *model, void **model_handle)
+static int intel_gna_register_model(const struct device *dev,
+				    struct gna_model_info *model,
+				    void **model_handle)
 {
-	struct intel_gna_data *const gna = DEV_DATA(dev);
+	struct intel_gna_data *const gna = dev->data;
 	struct intel_gna_model *gna_model;
 	struct gna_model_header *header;
-	u32_t ro_size, rw_size;
+	uint32_t ro_size, rw_size = 0;
 	void *virtual_base;
 	void *ro_region;
 
@@ -302,8 +301,8 @@ static int intel_gna_register_model(struct device *dev,
 	}
 
 	/* check for 64B alignment */
-	if (((u32_t)model->rw_region & BIT_MASK(6)) ||
-			((u32_t)model->ro_region & BIT_MASK(6))) {
+	if (((uint32_t)model->rw_region & BIT_MASK(6)) ||
+			((uint32_t)model->ro_region & BIT_MASK(6))) {
 		LOG_ERR("rw_region / ro_region not aligned to 64B");
 		return -EINVAL;
 	}
@@ -335,11 +334,11 @@ static int intel_gna_register_model(struct device *dev,
 
 		intel_gna_setup_page_table(model->rw_region, rw_size,
 				virtual_base);
-		SOC_DCACHE_FLUSH(model->rw_region, rw_size);
+		sys_cache_data_flush_range(model->rw_region, rw_size);
 	}
 
 	if (model->ro_region == NULL) {
-		ro_region = (void *)((u32_t)model->rw_region + rw_size);
+		ro_region = (void *)((uint32_t)model->rw_region + rw_size);
 	} else {
 		ro_region = model->ro_region;
 	}
@@ -351,28 +350,28 @@ static int intel_gna_register_model(struct device *dev,
 
 	/* setup page table entries for RO region */
 	intel_gna_setup_page_table(ro_region, ro_size,
-			(void *)((u32_t)virtual_base + rw_size));
+			(void *)((uint32_t)virtual_base + rw_size));
 
-	SOC_DCACHE_FLUSH(ro_region, ro_size);
-	SOC_DCACHE_FLUSH(gna_page_table, sizeof(gna_page_table));
+	sys_cache_data_flush_range(ro_region, ro_size);
+	sys_cache_data_flush_range(gna_page_table, sizeof(gna_page_table));
 
 	/* copy the model pointers */
 	gna_model->model = *model;
 	gna_model->vabase = virtual_base;
-	gna_model->input = (void *)((u32_t)model->rw_region +
-			*(u32_t *)((u32_t)model->rw_region +
+	gna_model->input = (void *)((uint32_t)model->rw_region +
+			*(uint32_t *)((uint32_t)model->rw_region +
 				header->input_ptr_offset));
-	gna_model->output = (void *)((u32_t)model->rw_region +
-			*(u32_t *)((u32_t)model->rw_region +
+	gna_model->output = (void *)((uint32_t)model->rw_region +
+			*(uint32_t *)((uint32_t)model->rw_region +
 				header->output_ptr_offset));
 	gna_model->registered = true;
 
 	LOG_INF("model->rw_region: %p", model->rw_region);
 	LOG_INF("input offset: %u",
-		*(u32_t *)((u32_t)model->rw_region + header->input_ptr_offset));
+		*(uint32_t *)((uint32_t)model->rw_region + header->input_ptr_offset));
 	LOG_INF("gna_model->input: %p", gna_model->input);
 	LOG_INF("output offset: %u",
-		*(u32_t *)((u32_t)model->rw_region +
+		*(uint32_t *)((uint32_t)model->rw_region +
 			header->output_ptr_offset));
 	LOG_INF("gna_model->output: %p", gna_model->output);
 	LOG_DBG("returning model handle: %p", gna_model);
@@ -380,9 +379,10 @@ static int intel_gna_register_model(struct device *dev,
 	return 0;
 }
 
-static int intel_gna_deregister_model(struct device *dev, void *model_handle)
+static int intel_gna_deregister_model(const struct device *dev,
+				      void *model_handle)
 {
-	struct intel_gna_data *const gna = DEV_DATA(dev);
+	struct intel_gna_data *const gna = dev->data;
 	struct intel_gna_model *gna_model;
 
 	if (model_handle == NULL) {
@@ -397,10 +397,11 @@ static int intel_gna_deregister_model(struct device *dev, void *model_handle)
 	return 0;
 }
 
-static int intel_gna_infer(struct device *dev, struct gna_inference_req *req,
-		gna_callback callback)
+static int intel_gna_infer(const struct device *dev,
+			   struct gna_inference_req *req,
+			   gna_callback callback)
 {
-	struct intel_gna_data *const gna = DEV_DATA(dev);
+	struct intel_gna_data *const gna = dev->data;
 	volatile struct intel_gna_regs *regs = gna->regs;
 	struct intel_gna_pending_req pending_req;
 	struct gna_model_header *header;
@@ -460,12 +461,12 @@ static int intel_gna_infer(struct device *dev, struct gna_inference_req *req,
 
 	/* copy input */
 	memcpy(handle->input, req->input, input_size);
-	SOC_DCACHE_FLUSH(handle->input, input_size);
+	sys_cache_data_flush_range(handle->input, input_size);
 
 	/* assign layer descriptor base address to configuration descriptor */
-	gna_config_desc.labase = (u32_t)handle->vabase;
-	gna_config_desc.lacnt = (u16_t)header->layer_count;
-	SOC_DCACHE_FLUSH(&gna_config_desc, sizeof(gna_config_desc));
+	gna_config_desc.labase = (uint32_t)handle->vabase;
+	gna_config_desc.lacnt = (uint16_t)header->layer_count;
+	sys_cache_data_flush_range(&gna_config_desc, sizeof(gna_config_desc));
 
 	gna->state = GNA_STATE_ACTIVE;
 	regs->gnactrl = (regs->gnactrl & ~GNA_CTRL_INTR_DISABLE) |
@@ -475,9 +476,9 @@ static int intel_gna_infer(struct device *dev, struct gna_inference_req *req,
 }
 
 #if LOG_LEVEL >= LOG_LEVEL_DBG
-static void intel_gna_regs_dump(struct device *dev)
+static void intel_gna_regs_dump(const struct device *dev)
 {
-	struct intel_gna_data *const gna = DEV_DATA(dev);
+	struct intel_gna_data *const gna = dev->data;
 	volatile struct intel_gna_regs *regs = gna->regs;
 
 	LOG_DBG("gnasts     :%08x", regs->gnasts);
@@ -496,9 +497,9 @@ static void intel_gna_regs_dump(struct device *dev)
 	LOG_DBG("gnaversion :%08x", regs->gnaversion);
 }
 
-static void intel_gna_config_desc_dump(struct device *dev)
+static void intel_gna_config_desc_dump(const struct device *dev)
 {
-	struct intel_gna_data *const gna = DEV_DATA(dev);
+	struct intel_gna_data *const gna = dev->data;
 	volatile struct intel_gna_regs *regs = gna->regs;
 
 	LOG_DBG("gnadesbase :%08x", regs->gnadesbase);
@@ -514,12 +515,12 @@ static const struct gna_driver_api gna_driver_api = {
 	.infer			= intel_gna_infer,
 };
 
-static struct intel_gna_config intel_gna_config;
 static struct intel_gna_data intel_gna_driver_data = {
-	.regs = (volatile struct intel_gna_regs *)INTEL_GNA_BASE_ADDR,
+	.regs = (volatile struct intel_gna_regs *)DT_INST_REG_ADDR(0),
 };
 
-DEVICE_AND_API_INIT(gna, CONFIG_INTEL_GNA_NAME, intel_gna_initialize,
-		    (void *)&intel_gna_driver_data, &intel_gna_config,
-		    POST_KERNEL, CONFIG_INTEL_GNA_INIT_PRIORITY,
-		    &gna_driver_api);
+DEVICE_DT_INST_DEFINE(0, intel_gna_initialize,
+		      NULL,
+		      (void *)&intel_gna_driver_data, NULL,
+		      POST_KERNEL, CONFIG_INTEL_GNA_INIT_PRIORITY,
+		      &gna_driver_api);

@@ -13,8 +13,7 @@ addition to a base ISA to tailor the processor for a particular application.
 
 For more information, see https://ip.cadence.com/ipportfolio/tensilica-ip/xtensa-customizable
 
-.. figure:: img/xt-sim.png
-     :width: 612px
+.. figure:: img/xt-sim.jpg
      :align: center
      :alt: Xtensa Xplorer (Eclipse base frontend for xt-sim)
 
@@ -25,7 +24,6 @@ Hardware
 
 The following Xtensa cores are officially supported:
 
-- Intel S1000
 - sample_controller
 
 System Clock
@@ -132,7 +130,7 @@ The file "soc/xtensa/linker_more.ld" contains Zephyr-specific linker
 sections that should be added to the default linker script linker.ld (inside
 SECTIONS region). If you are not using a linker script, you must create one
 and add these sections. The memory segment and PHDR should be replaced by
-appropriate values. See :zephyr_file:`soc/xtensa/hifi3_bd5/linker.ld` for an example.
+appropriate values.
 
 The linker script should be named ``linker.ld`` and placed in the directory
 ``soc/xtensa/${XTENSA_CORE}``.
@@ -141,7 +139,7 @@ Configuring build
 =================
 
 .. zephyr-app-commands::
-   :zephyr-app: tests/kernel/test_build
+   :zephyr-app: samples/hello_world
    :goals: menuconfig
 
 Below is an example of usage for typical configuration:
@@ -180,4 +178,3 @@ References
 **********
 
 .. _Xtensa tools: https://ip.cadence.com/support/sdk-evaluation-request
-

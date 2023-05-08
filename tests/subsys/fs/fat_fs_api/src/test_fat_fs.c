@@ -4,12 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/*
- * @filesystem
- * @brief test Zephyr file system generic features
- * to demonstrates the ZEPHYR File System APIs
- */
-
 #include "test_fat.h"
 
 static int test_statvfs(void)
@@ -35,5 +29,5 @@ static int test_statvfs(void)
 
 void test_fat_fs(void)
 {
-	zassert_true(test_statvfs() == TC_PASS, NULL);
+	zassert_true(test_statvfs() == TC_PASS);
 }

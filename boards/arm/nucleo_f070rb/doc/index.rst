@@ -21,8 +21,6 @@ The STM32 Nucleo board comes with the STM32 comprehensive software HAL library t
 with various packaged software examples.
 
 .. image:: img/nucleo_f070rb.jpg
-   :width: 500px
-   :height: 367px
    :align: center
    :alt: Nucleo F070RB
 
@@ -112,10 +110,8 @@ capable except for analog inputs.
 
 Board connectors:
 -----------------
-.. image:: img/nucleo_f070rb_connectors.png
-   :width: 800px
+.. image:: img/nucleo_f070rb_connectors.jpg
    :align: center
-   :height: 619px
    :alt: Nucleo F070RB connectors
 
 Default Zephyr Peripheral Mapping:
@@ -125,7 +121,7 @@ Default Zephyr Peripheral Mapping:
 - UART_2 TX/RX : PA2/PA3 (ST-Link Virtual COM Port)
 - I2C1 SCL/SDA : PB8/PB9 (Arduino I2C)
 - I2C2 SCL/SDA : PB10/PB11
-- SPI1 SCK/MISO/MOSI : PA5/PA6/PA7 (Arduino SPI)
+- SPI1 NSS/SCK/MISO/MOSI : PB6/PA5/PA6/PA7 (Arduino SPI)
 - SPI2 SCK/MISO/MOSI : PB13/PB14/PB15
 - USER_PB : PC13
 - LD1 : PA5

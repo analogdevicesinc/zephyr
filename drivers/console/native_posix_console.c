@@ -6,9 +6,9 @@
 
 #include <stdio.h>
 #include <ctype.h>
-#include "init.h"
-#include "kernel.h"
-#include "console/console.h"
+#include <zephyr/init.h>
+#include <zephyr/kernel.h>
+#include <zephyr/console/console.h>
 #include "posix_board_if.h"
 #include <string.h>
 #include <sys/time.h>
@@ -39,8 +39,10 @@ static void native_posix_stdout_init(void)
 	setvbuf(stdout, NULL, _IOLBF, 512);
 	setvbuf(stderr, NULL, _IOLBF, 512);
 
+#ifdef CONFIG_PRINTK
 	extern void __printk_hook_install(int (*fn)(int));
 	__printk_hook_install(putchar);
+#endif
 }
 
 /**
@@ -61,10 +63,10 @@ void posix_flush_stdout(void)
 
 static struct k_fifo *avail_queue;
 static struct k_fifo *lines_queue;
-static u8_t (*completion_cb)(char *line, u8_t len);
+static uint8_t (*completion_cb)(char *line, uint8_t len);
 static bool stdin_is_tty;
 
-static K_THREAD_STACK_DEFINE(stack, CONFIG_ARCH_POSIX_RECOMMENDED_STACK_SIZE);
+static K_KERNEL_STACK_DEFINE(stack, CONFIG_ARCH_POSIX_RECOMMENDED_STACK_SIZE);
 static struct k_thread native_stdio_thread;
 
 static inline void found_eof(void)
@@ -91,9 +93,9 @@ static inline void found_eof(void)
  * return > 0 if it was a directive (command starts with '!')
  * return 2 if the driver directive requires to pause processing input
  */
-static int catch_directive(char *s, s32_t *towait)
+static int catch_directive(char *s, int32_t *towait)
 {
-	while (*s != 0  && isspace(*s)) {
+	while (*s != 0  && isspace(*s) != 0) {
 		s++;
 	}
 
@@ -155,10 +157,10 @@ static int stdin_not_ready(void)
  * This function returns how long the thread should wait in ms,
  * before checking again the stdin buffer
  */
-static s32_t attempt_read_from_stdin(void)
+static int32_t attempt_read_from_stdin(void)
 {
 	static struct console_input *cmd;
-	s32_t towait = CONFIG_NATIVE_STDIN_POLL_PERIOD;
+	int32_t towait = CONFIG_NATIVE_STDIN_POLL_PERIOD;
 
 	while (1) {
 		char *ret;
@@ -213,7 +215,7 @@ static s32_t attempt_read_from_stdin(void)
 
 		/* Remove a possible end of line and other trailing spaces */
 		last = (int)strlen(cmd->line) - 1;
-		while ((last >= 0) && isspace(cmd->line[last])) {
+		while ((last >= 0) && isspace(cmd->line[last]) != 0) {
 			cmd->line[last--] = 0;
 		}
 
@@ -249,16 +251,15 @@ static void native_stdio_runner(void *p1, void *p2, void *p3)
 	stdin_is_tty = isatty(STDIN_FILENO);
 
 	while (1) {
-		s32_t wait_time = attempt_read_from_stdin();
+		int32_t wait_time = attempt_read_from_stdin();
 
 		k_sleep(wait_time);
 	}
 }
 #endif /* CONFIG_NATIVE_POSIX_STDIN_CONSOLE */
 
-static int native_posix_console_init(struct device *arg)
+static int native_posix_console_init(void)
 {
-	ARG_UNUSED(arg);
 
 #if defined(CONFIG_NATIVE_POSIX_STDOUT_CONSOLE)
 	native_posix_stdout_init();
@@ -269,4 +270,3 @@ static int native_posix_console_init(struct device *arg)
 
 SYS_INIT(native_posix_console_init, PRE_KERNEL_1,
 	CONFIG_NATIVE_POSIX_CONSOLE_INIT_PRIORITY);
-

@@ -4,17 +4,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
+#include <zephyr/kernel.h>
 #include <string.h>
-#include <sys/printk.h>
+#include <zephyr/sys/printk.h>
 #include "sample_instance.h"
 #include "sample_module.h"
 #include "ext_log_system.h"
 #include "ext_log_system_adapter.h"
-#include <logging/log_ctrl.h>
-#include <app_memory/app_memdomain.h>
+#include <zephyr/logging/log_ctrl.h>
+#include <zephyr/app_memory/app_memdomain.h>
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(main);
 
 #ifdef CONFIG_USERSPACE
@@ -30,7 +30,7 @@ static struct k_mem_partition *app_parts[] = {
 #endif /* CONFIG_USERSPACE */
 
 /* size of stack area used by each thread */
-#define STACKSIZE 1024
+#define STACKSIZE (1024)
 
 extern void sample_module_func(void);
 
@@ -44,7 +44,7 @@ SAMPLE_INSTANCE_DEFINE(app_part, inst2);
 #include <soc.h>
 #endif
 
-static u32_t timestamp_get(void)
+static uint32_t timestamp_get(void)
 {
 #ifdef CONFIG_SOC_FAMILY_NRF
 	return NRF_RTC1->COUNTER;
@@ -53,32 +53,13 @@ static u32_t timestamp_get(void)
 #endif
 }
 
-static u32_t timestamp_freq(void)
+static uint32_t timestamp_freq(void)
 {
 #ifdef CONFIG_SOC_FAMILY_NRF
 	return 32768 / (NRF_RTC1->PRESCALER + 1);
 #else
 	return sys_clock_hw_cycles_per_sec();
 #endif
-}
-
-/**
- * @brief Function for finding source ID based on source name.
- *
- * @param name Source name
- *
- * @return Source ID.
- */
-static int log_source_id_get(const char *name)
-{
-
-	for (int i = 0; i < log_src_cnt_get(CONFIG_LOG_DOMAIN_ID); i++) {
-		if (strcmp(log_source_name_get(CONFIG_LOG_DOMAIN_ID, i), name)
-		    == 0) {
-			return i;
-		}
-	}
-	return -1;
 }
 
 /**
@@ -175,20 +156,24 @@ static void severity_levels_showcase(void)
 
 /**
  * @brief Function demonstrates how transient strings can be logged.
- *
- * Logger ensures that allocated buffers are freed when log message is
- * processed.
  */
-static void log_strdup_showcase(void)
+static void log_transient_string_showcase(void)
 {
 	char transient_str[] = "transient_string";
 
 	printk("String logging showcase.\n");
 
-	LOG_INF("Logging transient string:%s", log_strdup(transient_str));
+	LOG_INF("Logging transient string:%s", transient_str);
 
 	/* Overwrite transient string to show that the logger has a copy. */
 	transient_str[0] = '\0';
+}
+
+static void wait_on_log_flushed(void)
+{
+	while (log_buffered_cnt()) {
+		k_sleep(K_MSEC(5));
+	}
 }
 
 /**
@@ -200,32 +185,58 @@ static void log_strdup_showcase(void)
  */
 static void performance_showcase(void)
 {
-	volatile u32_t current_timestamp;
-	volatile u32_t start_timestamp;
-	u32_t per_sec;
-	u32_t cnt = 0U;
-	u32_t window = 2U;
+/* Arbitrary limit when LOG_MODE_IMMEDIATE is enabled. */
+#define LOG_IMMEDIATE_TEST_MESSAGES_LIMIT 50
+#define MSG_SIZE (sizeof(struct log_msg) + 2 * sizeof(void *) + sizeof(int))
+
+	volatile uint32_t current_timestamp;
+	volatile uint32_t start_timestamp;
+	uint32_t limit = COND_CODE_1(CONFIG_LOG_MODE_IMMEDIATE,
+			     (LOG_IMMEDIATE_TEST_MESSAGES_LIMIT),
+			     (CONFIG_LOG_BUFFER_SIZE / MSG_SIZE));
+	uint32_t per_sec;
+	uint32_t cnt = 0U;
+	uint32_t window = 2U;
 
 	printk("Logging performance showcase.\n");
-
-	start_timestamp = timestamp_get();
-
-	while (start_timestamp == timestamp_get()) {
-#if (CONFIG_ARCH_POSIX)
-		k_busy_wait(100);
-#endif
-	}
-
-	start_timestamp = timestamp_get();
+	wait_on_log_flushed();
 
 	do {
-		LOG_INF("performance test - log message %d", cnt);
-		cnt++;
-		current_timestamp = timestamp_get();
-#if (CONFIG_ARCH_POSIX)
-		k_busy_wait(100);
-#endif
-	} while (current_timestamp < (start_timestamp + window));
+		cnt = 0;
+		start_timestamp = timestamp_get();
+
+		while (start_timestamp == timestamp_get()) {
+			Z_SPIN_DELAY(100);
+		}
+
+		start_timestamp = timestamp_get();
+
+		do {
+			LOG_INF("performance test - log message %d", cnt);
+			cnt++;
+			current_timestamp = timestamp_get();
+			Z_SPIN_DELAY(100);
+		} while (current_timestamp < (start_timestamp + window));
+
+		wait_on_log_flushed();
+
+		/* If limit exceeded then some messages might be dropped which
+		 * degraded performance. Decrease window size.
+		 * If less than half of limit is reached then it means that
+		 * window can be increased to improve precision.
+		 */
+		if (cnt >= limit) {
+			if (window >= 2) {
+				window /= 2;
+			} else {
+				break;
+			}
+		} else if (cnt < (limit / 2)) {
+			window *= 2;
+		} else {
+			break;
+		}
+	} while (1);
 
 	per_sec = (cnt * timestamp_freq()) / window;
 	printk("Estimated logging capabilities: %d messages/second\n", per_sec);
@@ -240,18 +251,13 @@ static void external_log_system_showcase(void)
 	ext_log_system_foo();
 }
 
-static void wait_on_log_flushed(void)
-{
-	while (log_buffered_cnt()) {
-		k_sleep(5);
-	}
-}
-
 static void log_demo_thread(void *p1, void *p2, void *p3)
 {
-	bool usermode = _is_user_context();
+	bool usermode = k_is_user_context();
 
-	k_sleep(100);
+	(void)log_set_tag("demo_tag");
+
+	k_sleep(K_MSEC(100));
 
 	printk("\n\t---=< RUNNING LOGGER DEMO FROM %s THREAD >=---\n\n",
 		(usermode) ? "USER" : "KERNEL");
@@ -263,21 +269,21 @@ static void log_demo_thread(void *p1, void *p2, void *p3)
 	/* Re-enabling filters before processing.
 	 * Note: Same filters are used to for gathering logs and processing.
 	 */
-	log_filter_set(NULL, CONFIG_LOG_DOMAIN_ID,
+	log_filter_set(NULL, Z_LOG_LOCAL_DOMAIN_ID,
 		       log_source_id_get(sample_module_name_get()),
 		       CONFIG_LOG_DEFAULT_LEVEL);
 
-	log_filter_set(NULL, CONFIG_LOG_DOMAIN_ID,
+	log_filter_set(NULL, Z_LOG_LOCAL_DOMAIN_ID,
 		       log_source_id_get(INST1_NAME),
 		       CONFIG_LOG_DEFAULT_LEVEL);
 
-	log_filter_set(NULL, CONFIG_LOG_DOMAIN_ID,
+	log_filter_set(NULL, Z_LOG_LOCAL_DOMAIN_ID,
 		       log_source_id_get(INST2_NAME),
 		       CONFIG_LOG_DEFAULT_LEVEL);
 
 	wait_on_log_flushed();
 
-	log_strdup_showcase();
+	log_transient_string_showcase();
 
 	severity_levels_showcase();
 
@@ -305,7 +311,11 @@ static void log_demo_supervisor(void *p1, void *p2, void *p3)
 	log_demo_thread(p1, p2, p3);
 
 #ifdef CONFIG_USERSPACE
-	k_mem_domain_init(&app_domain, ARRAY_SIZE(app_parts), app_parts);
+	int ret = k_mem_domain_init(&app_domain, ARRAY_SIZE(app_parts), app_parts);
+
+	__ASSERT(ret == 0, "k_mem_domain_init() failed %d\n", ret);
+	ARG_UNUSED(ret);
+
 	k_mem_domain_add_thread(&app_domain, k_current_get());
 	k_thread_user_mode_enter(log_demo_thread, p1, p2, p3);
 #endif

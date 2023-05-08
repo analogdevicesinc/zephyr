@@ -9,34 +9,38 @@
 #ifndef ZEPHYR_ARCH_ARC_INCLUDE_SWAP_MACROS_H_
 #define ZEPHYR_ARCH_ARC_INCLUDE_SWAP_MACROS_H_
 
-#include <kernel_structs.h>
+#include <zephyr/kernel_structs.h>
 #include <offsets_short.h>
-#include <toolchain.h>
-#include <arch/cpu.h>
+#include <zephyr/toolchain.h>
+#include <zephyr/arch/cpu.h>
+#include <zephyr/arch/arc/tool-compat.h>
+#include <zephyr/arch/arc/asm-compat/assembler.h>
+#include <zephyr/kernel.h>
+#include "../core/dsp/swap_dsp_macros.h"
 
 #ifdef _ASMLANGUAGE
 
-/* entering this macro, current is in r2 */
+/* save callee regs of current thread in r2 */
 .macro _save_callee_saved_regs
 
-	sub_s sp, sp, ___callee_saved_stack_t_SIZEOF
+	SUBR sp, sp, ___callee_saved_stack_t_SIZEOF
 
 	/* save regs on stack */
-	st_s r13, [sp, ___callee_saved_stack_t_r13_OFFSET]
-	st_s r14, [sp, ___callee_saved_stack_t_r14_OFFSET]
-	st_s r15, [sp, ___callee_saved_stack_t_r15_OFFSET]
-	st r16, [sp, ___callee_saved_stack_t_r16_OFFSET]
-	st r17, [sp, ___callee_saved_stack_t_r17_OFFSET]
-	st r18, [sp, ___callee_saved_stack_t_r18_OFFSET]
-	st r19, [sp, ___callee_saved_stack_t_r19_OFFSET]
-	st r20, [sp, ___callee_saved_stack_t_r20_OFFSET]
-	st r21, [sp, ___callee_saved_stack_t_r21_OFFSET]
-	st r22, [sp, ___callee_saved_stack_t_r22_OFFSET]
-	st r23, [sp, ___callee_saved_stack_t_r23_OFFSET]
-	st r24, [sp, ___callee_saved_stack_t_r24_OFFSET]
-	st r25, [sp, ___callee_saved_stack_t_r25_OFFSET]
-	st r26, [sp, ___callee_saved_stack_t_r26_OFFSET]
-	st fp,  [sp, ___callee_saved_stack_t_fp_OFFSET]
+	STR r13, sp, ___callee_saved_stack_t_r13_OFFSET
+	STR r14, sp, ___callee_saved_stack_t_r14_OFFSET
+	STR r15, sp, ___callee_saved_stack_t_r15_OFFSET
+	STR r16, sp, ___callee_saved_stack_t_r16_OFFSET
+	STR r17, sp, ___callee_saved_stack_t_r17_OFFSET
+	STR r18, sp, ___callee_saved_stack_t_r18_OFFSET
+	STR r19, sp, ___callee_saved_stack_t_r19_OFFSET
+	STR r20, sp, ___callee_saved_stack_t_r20_OFFSET
+	STR r21, sp, ___callee_saved_stack_t_r21_OFFSET
+	STR r22, sp, ___callee_saved_stack_t_r22_OFFSET
+	STR r23, sp, ___callee_saved_stack_t_r23_OFFSET
+	STR r24, sp, ___callee_saved_stack_t_r24_OFFSET
+	STR r25, sp, ___callee_saved_stack_t_r25_OFFSET
+	STR r26, sp, ___callee_saved_stack_t_r26_OFFSET
+	STR fp,  sp, ___callee_saved_stack_t_fp_OFFSET
 
 #ifdef CONFIG_USERSPACE
 #ifdef CONFIG_ARC_HAS_SECURE
@@ -56,17 +60,18 @@
 	st_s r13, [sp, ___callee_saved_stack_t_user_sp_OFFSET]
 #endif
 #endif
-	st r30, [sp, ___callee_saved_stack_t_r30_OFFSET]
+	STR r30, sp, ___callee_saved_stack_t_r30_OFFSET
 
 #ifdef CONFIG_ARC_HAS_ACCL_REGS
-	st r58, [sp, ___callee_saved_stack_t_r58_OFFSET]
-	st r59, [sp, ___callee_saved_stack_t_r59_OFFSET]
+	STR r58, sp, ___callee_saved_stack_t_r58_OFFSET
+#ifndef CONFIG_64BIT
+	STR r59, sp, ___callee_saved_stack_t_r59_OFFSET
+#endif /* !CONFIG_64BIT */
 #endif
 
-#ifdef CONFIG_FP_SHARING
+#ifdef CONFIG_FPU_SHARING
 	ld_s r13, [r2, ___thread_base_t_user_options_OFFSET]
-	/* K_FP_REGS is bit 1 */
-	bbit0 r13, 1, 1f
+	bbit0 r13, K_FP_IDX, fpu_skip_save
 	lr r13, [_ARC_V2_FPU_STATUS]
 	st_s r13, [sp, ___callee_saved_stack_t_fpu_status_OFFSET]
 	lr r13, [_ARC_V2_FPU_CTRL]
@@ -82,27 +87,28 @@
 	lr r13, [_ARC_V2_FPU_DPFP2H]
 	st_s r13, [sp, ___callee_saved_stack_t_dpfp2h_OFFSET]
 #endif
-1 :
 #endif
-
+fpu_skip_save :
+	_save_dsp_regs
 	/* save stack pointer in struct k_thread */
-	st sp, [r2, _thread_offset_to_sp]
+	STR sp, r2, _thread_offset_to_sp
 .endm
 
-/* entering this macro, current is in r2 */
+/* load the callee regs of thread (in r2)*/
 .macro _load_callee_saved_regs
 	/* restore stack pointer from struct k_thread */
-	ld sp, [r2, _thread_offset_to_sp]
+	LDR sp, r2, _thread_offset_to_sp
 
 #ifdef CONFIG_ARC_HAS_ACCL_REGS
-	ld r58, [sp, ___callee_saved_stack_t_r58_OFFSET]
-	ld r59, [sp, ___callee_saved_stack_t_r59_OFFSET]
+	LDR r58, sp, ___callee_saved_stack_t_r58_OFFSET
+#ifndef CONFIG_64BIT
+	LDR r59, sp, ___callee_saved_stack_t_r59_OFFSET
+#endif /* !CONFIG_64BIT */
 #endif
 
-#ifdef CONFIG_FP_SHARING
+#ifdef CONFIG_FPU_SHARING
 	ld_s r13, [r2, ___thread_base_t_user_options_OFFSET]
-	/* K_FP_REGS is bit 1 */
-	bbit0 r13, 1, 2f
+	bbit0 r13, K_FP_IDX, fpu_skip_load
 
 	ld_s r13, [sp, ___callee_saved_stack_t_fpu_status_OFFSET]
 	sr r13, [_ARC_V2_FPU_STATUS]
@@ -119,9 +125,9 @@
 	ld_s r13, [sp, ___callee_saved_stack_t_dpfp2h_OFFSET]
 	sr r13, [_ARC_V2_FPU_DPFP2H]
 #endif
-2 :
 #endif
-
+fpu_skip_load :
+	_load_dsp_regs
 #ifdef CONFIG_USERSPACE
 #ifdef CONFIG_ARC_HAS_SECURE
 #ifdef CONFIG_ARC_SECURE_FIRMWARE
@@ -141,29 +147,30 @@
 #endif
 #endif
 
-	ld_s r13, [sp, ___callee_saved_stack_t_r13_OFFSET]
-	ld_s r14, [sp, ___callee_saved_stack_t_r14_OFFSET]
-	ld_s r15, [sp, ___callee_saved_stack_t_r15_OFFSET]
-	ld r16, [sp, ___callee_saved_stack_t_r16_OFFSET]
-	ld r17, [sp, ___callee_saved_stack_t_r17_OFFSET]
-	ld r18, [sp, ___callee_saved_stack_t_r18_OFFSET]
-	ld r19, [sp, ___callee_saved_stack_t_r19_OFFSET]
-	ld r20, [sp, ___callee_saved_stack_t_r20_OFFSET]
-	ld r21, [sp, ___callee_saved_stack_t_r21_OFFSET]
-	ld r22, [sp, ___callee_saved_stack_t_r22_OFFSET]
-	ld r23, [sp, ___callee_saved_stack_t_r23_OFFSET]
-	ld r24, [sp, ___callee_saved_stack_t_r24_OFFSET]
-	ld r25, [sp, ___callee_saved_stack_t_r25_OFFSET]
-	ld r26, [sp, ___callee_saved_stack_t_r26_OFFSET]
-	ld fp,  [sp, ___callee_saved_stack_t_fp_OFFSET]
-	ld r30, [sp, ___callee_saved_stack_t_r30_OFFSET]
+	LDR r13, sp, ___callee_saved_stack_t_r13_OFFSET
+	LDR r14, sp, ___callee_saved_stack_t_r14_OFFSET
+	LDR r15, sp, ___callee_saved_stack_t_r15_OFFSET
+	LDR r16, sp, ___callee_saved_stack_t_r16_OFFSET
+	LDR r17, sp, ___callee_saved_stack_t_r17_OFFSET
+	LDR r18, sp, ___callee_saved_stack_t_r18_OFFSET
+	LDR r19, sp, ___callee_saved_stack_t_r19_OFFSET
+	LDR r20, sp, ___callee_saved_stack_t_r20_OFFSET
+	LDR r21, sp, ___callee_saved_stack_t_r21_OFFSET
+	LDR r22, sp, ___callee_saved_stack_t_r22_OFFSET
+	LDR r23, sp, ___callee_saved_stack_t_r23_OFFSET
+	LDR r24, sp, ___callee_saved_stack_t_r24_OFFSET
+	LDR r25, sp, ___callee_saved_stack_t_r25_OFFSET
+	LDR r26, sp, ___callee_saved_stack_t_r26_OFFSET
+	LDR fp,  sp, ___callee_saved_stack_t_fp_OFFSET
+	LDR r30, sp, ___callee_saved_stack_t_r30_OFFSET
 
-	add_s sp, sp, ___callee_saved_stack_t_SIZEOF
+	ADDR sp, sp, ___callee_saved_stack_t_SIZEOF
 
 .endm
 
+/* discard callee regs */
 .macro _discard_callee_saved_regs
-	add_s sp, sp, ___callee_saved_stack_t_SIZEOF
+	ADDR sp, sp, ___callee_saved_stack_t_SIZEOF
 .endm
 
 /*
@@ -172,33 +179,35 @@
  */
 .macro _create_irq_stack_frame
 
-	sub_s sp, sp, ___isf_t_SIZEOF
+	SUBR sp, sp, ___isf_t_SIZEOF
 
-	st blink, [sp, ___isf_t_blink_OFFSET]
+	STR blink, sp, ___isf_t_blink_OFFSET
 
 	/* store these right away so we can use them if needed */
 
-	st_s r13, [sp, ___isf_t_r13_OFFSET]
-	st_s r12, [sp, ___isf_t_r12_OFFSET]
-	st   r11, [sp, ___isf_t_r11_OFFSET]
-	st   r10, [sp, ___isf_t_r10_OFFSET]
-	st   r9,  [sp, ___isf_t_r9_OFFSET]
-	st   r8,  [sp, ___isf_t_r8_OFFSET]
-	st   r7,  [sp, ___isf_t_r7_OFFSET]
-	st   r6,  [sp, ___isf_t_r6_OFFSET]
-	st   r5,  [sp, ___isf_t_r5_OFFSET]
-	st   r4,  [sp, ___isf_t_r4_OFFSET]
-	st_s r3,  [sp, ___isf_t_r3_OFFSET]
-	st_s r2,  [sp, ___isf_t_r2_OFFSET]
-	st_s r1,  [sp, ___isf_t_r1_OFFSET]
-	st_s r0,  [sp, ___isf_t_r0_OFFSET]
+	STR r13, sp, ___isf_t_r13_OFFSET
+	STR r12, sp, ___isf_t_r12_OFFSET
+	STR r11, sp, ___isf_t_r11_OFFSET
+	STR r10, sp, ___isf_t_r10_OFFSET
+	STR r9,  sp, ___isf_t_r9_OFFSET
+	STR r8,  sp, ___isf_t_r8_OFFSET
+	STR r7,  sp, ___isf_t_r7_OFFSET
+	STR r6,  sp, ___isf_t_r6_OFFSET
+	STR r5,  sp, ___isf_t_r5_OFFSET
+	STR r4,  sp, ___isf_t_r4_OFFSET
+	STR r3,  sp, ___isf_t_r3_OFFSET
+	STR r2,  sp, ___isf_t_r2_OFFSET
+	STR r1,  sp, ___isf_t_r1_OFFSET
+	STR r0,  sp, ___isf_t_r0_OFFSET
 
-	mov r0, lp_count
-	st_s r0, [sp, ___isf_t_lp_count_OFFSET]
-	lr r1, [_ARC_V2_LP_START]
-	lr r0, [_ARC_V2_LP_END]
-	st_s r1, [sp, ___isf_t_lp_start_OFFSET]
-	st_s r0, [sp, ___isf_t_lp_end_OFFSET]
+#ifdef CONFIG_ARC_HAS_ZOL
+	MOVR r0, lp_count
+	STR r0, sp, ___isf_t_lp_count_OFFSET
+	LRR r1, [_ARC_V2_LP_START]
+	LRR r0, [_ARC_V2_LP_END]
+	STR r1, sp, ___isf_t_lp_start_OFFSET
+	STR r0, sp, ___isf_t_lp_end_OFFSET
+#endif /* CONFIG_ARC_HAS_ZOL */
 
 #ifdef CONFIG_CODE_DENSITY
 	lr r1, [_ARC_V2_JLI_BASE]
@@ -217,7 +226,7 @@
  */
 .macro _pop_irq_stack_frame
 
-	ld blink, [sp, ___isf_t_blink_OFFSET]
+	LDR blink, sp, ___isf_t_blink_OFFSET
 
 #ifdef CONFIG_CODE_DENSITY
 	ld_s r1, [sp, ___isf_t_jli_base_OFFSET]
@@ -228,27 +237,29 @@
 	sr r2, [_ARC_V2_EI_BASE]
 #endif
 
-	ld_s r0, [sp, ___isf_t_lp_count_OFFSET]
-	mov lp_count, r0
-	ld_s r1, [sp, ___isf_t_lp_start_OFFSET]
-	ld_s r0, [sp, ___isf_t_lp_end_OFFSET]
-	sr r1, [_ARC_V2_LP_START]
-	sr r0, [_ARC_V2_LP_END]
+#ifdef CONFIG_ARC_HAS_ZOL
+	LDR r0, sp, ___isf_t_lp_count_OFFSET
+	MOVR lp_count, r0
+	LDR r1, sp, ___isf_t_lp_start_OFFSET
+	LDR r0, sp, ___isf_t_lp_end_OFFSET
+	SRR r1, [_ARC_V2_LP_START]
+	SRR r0, [_ARC_V2_LP_END]
+#endif /* CONFIG_ARC_HAS_ZOL */
 
-	ld_s r13, [sp, ___isf_t_r13_OFFSET]
-	ld_s r12, [sp, ___isf_t_r12_OFFSET]
-	ld   r11, [sp, ___isf_t_r11_OFFSET]
-	ld   r10, [sp, ___isf_t_r10_OFFSET]
-	ld   r9,  [sp, ___isf_t_r9_OFFSET]
-	ld   r8,  [sp, ___isf_t_r8_OFFSET]
-	ld   r7,  [sp, ___isf_t_r7_OFFSET]
-	ld   r6,  [sp, ___isf_t_r6_OFFSET]
-	ld   r5,  [sp, ___isf_t_r5_OFFSET]
-	ld   r4,  [sp, ___isf_t_r4_OFFSET]
-	ld_s r3,  [sp, ___isf_t_r3_OFFSET]
-	ld_s r2,  [sp, ___isf_t_r2_OFFSET]
-	ld_s r1,  [sp, ___isf_t_r1_OFFSET]
-	ld_s r0,  [sp, ___isf_t_r0_OFFSET]
+	LDR r13, sp, ___isf_t_r13_OFFSET
+	LDR r12, sp, ___isf_t_r12_OFFSET
+	LDR r11, sp, ___isf_t_r11_OFFSET
+	LDR r10, sp, ___isf_t_r10_OFFSET
+	LDR r9,  sp, ___isf_t_r9_OFFSET
+	LDR r8,  sp, ___isf_t_r8_OFFSET
+	LDR r7,  sp, ___isf_t_r7_OFFSET
+	LDR r6,  sp, ___isf_t_r6_OFFSET
+	LDR r5,  sp, ___isf_t_r5_OFFSET
+	LDR r4,  sp, ___isf_t_r4_OFFSET
+	LDR r3,  sp, ___isf_t_r3_OFFSET
+	LDR r2,  sp, ___isf_t_r2_OFFSET
+	LDR r1,  sp, ___isf_t_r1_OFFSET
+	LDR r0,  sp, ___isf_t_r0_OFFSET
 
 
 	/*
@@ -258,14 +269,14 @@
 	 * The pc and status32 values will still be on the stack. We cannot
 	 * pop them yet because the callers of _pop_irq_stack_frame must reload
 	 * status32 differently depending on the execution context they are
-	 * running in (z_arch_switch(), firq or exception).
+	 * running in (arch_switch(), firq or exception).
 	 */
-	add_s sp, sp, ___isf_t_SIZEOF
+	ADDR sp, sp, ___isf_t_SIZEOF
 
 .endm
 
 /*
- * To use this macor, r2 should have the value of thread struct pointer to
+ * To use this macro, r2 should have the value of thread struct pointer to
  * _kernel.current. r3 is a scratch reg.
  */
 .macro _load_stack_check_regs
@@ -297,72 +308,265 @@
 /* check and increase the interrupt nest counter
  * after increase, check whether nest counter == 1
  * the result will be EQ bit of status32
+ * two temp regs are needed
  */
-.macro _check_and_inc_int_nest_counter reg1 reg2
+.macro _check_and_inc_int_nest_counter, reg1, reg2
 #ifdef CONFIG_SMP
-	_get_cpu_id \reg1
-	ld.as \reg1, [@_curr_cpu, \reg1]
-	ld \reg2, [\reg1, ___cpu_t_nested_OFFSET]
+	/* get pointer to _cpu_t of this CPU */
+	_get_cpu_id MACRO_ARG(reg1)
+	ASLR MACRO_ARG(reg1), MACRO_ARG(reg1), ARC_REGSHIFT
+	LDR MACRO_ARG(reg1), MACRO_ARG(reg1), _curr_cpu
+	/* _cpu_t.nested is 32 bit despite of platform bittnes */
+	ld MACRO_ARG(reg2), [MACRO_ARG(reg1), ___cpu_t_nested_OFFSET]
 #else
-	mov \reg1, _kernel
-	ld \reg2, [\reg1, ___kernel_t_nested_OFFSET]
+	MOVR MACRO_ARG(reg1), _kernel
+	/* z_kernel.nested is 32 bit despite of platform bittnes */
+	ld MACRO_ARG(reg2), [MACRO_ARG(reg1), _kernel_offset_to_nested]
 #endif
-	add \reg2, \reg2, 1
+	add MACRO_ARG(reg2), MACRO_ARG(reg2), 1
 #ifdef CONFIG_SMP
-	st \reg2, [\reg1, ___cpu_t_nested_OFFSET]
+	st MACRO_ARG(reg2), [MACRO_ARG(reg1), ___cpu_t_nested_OFFSET]
 #else
-	st \reg2, [\reg1, ___kernel_t_nested_OFFSET]
+	st MACRO_ARG(reg2), [MACRO_ARG(reg1), _kernel_offset_to_nested]
 #endif
-	cmp \reg2, 1
+	cmp MACRO_ARG(reg2), 1
 .endm
 
-/* decrease interrupt nest counter */
-.macro _dec_int_nest_counter reg1 reg2
+/* decrease interrupt stack nest counter
+ * the counter > 0, interrupt stack is used, or
+ * not used
+ */
+.macro _dec_int_nest_counter, reg1, reg2
 #ifdef CONFIG_SMP
-	_get_cpu_id \reg1
-	ld.as \reg1, [@_curr_cpu, \reg1]
-	ld \reg2, [\reg1, ___cpu_t_nested_OFFSET]
+	/* get pointer to _cpu_t of this CPU */
+	_get_cpu_id MACRO_ARG(reg1)
+	ASLR MACRO_ARG(reg1), MACRO_ARG(reg1), ARC_REGSHIFT
+	LDR MACRO_ARG(reg1), MACRO_ARG(reg1), _curr_cpu
+	/* _cpu_t.nested is 32 bit despite of platform bittnes */
+	ld MACRO_ARG(reg2), [MACRO_ARG(reg1), ___cpu_t_nested_OFFSET]
 #else
-	mov \reg1, _kernel
-	ld \reg2, [\reg1, ___kernel_t_nested_OFFSET]
+	MOVR MACRO_ARG(reg1), _kernel
+	/* z_kernel.nested is 32 bit despite of platform bittnes */
+	ld MACRO_ARG(reg2), [MACRO_ARG(reg1), _kernel_offset_to_nested]
 #endif
-	sub \reg2, \reg2, 1
+	sub MACRO_ARG(reg2), MACRO_ARG(reg2), 1
 #ifdef CONFIG_SMP
-	st \reg2, [\reg1, ___cpu_t_nested_OFFSET]
+	st MACRO_ARG(reg2), [MACRO_ARG(reg1), ___cpu_t_nested_OFFSET]
 #else
-	st \reg2, [\reg1, ___kernel_t_nested_OFFSET]
+	st MACRO_ARG(reg2), [MACRO_ARG(reg1), _kernel_offset_to_nested]
 #endif
 .endm
 
 /* If multi bits in IRQ_ACT are set, i.e. last bit != fist bit, it's
  * in nest interrupt. The result will be EQ bit of status32
+ * need two temp reg to do this
  */
-.macro _check_nest_int_by_irq_act  reg1, reg2
-	lr \reg1, [_ARC_V2_AUX_IRQ_ACT]
+.macro _check_nest_int_by_irq_act, reg1, reg2
+	lr MACRO_ARG(reg1), [_ARC_V2_AUX_IRQ_ACT]
 #ifdef CONFIG_ARC_SECURE_FIRMWARE
-	and \reg1, \reg1, ((1 << ARC_N_IRQ_START_LEVEL) - 1)
+	and MACRO_ARG(reg1), MACRO_ARG(reg1), ((1 << ARC_N_IRQ_START_LEVEL) - 1)
 #else
-	and \reg1, \reg1, 0xffff
+	and MACRO_ARG(reg1), MACRO_ARG(reg1), 0xffff
 #endif
-	ffs \reg2, \reg1
-	fls \reg1, \reg1
-	cmp \reg1, \reg2
+	ffs MACRO_ARG(reg2), MACRO_ARG(reg1)
+	fls MACRO_ARG(reg1), MACRO_ARG(reg1)
+	cmp MACRO_ARG(reg1), MACRO_ARG(reg2)
 .endm
 
-.macro _get_cpu_id reg
-	lr \reg, [_ARC_V2_IDENTITY]
-	xbfu \reg, \reg, 0xe8
+
+/* macro to get id of current cpu
+ * the result will be in reg (a reg)
+ */
+.macro _get_cpu_id, reg
+	LRR MACRO_ARG(reg), [_ARC_V2_IDENTITY]
+	xbfu MACRO_ARG(reg), MACRO_ARG(reg), 0xe8
 .endm
 
-.macro _get_curr_cpu_irq_stack irq_sp
+/* macro to get the interrupt stack of current cpu
+ * the result will be in irq_sp (a reg)
+ */
+.macro _get_curr_cpu_irq_stack, irq_sp
 #ifdef CONFIG_SMP
-	_get_cpu_id \irq_sp
-	ld.as \irq_sp, [@_curr_cpu, \irq_sp]
-	ld \irq_sp, [\irq_sp, ___cpu_t_irq_stack_OFFSET]
+	/* get pointer to _cpu_t of this CPU */
+	_get_cpu_id MACRO_ARG(irq_sp)
+	ASLR MACRO_ARG(irq_sp), MACRO_ARG(irq_sp), ARC_REGSHIFT
+	LDR MACRO_ARG(irq_sp), MACRO_ARG(irq_sp), _curr_cpu
+	/* get pointer to irq_stack itself */
+	LDR MACRO_ARG(irq_sp), MACRO_ARG(irq_sp), ___cpu_t_irq_stack_OFFSET
 #else
-	mov \irq_sp, _kernel
-	ld \irq_sp, [\irq_sp, _kernel_offset_to_irq_stack]
+	MOVR MACRO_ARG(irq_sp), _kernel
+	LDR MACRO_ARG(irq_sp), MACRO_ARG(irq_sp), _kernel_offset_to_irq_stack
 #endif
+.endm
+
+/* macro to push aux reg through reg */
+.macro PUSHAX, reg, aux
+	LRR MACRO_ARG(reg), [MACRO_ARG(aux)]
+	PUSHR MACRO_ARG(reg)
+.endm
+
+/* macro to pop aux reg through reg */
+.macro POPAX, reg, aux
+	POPR MACRO_ARG(reg)
+	SRR MACRO_ARG(reg), [MACRO_ARG(aux)]
+.endm
+
+
+/* macro to store old thread call regs */
+.macro _store_old_thread_callee_regs
+
+	_save_callee_saved_regs
+	/* Save old thread into switch handle which is required by wait_for_switch.
+	 * NOTE: we shouldn't save anything related to old thread context after this point!
+	 * TODO: we should add SMP write-after-write data memory barrier here, as we want all
+	 * previous writes completed before setting switch_handle which is polled by other cores
+	 * in wait_for_switch in case of SMP. Though it's not likely that this issue
+	 * will reproduce in real world as there is some gap before reading switch_handle and
+	 * reading rest of the data we've stored before.
+	 */
+	STR r2, r2, ___thread_t_switch_handle_OFFSET
+.endm
+
+/* macro to store old thread call regs  in interrupt*/
+.macro _irq_store_old_thread_callee_regs
+#if defined(CONFIG_USERSPACE)
+/*
+ * when USERSPACE is enabled, according to ARCv2 ISA, SP will be switched
+ * if interrupt comes out in user mode, and will be recorded in bit 31
+ * (U bit) of IRQ_ACT. when interrupt exits, SP will be switched back
+ * according to U bit.
+ *
+ * need to remember the user/kernel status of interrupted thread, will be
+ * restored when thread switched back
+ *
+ */
+	lr r1, [_ARC_V2_AUX_IRQ_ACT]
+	and r3, r1, 0x80000000
+	push_s r3
+
+	bclr r1, r1, 31
+	sr r1, [_ARC_V2_AUX_IRQ_ACT]
+#endif
+	_store_old_thread_callee_regs
+.endm
+
+/* macro to load new thread callee regs */
+.macro _load_new_thread_callee_regs
+#ifdef CONFIG_ARC_STACK_CHECKING
+	_load_stack_check_regs
+#endif
+	/*
+	 * _load_callee_saved_regs expects incoming thread in r2.
+	 * _load_callee_saved_regs restores the stack pointer.
+	 */
+	_load_callee_saved_regs
+
+#if defined(CONFIG_MPU_STACK_GUARD) || defined(CONFIG_USERSPACE)
+	push_s r2
+	bl configure_mpu_thread
+	pop_s r2
+#endif
+	/* _thread_arch.relinquish_cause is 32 bit despite of platform bittnes */
+	ld r3, [r2, _thread_offset_to_relinquish_cause]
+.endm
+
+
+/* when switch to thread caused by coop, some status regs need to set */
+.macro _set_misc_regs_irq_switch_from_coop
+#ifdef CONFIG_ARC_SECURE_FIRMWARE
+	/* must return to secure mode, so set IRM bit to 1 */
+	lr r0, [_ARC_V2_SEC_STAT]
+	bset r0, r0, _ARC_V2_SEC_STAT_IRM_BIT
+	sflag r0
+#endif
+.endm
+
+/* when switch to thread caused by irq, some status regs need to set */
+.macro _set_misc_regs_irq_switch_from_irq
+#if defined(CONFIG_USERSPACE)
+/*
+ * need to recover the user/kernel status of interrupted thread
+ */
+	pop_s r3
+	lr r2, [_ARC_V2_AUX_IRQ_ACT]
+	or r2, r2, r3
+	sr r2, [_ARC_V2_AUX_IRQ_ACT]
+#endif
+
+#ifdef CONFIG_ARC_SECURE_FIRMWARE
+	/* here need to recover SEC_STAT.IRM bit */
+	pop_s r3
+	sflag r3
+#endif
+.endm
+
+/* macro to get next switch handle in assembly */
+.macro _get_next_switch_handle
+	PUSHR r2
+	MOVR r0, sp
+	bl z_arch_get_next_switch_handle
+	POPR  r2
+.endm
+
+/* macro to disable stack checking in assembly, need a GPR
+ * to do this
+ */
+.macro _disable_stack_checking, reg
+#ifdef CONFIG_ARC_STACK_CHECKING
+#ifdef CONFIG_ARC_SECURE_FIRMWARE
+	lr MACRO_ARG(reg), [_ARC_V2_SEC_STAT]
+	bclr MACRO_ARG(reg), MACRO_ARG(reg), _ARC_V2_SEC_STAT_SSC_BIT
+	sflag MACRO_ARG(reg)
+
+#else
+	lr MACRO_ARG(reg), [_ARC_V2_STATUS32]
+	bclr MACRO_ARG(reg), MACRO_ARG(reg), _ARC_V2_STATUS32_SC_BIT
+	kflag MACRO_ARG(reg)
+#endif
+#endif
+.endm
+
+/* macro to enable stack checking in assembly, need a GPR
+ * to do this
+ */
+.macro _enable_stack_checking, reg
+#ifdef CONFIG_ARC_STACK_CHECKING
+#ifdef CONFIG_ARC_SECURE_FIRMWARE
+	lr MACRO_ARG(reg), [_ARC_V2_SEC_STAT]
+	bset MACRO_ARG(reg), MACRO_ARG(reg), _ARC_V2_SEC_STAT_SSC_BIT
+	sflag MACRO_ARG(reg)
+#else
+	lr MACRO_ARG(reg), [_ARC_V2_STATUS32]
+	bset MACRO_ARG(reg), MACRO_ARG(reg), _ARC_V2_STATUS32_SC_BIT
+	kflag MACRO_ARG(reg)
+#endif
+#endif
+.endm
+
+
+#define __arc_u9_max		(255)
+#define __arc_u9_min		(-256)
+#define __arc_ldst32_as_shift	2
+
+/*
+ * When we accessing bloated struct member we can exceed u9 operand in store
+ * instruction. So we can use _st32_huge_offset macro instead
+ */
+.macro _st32_huge_offset, d, s, offset, temp
+	.if MACRO_ARG(offset) <= __arc_u9_max && MACRO_ARG(offset) >= __arc_u9_min
+		st MACRO_ARG(d), [MACRO_ARG(s), MACRO_ARG(offset)]
+	/* Technically we can optimize with .as both big positive and negative offsets here, but
+	 * as we use only positive offsets in hand-written assembly code we keep only
+	 * positive offset case here for simplicity.
+	 */
+	.elseif !(MACRO_ARG(offset) % (1 << __arc_ldst32_as_shift)) &&                             \
+		MACRO_ARG(offset) <= (__arc_u9_max << __arc_ldst32_as_shift) &&                    \
+		MACRO_ARG(offset) >= 0
+		st.as MACRO_ARG(d), [MACRO_ARG(s), MACRO_ARG(offset) >> __arc_ldst32_as_shift]
+	.else
+		ADDR MACRO_ARG(temp), MACRO_ARG(s), MACRO_ARG(offset)
+		st MACRO_ARG(d), [MACRO_ARG(temp)]
+	.endif
 .endm
 
 #endif /* _ASMLANGUAGE */

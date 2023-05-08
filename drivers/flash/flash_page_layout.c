@@ -4,69 +4,60 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <drivers/flash.h>
+#include <errno.h>
 
-static int flash_get_page_info(struct device *dev, off_t offs,
-				   bool use_addr, struct flash_pages_info *info)
+#include <zephyr/drivers/flash.h>
+
+static int flash_get_page_info(const struct device *dev, off_t offs,
+			       uint32_t index, struct flash_pages_info *info)
 {
-	const struct flash_driver_api *api = dev->driver_api;
+	const struct flash_driver_api *api = dev->api;
 	const struct flash_pages_layout *layout;
-	size_t page_count = 0;
-	off_t group_offs = 0;
-	u32_t num_in_group;
-	off_t end = 0;
 	size_t layout_size;
+	uint32_t index_jmp;
+
+	info->start_offset = 0;
+	info->index = 0U;
 
 	api->page_layout(dev, &layout, &layout_size);
 
 	while (layout_size--) {
-		if (use_addr) {
-			end += layout->pages_count * layout->pages_size;
+		info->size = layout->pages_size;
+		if (offs == 0) {
+			index_jmp = index - info->index;
 		} else {
-			end += layout->pages_count;
+			index_jmp = (offs - info->start_offset) / info->size;
 		}
 
-		if (offs < end) {
-			info->size = layout->pages_size;
-
-			if (use_addr) {
-				num_in_group = (offs - group_offs) /
-					       layout->pages_size;
-			} else {
-				num_in_group = offs - page_count;
-			}
-
-			info->start_offset = group_offs +
-					     num_in_group * layout->pages_size;
-			info->index = page_count + num_in_group;
-
+		index_jmp = MIN(index_jmp, layout->pages_count);
+		info->start_offset += (index_jmp * info->size);
+		info->index += index_jmp;
+		if (index_jmp < layout->pages_count) {
 			return 0;
 		}
-
-		group_offs += layout->pages_count * layout->pages_size;
-		page_count += layout->pages_count;
 
 		layout++;
 	}
 
-	return -EINVAL; /* page of the index doesn't exist */
+	return -EINVAL; /* page at offs or idx doesn't exist */
 }
 
-int z_impl_flash_get_page_info_by_offs(struct device *dev, off_t offs,
+int z_impl_flash_get_page_info_by_offs(const struct device *dev, off_t offs,
+				       struct flash_pages_info *info)
+{
+	return flash_get_page_info(dev, offs, 0U, info);
+}
+
+int z_impl_flash_get_page_info_by_idx(const struct device *dev,
+				      uint32_t page_index,
 				      struct flash_pages_info *info)
 {
-	return flash_get_page_info(dev, offs, true, info);
+	return flash_get_page_info(dev, 0, page_index, info);
 }
 
-int z_impl_flash_get_page_info_by_idx(struct device *dev, u32_t page_index,
-				     struct flash_pages_info *info)
+size_t z_impl_flash_get_page_count(const struct device *dev)
 {
-	return flash_get_page_info(dev, page_index, false, info);
-}
-
-size_t z_impl_flash_get_page_count(struct device *dev)
-{
-	const struct flash_driver_api *api = dev->driver_api;
+	const struct flash_driver_api *api = dev->api;
 	const struct flash_pages_layout *layout;
 	size_t layout_size;
 	size_t count = 0;
@@ -81,9 +72,10 @@ size_t z_impl_flash_get_page_count(struct device *dev)
 	return count;
 }
 
-void flash_page_foreach(struct device *dev, flash_page_cb cb, void *data)
+void flash_page_foreach(const struct device *dev, flash_page_cb cb,
+			void *data)
 {
-	const struct flash_driver_api *api = dev->driver_api;
+	const struct flash_driver_api *api = dev->api;
 	const struct flash_pages_layout *layout;
 	struct flash_pages_info page_info;
 	size_t block, num_blocks, page = 0, i;

@@ -7,8 +7,8 @@
  */
 
 #include <stdio.h>
-#include <sys/libc-hooks.h>
-#include <syscall_handler.h>
+#include <zephyr/sys/libc-hooks.h>
+#include <zephyr/syscall_handler.h>
 #include <string.h>
 
 static int _stdout_hook_default(int c)
@@ -18,16 +18,16 @@ static int _stdout_hook_default(int c)
 	return EOF;
 }
 
-static int (*_stdout_hook)(int) = _stdout_hook_default;
+static int (*_stdout_hook)(int c) = _stdout_hook_default;
 
-void __stdout_hook_install(int (*hook)(int))
+void __stdout_hook_install(int (*hook)(int c))
 {
 	_stdout_hook = hook;
 }
 
 int z_impl_zephyr_fputc(int c, FILE *stream)
 {
-	return (stdout == stream) ? _stdout_hook(c) : EOF;
+	return (stream == stdout || stream == stderr) ? _stdout_hook(c) : EOF;
 }
 
 #ifdef CONFIG_USERSPACE
@@ -43,24 +43,37 @@ int fputc(int c, FILE *stream)
 	return zephyr_fputc(c, stream);
 }
 
-int fputs(const char *_MLIBC_RESTRICT string, FILE *_MLIBC_RESTRICT stream)
+int fputs(const char *ZRESTRICT s, FILE *ZRESTRICT stream)
 {
-	int len = strlen(string);
+	int len = strlen(s);
 	int ret;
 
-	ret = fwrite(string, len, 1, stream);
+	ret = fwrite(s, 1, len, stream);
 
 	return len == ret ? 0 : EOF;
 }
 
-size_t z_impl_zephyr_fwrite(const void *_MLIBC_RESTRICT ptr, size_t size,
-			    size_t nitems, FILE *_MLIBC_RESTRICT stream)
+#undef putc
+int putc(int c, FILE *stream)
+{
+	return zephyr_fputc(c, stream);
+}
+
+#undef putchar
+int putchar(int c)
+{
+	return zephyr_fputc(c, stdout);
+}
+
+size_t z_impl_zephyr_fwrite(const void *ZRESTRICT ptr, size_t size,
+			    size_t nitems, FILE *ZRESTRICT stream)
 {
 	size_t i;
 	size_t j;
 	const unsigned char *p;
 
-	if ((stream != stdout) || (nitems == 0) || (size == 0)) {
+	if ((stream != stdout && stream != stderr) ||
+	    (nitems == 0) || (size == 0)) {
 		return 0;
 	}
 
@@ -83,28 +96,28 @@ done:
 }
 
 #ifdef CONFIG_USERSPACE
-static inline size_t z_vrfy_zephyr_fwrite(const void *_MLIBC_RESTRICT ptr,
+static inline size_t z_vrfy_zephyr_fwrite(const void *ZRESTRICT ptr,
 					  size_t size, size_t nitems,
-					  FILE *_MLIBC_RESTRICT stream)
+					  FILE *ZRESTRICT stream)
 {
 
 	Z_OOPS(Z_SYSCALL_MEMORY_ARRAY_READ(ptr, nitems, size));
-	return z_impl_zephyr_fwrite((const void *_MLIBC_RESTRICT)ptr, size,
-				    nitems, (FILE *_MLIBC_RESTRICT)stream);
+	return z_impl_zephyr_fwrite((const void *ZRESTRICT)ptr, size,
+				    nitems, (FILE *ZRESTRICT)stream);
 }
 #include <syscalls/zephyr_fwrite_mrsh.c>
 #endif
 
-size_t fwrite(const void *_MLIBC_RESTRICT ptr, size_t size, size_t nitems,
-			  FILE *_MLIBC_RESTRICT stream)
+size_t fwrite(const void *ZRESTRICT ptr, size_t size, size_t nitems,
+			  FILE *ZRESTRICT stream)
 {
 	return zephyr_fwrite(ptr, size, nitems, stream);
 }
 
 
-int puts(const char *string)
+int puts(const char *s)
 {
-	if (fputs(string, stdout) == EOF) {
+	if (fputs(s, stdout) == EOF) {
 		return EOF;
 	}
 

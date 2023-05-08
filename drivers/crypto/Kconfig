@@ -1,16 +1,13 @@
-# Kconfig - Crypto configuration options
-#
-# Copyright (c) 2017 Intel Corporation
-#
-# SPDX-License-Identifier: Apache-2.0
-#
+# Crypto configuration options
 
+# Copyright (c) 2017 Intel Corporation
+# SPDX-License-Identifier: Apache-2.0
 
 #
 # CRYPTO options
 #
 menuconfig CRYPTO
-	bool "Crypto Drivers [EXPERIMENTAL]"
+	bool "Crypto drivers"
 
 if CRYPTO
 
@@ -25,13 +22,14 @@ module-str = CRYPTO
 source "subsys/logging/Kconfig.template.log_config"
 
 config CRYPTO_TINYCRYPT_SHIM
-	bool "Enable TinyCrypt shim driver [EXPERIMENTAL]"
+	bool "TinyCrypt shim driver [EXPERIMENTAL]"
 	select TINYCRYPT
 	select TINYCRYPT_AES
 	select TINYCRYPT_AES_CBC
 	select TINYCRYPT_AES_CTR
 	select TINYCRYPT_AES_CCM
 	select TINYCRYPT_AES_CMAC
+	select EXPERIMENTAL
 	help
 	  Enable TinyCrypt shim layer compliant with crypto APIs.
 
@@ -51,9 +49,10 @@ config CRYPTO_TINYCRYPT_SHIM_DRV_NAME
 	  Device name for TinyCrypt Pseudo device.
 
 config CRYPTO_MBEDTLS_SHIM
-	bool "Enable mbedTLS shim driver [EXPERIMENTAL]"
+	bool "MbedTLS shim driver [EXPERIMENTAL]"
 	select MBEDTLS
 	select MBEDTLS_ENABLE_HEAP
+	select EXPERIMENTAL
 	help
 	  Enable mbedTLS shim layer compliant with crypto APIs. You will need
 	  to fill in a relevant value to CONFIG_MBEDTLS_HEAP_SIZE.
@@ -74,5 +73,9 @@ config CRYPTO_MBEDTLS_SHIM_MAX_SESSION
 	  can handle in parallel.
 
 source "drivers/crypto/Kconfig.ataes132a"
+source "drivers/crypto/Kconfig.stm32"
+source "drivers/crypto/Kconfig.nrf_ecb"
+source "drivers/crypto/Kconfig.intel"
+source "drivers/crypto/Kconfig.npcx"
 
 endif # CRYPTO

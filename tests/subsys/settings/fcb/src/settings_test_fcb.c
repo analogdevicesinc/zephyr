@@ -9,12 +9,15 @@
 
 #include "settings_test.h"
 #include "settings_priv.h"
-#include <storage/flash_map.h>
+#include <zephyr/storage/flash_map.h>
 
-u8_t val8;
-u8_t val8_un;
-u32_t val32;
-u64_t val64;
+#define TEST_PARTITION		storage_partition
+#define TEST_PARTITION_ID	FIXED_PARTITION_ID(TEST_PARTITION)
+
+uint8_t val8;
+uint8_t val8_un;
+uint32_t val32;
+uint64_t val64;
 
 int test_get_called;
 int test_set_called;
@@ -101,9 +104,6 @@ int c1_handle_set(const char *name, size_t len, settings_read_cb read_cb,
 	if (settings_name_steq(name, "mybar", &next) && !next) {
 		rc = read_cb(cb_arg, &val8, sizeof(val8));
 		zassert_true(rc >= 0, "SETTINGS_VALUE_SET callback");
-		if (rc == 0) {
-			val8 = VAL8_DELETED;
-		}
 		return 0;
 	}
 
@@ -190,7 +190,7 @@ void config_wipe_fcb(struct flash_sector *fs, int cnt)
 	int rc;
 	int i;
 
-	rc = flash_area_open(DT_FLASH_AREA_STORAGE_ID, &fap);
+	rc = flash_area_open(TEST_PARTITION_ID, &fap);
 
 	for (i = 0; i < cnt; i++) {
 		rc = flash_area_erase(fap, fs[i].fs_off, fs[i].fs_size);
@@ -226,7 +226,7 @@ char *c2_var_find(char *name)
 	idx = strtoul(&name[6], &eptr, 10);
 	zassert_true(*eptr == '\0', "EOF");
 	zassert_true(idx < c2_var_count,
-		     "var index greather than any exporter");
+		     "var index greater than any exporter");
 
 	return val_string[idx];
 }
@@ -344,73 +344,32 @@ int c3_handle_export(int (*cb)(const char *name,
 	return 0;
 }
 
-void tests_settings_check_target(void)
+void *settings_config_fcb_setup(void)
 {
 	const struct flash_area *fap;
 	int rc;
-	u8_t wbs;
+	uint8_t wbs;
 
-	rc = flash_area_open(DT_FLASH_AREA_STORAGE_ID, &fap);
-	zassert_true(rc == 0, "Can't open storage flash area");
+	rc = flash_area_open(TEST_PARTITION_ID, &fap);
+	zassume_true(rc == 0, "Can't open storage flash area");
 
 	wbs = flash_area_align(fap);
-	zassert_true(wbs <= 16,
+	zassume_true(wbs <= 32,
 		"Flash driver is not compatible with the settings fcb-backend");
+	return NULL;
 }
 
-void test_settings_encode(void);
-void config_empty_lookups(void);
-void test_config_insert(void);
-void test_config_getset_unknown(void);
-void test_config_getset_int(void);
-void test_config_getset_int64(void);
-void test_config_commit(void);
-
-void test_config_empty_fcb(void);
-void test_config_save_1_fcb(void);
-void test_config_delete_fcb(void);
-void test_config_insert2(void);
-void test_config_save_2_fcb(void);
-void test_config_insert3(void);
-void test_config_save_3_fcb(void);
-void test_config_compress_reset(void);
-void test_config_save_one_fcb(void);
-void test_config_compress_deleted(void);
-void test_setting_raw_read(void);
-void test_setting_val_read(void);
-void test_config_save_fcb_unaligned(void);
-
-void test_main(void)
+ZTEST(settings_config_fcb, test_config_insert_handler2)
 {
-#ifdef CONFIG_SETTINGS_USE_BASE64
-	ztest_test_suite(test_config_fcb_base64,
-			 ztest_unit_test(test_settings_encode),
-			 ztest_unit_test(test_setting_raw_read),
-			 ztest_unit_test(test_setting_val_read));
-	ztest_run_test_suite(test_config_fcb_base64);
-#endif
-	ztest_test_suite(test_config_fcb,
-			 /* Config tests */
-			 ztest_unit_test(config_empty_lookups),
-			 ztest_unit_test(test_config_insert),
-			 ztest_unit_test(test_config_getset_unknown),
-			 ztest_unit_test(test_config_getset_int),
-			 ztest_unit_test(test_config_getset_int64),
-			 ztest_unit_test(test_config_commit),
-			 /* FCB as backing storage*/
-			 ztest_unit_test(tests_settings_check_target),
-			 ztest_unit_test(test_config_save_fcb_unaligned),
-			 ztest_unit_test(test_config_empty_fcb),
-			 ztest_unit_test(test_config_save_1_fcb),
-			 ztest_unit_test(test_config_delete_fcb),
-			 ztest_unit_test(test_config_insert2),
-			 ztest_unit_test(test_config_save_2_fcb),
-			 ztest_unit_test(test_config_insert3),
-			 ztest_unit_test(test_config_save_3_fcb),
-			 ztest_unit_test(test_config_compress_reset),
-			 ztest_unit_test(test_config_save_one_fcb),
-			 ztest_unit_test(test_config_compress_deleted)
-			);
-
-	ztest_run_test_suite(test_config_fcb);
+	test_config_insert2();
 }
+
+ZTEST(settings_config_fcb, test_config_insert_handler3)
+{
+	test_config_insert3();
+}
+
+ZTEST_SUITE(settings_config, NULL, settings_config_setup, NULL, NULL,
+	    settings_config_teardown);
+ZTEST_SUITE(settings_config_fcb, NULL, settings_config_fcb_setup,
+	    NULL, NULL, NULL);

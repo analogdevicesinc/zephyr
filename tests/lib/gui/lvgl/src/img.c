@@ -4,11 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <lvgl.h>
+#include <zephyr/kernel.h>
 #include "img.h"
 
-static const u8_t img_data[] = {
+static const uint8_t img_data[] = {
 	0x00, 0x00, 0x00, 0x00,	/* Index color 0 */
 	0x00, 0xff, 0x00, 0x00,	/* Index color 1 */
 
@@ -135,4 +134,3 @@ const lv_img_dsc_t *get_lvgl_img(void)
 {
 	return &img_dsc;
 }
-

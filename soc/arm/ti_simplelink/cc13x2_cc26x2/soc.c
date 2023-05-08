@@ -4,13 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <init.h>
+#include <zephyr/init.h>
 
 #include <driverlib/setup.h>
 
-static int ti_cc13x2_cc26x2_init(struct device *dev)
+static int ti_cc13x2_cc26x2_init(void)
 {
-	ARG_UNUSED(dev);
 
 	/* Performs necessary trim of the device. */
 	SetupTrimDevice();

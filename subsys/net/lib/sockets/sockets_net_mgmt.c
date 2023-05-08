@@ -5,25 +5,29 @@
  */
 
 #include <stdbool.h>
+#ifdef CONFIG_ARCH_POSIX
 #include <fcntl.h>
+#else
+#include <zephyr/posix/fcntl.h>
+#endif
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_sock_mgmt, CONFIG_NET_SOCKETS_LOG_LEVEL);
 
-#include <kernel.h>
-#include <misc/util.h>
-#include <net/socket.h>
-#include <syscall_handler.h>
-#include <misc/fdtable.h>
-#include <net/socket_net_mgmt.h>
-#include <net/ethernet_mgmt.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/net/socket.h>
+#include <zephyr/syscall_handler.h>
+#include <zephyr/sys/fdtable.h>
+#include <zephyr/net/socket_net_mgmt.h>
+#include <zephyr/net/ethernet_mgmt.h>
 
 #include "sockets_internal.h"
 #include "net_private.h"
 
 #define MSG_ALLOC_TIMEOUT K_MSEC(100)
 
-struct net_mgmt_socket {
+__net_socket struct net_mgmt_socket {
 	/* Network interface related to this socket */
 	struct net_if *iface;
 
@@ -31,19 +35,19 @@ struct net_mgmt_socket {
 	uintptr_t pid;
 
 	/* net_mgmt mask */
-	u32_t mask;
+	uint32_t mask;
 
 	/* Message allocation timeout */
-	s32_t alloc_timeout;
+	k_timeout_t alloc_timeout;
 
 	/* net_mgmt event timeout */
-	s32_t wait_timeout;
+	k_timeout_t wait_timeout;
 
 	/* Socket protocol */
 	int proto;
 
 	/* Is this entry in use (true) or not (false) */
-	u8_t is_in_use : 1;
+	uint8_t is_in_use : 1;
 };
 
 static struct net_mgmt_socket
@@ -79,13 +83,6 @@ int znet_mgmt_socket(int family, int type, int proto)
 	mgmt->proto = proto;
 	mgmt->alloc_timeout = MSG_ALLOC_TIMEOUT;
 	mgmt->wait_timeout = K_FOREVER;
-
-#if defined(CONFIG_USERSPACE)
-	/* Set net context object as initialized and grant access to the
-	 * calling thread (and only the calling thread)
-	 */
-	z_object_recycle(mgmt);
-#endif
 
 	z_finalize_fd(fd, mgmt,
 		     (const struct fd_op_vtable *)&net_mgmt_sock_fd_op_vtable);
@@ -151,12 +148,12 @@ static ssize_t znet_mgmt_recvfrom(struct net_mgmt_socket *mgmt, void *buf,
 				  socklen_t *addrlen)
 {
 	struct sockaddr_nm *nm_addr = (struct sockaddr_nm *)src_addr;
-	s32_t timeout = mgmt->wait_timeout;
-	u32_t raised_event = 0;
-	u8_t *copy_to = buf;
+	k_timeout_t timeout = mgmt->wait_timeout;
+	uint32_t raised_event = 0;
+	uint8_t *copy_to = buf;
 	struct net_mgmt_msghdr hdr;
 	struct net_if *iface;
-	const u8_t *info;
+	const uint8_t *info;
 	size_t info_len;
 	int ret;
 
@@ -190,7 +187,7 @@ again:
 	}
 
 	if ((mgmt->mask & raised_event) != raised_event) {
-		if (timeout == K_FOREVER) {
+		if (K_TIMEOUT_EQ(timeout, K_FOREVER)) {
 			goto again;
 		}
 
@@ -397,5 +394,5 @@ static bool net_mgmt_is_supported(int family, int type, int proto)
 	return true;
 }
 
-NET_SOCKET_REGISTER(af_net_mgmt, AF_NET_MGMT, net_mgmt_is_supported,
-		    znet_mgmt_socket);
+NET_SOCKET_REGISTER(af_net_mgmt, NET_SOCKET_DEFAULT_PRIO, AF_NET_MGMT,
+		    net_mgmt_is_supported, znet_mgmt_socket);

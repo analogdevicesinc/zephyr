@@ -1,13 +1,10 @@
-# Kconfig.debug - Debug Options
+# Debug Options
 
-#
 # Copyright (c) 2016 Intel Corporation.
-#
 # SPDX-License-Identifier: Apache-2.0
-#
 
 menuconfig NET_LOG
-	bool "Enable network stack logging and debugging"
+	bool "Network stack logging and debugging"
 	select LOG
 	help
 	  Enable logging in various parts of the network stack.

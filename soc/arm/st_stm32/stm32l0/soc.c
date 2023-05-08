@@ -9,12 +9,17 @@
  * @brief System/hardware module for STM32L0 processor
  */
 
-#include <device.h>
-#include <init.h>
-#include <arch/cpu.h>
-#include <cortex_m/exc.h>
-#include <linker/linker-defs.h>
+#include <zephyr/device.h>
+#include <zephyr/init.h>
+#include <zephyr/arch/cpu.h>
+#include <zephyr/arch/arm/aarch32/cortex_m/cmsis.h>
+#include <zephyr/arch/arm/aarch32/nmi.h>
+#include <zephyr/irq.h>
+#include <zephyr/linker/linker-defs.h>
 #include <string.h>
+#include <stm32_ll_bus.h>
+#include <stm32_ll_pwr.h>
+#include <stm32_ll_bus.h>
 
 /**
  * @brief Perform basic hardware initialization at boot.
@@ -24,11 +29,10 @@
  *
  * @return 0
  */
-static int stm32l0_init(struct device *arg)
+static int stm32l0_init(void)
 {
-	u32_t key;
+	uint32_t key;
 
-	ARG_UNUSED(arg);
 
 	key = irq_lock();
 
@@ -42,6 +46,22 @@ static int stm32l0_init(struct device *arg)
 	/* Update CMSIS SystemCoreClock variable (HCLK) */
 	/* At reset, system core clock is set to 2.1 MHz from MSI */
 	SystemCoreClock = 2097152;
+
+	/* Default Voltage scaling range selection (range2)
+	 * doesn't allow to configure Max frequency
+	 * switch to range1 to match any frequency
+	 */
+	LL_APB1_GRP1_EnableClock(LL_APB1_GRP1_PERIPH_PWR);
+	LL_PWR_SetRegulVoltageScaling(LL_PWR_REGU_VOLTAGE_SCALE1);
+
+	/* On STM32L0, there are some hardfault when enabling DBGMCU bit:
+	 * Sleep, Stop or Standby.
+	 * See https://github.com/zephyrproject-rtos/zephyr/issues/#37119
+	 * For unclear reason, enabling DMA clock fixes this issue
+	 * (similarly than it fixes
+	 * https://github.com/zephyrproject-rtos/zephyr/issues/#34324 )
+	 */
+	LL_AHB1_GRP1_EnableClock(LL_AHB1_GRP1_PERIPH_DMA1);
 
 	return 0;
 }

@@ -4,23 +4,21 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/**
- * @addtogroup t_driver_pwm
- * @{
- * @defgroup t_pwm_basic test_pwm_basic_operations
- * @}
- */
 
-#include <zephyr.h>
-#include <ztest.h>
+#include <zephyr/kernel.h>
+#include <zephyr/ztest.h>
+#include <zephyr/device.h>
 
-extern void test_pwm_usec(void);
-extern void test_pwm_cycle(void);
+const struct device *get_pwm_device(void);
 
-void test_main(void)
+static void *pwm_basic_setup(void)
 {
-	ztest_test_suite(pwm_basic_test,
-			 ztest_unit_test(test_pwm_usec),
-			 ztest_unit_test(test_pwm_cycle));
-	ztest_run_test_suite(pwm_basic_test);
+	const struct device *dev = get_pwm_device();
+
+	zassert_true(device_is_ready(dev), "PWM device is not ready");
+	k_object_access_grant(dev, k_current_get());
+
+	return NULL;
 }
+
+ZTEST_SUITE(pwm_basic, NULL, pwm_basic_setup, NULL, NULL, NULL);

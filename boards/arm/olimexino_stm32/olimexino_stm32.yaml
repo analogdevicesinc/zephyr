@@ -11,6 +11,8 @@ supported:
   - gpio
   - i2c
   - pwm
+  - sdhc
   - spi
   - usb_device
   - watchdog
+  - can

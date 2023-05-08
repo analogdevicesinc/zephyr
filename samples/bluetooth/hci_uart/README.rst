@@ -50,7 +50,7 @@ For example, to build for the nRF52832 Development Kit:
 
 .. zephyr-app-commands::
    :zephyr-app: samples/bluetooth/hci_uart
-   :board: nrf52_pca10040
+   :board: nrf52dk_nrf52832
    :goals: build flash
 
 .. _bluetooth-hci-uart-qemu-posix:
@@ -114,3 +114,79 @@ BlueZ loads and initializes the attached controller.
 Once the controller is attached follow the instructions in the
 :ref:`bluetooth_ctlr_bluez` section to use BlueZ with it.
 
+Debugging the controller
+========================
+
+The sample can be debugged using RTT since the UART is otherwise used by this
+application. To enable debug over RTT the debug configuration file can be used.
+
+.. code-block:: console
+
+   west build samples/bluetooth/hci_uart -- -DOVERLAY_CONFIG='debug.conf'
+
+Then attach RTT as described here: :ref:`Using Segger J-Link <Using Segger J-Link>`
+
+Support for the Direction Finding
+=================================
+
+The sample can be built with the support for the BLE Direction Finding.
+To enable this feature build this sample for specific board variants that provide
+required hardware configuration for the Radio.
+
+.. code-block:: console
+
+   west build samples/bluetooth/hci_uart -b nrf52833dk_nrf52833@df -- -DCONFIG_BT_CTLR_DF=y
+
+You can use following targets:
+
+* ``nrf5340dk_nrf5340_cpunet@df``
+* ``nrf52833dk_nrf52833@df``
+
+Check the :ref:`bluetooth_direction_finding_connectionless_rx` and the :ref:`bluetooth_direction_finding_connectionless_tx` for more details.
+
+Using a USB CDC ACM UART
+========================
+
+The sample can be configured to use a USB UART instead. See :zephyr_file:`samples/bluetooth/hci_uart/nrf52840dongle_nrf52840.conf` and :zephyr_file:`samples/bluetooth/hci_uart/nrf52840dongle_nrf52840.overlay`.
+
+Using the controller with the Zephyr host
+=========================================
+
+This describes how to hook up a board running this sample to a board running
+an application that uses the Zephyr host.
+
+On the controller side, the `zephyr,bt-c2h-uart` DTS property (in the `chosen`
+block) is used to select which uart device to use. For example if we want to
+keep the console logs, we can keep console on uart0 and the HCI on uart1 like
+so:
+
+.. code-block:: dts
+
+   / {
+      chosen {
+         zephyr,console = &uart0;
+         zephyr,shell-uart = &uart0;
+         zephyr,bt-c2h-uart = &uart1;
+      };
+   };
+
+On the host application, some config options need to be used to select the H4
+driver instead of the built-in controller:
+
+.. code-block:: kconfig
+
+   CONFIG_BT_HCI=y
+   CONFIG_BT_CTLR=n
+   CONFIG_BT_H4=y
+
+Similarly, the `zephyr,bt-uart` DTS property selects which uart to use:
+
+.. code-block:: dts
+
+   / {
+      chosen {
+         zephyr,console = &uart0;
+         zephyr,shell-uart = &uart0;
+         zephyr,bt-uart = &uart1;
+      };
+   };

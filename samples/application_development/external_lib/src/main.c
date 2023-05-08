@@ -7,14 +7,14 @@
 /* hello world example: calling functions from a static library */
 
 
-#include <zephyr.h>
+#include <zephyr/kernel.h>
 #include <stdio.h>
 
 #include <mylib.h>
 
-void main(void)
+int main(void)
 {
 	printf("Hello World!\n");
 	mylib_hello_world();
+	return 0;
 }
-

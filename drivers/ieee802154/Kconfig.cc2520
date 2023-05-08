@@ -1,28 +1,14 @@
-# Kconfig.cc2520 - TI CC2520 configuration options
-#
-#
+# TI CC2520 configuration options
+
 # Copyright (c) 2017 Intel Corporation
-#
 # SPDX-License-Identifier: Apache-2.0
-#
 
 menuconfig IEEE802154_CC2520
 	bool "TI CC2520 Driver support"
-	depends on NETWORKING
+	default y
+	depends on DT_HAS_TI_CC2520_ENABLED
 
 if IEEE802154_CC2520
-
-config IEEE802154_CC2520_DRV_NAME
-	string "TI CC2520 Driver's name"
-	default "cc2520"
-	help
-	  This option sets the driver name
-
-config IEEE802154_CC2520_GPIO_SPI_CS
-	bool "Manage SPI CS through a GPIO pin"
-	help
-	This option is useful if one needs to manage SPI CS through a GPIO
-	pin to by-pass the SPI controller's CS logic.
 
 config IEEE802154_CC2520_RX_STACK_SIZE
 	int "Driver's internal RX thread stack size"
@@ -80,19 +66,13 @@ config IEEE802154_CC2520_MAC7
 endif # IEEE802154_CC2520_RANDOM_MAC
 
 config IEEE802154_CC2520_CRYPTO
-	bool "Enable hardware crypto helper on cc2520"
+	bool "Hardware crypto helper on cc2520"
+	default y
 	depends on NET_L2_IEEE802154_SECURITY
 	help
 	  This option will expose the hardware AES encryption from CC2520.
 	  Such feature should not be used for anything but 802.15.4 security.
 	  The crypto device exposed will only support synchronous CCM operation.
-
-config IEEE802154_CC2520_CRYPTO_DRV_NAME
-	string "TI CC2520 Crypto Driver's name"
-	default "cc2520_crypto"
-	depends on IEEE802154_CC2520_CRYPTO
-	help
-	  This option sets the driver name for the crypto part found on CC2520.
 
 config IEEE802154_CC2520_CRYPTO_INIT_PRIO
 	int "TI CC2520 crypto device initialization priority"

@@ -7,14 +7,21 @@
 
 /* Sample app for USB DFU class driver. */
 
-#include <zephyr.h>
-#include <logging/log.h>
+#include <zephyr/kernel.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/usb/usb_device.h>
 LOG_MODULE_REGISTER(main);
 
-void main(void)
+int main(void)
 {
-	/* Nothing to be done other than the selecting appropriate build
-	 * config options. Use dfu-util to update the device.
-	 */
+	int ret;
+
+	ret = usb_enable(NULL);
+	if (ret != 0) {
+		LOG_ERR("Failed to enable USB");
+		return 0;
+	}
+
 	LOG_INF("This device supports USB DFU class.\n");
+	return 0;
 }

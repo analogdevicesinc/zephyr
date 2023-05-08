@@ -4,13 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <ztest.h>
+#include <zephyr/ztest.h>
 
-extern void test_arm_thread_swap(void);
-
-void test_main(void)
-{
-	ztest_test_suite(arm_thread_swap,
-		ztest_unit_test(test_arm_thread_swap));
-	ztest_run_test_suite(arm_thread_swap);
-}
+ZTEST_SUITE(arm_thread_swap, NULL, NULL, NULL, NULL, NULL);

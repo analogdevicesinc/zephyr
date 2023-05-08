@@ -5,67 +5,62 @@
  */
 
 /**
- * @file Sample app to demonstrate PWM.
- *
- * This app uses PWM[0].
+ * @file Sample app to demonstrate PWM-based servomotor control
  */
 
-#include <zephyr.h>
-#include <sys/printk.h>
-#include <device.h>
-#include <drivers/pwm.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/pwm.h>
 
-#ifndef DT_ALIAS_PWM_0_LABEL
-#error "Choose supported board or add new board for the application"
-#endif
+static const struct pwm_dt_spec servo = PWM_DT_SPEC_GET(DT_NODELABEL(servo));
+static const uint32_t min_pulse = DT_PROP(DT_NODELABEL(servo), min_pulse);
+static const uint32_t max_pulse = DT_PROP(DT_NODELABEL(servo), max_pulse);
 
-/*
- * Unlike pulse width, period is not a critical parameter for
- * motor control. 20ms is commonly used.
- */
-#define PERIOD (USEC_PER_SEC / 50U)
+#define STEP PWM_USEC(100)
 
-/* all in micro second */
-#define STEPSIZE 100
-#define MINPULSEWIDTH 700
-#define MAXPULSEWIDTH 2300
+enum direction {
+	DOWN,
+	UP,
+};
 
-void main(void)
+int main(void)
 {
-	struct device *pwm_dev;
-	u32_t pulse_width = MINPULSEWIDTH;
-	u8_t dir = 0U;
+	uint32_t pulse_width = min_pulse;
+	enum direction dir = UP;
+	int ret;
 
-	printk("PWM demo app-servo control\n");
+	printk("Servomotor control\n");
 
-	pwm_dev = device_get_binding(DT_ALIAS_PWM_0_LABEL);
-	if (!pwm_dev) {
-		printk("Cannot find PWM device!\n");
-		return;
+	if (!device_is_ready(servo.dev)) {
+		printk("Error: PWM device %s is not ready\n", servo.dev->name);
+		return 0;
 	}
 
 	while (1) {
-		if (pwm_pin_set_usec(pwm_dev, 0, PERIOD, pulse_width)) {
-			printk("pwm pin set fails\n");
-			return;
+		ret = pwm_set_pulse_dt(&servo, pulse_width);
+		if (ret < 0) {
+			printk("Error %d: failed to set pulse width\n", ret);
+			return 0;
 		}
 
-		if (dir) {
-			if (pulse_width <= MINPULSEWIDTH) {
-				dir = 0U;
-				pulse_width = MINPULSEWIDTH;
+		if (dir == DOWN) {
+			if (pulse_width <= min_pulse) {
+				dir = UP;
+				pulse_width = min_pulse;
 			} else {
-				pulse_width -= STEPSIZE;
+				pulse_width -= STEP;
 			}
 		} else {
-			pulse_width += STEPSIZE;
+			pulse_width += STEP;
 
-			if (pulse_width >= MAXPULSEWIDTH) {
-				dir = 1U;
-				pulse_width = MAXPULSEWIDTH;
+			if (pulse_width >= max_pulse) {
+				dir = DOWN;
+				pulse_width = max_pulse;
 			}
 		}
 
-		k_sleep(MSEC_PER_SEC);
+		k_sleep(K_SECONDS(1));
 	}
+	return 0;
 }

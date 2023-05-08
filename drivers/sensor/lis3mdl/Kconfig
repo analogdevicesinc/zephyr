@@ -1,11 +1,11 @@
 # Copyright (c) 2016 Intel Corporation
-#
 # SPDX-License-Identifier: Apache-2.0
-#
 
 menuconfig LIS3MDL
 	bool "LIS3MDL magnetometer"
-	depends on I2C && HAS_DTS_I2C
+	default y
+	depends on DT_HAS_ST_LIS3MDL_MAGN_ENABLED
+	select I2C
 	help
 	  Enable driver for LIS3MDL I2C-based magnetometer.
 
@@ -34,22 +34,6 @@ endchoice # LIS3MDL_TRIGGER_MODE
 
 config LIS3MDL_TRIGGER
 	bool
-
-config LIS3MDL_GPIO_DEV_NAME
-	string "GPIO device"
-	default "GPIO_0"
-	depends on LIS3MDL_TRIGGER
-	help
-	  The device name of the GPIO device to which the LIS3MDL interrupt pins
-	  are connected.
-
-config LIS3MDL_GPIO_PIN_NUM
-	int "Interrupt GPIO pin number"
-	default 0
-	depends on LIS3MDL_TRIGGER
-	help
-	  The number of the GPIO on which the interrupt signal from the LIS3MDL
-	  chip will be received.
 
 config LIS3MDL_THREAD_PRIORITY
 	int "Thread priority"

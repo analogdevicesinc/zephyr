@@ -1,10 +1,7 @@
-# Kconfig - net stack configuration options
+# Net stack configuration options
 
-#
 # Copyright (c) 2015 Intel Corporation
-#
 # SPDX-License-Identifier: Apache-2.0
-#
 
 menu "Networking"
 
@@ -15,16 +12,6 @@ config NET_BUF
 	  buffers.
 
 if NET_BUF
-
-config NET_BUF_USER_DATA_SIZE
-	int "Size of user_data available in every network buffer"
-	default 8 if BT
-	default 4
-	range 8 65535 if BT
-	range 0 65535
-	help
-	  Amount of memory reserved in each network buffer for user data. In
-	  most cases this can be left as the default value.
 
 config NET_BUF_LOG
 	bool "Network buffer logging"
@@ -66,21 +53,30 @@ config NET_BUF_POOL_USAGE
 
 endif # NET_BUF
 
-config  NETWORKING
-	bool "Link layer and IP networking support"
+config NETWORKING
+	bool "Link layer and networking (including IP)"
 	select NET_BUF
 	select POLL
 	select ENTROPY_GENERATOR
 	help
-	  This option enabled generic link layer and IP networking support.
+	  This option enables generic link layer and networking support
+	  and is the basis for higher level protocols (e.g. IP protocols).
 
 if NETWORKING
+
+# Such option should not be configured manually but by device drivers
+# which supports PM properly.
+config NET_POWER_MANAGEMENT
+	bool
+	depends on PM_DEVICE
 
 source "subsys/net/Kconfig.hostname"
 
 source "subsys/net/l2/Kconfig"
 
 source "subsys/net/ip/Kconfig"
+
+source "subsys/net/pkt_filter/Kconfig"
 
 source "subsys/net/lib/Kconfig"
 

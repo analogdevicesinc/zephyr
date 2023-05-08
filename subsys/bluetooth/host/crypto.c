@@ -8,53 +8,47 @@
 #include <string.h>
 #include <errno.h>
 
-#include <zephyr.h>
-#include <sys/byteorder.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/byteorder.h>
+#include <zephyr/sys/check.h>
 
-#include <bluetooth/bluetooth.h>
-#include <bluetooth/hci.h>
-#include <bluetooth/conn.h>
+#include <zephyr/bluetooth/bluetooth.h>
+#include <zephyr/bluetooth/hci.h>
+#include <zephyr/bluetooth/conn.h>
+#include <zephyr/bluetooth/crypto.h>
 
 #include <tinycrypt/constants.h>
 #include <tinycrypt/hmac_prng.h>
 #include <tinycrypt/aes.h>
 #include <tinycrypt/utils.h>
 
-#define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_DEBUG_HCI_CORE)
-#define LOG_MODULE_NAME bt_crypto
-#include "common/log.h"
+#include "common/bt_str.h"
 
 #include "hci_core.h"
+
+#define LOG_LEVEL CONFIG_BT_HCI_CORE_LOG_LEVEL
+#include <zephyr/logging/log.h>
+LOG_MODULE_REGISTER(bt_host_crypto);
 
 static struct tc_hmac_prng_struct prng;
 
 static int prng_reseed(struct tc_hmac_prng_struct *h)
 {
-	u8_t seed[32];
-	s64_t extra;
-	int ret, i;
+	uint8_t seed[32];
+	int64_t extra;
+	int ret;
 
-	for (i = 0; i < (sizeof(seed) / 8); i++) {
-		struct bt_hci_rp_le_rand *rp;
-		struct net_buf *rsp;
-
-		ret = bt_hci_cmd_send_sync(BT_HCI_OP_LE_RAND, NULL, &rsp);
-		if (ret) {
-			return ret;
-		}
-
-		rp = (void *)rsp->data;
-		memcpy(&seed[i * 8], rp->rand, 8);
-
-		net_buf_unref(rsp);
+	ret = bt_hci_le_rand(seed, sizeof(seed));
+	if (ret) {
+		return ret;
 	}
 
 	extra = k_uptime_get();
 
-	ret = tc_hmac_prng_reseed(h, seed, sizeof(seed), (u8_t *)&extra,
+	ret = tc_hmac_prng_reseed(h, seed, sizeof(seed), (uint8_t *)&extra,
 				  sizeof(extra));
 	if (ret == TC_CRYPTO_FAIL) {
-		BT_ERR("Failed to re-seed PRNG");
+		LOG_ERR("Failed to re-seed PRNG");
 		return -EIO;
 	}
 
@@ -63,28 +57,17 @@ static int prng_reseed(struct tc_hmac_prng_struct *h)
 
 int prng_init(void)
 {
-	struct bt_hci_rp_le_rand *rp;
-	struct net_buf *rsp;
+	uint8_t perso[8];
 	int ret;
 
-	/* Check first that HCI_LE_Rand is supported */
-	if (!BT_CMD_TEST(bt_dev.supported_commands, 27, 7)) {
-		return -ENOTSUP;
-	}
-
-	ret = bt_hci_cmd_send_sync(BT_HCI_OP_LE_RAND, NULL, &rsp);
+	ret = bt_hci_le_rand(perso, sizeof(perso));
 	if (ret) {
 		return ret;
 	}
 
-	rp = (void *)rsp->data;
-
-	ret = tc_hmac_prng_init(&prng, rp->rand, sizeof(rp->rand));
-
-	net_buf_unref(rsp);
-
+	ret = tc_hmac_prng_init(&prng, perso, sizeof(perso));
 	if (ret == TC_CRYPTO_FAIL) {
-		BT_ERR("Failed to initialize PRNG");
+		LOG_ERR("Failed to initialize PRNG");
 		return -EIO;
 	}
 
@@ -92,9 +75,14 @@ int prng_init(void)
 	return prng_reseed(&prng);
 }
 
+#if defined(CONFIG_BT_HOST_CRYPTO_PRNG)
 int bt_rand(void *buf, size_t len)
 {
 	int ret;
+
+	CHECKIF(buf == NULL || len == 0) {
+		return -EINVAL;
+	}
 
 	ret = tc_hmac_prng_generate(buf, len, &prng);
 	if (ret == TC_HMAC_PRNG_RESEED_REQ) {
@@ -112,14 +100,29 @@ int bt_rand(void *buf, size_t len)
 
 	return -EIO;
 }
+#else /* !CONFIG_BT_HOST_CRYPTO_PRNG */
+int bt_rand(void *buf, size_t len)
+{
+	CHECKIF(buf == NULL || len == 0) {
+		return -EINVAL;
+	}
 
-int bt_encrypt_le(const u8_t key[16], const u8_t plaintext[16],
-		  u8_t enc_data[16])
+	return bt_hci_le_rand(buf, len);
+}
+#endif /* CONFIG_BT_HOST_CRYPTO_PRNG */
+
+int bt_encrypt_le(const uint8_t key[16], const uint8_t plaintext[16],
+		  uint8_t enc_data[16])
 {
 	struct tc_aes_key_sched_struct s;
-	u8_t tmp[16];
+	uint8_t tmp[16];
 
-	BT_DBG("key %s plaintext %s", bt_hex(key, 16), bt_hex(plaintext, 16));
+	CHECKIF(key == NULL || plaintext == NULL || enc_data == NULL) {
+		return -EINVAL;
+	}
+
+	LOG_DBG("key %s", bt_hex(key, 16));
+	LOG_DBG("plaintext %s", bt_hex(plaintext, 16));
 
 	sys_memcpy_swap(tmp, key, 16);
 
@@ -135,17 +138,22 @@ int bt_encrypt_le(const u8_t key[16], const u8_t plaintext[16],
 
 	sys_mem_swap(enc_data, 16);
 
-	BT_DBG("enc_data %s", bt_hex(enc_data, 16));
+	LOG_DBG("enc_data %s", bt_hex(enc_data, 16));
 
 	return 0;
 }
 
-int bt_encrypt_be(const u8_t key[16], const u8_t plaintext[16],
-		  u8_t enc_data[16])
+int bt_encrypt_be(const uint8_t key[16], const uint8_t plaintext[16],
+		  uint8_t enc_data[16])
 {
 	struct tc_aes_key_sched_struct s;
 
-	BT_DBG("key %s plaintext %s", bt_hex(key, 16), bt_hex(plaintext, 16));
+	CHECKIF(key == NULL || plaintext == NULL || enc_data == NULL) {
+		return -EINVAL;
+	}
+
+	LOG_DBG("key %s", bt_hex(key, 16));
+	LOG_DBG("plaintext %s", bt_hex(plaintext, 16));
 
 	if (tc_aes128_set_encrypt_key(&s, key) == TC_CRYPTO_FAIL) {
 		return -EINVAL;
@@ -155,7 +163,14 @@ int bt_encrypt_be(const u8_t key[16], const u8_t plaintext[16],
 		return -EINVAL;
 	}
 
-	BT_DBG("enc_data %s", bt_hex(enc_data, 16));
+	LOG_DBG("enc_data %s", bt_hex(enc_data, 16));
 
 	return 0;
 }
+
+#ifdef ZTEST_UNITTEST
+struct tc_hmac_prng_struct *bt_crypto_get_hmac_prng_instance(void)
+{
+	return &prng;
+}
+#endif /* ZTEST_UNITTEST */

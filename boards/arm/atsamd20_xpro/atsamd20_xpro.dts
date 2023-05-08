@@ -6,6 +6,7 @@
 
 /dts-v1/;
 #include <atmel/samd20.dtsi>
+#include "atsamd20_xpro-pinctrl.dtsi"
 
 / {
 	model = "SAM D20 Xplained Pro";
@@ -14,6 +15,7 @@
 	aliases {
 		led0 = &yellow_led;
 		sw0 = &user_button;
+		i2c-0 = &sercom2;
 	};
 
 	chosen {
@@ -26,7 +28,7 @@
 	leds {
 		compatible = "gpio-leds";
 		yellow_led: led_0 {
-			gpios = <&porta 14 0>;
+			gpios = <&porta 14 GPIO_ACTIVE_LOW>;
 			label = "LED0";
 		};
 	};
@@ -34,7 +36,7 @@
 	buttons {
 		compatible = "gpio-keys";
 		user_button: button_0 {
-			gpios = <&porta 15 (GPIO_PUD_PULL_UP | GPIO_INT_ACTIVE_LOW)>;
+			gpios = <&porta 15 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
 			label = "SW0";
 		};
 	};
@@ -48,9 +50,24 @@
 	status = "okay";
 	compatible = "atmel,sam0-spi";
 	dipo = <0>;
-	dopo = <2>;
+	dopo = <1>;
 	#address-cells = <1>;
 	#size-cells = <0>;
+	cs-gpios = <&porta 5 GPIO_ACTIVE_LOW>;
+
+	pinctrl-0 = <&sercom0_spi_default>;
+	pinctrl-names = "default";
+};
+
+&sercom2 {
+	status = "okay";
+	compatible = "atmel,sam0-i2c";
+	clock-frequency = <I2C_BITRATE_FAST>;
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	pinctrl-0 = <&sercom2_i2c_default>;
+	pinctrl-names = "default";
 };
 
 &sercom3 {
@@ -59,6 +76,9 @@
 	current-speed = <115200>;
 	rxpo = <3>;
 	txpo = <1>;
+
+	pinctrl-0 = <&sercom3_uart_default>;
+	pinctrl-names = "default";
 };
 
 &sercom4 {
@@ -67,6 +87,9 @@
 	current-speed = <115200>;
 	rxpo = <1>;
 	txpo = <0>;
+
+	pinctrl-0 = <&sercom4_uart_default>;
+	pinctrl-names = "default";
 };
 
 &flash0 {
@@ -76,16 +99,13 @@
 		#size-cells = <1>;
 
 		/*
-		 * The final 16 KiB is reserved for the application
-		 * and is used by NFFS if enabled.
+		 * The final 16 KiB is reserved for the application.
+		 * Storage partition will be used by FCB/LittleFS/NVS
+		 * if enabled.
 		 */
 		storage_partition: partition@3c000 {
 			label = "storage";
 			reg = <0x0003c000 0x00004000>;
 		};
 	};
-};
-
-&rtc {
-	status = "okay";
 };

@@ -1,10 +1,7 @@
-# Kconfig - Bluetooth LE driver configuration options
+# Bluetooth LE driver configuration options
 
-#
 # Copyright (c) 2015-2016 Intel Corporation
-#
 # SPDX-License-Identifier: Apache-2.0
-#
 
 #
 # Bluetooth options
@@ -12,9 +9,12 @@
 
 # Controller support is an HCI driver in itself, so these HCI driver
 # options are only applicable if controller support hasn't been enabled.
-if BT && ! BT_CTLR
+menuconfig BT_DRIVERS
+	bool "Bluetooth drivers"
+	default y
+	depends on BT && !BT_CTLR
 
-menu "Bluetooth Drivers"
+if BT_DRIVERS
 
 if BT_HCI
 source "drivers/bluetooth/hci/Kconfig"
@@ -24,6 +24,4 @@ if BT_CUSTOM
 # Insert here any custom (non-HCI) offload drives
 endif
 
-endmenu
-
-endif # BT && ! BT_CTLR
+endif # BT_DRIVERS

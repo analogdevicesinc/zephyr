@@ -4,14 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <sys/printk.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/printk.h>
 
-#include <drivers/gpio.h>
-#include <drivers/led.h>
-#include <drivers/i2c.h>
-#include <drivers/spi.h>
-#include <drivers/sensor.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/led.h>
+#include <zephyr/drivers/i2c.h>
+#include <zephyr/drivers/spi.h>
+#include <zephyr/drivers/sensor.h>
 
 #include <stdio.h>
 
@@ -20,6 +20,10 @@
 #define WHOAMI_REG      0x0F
 #define WHOAMI_ALT_REG  0x4F
 
+#ifdef CONFIG_LP3943
+static const struct device *const ledc = DEVICE_DT_GET_ONE(ti_lp3943);
+#endif
+
 static inline float out_ev(struct sensor_value *val)
 {
 	return (val->val1 + (float)val->val2 / 1000000);
@@ -27,8 +31,8 @@ static inline float out_ev(struct sensor_value *val)
 
 static int lsm6dsl_trig_cnt;
 #ifdef CONFIG_LSM6DSL_TRIGGER
-static void lsm6dsl_trigger_handler(struct device *dev,
-				    struct sensor_trigger *trig)
+static void lsm6dsl_trigger_handler(const struct device *dev,
+				    const struct sensor_trigger *trig)
 {
 #ifdef ARGONKEY_TEST_LOG
 	char out_str[64];
@@ -50,9 +54,9 @@ static void lsm6dsl_trigger_handler(struct device *dev,
 	sensor_channel_get(dev, SENSOR_CHAN_ACCEL_Y, &accel_y);
 	sensor_channel_get(dev, SENSOR_CHAN_ACCEL_Z, &accel_z);
 #ifdef ARGONKEY_TEST_LOG
-	sprintf(out_str, "accel (%f %f %f) m/s2", out_ev(&accel_x),
-						out_ev(&accel_y),
-						out_ev(&accel_z));
+	sprintf(out_str, "accel (%f %f %f) m/s2", (double)out_ev(&accel_x),
+						(double)out_ev(&accel_y),
+						(double)out_ev(&accel_z));
 	printk("TRIG %s\n", out_str);
 #endif
 
@@ -62,9 +66,9 @@ static void lsm6dsl_trigger_handler(struct device *dev,
 	sensor_channel_get(dev, SENSOR_CHAN_GYRO_Y, &gyro_y);
 	sensor_channel_get(dev, SENSOR_CHAN_GYRO_Z, &gyro_z);
 #ifdef ARGONKEY_TEST_LOG
-	sprintf(out_str, "gyro (%f %f %f) dps", out_ev(&gyro_x),
-						out_ev(&gyro_y),
-						out_ev(&gyro_z));
+	sprintf(out_str, "gyro (%f %f %f) dps", (double)out_ev(&gyro_x),
+						(double)out_ev(&gyro_y),
+						(double)out_ev(&gyro_z));
 	printk("TRIG %s\n", out_str);
 #endif
 
@@ -75,9 +79,9 @@ static void lsm6dsl_trigger_handler(struct device *dev,
 	sensor_channel_get(dev, SENSOR_CHAN_MAGN_Y, &magn_y);
 	sensor_channel_get(dev, SENSOR_CHAN_MAGN_Z, &magn_z);
 #ifdef ARGONKEY_TEST_LOG
-	sprintf(out_str, "magn (%f %f %f) gauss", out_ev(&magn_x),
-						 out_ev(&magn_y),
-						 out_ev(&magn_z));
+	sprintf(out_str, "magn (%f %f %f) gauss", (double)out_ev(&magn_x),
+						 (double)out_ev(&magn_y),
+						 (double)out_ev(&magn_z));
 	printk("TRIG %s\n", out_str);
 #endif
 
@@ -91,8 +95,8 @@ static void lsm6dsl_trigger_handler(struct device *dev,
 	sensor_channel_get(dev, SENSOR_CHAN_AMBIENT_TEMP, &temp);
 
 #ifdef ARGONKEY_TEST_LOG
-	sprintf(out_str, "press (%f) kPa - temp (%f) deg", out_ev(&press),
-							   out_ev(&temp));
+	sprintf(out_str, "press (%f) kPa - temp (%f) deg", (double)out_ev(&press),
+							   (double)out_ev(&temp));
 	printk("%s\n", out_str);
 #endif
 
@@ -103,21 +107,18 @@ static void lsm6dsl_trigger_handler(struct device *dev,
 #define NUM_LEDS 12
 #define DELAY_TIME K_MSEC(50)
 
-void main(void)
+int main(void)
 {
 	int cnt = 0;
 	char out_str[64];
-	static struct device *led0, *led1;
+	static const struct gpio_dt_spec led0_gpio = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
+	static const struct gpio_dt_spec led1_gpio = GPIO_DT_SPEC_GET(DT_ALIAS(led1), gpios);
 	int i, on = 1;
 
 #ifdef CONFIG_LP3943
-	static struct device *ledc;
-
-	ledc = device_get_binding(DT_INST_0_TI_LP3943_LABEL);
-	if (!ledc) {
-		printk("Could not get pointer to %s sensor\n",
-			DT_INST_0_TI_LP3943_LABEL);
-		return;
+	if (!device_is_ready(ledc)) {
+		printk("%s: device not ready.\n", ledc->name);
+		return 0;
 	}
 
 	/* turn all leds on */
@@ -133,49 +134,50 @@ void main(void)
 	}
 #endif
 
-	led0 = device_get_binding(DT_ALIAS_LED0_GPIOS_CONTROLLER);
-	gpio_pin_configure(led0, DT_ALIAS_LED0_GPIOS_PIN, GPIO_DIR_OUT);
-	gpio_pin_write(led0, DT_ALIAS_LED0_GPIOS_PIN, 1);
+	if (!device_is_ready(led0_gpio.port)) {
+		printk("%s: device not ready.\n", led0_gpio.port->name);
+		return 0;
+	}
+	gpio_pin_configure_dt(&led0_gpio, GPIO_OUTPUT_ACTIVE);
 
-	led1 = device_get_binding(DT_ALIAS_LED1_GPIOS_CONTROLLER);
-	gpio_pin_configure(led1, DT_ALIAS_LED1_GPIOS_PIN, GPIO_DIR_OUT);
+	if (!device_is_ready(led1_gpio.port)) {
+		printk("%s: device not ready.\n", led1_gpio.port->name);
+		return 0;
+	}
+	gpio_pin_configure_dt(&led1_gpio, GPIO_OUTPUT_INACTIVE);
 
 	for (i = 0; i < 5; i++) {
-		gpio_pin_write(led1, DT_ALIAS_LED1_GPIOS_PIN, on);
-		k_sleep(200);
+		gpio_pin_set_dt(&led1_gpio, on);
+		k_sleep(K_MSEC(200));
 		on = (on == 1) ? 0 : 1;
 	}
 
 	printk("ArgonKey test!!\n");
 
 #ifdef CONFIG_LPS22HB
-	struct device *baro_dev =
-			device_get_binding(DT_INST_0_ST_LPS22HB_PRESS_LABEL);
+	const struct device *const baro_dev = DEVICE_DT_GET_ONE(st_lps22hb_press);
 
-	if (!baro_dev) {
-		printk("Could not get pointer to %s sensor\n",
-			DT_INST_0_ST_LPS22HB_PRESS_LABEL);
-		return;
+	if (!device_is_ready(baro_dev)) {
+		printk("%s: device not ready.\n", baro_dev->name);
+		return 0;
 	}
 #endif
 
 #ifdef CONFIG_HTS221
-	struct device *hum_dev = device_get_binding(DT_INST_0_ST_HTS221_LABEL);
+	const struct device *const hum_dev = DEVICE_DT_GET_ONE(st_hts221);
 
-	if (!hum_dev) {
-		printk("Could not get pointer to %s sensor\n",
-			DT_INST_0_ST_HTS221_LABEL);
-		return;
+	if (!device_is_ready(hum_dev)) {
+		printk("%s: device not ready.\n", hum_dev->name);
+		return 0;
 	}
 #endif
 
 #ifdef CONFIG_LSM6DSL
-	struct device *accel_dev = device_get_binding(DT_INST_0_ST_LSM6DSL_LABEL);
+	const struct device *const accel_dev = DEVICE_DT_GET_ONE(st_lsm6dsl);
 
-	if (!accel_dev) {
-		printk("Could not get pointer to %s sensor\n",
-			DT_INST_0_ST_LSM6DSL_LABEL);
-		return;
+	if (!device_is_ready(accel_dev)) {
+		printk("%s: device not ready.\n", accel_dev->name);
+		return 0;
 	}
 
 #if defined(CONFIG_LSM6DSL_ACCEL_ODR) && (CONFIG_LSM6DSL_ACCEL_ODR == 0)
@@ -188,7 +190,7 @@ void main(void)
 	if (sensor_attr_set(accel_dev, SENSOR_CHAN_ACCEL_XYZ,
 			    SENSOR_ATTR_SAMPLING_FREQUENCY, &a_odr_attr) < 0) {
 		printk("Cannot set sampling frequency for accelerometer.\n");
-		return;
+		return 0;
 	}
 #endif
 
@@ -201,7 +203,7 @@ void main(void)
 	if (sensor_attr_set(accel_dev, SENSOR_CHAN_ACCEL_XYZ,
 			    SENSOR_ATTR_FULL_SCALE, &a_fs_attr) < 0) {
 		printk("Cannot set fs for accelerometer.\n");
-		return;
+		return 0;
 	}
 #endif
 
@@ -215,7 +217,7 @@ void main(void)
 	if (sensor_attr_set(accel_dev, SENSOR_CHAN_GYRO_XYZ,
 			    SENSOR_ATTR_SAMPLING_FREQUENCY, &g_odr_attr) < 0) {
 		printk("Cannot set sampling frequency for gyro.\n");
-		return;
+		return 0;
 	}
 #endif
 
@@ -228,19 +230,18 @@ void main(void)
 	if (sensor_attr_set(accel_dev, SENSOR_CHAN_GYRO_XYZ,
 			    SENSOR_ATTR_FULL_SCALE, &g_fs_attr) < 0) {
 		printk("Cannot set fs for gyroscope.\n");
-		return;
+		return 0;
 	}
 #endif
 
 #endif
 
 #ifdef CONFIG_VL53L0X
-	struct device *tof_dev = device_get_binding(DT_INST_0_ST_VL53L0X_LABEL);
+	const struct device *const tof_dev = DEVICE_DT_GET_ONE(st_vl53l0x);
 
-	if (!tof_dev) {
-		printk("Could not get pointer to %s sensor\n",
-			DT_INST_0_ST_VL53L0X_LABEL);
-		return;
+	if (!device_is_ready(tof_dev)) {
+		printk("%s: device not ready.\n", tof_dev->name);
+		return 0;
 	}
 #endif
 
@@ -252,7 +253,7 @@ void main(void)
 	if (sensor_trigger_set(accel_dev, &trig,
 			       lsm6dsl_trigger_handler) != 0) {
 		printk("Could not set sensor type and channel\n");
-		return;
+		return 0;
 	}
 #endif
 
@@ -309,9 +310,9 @@ void main(void)
 		sensor_channel_get(accel_dev, SENSOR_CHAN_ACCEL_X, &accel_x);
 		sensor_channel_get(accel_dev, SENSOR_CHAN_ACCEL_Y, &accel_y);
 		sensor_channel_get(accel_dev, SENSOR_CHAN_ACCEL_Z, &accel_z);
-		sprintf(out_str, "accel (%f %f %f) m/s2", out_ev(&accel_x),
-							out_ev(&accel_y),
-							out_ev(&accel_z));
+		sprintf(out_str, "accel (%f %f %f) m/s2", (double)out_ev(&accel_x),
+							(double)out_ev(&accel_y),
+							(double)out_ev(&accel_z));
 		printk("%s\n", out_str);
 
 		/* lsm6dsl gyro */
@@ -319,9 +320,9 @@ void main(void)
 		sensor_channel_get(accel_dev, SENSOR_CHAN_GYRO_X, &gyro_x);
 		sensor_channel_get(accel_dev, SENSOR_CHAN_GYRO_Y, &gyro_y);
 		sensor_channel_get(accel_dev, SENSOR_CHAN_GYRO_Z, &gyro_z);
-		sprintf(out_str, "gyro (%f %f %f) dps", out_ev(&gyro_x),
-							out_ev(&gyro_y),
-							out_ev(&gyro_z));
+		sprintf(out_str, "gyro (%f %f %f) dps", (double)out_ev(&gyro_x),
+							(double)out_ev(&gyro_y),
+							(double)out_ev(&gyro_z));
 		printk("%s\n", out_str);
 #if defined(CONFIG_LSM6DSL_EXT0_LIS2MDL)
 		/* lsm6dsl magn */
@@ -329,9 +330,9 @@ void main(void)
 		sensor_channel_get(accel_dev, SENSOR_CHAN_MAGN_X, &magn_x);
 		sensor_channel_get(accel_dev, SENSOR_CHAN_MAGN_Y, &magn_y);
 		sensor_channel_get(accel_dev, SENSOR_CHAN_MAGN_Z, &magn_z);
-		sprintf(out_str, "magn (%f %f %f) gauss", out_ev(&magn_x),
-							 out_ev(&magn_y),
-							 out_ev(&magn_z));
+		sprintf(out_str, "magn (%f %f %f) gauss", (double)out_ev(&magn_x),
+							 (double)out_ev(&magn_y),
+							 (double)out_ev(&magn_z));
 		printk("%s\n", out_str);
 #endif
 #if defined(CONFIG_LSM6DSL_EXT0_LPS22HB)
@@ -343,15 +344,13 @@ void main(void)
 		sensor_channel_get(accel_dev, SENSOR_CHAN_AMBIENT_TEMP, &temp);
 
 		sprintf(out_str, "press (%f) kPa - temp (%f) deg",
-			out_ev(&press), out_ev(&temp));
+			(double)out_ev(&press), (double)out_ev(&temp));
 		printk("%s\n", out_str);
 #endif
 
 #endif /* CONFIG_LSM6DSL */
 
 		printk("- (%d) (trig_cnt: %d)\n\n", ++cnt, lsm6dsl_trig_cnt);
-		k_sleep(2000);
+		k_sleep(K_MSEC(2000));
 	}
 }
-
-

@@ -2,29 +2,62 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+import importlib
+import logging
+
 from runners.core import ZephyrBinaryRunner, MissingProgram
 
-# We import these here to ensure the ZephyrBinaryRunner subclasses are
-# defined; otherwise, ZephyrBinaryRunner.create_for_shell_script()
-# won't work.
+_logger = logging.getLogger('runners')
 
-# Explicitly silence the unused import warning.
-# flake8: noqa: F401
-from runners import arc
-from runners import bossac
-from runners import dfu
-from runners import esp32
-from runners import hifive1
-from runners import jlink
-from runners import nios2
-from runners import nrfjprog
-from runners import nsim
-from runners import openocd
-from runners import pyocd
-from runners import qemu
-from runners import xtensa
-from runners import intel_s1000
-from runners import blackmagicprobe
+def _import_runner_module(runner_name):
+    try:
+        importlib.import_module(f'runners.{runner_name}')
+    except ImportError as ie:
+        # Runners are supposed to gracefully handle failures when they
+        # import anything outside of stdlib, but they sometimes do
+        # not. Catch ImportError to handle this.
+        _logger.warning(f'The module for runner "{runner_name}" '
+                        f'could not be imported ({ie}). This most likely '
+                        'means it is not handling its dependencies properly. '
+                        'Please report this to the zephyr developers.')
+
+# We import these here to ensure the ZephyrBinaryRunner subclasses are
+# defined; otherwise, ZephyrBinaryRunner.get_runners() won't work.
+
+_names = [
+    'blackmagicprobe',
+    'bossac',
+    'canopen_program',
+    'dediprog',
+    'dfu',
+    'esp32',
+    'ezflashcli',
+    'gd32isp',
+    'hifive1',
+    'intel_adsp',
+    'intel_cyclonev',
+    'jlink',
+    'mdb',
+    'misc',
+    'nios2',
+    'nrfjprog',
+    'nrfutil',
+    'nsim',
+    'openocd',
+    'pyocd',
+    'qemu',
+    'silabs_commander',
+    'spi_burn',
+    'stm32cubeprogrammer',
+    'stm32flash',
+    'trace32',
+    'uf2',
+    'xtensa',
+    # Keep this list sorted by runner name; don't add to the end.
+]
+
+for _name in _names:
+    _import_runner_module(_name)
 
 def get_runner_cls(runner):
     '''Get a runner's class object, given its name.'''

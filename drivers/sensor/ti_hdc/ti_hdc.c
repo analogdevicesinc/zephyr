@@ -4,60 +4,61 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <device.h>
-#include <drivers/i2c.h>
-#include <drivers/gpio.h>
-#include <kernel.h>
-#include <drivers/sensor.h>
-#include <sys/util.h>
-#include <sys/__assert.h>
-#include <logging/log.h>
+#define DT_DRV_COMPAT ti_hdc
+
+#include <zephyr/device.h>
+#include <zephyr/drivers/i2c.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/kernel.h>
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/sys/__assert.h>
+#include <zephyr/logging/log.h>
 
 #include "ti_hdc.h"
 
-#define LOG_LEVEL CONFIG_SENSOR_LOG_LEVEL
-LOG_MODULE_REGISTER(TI_HDC);
+LOG_MODULE_REGISTER(TI_HDC, CONFIG_SENSOR_LOG_LEVEL);
 
-#if defined(DT_INST_0_TI_HDC_DRDY_GPIOS_CONTROLLER)
-static void ti_hdc_gpio_callback(struct device *dev,
-				  struct gpio_callback *cb, u32_t pins)
+static void ti_hdc_gpio_callback(const struct device *dev,
+				  struct gpio_callback *cb, uint32_t pins)
 {
 	struct ti_hdc_data *drv_data =
 		CONTAINER_OF(cb, struct ti_hdc_data, gpio_cb);
+	const struct ti_hdc_config *cfg = drv_data->dev->config;
 
 	ARG_UNUSED(pins);
 
-	gpio_pin_disable_callback(dev, DT_INST_0_TI_HDC_DRDY_GPIOS_PIN);
+	gpio_pin_interrupt_configure_dt(&cfg->drdy, GPIO_INT_DISABLE);
 	k_sem_give(&drv_data->data_sem);
 }
-#endif
 
-static int ti_hdc_sample_fetch(struct device *dev, enum sensor_channel chan)
+static int ti_hdc_sample_fetch(const struct device *dev,
+			       enum sensor_channel chan)
 {
-	struct ti_hdc_data *drv_data = dev->driver_data;
-	u8_t buf[4];
+	struct ti_hdc_data *drv_data = dev->data;
+	const struct ti_hdc_config *cfg = dev->config;
+	uint8_t buf[4];
 
 	__ASSERT_NO_MSG(chan == SENSOR_CHAN_ALL);
 
-#if defined(DT_INST_0_TI_HDC_DRDY_GPIOS_CONTROLLER)
-	gpio_pin_enable_callback(drv_data->gpio, DT_INST_0_TI_HDC_DRDY_GPIOS_PIN);
-#endif
+	if (cfg->drdy.port) {
+		gpio_pin_interrupt_configure_dt(&cfg->drdy, GPIO_INT_EDGE_TO_ACTIVE);
+	}
 
 	buf[0] = TI_HDC_REG_TEMP;
-	if (i2c_write(drv_data->i2c, buf, 1,
-		      DT_INST_0_TI_HDC_BASE_ADDRESS) < 0) {
+	if (i2c_write_dt(&cfg->i2c, buf, 1) < 0) {
 		LOG_DBG("Failed to write address pointer");
 		return -EIO;
 	}
 
-#if defined(DT_INST_0_TI_HDC_DRDY_GPIOS_CONTROLLER)
-	k_sem_take(&drv_data->data_sem, K_FOREVER);
-#else
-	/* wait for the conversion to finish */
-	k_sleep(HDC_CONVERSION_TIME);
-#endif
+	if (cfg->drdy.port) {
+		k_sem_take(&drv_data->data_sem, K_FOREVER);
+	} else {
+		/* wait for the conversion to finish */
+		k_msleep(HDC_CONVERSION_TIME);
+	}
 
-	if (i2c_read(drv_data->i2c, buf, 4, DT_INST_0_TI_HDC_BASE_ADDRESS) < 0) {
+	if (i2c_read_dt(&cfg->i2c, buf, 4) < 0) {
 		LOG_DBG("Failed to read sample data");
 		return -EIO;
 	}
@@ -69,12 +70,12 @@ static int ti_hdc_sample_fetch(struct device *dev, enum sensor_channel chan)
 }
 
 
-static int ti_hdc_channel_get(struct device *dev,
+static int ti_hdc_channel_get(const struct device *dev,
 			      enum sensor_channel chan,
 			      struct sensor_value *val)
 {
-	struct ti_hdc_data *drv_data = dev->driver_data;
-	u64_t tmp;
+	struct ti_hdc_data *drv_data = dev->data;
+	uint64_t tmp;
 
 	/*
 	 * See datasheet "Temperature Register" and "Humidity
@@ -83,12 +84,12 @@ static int ti_hdc_channel_get(struct device *dev,
 	 */
 	if (chan == SENSOR_CHAN_AMBIENT_TEMP) {
 		/* val = -40 + 165 * sample / 2^16 */
-		tmp = (u64_t)drv_data->t_sample * 165U;
-		val->val1 = (s32_t)(tmp >> 16) - 40;
+		tmp = (uint64_t)drv_data->t_sample * 165U;
+		val->val1 = (int32_t)(tmp >> 16) - 40;
 		val->val2 = ((tmp & 0xFFFF) * 1000000U) >> 16;
 	} else if (chan == SENSOR_CHAN_HUMIDITY) {
 		/* val = 100 * sample / 2^16 */
-		tmp = (u64_t)drv_data->rh_sample * 100U;
+		tmp = (uint64_t)drv_data->rh_sample * 100U;
 		val->val1 = tmp >> 16;
 		/* x * 1000000 / 65536 == x * 15625 / 1024 */
 		val->val2 = ((tmp & 0xFFFF) * 15625U) >> 10;
@@ -104,76 +105,78 @@ static const struct sensor_driver_api ti_hdc_driver_api = {
 	.channel_get = ti_hdc_channel_get,
 };
 
-static u16_t read16(struct device *dev, u8_t a, u8_t d)
+static uint16_t read16(const struct i2c_dt_spec *i2c, uint8_t d)
 {
-	u8_t buf[2];
-	if (i2c_burst_read(dev, a, d, (u8_t *)buf, 2) < 0) {
+	uint8_t buf[2];
+	if (i2c_burst_read_dt(i2c, d, (uint8_t *)buf, 2) < 0) {
 		LOG_ERR("Error reading register.");
 	}
 	return (buf[0] << 8 | buf[1]);
 }
 
-static int ti_hdc_init(struct device *dev)
+static int ti_hdc_init(const struct device *dev)
 {
-	struct ti_hdc_data *drv_data = dev->driver_data;
-	u16_t tmp;
+	const struct ti_hdc_config *cfg = dev->config;
+	uint16_t tmp;
 
-	drv_data->i2c = device_get_binding(DT_INST_0_TI_HDC_BUS_NAME);
-
-	if (drv_data->i2c == NULL) {
-		LOG_DBG("Failed to get pointer to %s device!",
-			DT_INST_0_TI_HDC_BUS_NAME);
-		return -EINVAL;
+	if (!device_is_ready(cfg->i2c.bus)) {
+		LOG_ERR("Bus device is not ready");
+		return -ENODEV;
 	}
 
-	if (read16(drv_data->i2c, DT_INST_0_TI_HDC_BASE_ADDRESS,
-		   TI_HDC_REG_MANUFID) != TI_HDC_MANUFID) {
+	if (read16(&cfg->i2c, TI_HDC_REG_MANUFID) != TI_HDC_MANUFID) {
 		LOG_ERR("Failed to get correct manufacturer ID");
 		return -EINVAL;
 	}
-	tmp = read16(drv_data->i2c, DT_INST_0_TI_HDC_BASE_ADDRESS,
-		     TI_HDC_REG_DEVICEID);
+	tmp = read16(&cfg->i2c, TI_HDC_REG_DEVICEID);
 	if (tmp != TI_HDC1000_DEVID && tmp != TI_HDC1050_DEVID) {
 		LOG_ERR("Unsupported device ID");
 		return -EINVAL;
 	}
 
-#if defined(DT_INST_0_TI_HDC_DRDY_GPIOS_CONTROLLER)
-	k_sem_init(&drv_data->data_sem, 0, UINT_MAX);
+	if (cfg->drdy.port) {
+		struct ti_hdc_data *drv_data = dev->data;
 
-	/* setup data ready gpio interrupt */
-	drv_data->gpio = device_get_binding(
-				DT_INST_0_TI_HDC_DRDY_GPIOS_CONTROLLER);
-	if (drv_data->gpio == NULL) {
-		LOG_DBG("Failed to get pointer to %s device",
-			 DT_INST_0_TI_HDC_DRDY_GPIOS_CONTROLLER);
-		return -EINVAL;
+		drv_data->dev = dev;
+
+		k_sem_init(&drv_data->data_sem, 0, K_SEM_MAX_LIMIT);
+
+		/* setup data ready gpio interrupt */
+		if (!device_is_ready(cfg->drdy.port)) {
+			LOG_ERR("%s: device %s is not ready", dev->name,
+					cfg->drdy.port->name);
+			return -ENODEV;
+		}
+
+		gpio_pin_configure_dt(&cfg->drdy, GPIO_INPUT);
+
+		gpio_init_callback(&drv_data->gpio_cb,
+				ti_hdc_gpio_callback,
+				BIT(cfg->drdy.pin));
+
+		if (gpio_add_callback(cfg->drdy.port, &drv_data->gpio_cb) < 0) {
+			LOG_DBG("Failed to set GPIO callback");
+			return -EIO;
+		}
+
+		gpio_pin_interrupt_configure_dt(&cfg->drdy, GPIO_INT_EDGE_TO_ACTIVE);
 	}
-
-	gpio_pin_configure(drv_data->gpio, DT_INST_0_TI_HDC_DRDY_GPIOS_PIN,
-			   GPIO_DIR_IN | GPIO_INT | GPIO_INT_EDGE |
-#if defined(DT_INST_0_TI_HDC_DRDY_GPIOS_FLAGS)
-			   DT_INST_0_TI_HDC_DRDY_GPIOS_FLAGS |
-#endif
-			   GPIO_INT_ACTIVE_LOW | GPIO_INT_DEBOUNCE);
-
-	gpio_init_callback(&drv_data->gpio_cb,
-			   ti_hdc_gpio_callback,
-			   BIT(DT_INST_0_TI_HDC_DRDY_GPIOS_PIN));
-
-	if (gpio_add_callback(drv_data->gpio, &drv_data->gpio_cb) < 0) {
-		LOG_DBG("Failed to set GPIO callback");
-		return -EIO;
-	}
-#endif
 
 	LOG_INF("Initialized device successfully");
 
 	return 0;
 }
 
-static struct ti_hdc_data ti_hdc_data;
+#define TI_HDC_DEFINE(inst)								\
+	static struct ti_hdc_data ti_hdc_data_##inst;					\
+											\
+	static const struct ti_hdc_config ti_hdc_config_##inst = {			\
+		.i2c = I2C_DT_SPEC_INST_GET(inst),					\
+		.drdy = GPIO_DT_SPEC_INST_GET_OR(inst, drdy_gpios, { 0 }),		\
+	};										\
+											\
+	SENSOR_DEVICE_DT_INST_DEFINE(inst, ti_hdc_init, NULL,				\
+			      &ti_hdc_data_##inst, &ti_hdc_config_##inst, POST_KERNEL,	\
+			      CONFIG_SENSOR_INIT_PRIORITY, &ti_hdc_driver_api);		\
 
-DEVICE_AND_API_INIT(ti_hdc, DT_INST_0_TI_HDC_LABEL, ti_hdc_init, &ti_hdc_data,
-		    NULL, POST_KERNEL, CONFIG_SENSOR_INIT_PRIORITY,
-		    &ti_hdc_driver_api);
+DT_INST_FOREACH_STATUS_OKAY(TI_HDC_DEFINE)

@@ -4,14 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <toolchain.h>
-#include <linker/sections.h>
-#include <arch/cpu.h>
+#include <zephyr/toolchain.h>
+#include <zephyr/linker/sections.h>
+#include <zephyr/arch/cpu.h>
 #include <offsets_short.h>
 
 _ASM_FILE_PROLOGUE
 
-GDATA(_interrupt_stack)
+GDATA(z_interrupt_stacks)
 
 GTEXT(z_do_software_reboot)
 SECTION_FUNC(TEXT,z_do_software_reboot)
@@ -45,7 +45,7 @@ SECTION_FUNC(TEXT,z_force_exit_one_nested_irq)
 		ldrne lr, =0xfffffffd
 		ldrne r2, =z_do_software_reboot
 
-	ldr ip, =_interrupt_stack
+	ldr ip, =z_interrupt_stacks
 	add.w ip, ip, #(___esf_t_SIZEOF * 2) /* enough for a stack frame */
 	ldr r1, =0xfffffffe
 	and.w r2, r1

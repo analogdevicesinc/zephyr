@@ -7,9 +7,9 @@
 #ifndef ZEPHYR_DRIVERS_SENSOR_AMG88XX_AMG88XX_H_
 #define ZEPHYR_DRIVERS_SENSOR_AMG88XX_AMG88XX_H_
 
-#include <device.h>
-#include <drivers/gpio.h>
-#include <sys/util.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/sys/util.h>
 
 #define AMG88XX_PCLT		0x00 /* Setting Power control register */
 #define AMG88XX_RST		0x01 /* Reset register */
@@ -17,7 +17,7 @@
 #define AMG88XX_INTC		0x03 /* Setting interrupt control register */
 #define AMG88XX_STAT		0x04 /* Status register */
 #define AMG88XX_SCLR		0x05 /* Status clear register */
-#define AMG88XX_AVE		0x07 /* Setting verage register */
+#define AMG88XX_AVE		0x07 /* Setting average register */
 #define AMG88XX_INTHL		0x08 /* Interrupt level upper limit [7:0] */
 #define AMG88XX_INTHH		0x09 /* Interrupt level upper limit [11:8] */
 #define AMG88XX_INTLL		0x0a /* Interrupt level lower limit [7:0] */
@@ -38,7 +38,7 @@
 #define AMG88XX_OUTPUT_BASE	0x80 /* Base address for the output values */
 
 #define AMG88XX_PCLT_NORMAL_MODE	0x00
-#define AMG88XX_PCLT_SLEEEP_MODE	0x10
+#define AMG88XX_PCLT_SLEEP_MODE		0x10
 #define AMG88XX_PCLT_STAND_BY_60S_MODE	0x20
 #define AMG88XX_PCLT_STAND_BY_10S_MODE	0x21
 
@@ -67,51 +67,47 @@
 #define AMG88XX_WAIT_INITIAL_RESET_US	2000
 
 struct amg88xx_config {
-	char *i2c_name;
+	const struct i2c_dt_spec i2c;
 #ifdef CONFIG_AMG88XX_TRIGGER
-	char *gpio_name;
-	u8_t gpio_pin;
+	const struct gpio_dt_spec int_gpio;
 #endif
-	u8_t i2c_address;
 };
 
 struct amg88xx_data {
-	struct device *i2c;
-	s16_t sample[64];
+	int16_t sample[64];
 
 #ifdef CONFIG_AMG88XX_TRIGGER
-	struct device *gpio;
+	const struct device *dev;
 	struct gpio_callback gpio_cb;
 
 	sensor_trigger_handler_t drdy_handler;
-	struct sensor_trigger drdy_trigger;
+	const struct sensor_trigger *drdy_trigger;
 
 	sensor_trigger_handler_t th_handler;
-	struct sensor_trigger th_trigger;
+	const struct sensor_trigger *th_trigger;
 
 #if defined(CONFIG_AMG88XX_TRIGGER_OWN_THREAD)
-	K_THREAD_STACK_MEMBER(thread_stack, CONFIG_AMG88XX_THREAD_STACK_SIZE);
+	K_KERNEL_STACK_MEMBER(thread_stack, CONFIG_AMG88XX_THREAD_STACK_SIZE);
 	struct k_sem gpio_sem;
 	struct k_thread thread;
 #elif defined(CONFIG_AMG88XX_TRIGGER_GLOBAL_THREAD)
 	struct k_work work;
-	struct device *dev;
 #endif
 
 #endif /* CONFIG_AMG88XX_TRIGGER */
 };
 
 #ifdef CONFIG_AMG88XX_TRIGGER
-int amg88xx_attr_set(struct device *dev,
+int amg88xx_attr_set(const struct device *dev,
 		     enum sensor_channel chan,
 		     enum sensor_attribute attr,
 		     const struct sensor_value *val);
 
-int amg88xx_trigger_set(struct device *dev,
+int amg88xx_trigger_set(const struct device *dev,
 			const struct sensor_trigger *trig,
 			sensor_trigger_handler_t handler);
 
-int amg88xx_init_interrupt(struct device *dev);
+int amg88xx_init_interrupt(const struct device *dev);
 #endif /* CONFIG_AMG88XX_TRIGGER */
 
 #endif

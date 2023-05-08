@@ -13,12 +13,12 @@
  */
 
 #include <string.h>
-#include <ztest.h>
+#include <zephyr/ztest.h>
 #include "testfs_tests.h"
 #include "testfs_lfs.h"
 #include <lfs.h>
 
-#include <fs/littlefs.h>
+#include <zephyr/fs/littlefs.h>
 
 static struct testfs_bcmd test_hierarchy[] = {
 	TESTFS_BCMD_FILE("f1", 1, 1),
@@ -62,11 +62,13 @@ static int check_mkdir(struct fs_mount_t *mp)
 	struct fs_file_t file;
 	struct testfs_path fpath;
 
+	fs_file_t_init(&file);
 	zassert_equal(fs_open(&file,
 			      testfs_path_extend(testfs_path_copy(&fpath,
 								  &dpath),
 						 "file",
-						 TESTFS_PATH_END)),
+						 TESTFS_PATH_END),
+			      FS_O_CREATE | FS_O_RDWR),
 		      0,
 		      "creat in dir failed");
 	zassert_equal(fs_close(&file), 0,
@@ -299,7 +301,7 @@ static int check_rename(struct fs_mount_t *mp)
 
 	while (cp != to_end_bcmd) {
 		if (cp->name) {
-			zassert_true(cp->matched, "foriegn file retained");
+			zassert_true(cp->matched, "foreign file retained");
 		}
 		++cp;
 	}
@@ -307,7 +309,7 @@ static int check_rename(struct fs_mount_t *mp)
 	return TC_PASS;
 }
 
-void test_lfs_dirops(void)
+ZTEST(littlefs, test_lfs_dirops)
 {
 	struct fs_mount_t *mp = &testfs_small_mnt;
 

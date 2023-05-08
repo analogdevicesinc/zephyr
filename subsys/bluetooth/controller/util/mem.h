@@ -34,18 +34,36 @@
  *    MROUND( 9) = 12
  *    MROUND(13) = 16
  */
-#define MROUND(x) (((u32_t)(x)+3) & (~((u32_t)3)))
+#define MROUND(x) (((uint32_t)(x)+3) & (~((uint32_t)3)))
 #endif
 
-void mem_init(void *mem_pool, u16_t mem_size, u16_t mem_count, void **mem_head);
+/* When memory is free in the mem_pool, first few bytes are reserved for
+ * maintaining the next pointer and free count.
+ */
+#define MEM_FREE_MEMBER_NEXT_SIZE  (sizeof(void *))
+#define MEM_FREE_MEMBER_COUNT_SIZE (sizeof(uint16_t))
+#define MEM_FREE_RESERVED_SIZE     ((MEM_FREE_MEMBER_NEXT_SIZE) + \
+				    (MEM_FREE_MEMBER_COUNT_SIZE))
+
+/* Define to check if a structure member is safe to be accessed when the memory
+ * is in the mem_pool free list. I.e. whether a structure member be safely
+ * accessed after the mem being freed.
+ */
+#define MEM_FREE_MEMBER_ACCESS_BUILD_ASSERT(type, member) \
+	BUILD_ASSERT(offsetof(type, member) >= MEM_FREE_RESERVED_SIZE, \
+		     "Possible unsafe member access inside free mem pool")
+
+void mem_init(void *mem_pool, uint16_t mem_size, uint16_t mem_count, void **mem_head);
 void *mem_acquire(void **mem_head);
 void mem_release(void *mem, void **mem_head);
 
-u16_t mem_free_count_get(void *mem_head);
-void *mem_get(void *mem_pool, u16_t mem_size, u16_t index);
-u16_t mem_index_get(void *mem, void *mem_pool, u16_t mem_size);
+uint16_t mem_free_count_get(void *mem_head);
+void *mem_get(const void *mem_pool, uint16_t mem_size, uint16_t index);
+uint16_t mem_index_get(const void *mem, const void *mem_pool, uint16_t mem_size);
 
-void mem_rcopy(u8_t *dst, u8_t const *src, u16_t len);
-u8_t mem_nz(u8_t *src, u16_t len);
+void mem_rcopy(uint8_t *dst, uint8_t const *src, uint16_t len);
+uint8_t mem_nz(uint8_t *src, uint16_t len);
+void mem_xor_n(uint8_t *dst, uint8_t *src1, uint8_t *src2, uint16_t len);
+void mem_xor_32(uint8_t *dst, uint8_t *src1, uint8_t *src2);
 
-u32_t mem_ut(void);
+uint32_t mem_ut(void);

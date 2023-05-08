@@ -7,11 +7,11 @@
 #ifndef __TEST_LIFO_H__
 #define __TEST_LIFO_H__
 
-#include <ztest.h>
-#include <irq_offload.h>
+#include <zephyr/ztest.h>
+#include <zephyr/irq_offload.h>
 
 typedef struct ldata {
 	sys_snode_t snode;
-	u32_t data;
+	uint32_t data;
 } ldata_t;
 #endif

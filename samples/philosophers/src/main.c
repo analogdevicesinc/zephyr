@@ -35,15 +35,15 @@
  * header file.
  */
 
-#include <zephyr.h>
+#include <zephyr/kernel.h>
 
 #if defined(CONFIG_STDOUT_CONSOLE)
 #include <stdio.h>
 #else
-#include <sys/printk.h>
+#include <zephyr/sys/printk.h>
 #endif
 
-#include <sys/__assert.h>
+#include <zephyr/sys/__assert.h>
 
 #define SEMAPHORES 1
 #define MUTEXES 2
@@ -83,7 +83,7 @@
 /* end - control behaviour of the demo */
 /***************************************/
 
-#define STACK_SIZE 768
+#define STACK_SIZE (2048)
 
 #include "phil_obj_abstract.h"
 
@@ -97,7 +97,7 @@ static void set_phil_state_pos(int id)
 }
 
 #include <stdarg.h>
-static void print_phil_state(int id, const char *fmt, s32_t delay)
+static void print_phil_state(int id, const char *fmt, int32_t delay)
 {
 	int prio = k_thread_priority_get(k_current_get());
 
@@ -117,17 +117,17 @@ static void print_phil_state(int id, const char *fmt, s32_t delay)
 	printk("\n");
 }
 
-static s32_t get_random_delay(int id, int period_in_ms)
+static int32_t get_random_delay(int id, int period_in_ms)
 {
 	/*
 	 * The random delay is unit-less, and is based on the philosopher's ID
 	 * and the current uptime to create some pseudo-randomness. It produces
 	 * a value between 0 and 31.
 	 */
-	s32_t delay = (k_uptime_get_32()/100 * (id + 1)) & 0x1f;
+	int32_t delay = (k_uptime_get_32()/100 * (id + 1)) & 0x1f;
 
 	/* add 1 to not generate a delay of 0 */
-	s32_t ms = (delay + 1) * period_in_ms;
+	int32_t ms = (delay + 1) * period_in_ms;
 
 	return ms;
 }
@@ -157,7 +157,7 @@ void philosopher(void *id, void *unused1, void *unused2)
 	}
 
 	while (1) {
-		s32_t delay;
+		int32_t delay;
 
 		print_phil_state(my_id, "       STARVING       ", 0);
 		take(fork1);
@@ -166,7 +166,7 @@ void philosopher(void *id, void *unused1, void *unused2)
 
 		delay = get_random_delay(my_id, 25);
 		print_phil_state(my_id, "  EATING  [ %s%d ms ] ", delay);
-		k_sleep(delay);
+		k_msleep(delay);
 
 		drop(fork2);
 		print_phil_state(my_id, "   DROPPED ONE FORK   ", 0);
@@ -174,7 +174,7 @@ void philosopher(void *id, void *unused1, void *unused2)
 
 		delay = get_random_delay(my_id, 25);
 		print_phil_state(my_id, " THINKING [ %s%d ms ] ", delay);
-		k_sleep(delay);
+		k_msleep(delay);
 	}
 
 }
@@ -219,7 +219,12 @@ static void start_threads(void)
 		k_thread_create(&threads[i], &stacks[i][0], STACK_SIZE,
 				philosopher, INT_TO_POINTER(i), NULL, NULL,
 				prio, K_USER, K_FOREVER);
+#ifdef CONFIG_THREAD_NAME
+		char tname[CONFIG_THREAD_MAX_NAME_LEN];
 
+		snprintk(tname, CONFIG_THREAD_MAX_NAME_LEN, "Philosopher %d", i);
+		k_thread_name_set(&threads[i], tname);
+#endif /* CONFIG_THREAD_NAME */
 		k_object_access_grant(fork(i), &threads[i]);
 		k_object_access_grant(fork((i + 1) % NUM_PHIL), &threads[i]);
 
@@ -244,7 +249,7 @@ static void display_demo_description(void)
 #endif
 }
 
-void main(void)
+int main(void)
 {
 	display_demo_description();
 #if CONFIG_TIMESLICING
@@ -258,6 +263,7 @@ void main(void)
 	/* Wait a few seconds before main() exit, giving the sample the
 	 * opportunity to dump some output before coverage data gets emitted
 	 */
-	k_sleep(5000);
+	k_sleep(K_MSEC(5000));
 #endif
+	return 0;
 }

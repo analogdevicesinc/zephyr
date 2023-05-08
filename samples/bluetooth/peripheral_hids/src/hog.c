@@ -9,18 +9,19 @@
  */
 
 #include <zephyr/types.h>
+#include <zephyr/drivers/gpio.h>
 #include <stddef.h>
 #include <string.h>
 #include <errno.h>
-#include <sys/printk.h>
-#include <sys/byteorder.h>
-#include <zephyr.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/sys/byteorder.h>
+#include <zephyr/kernel.h>
 
-#include <bluetooth/bluetooth.h>
-#include <bluetooth/hci.h>
-#include <bluetooth/conn.h>
-#include <bluetooth/uuid.h>
-#include <bluetooth/gatt.h>
+#include <zephyr/bluetooth/bluetooth.h>
+#include <zephyr/bluetooth/hci.h>
+#include <zephyr/bluetooth/conn.h>
+#include <zephyr/bluetooth/uuid.h>
+#include <zephyr/bluetooth/gatt.h>
 
 enum {
 	HIDS_REMOTE_WAKE = BIT(0),
@@ -28,14 +29,14 @@ enum {
 };
 
 struct hids_info {
-	u16_t version; /* version number of base USB HID Specification */
-	u8_t code; /* country HID Device hardware is localized for. */
-	u8_t flags;
+	uint16_t version; /* version number of base USB HID Specification */
+	uint8_t code; /* country HID Device hardware is localized for. */
+	uint8_t flags;
 } __packed;
 
 struct hids_report {
-	u8_t id; /* report id */
-	u8_t type; /* report type */
+	uint8_t id; /* report id */
+	uint8_t type; /* report type */
 } __packed;
 
 static struct hids_info info = {
@@ -55,12 +56,13 @@ static struct hids_report input = {
 	.type = HIDS_INPUT,
 };
 
-static u8_t simulate_input;
-static u8_t ctrl_point;
-static u8_t report_map[] = {
+static uint8_t simulate_input;
+static uint8_t ctrl_point;
+static uint8_t report_map[] = {
 	0x05, 0x01, /* Usage Page (Generic Desktop Ctrls) */
 	0x09, 0x02, /* Usage (Mouse) */
 	0xA1, 0x01, /* Collection (Application) */
+	0x85, 0x01, /*	 Report Id (1) */
 	0x09, 0x01, /*   Usage (Pointer) */
 	0xA1, 0x00, /*   Collection (Physical) */
 	0x05, 0x09, /*     Usage Page (Button) */
@@ -89,7 +91,7 @@ static u8_t report_map[] = {
 
 static ssize_t read_info(struct bt_conn *conn,
 			  const struct bt_gatt_attr *attr, void *buf,
-			  u16_t len, u16_t offset)
+			  uint16_t len, uint16_t offset)
 {
 	return bt_gatt_attr_read(conn, attr, buf, len, offset, attr->user_data,
 				 sizeof(struct hids_info));
@@ -97,7 +99,7 @@ static ssize_t read_info(struct bt_conn *conn,
 
 static ssize_t read_report_map(struct bt_conn *conn,
 			       const struct bt_gatt_attr *attr, void *buf,
-			       u16_t len, u16_t offset)
+			       uint16_t len, uint16_t offset)
 {
 	return bt_gatt_attr_read(conn, attr, buf, len, offset, report_map,
 				 sizeof(report_map));
@@ -105,30 +107,30 @@ static ssize_t read_report_map(struct bt_conn *conn,
 
 static ssize_t read_report(struct bt_conn *conn,
 			   const struct bt_gatt_attr *attr, void *buf,
-			   u16_t len, u16_t offset)
+			   uint16_t len, uint16_t offset)
 {
 	return bt_gatt_attr_read(conn, attr, buf, len, offset, attr->user_data,
 				 sizeof(struct hids_report));
 }
 
-static void input_ccc_changed(const struct bt_gatt_attr *attr, u16_t value)
+static void input_ccc_changed(const struct bt_gatt_attr *attr, uint16_t value)
 {
 	simulate_input = (value == BT_GATT_CCC_NOTIFY) ? 1 : 0;
 }
 
 static ssize_t read_input_report(struct bt_conn *conn,
 				 const struct bt_gatt_attr *attr, void *buf,
-				 u16_t len, u16_t offset)
+				 uint16_t len, uint16_t offset)
 {
 	return bt_gatt_attr_read(conn, attr, buf, len, offset, NULL, 0);
 }
 
 static ssize_t write_ctrl_point(struct bt_conn *conn,
 				const struct bt_gatt_attr *attr,
-				const void *buf, u16_t len, u16_t offset,
-				u8_t flags)
+				const void *buf, uint16_t len, uint16_t offset,
+				uint8_t flags)
 {
-	u8_t *value = attr->user_data;
+	uint8_t *value = attr->user_data;
 
 	if (offset + len > sizeof(ctrl_point)) {
 		return BT_GATT_ERR(BT_ATT_ERR_INVALID_OFFSET);
@@ -139,6 +141,16 @@ static ssize_t write_ctrl_point(struct bt_conn *conn,
 	return len;
 }
 
+#if CONFIG_SAMPLE_BT_USE_AUTHENTICATION
+/* Require encryption using authenticated link-key. */
+#define SAMPLE_BT_PERM_READ BT_GATT_PERM_READ_AUTHEN
+#define SAMPLE_BT_PERM_WRITE BT_GATT_PERM_WRITE_AUTHEN
+#else
+/* Require encryption. */
+#define SAMPLE_BT_PERM_READ BT_GATT_PERM_READ_ENCRYPT
+#define SAMPLE_BT_PERM_WRITE BT_GATT_PERM_WRITE_ENCRYPT
+#endif
+
 /* HID Service Declaration */
 BT_GATT_SERVICE_DEFINE(hog_svc,
 	BT_GATT_PRIMARY_SERVICE(BT_UUID_HIDS),
@@ -148,10 +160,10 @@ BT_GATT_SERVICE_DEFINE(hog_svc,
 			       BT_GATT_PERM_READ, read_report_map, NULL, NULL),
 	BT_GATT_CHARACTERISTIC(BT_UUID_HIDS_REPORT,
 			       BT_GATT_CHRC_READ | BT_GATT_CHRC_NOTIFY,
-			       BT_GATT_PERM_READ_AUTHEN,
+			       SAMPLE_BT_PERM_READ,
 			       read_input_report, NULL, NULL),
 	BT_GATT_CCC(input_ccc_changed,
-		    BT_GATT_PERM_READ_AUTHEN | BT_GATT_PERM_WRITE_AUTHEN),
+		    SAMPLE_BT_PERM_READ | SAMPLE_BT_PERM_WRITE),
 	BT_GATT_DESCRIPTOR(BT_UUID_HIDS_REPORT_REF, BT_GATT_PERM_READ,
 			   read_report, NULL, &input),
 	BT_GATT_CHARACTERISTIC(BT_UUID_HIDS_CTRL_POINT,
@@ -162,4 +174,34 @@ BT_GATT_SERVICE_DEFINE(hog_svc,
 
 void hog_init(void)
 {
+}
+
+#define SW0_NODE DT_ALIAS(sw0)
+
+void hog_button_loop(void)
+{
+#if DT_NODE_HAS_STATUS(SW0_NODE, okay)
+	const struct gpio_dt_spec sw0 = GPIO_DT_SPEC_GET(SW0_NODE, gpios);
+
+	gpio_pin_configure_dt(&sw0, GPIO_INPUT);
+
+	for (;;) {
+		if (simulate_input) {
+			/* HID Report:
+			 * Byte 0: buttons (lower 3 bits)
+			 * Byte 1: X axis (int8)
+			 * Byte 2: Y axis (int8)
+			 */
+			int8_t report[3] = {0, 0, 0};
+
+			if (gpio_pin_get_dt(&sw0)) {
+				report[0] |= BIT(0);
+			}
+
+			bt_gatt_notify(NULL, &hog_svc.attrs[5],
+				       report, sizeof(report));
+		}
+		k_sleep(K_MSEC(100));
+	}
+#endif
 }

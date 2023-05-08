@@ -4,15 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <device.h>
-#include <init.h>
-#include <kernel.h>
-#include <pinmux.h>
+#include <zephyr/device.h>
+#include <zephyr/init.h>
+#include <zephyr/kernel.h>
 #include <soc.h>
-#include <sys_io.h>
-#include <gpio/gpio_cmsdk_ahb.h>
-
-#include "pinmux/pinmux.h"
+#include <zephyr/sys/sys_io.h>
+#include <zephyr/drivers/gpio/gpio_cmsdk_ahb.h>
 
 /**
  * @brief Pinmux driver for ARM MPS2 AN521 Board
@@ -32,13 +29,13 @@
  */
 
 #define CMSDK_AHB_GPIO0_DEV \
-	((volatile struct gpio_cmsdk_ahb *)DT_CMSDK_AHB_GPIO0)
+	((volatile struct gpio_cmsdk_ahb *)DT_REG_ADDR(DT_NODELABEL(gpio0)))
 #define CMSDK_AHB_GPIO1_DEV \
-	((volatile struct gpio_cmsdk_ahb *)DT_CMSDK_AHB_GPIO1)
+	((volatile struct gpio_cmsdk_ahb *)DT_REG_ADDR(DT_NODELABEL(gpio1)))
 #define CMSDK_AHB_GPIO2_DEV \
-	((volatile struct gpio_cmsdk_ahb *)DT_CMSDK_AHB_GPIO2)
+	((volatile struct gpio_cmsdk_ahb *)DT_REG_ADDR(DT_NODELABEL(gpio2)))
 #define CMSDK_AHB_GPIO3_DEV \
-	((volatile struct gpio_cmsdk_ahb *)DT_CMSDK_AHB_GPIO3)
+	((volatile struct gpio_cmsdk_ahb *)DT_REG_ADDR(DT_NODELABEL(gpio3)))
 
 /*
  * This is the mapping from the ARM MPS2 AN521 Board pins to GPIO
@@ -117,9 +114,9 @@
  */
 static void arm_mps2_pinmux_defaults(void)
 {
-	u32_t gpio_0 = 0;
-	u32_t gpio_1 = 0;
-	u32_t gpio_2 = 0;
+	uint32_t gpio_0 = 0;
+	uint32_t gpio_1 = 0;
+	uint32_t gpio_2 = 0;
 
 	/* Set GPIO Alternate Functions */
 
@@ -155,9 +152,8 @@ static void arm_mps2_pinmux_defaults(void)
 	CMSDK_AHB_GPIO2_DEV->altfuncset = gpio_2;
 }
 
-static int arm_mps2_pinmux_init(struct device *port)
+static int arm_mps2_pinmux_init(void)
 {
-	ARG_UNUSED(port);
 
 	arm_mps2_pinmux_defaults();
 

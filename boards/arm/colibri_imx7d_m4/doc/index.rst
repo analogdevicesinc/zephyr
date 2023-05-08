@@ -12,8 +12,7 @@ Zephyr was ported to run on the M4 core. In a later release, it will also
 communicate with the A7 core (running Linux) via RPmsg.
 
 
-.. image:: ./colibri_imx7d_m4.png
-   :width: 720px
+.. image:: colibri_imx7d_m4.jpg
    :align: center
    :alt: Colibri-iMX7
 
@@ -231,6 +230,7 @@ To run Zephyr Binary using J-Link create the following script in order to
 get the Program Counter and Stack Pointer from zephyr.bin.
 
 get-pc-sp.sh:
+
 .. code-block:: console
 
    #!/bin/sh
@@ -245,6 +245,7 @@ get-pc-sp.sh:
 
 
 Get the SP and PC from firmware binary: ``./get-pc-sp.sh zephyr.bin``
+
 .. code-block:: console
 
    pc=00900f01

@@ -1,18 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 
-cmake_minimum_required(VERSION 3.13.1)
-include($ENV{ZEPHYR_BASE}/cmake/app/boilerplate.cmake NO_POLICY_SCOPE)
-project(NONE)
+cmake_minimum_required(VERSION 3.20.0)
+find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
+project(functional_fcb)
 
-FILE(GLOB app_sources ../src/*.c)
-target_sources(app PRIVATE ${app_sources})
-zephyr_include_directories(
-	$ENV{ZEPHYR_BASE}/subsys/settings/include
-	$ENV{ZEPHYR_BASE}/subsys/settings/src
-	)
+# The code is in the library common to several tests.
+target_sources(app PRIVATE settings_test_fcb.c)
 
-if(TEST)
-	target_compile_definitions(app PRIVATE
-		-DTEST_${TEST}
-		)
-endif()
+add_subdirectory(../src func_test_bindir)

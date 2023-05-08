@@ -17,7 +17,6 @@
  *
  * @brief Receive task (Wait task)
  *
- * @return N/A
  */
 void waittask(void)
 {
@@ -27,7 +26,7 @@ void waittask(void)
 		k_sem_take(&SEM1, K_FOREVER);
 	}
 	for (i = 0; i < NR_OF_SEMA_RUNS; i++) {
-		k_sem_take(&SEM1, SEMA_WAIT_TIME);
+		k_sem_take(&SEM1, K_MSEC(SEMA_WAIT_TIME));
 	}
 
 }

@@ -5,7 +5,7 @@
  */
 
 #include <errno.h>
-#include <posix/pthread.h>
+#include <zephyr/posix/pthread.h>
 
 /**
  * @brief Destroy semaphore.
@@ -90,8 +90,9 @@ int sem_post(sem_t *semaphore)
  */
 int sem_timedwait(sem_t *semaphore, struct timespec *abstime)
 {
-	s32_t timeout;
-	s64_t current_ms, abstime_ms;
+	int32_t timeout;
+	struct timespec current;
+	int64_t current_ms, abstime_ms;
 
 	__ASSERT(abstime, "abstime pointer NULL");
 
@@ -100,16 +101,20 @@ int sem_timedwait(sem_t *semaphore, struct timespec *abstime)
 		return -1;
 	}
 
-	current_ms = (s64_t)k_uptime_get();
-	abstime_ms = (s64_t)_ts_to_ms(abstime);
-
-	if (abstime_ms <= current_ms) {
-		timeout = K_NO_WAIT;
-	} else {
-		timeout = (s32_t)(abstime_ms - current_ms);
+	if (clock_gettime(CLOCK_REALTIME, &current) < 0) {
+		return -1;
 	}
 
-	if (k_sem_take(semaphore, timeout)) {
+	abstime_ms = (int64_t)_ts_to_ms(abstime);
+	current_ms = (int64_t)_ts_to_ms(&current);
+
+	if (abstime_ms <= current_ms) {
+		timeout = 0;
+	} else {
+		timeout = (int32_t)(abstime_ms - current_ms);
+	}
+
+	if (k_sem_take(semaphore, K_MSEC(timeout))) {
 		errno = ETIMEDOUT;
 		return -1;
 	}
@@ -139,6 +144,7 @@ int sem_trywait(sem_t *semaphore)
  */
 int sem_wait(sem_t *semaphore)
 {
-	k_sem_take(semaphore, K_FOREVER);
+	/* With K_FOREVER, may return only success. */
+	(void)k_sem_take(semaphore, K_FOREVER);
 	return 0;
 }

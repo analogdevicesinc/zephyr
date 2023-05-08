@@ -8,21 +8,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_hostname, CONFIG_NET_HOSTNAME_LOG_LEVEL);
 
-#include <zephyr.h>
+#include <zephyr/kernel.h>
 
-#include <net/net_core.h>
+#include <zephyr/net/hostname.h>
+#include <zephyr/net/net_core.h>
 
-#if defined(CONFIG_NET_HOSTNAME_UNIQUE)
-/* Allocate extra space to append MAC address to hostname */
-#define EXTRA_SPACE (8 * 2)
-#else
-#define EXTRA_SPACE 0
-#endif /* CONFIG_NET_HOSTNAME_UNIQUE */
-
-static char hostname[sizeof(CONFIG_NET_HOSTNAME) + EXTRA_SPACE];
+static char hostname[NET_HOSTNAME_MAX_LEN + 1];
 
 const char *net_hostname_get(void)
 {
@@ -30,22 +24,26 @@ const char *net_hostname_get(void)
 }
 
 #if defined(CONFIG_NET_HOSTNAME_UNIQUE)
-int net_hostname_set_postfix(const u8_t *hostname_postfix,
+int net_hostname_set_postfix(const uint8_t *hostname_postfix,
 			     int postfix_len)
 {
+#if !defined(CONFIG_NET_HOSTNAME_UNIQUE_UPDATE)
 	static bool postfix_set;
+#endif
 	int pos = 0;
 	int i;
 
+#if !defined(CONFIG_NET_HOSTNAME_UNIQUE_UPDATE)
 	if (postfix_set) {
 		return -EALREADY;
 	}
+#endif
 
 	NET_ASSERT(postfix_len > 0);
 
 	/* Note that we convert the postfix to hex (2 chars / byte) */
 	if ((postfix_len * 2) >
-	    ((sizeof(hostname) - 1) - (sizeof(CONFIG_NET_HOSTNAME) - 1))) {
+	    (NET_HOSTNAME_MAX_LEN - (sizeof(CONFIG_NET_HOSTNAME) - 1))) {
 		return -EMSGSIZE;
 	}
 
@@ -56,7 +54,9 @@ int net_hostname_set_postfix(const u8_t *hostname_postfix,
 
 	NET_DBG("New hostname %s", hostname);
 
+#if !defined(CONFIG_NET_HOSTNAME_UNIQUE_UPDATE)
 	postfix_set = true;
+#endif
 
 	return 0;
 }
@@ -66,5 +66,5 @@ void net_hostname_init(void)
 {
 	memcpy(hostname, CONFIG_NET_HOSTNAME, sizeof(CONFIG_NET_HOSTNAME) - 1);
 
-	NET_DBG("Hostname set to %s", hostname);
+	NET_DBG("Hostname set to %s", CONFIG_NET_HOSTNAME);
 }

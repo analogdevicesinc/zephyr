@@ -1,18 +1,12 @@
-title: ARM CMSDK DUALTIMER
-
-description: >
-    This binding gives a base representation of the ARM CMSDK DUALTIMER
+description: ARM CMSDK dual timer
 
 compatible: "arm,cmsdk-dtimer"
 
 include: base.yaml
 
 properties:
-    reg:
-      required: true
+  reg:
+    required: true
 
-    interrupts:
-      required: true
-
-    label:
-      required: true
+  interrupts:
+    required: true

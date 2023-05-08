@@ -8,7 +8,7 @@
 #ifndef ZEPHYR_DRIVERS_SENSOR_APDS9960_APDS9960_H_
 #define ZEPHYR_DRIVERS_SENSOR_APDS9960_APDS9960_H_
 
-#include <drivers/gpio.h>
+#include <zephyr/drivers/gpio.h>
 
 #define APDS9960_ENABLE_REG		0x80
 #define APDS9960_ENABLE_GEN		BIT(6)
@@ -213,43 +213,48 @@
 #define APDS9960_DEFAULT_GCONF3		0
 
 struct apds9960_config {
-	char *i2c_name;
-	char *gpio_name;
-	u8_t gpio_pin;
-	u8_t i2c_address;
-	u8_t pgain;
-	u8_t again;
-	u8_t ppcount;
-	u8_t pled_boost;
+	struct i2c_dt_spec i2c;
+	struct gpio_dt_spec int_gpio;
+	uint8_t pgain;
+	uint8_t again;
+	uint8_t ppcount;
+	uint8_t pled_boost;
 };
 
 struct apds9960_data {
-	struct device *i2c;
-	struct device *gpio;
 	struct gpio_callback gpio_cb;
 	struct k_work work;
-	struct device *dev;
-	u16_t sample_crgb[4];
-	u8_t pdata;
-	u8_t gpio_pin;
+	const struct device *dev;
+	uint16_t sample_crgb[4];
+	uint8_t pdata;
 
 #ifdef CONFIG_APDS9960_TRIGGER
 	sensor_trigger_handler_t p_th_handler;
-	struct sensor_trigger p_th_trigger;
+	const struct sensor_trigger *p_th_trigger;
 #else
 	struct k_sem data_sem;
 #endif
 };
 
+static inline void apds9960_setup_int(const struct apds9960_config *cfg,
+				      bool enable)
+{
+	unsigned int flags = enable
+		? GPIO_INT_EDGE_TO_ACTIVE
+		: GPIO_INT_DISABLE;
+
+	gpio_pin_interrupt_configure_dt(&cfg->int_gpio, flags);
+}
+
 #ifdef CONFIG_APDS9960_TRIGGER
 void apds9960_work_cb(struct k_work *work);
 
-int apds9960_attr_set(struct device *dev,
+int apds9960_attr_set(const struct device *dev,
 		      enum sensor_channel chan,
 		      enum sensor_attribute attr,
 		      const struct sensor_value *val);
 
-int apds9960_trigger_set(struct device *dev,
+int apds9960_trigger_set(const struct device *dev,
 			 const struct sensor_trigger *trig,
 			 sensor_trigger_handler_t handler);
 #endif /* CONFIG_APDS9960_TRIGGER */

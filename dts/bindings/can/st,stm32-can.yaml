@@ -1,18 +1,25 @@
-title: STM32 CAN
-
-description: >
-    This binding gives a base representation of the STM32 CAN controller
+description: STM32 CAN controller
 
 compatible: "st,stm32-can"
 
-include: can-controller.yaml
+include: [can-controller.yaml, pinctrl-device.yaml]
 
 properties:
-    reg:
-      required: true
+  reg:
+    required: true
 
-    interrupts:
-      required: true
+  interrupts:
+    required: true
 
-    clocks:
-      required: true
+  clocks:
+    required: true
+
+  pinctrl-0:
+    required: true
+
+  pinctrl-names:
+    required: true
+
+  master-can-reg:
+    type: int
+    description: master can reg when different from current instance

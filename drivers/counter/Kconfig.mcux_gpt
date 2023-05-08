@@ -1,20 +1,11 @@
-# Kconfig - MCUXpresso SDK RTC
-#
-# Copyright (c) 2019 Linaro Limited
-#
-# SPDX-License-Identifier: Apache-2.0
-#
+# MCUXpresso SDK RTC
 
-menuconfig COUNTER_MCUX_GPT
+# Copyright (c) 2019 Linaro Limited
+# SPDX-License-Identifier: Apache-2.0
+
+config COUNTER_MCUX_GPT
 	bool "MCUX GPT driver"
-	depends on HAS_MCUX_GPT
+	default y
+	depends on DT_HAS_NXP_IMX_GPT_ENABLED
 	help
 	  Enable support for mcux General Purpose Timer (GPT) driver.
-
-config COUNTER_MCUX_GPT1
-	bool "Enable Counter on GPT1"
-	depends on COUNTER_MCUX_GPT
-
-config COUNTER_MCUX_GPT2
-	bool "Enable Counter on GPT2"
-	depends on COUNTER_MCUX_GPT

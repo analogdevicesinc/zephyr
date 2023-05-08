@@ -22,8 +22,7 @@ F-antenna which can be bypassed to test via SMA connection, multiple power
 supply options, push/capacitive touch buttons, switches, LEDs and integrated
 sensors.
 
-.. image:: ./frdm_kw41z.jpg
-   :width: 720px
+.. image:: frdm_kw41z.jpg
    :align: center
    :alt: FRDM-KW41Z
 
@@ -81,6 +80,12 @@ The frdm_kw41z board configuration supports the following hardware features:
 +-----------+------------+-------------------------------------+
 | SENSOR    | off-chip   | fxos8700 polling:                   |
 |           |            | fxos8700 trigger                    |
++-----------+------------+-------------------------------------+
+| PWM       | on-chip    | tpm                                 |
++-----------+------------+-------------------------------------+
+| TRNG      | on-chip    | entropy                             |
++-----------+------------+-------------------------------------+
+| FTFA      | on-chip    | flash programming                   |
 +-----------+------------+-------------------------------------+
 
 The default configuration can be found in the defconfig file:
@@ -168,13 +173,14 @@ path.
 Follow the instructions in :ref:`opensda-jlink-onboard-debug-probe` to program
 the `OpenSDA J-Link FRDM-KW41Z Firmware`_.
 
-Add the argument ``-DOPENSDA_FW=jlink`` when you invoke ``west build`` to
-override the default runner from pyOCD to J-Link:
+Add the arguments ``-DBOARD_FLASH_RUNNER=jlink`` and
+``-DBOARD_DEBUG_RUNNER=jlink`` when you invoke ``west build`` to override the
+default runner from pyOCD to J-Link:
 
 .. zephyr-app-commands::
    :zephyr-app: samples/hello_world
    :board: frdm_kw41z
-   :gen-args: -DOPENSDA_FW=jlink
+   :gen-args: -DBOARD_FLASH_RUNNER=jlink -DBOARD_DEBUG_RUNNER=jlink
    :goals: build
 
 Configuring a Console
@@ -248,7 +254,7 @@ should see the following message in the terminal:
    https://www.nxp.com/webapp/Download?colCode=MKW41Z512RM
 
 .. _OpenSDA DAPLink FRDM-KW41Z Firmware:
-   https://www.nxp.com/assets/downloads/data/en/reference-applications/OpenSDAv2.2_DAPLink_frdmkw41z_rev0241.zip
+   https://www.nxp.com/downloads/en/reference-applications/OpenSDAv2.2_DAPLink_frdmkw41z_rev0241.zip
 
 .. _OpenSDA J-Link FRDM-KW41Z Firmware:
    https://www.segger.com/downloads/jlink/OpenSDA_FRDM-KW41Z

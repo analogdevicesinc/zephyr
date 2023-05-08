@@ -12,7 +12,7 @@
  *
  * Most users will be normally unaware of this file existence, unless they have
  * a link issue in which their POSIX functions calls are reported in errors (as
- * zap_<origian_func_name>).
+ * zap_<original_func_name>).
  * If you do see a link error telling you that zap_something is undefined, it is
  * likely that you forgot to select the corresponding Zephyr POSIX API.
  *
@@ -41,7 +41,16 @@
  * we free the function name "main" for its normal purpose
  */
 #ifndef main
-#define main(...) zephyr_app_main(__VA_ARGS__)
+#define main(...) _posix_zephyr_main(__VA_ARGS__)
+#endif
+
+#if defined(__cplusplus) && defined(CONFIG_CPP_MAIN)
+/* To be able to define main() in C++ code we need to have its prototype
+ * defined somewhere visibly. Otherwise name mangling will prevent the linker
+ * from finding it. Zephyr assumes an int main(void) prototype and therefore
+ * this will be the prototype after renaming:
+ */
+extern "C" int _posix_zephyr_main(void);
 #endif
 
 #ifdef CONFIG_POSIX_API
@@ -206,6 +215,11 @@
 #define unlink		zap_unlink
 #define stat		zap_stat
 #define mkdir		zap_mkdir
+
+/* eventfd */
+#define eventfd		zap_eventfd
+#define eventfd_read	zap_eventfd_read
+#define eventfd_write	zap_eventfd_write
 
 #endif /* CONFIG_POSIX_API */
 

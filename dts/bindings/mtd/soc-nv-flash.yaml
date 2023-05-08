@@ -1,22 +1,14 @@
-title: Flash base node description
-
-description: >
-    This binding gives a base FLASH description
+description: Flash node
 
 compatible: "soc-nv-flash"
 
 include: base.yaml
 
 properties:
-    label:
-      required: false
+  erase-block-size:
+    type: int
+    description: address alignment required by flash erase operations
 
-    erase-block-size:
-     type: int
-     description: address alignment required by flash erase operations
-     required: false
-
-    write-block-size:
-     type: int
-     description: address alignment required by flash write operations
-     required: false
+  write-block-size:
+    type: int
+    description: address alignment required by flash write operations

@@ -1,112 +1,40 @@
-# Kconfig - Kinetis KE1xF series configuration options
-#
-# Copyright (c) 2019 Vestas Wind Systems A/S
-#
+# Kinetis KE1xF series configuration options
+
+# Copyright (c) 2019-2021 Vestas Wind Systems A/S
 # SPDX-License-Identifier: Apache-2.0
-#
 
 if SOC_SERIES_KINETIS_KE1XF
 
 config SOC_SERIES
 	default "ke1xf"
 
+config MCUX_LPTMR_TIMER
+	default y if PM
+
+config CORTEX_M_SYSTICK
+	default n if MCUX_LPTMR_TIMER
+
+config SYS_CLOCK_HW_CYCLES_PER_SEC
+	default $(dt_node_int_prop_int,/cpus/cpu@0,clock-frequency) if CORTEX_M_SYSTICK
+	default $(dt_node_int_prop_int,/soc/lptmr@40040000,clock-frequency) if MCUX_LPTMR_TIMER
+
 config NUM_IRQS
-	int
 	# must be >= the highest interrupt number used
 	default 91
 
-if KINETIS_FLASH_CONFIG
+config CPU_HAS_CUSTOM_FIXED_SOC_MPU_REGIONS
+	default y
 
 config KINETIS_FLASH_CONFIG_FOPT
 	default 0x7d
+	depends on KINETIS_FLASH_CONFIG
 
-endif # KINETIS_FLASH_CONFIG
-
-if CLOCK_CONTROL
-
-config CLOCK_CONTROL_MCUX_SCG
+config PWM_MCUX_PWT
 	default y
-
-config CLOCK_CONTROL_MCUX_SIM
-	default y
-
-config CLOCK_CONTROL_MCUX_PCC
-	default y
-
-endif # CLOCK_CONTROL
-
-if WATCHDOG
-
-config WDT_MCUX_WDOG32
-	default y
-
-endif # WATCHDOG
-
-if COUNTER
-
-config COUNTER_MCUX_RTC
-	default y
-
-endif # COUNTER
-
-if PWM
-
-config PWM_MCUX_FTM
-	default y
-
-endif # PWM
-
-if PINMUX
-
-config PINMUX_MCUX
-	default y
-
-endif # PINMUX
+	depends on PWM_CAPTURE
 
 config GPIO
 	default y
-
-if GPIO
-
-config GPIO_MCUX
-	default y
-
-endif # GPIO
-
-if FLASH
-
-config SOC_FLASH_MCUX
-	default y
-
-endif # FLASH
-
-if SERIAL
-
-config UART_MCUX_LPUART
-	default y
-
-endif # SERIAL
-
-if I2C
-
-config I2C_MCUX_LPI2C
-	default y
-
-endif # I2C
-
-if SPI
-
-config SPI_MCUX_LPSPI
-	default y
-
-endif # SPI
-
-if ADC
-
-config ADC_MCUX_ADC12
-	default y
-
-endif # ADC
 
 source "soc/arm/nxp_kinetis/ke1xf/Kconfig.defconfig.mke*"
 

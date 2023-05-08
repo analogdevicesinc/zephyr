@@ -12,7 +12,6 @@ polymer batteries, charging status indicator and user LEDs, native USB
 connector, 20 I/O pins, and a small prototyping area.
 
 .. image:: img/adafruit_feather_m0_basic_proto.jpg
-     :width: 640px
      :align: center
      :alt: Adafruit Feather M0 Basic Proto
 
@@ -34,25 +33,27 @@ Supported Features
 The adafruit_feather_m0_basic_proto board configuration supports the
 following hardware features:
 
-+-----------+------------+--------------------------------------+
-| Interface | Controller | Driver/Component                     |
-+===========+============+======================================+
-| NVIC      | on-chip    | Nested vector interrupt controller   |
-+-----------+------------+--------------------------------------+
-| Flash     | on-chip    | Can be used with NFFS to store files |
-+-----------+------------+--------------------------------------+
-| SYSTICK   | on-chip    | Systick                              |
-+-----------+------------+--------------------------------------+
-| WDT       | on-chip    | Watchdog                             |
-+-----------+------------+--------------------------------------+
-| GPIO      | on-chip    | I/O ports                            |
-+-----------+------------+--------------------------------------+
-| USART     | on-chip    | Serial port                          |
-+-----------+------------+--------------------------------------+
-| SPI       | on-chip    | Serial Peripheral Interface port     |
-+-----------+------------+--------------------------------------+
-| USB       | on-chip    | USB device                           |
-+-----------+------------+--------------------------------------+
++-----------+------------+------------------------------------------+
+| Interface | Controller | Driver/Component                         |
++===========+============+==========================================+
+| NVIC      | on-chip    | Nested vector interrupt controller       |
++-----------+------------+------------------------------------------+
+| Flash     | on-chip    | Can be used with LittleFS to store files |
++-----------+------------+------------------------------------------+
+| SYSTICK   | on-chip    | Systick                                  |
++-----------+------------+------------------------------------------+
+| WDT       | on-chip    | Watchdog                                 |
++-----------+------------+------------------------------------------+
+| GPIO      | on-chip    | I/O ports                                |
++-----------+------------+------------------------------------------+
+| USART     | on-chip    | Serial port                              |
++-----------+------------+------------------------------------------+
+| I2C       | on-chip    | Inter-Integrated Circuit                 |
++-----------+------------+------------------------------------------+
+| SPI       | on-chip    | Serial Peripheral Interface port         |
++-----------+------------+------------------------------------------+
+| USB       | on-chip    | USB device                               |
++-----------+------------+------------------------------------------+
 
 Other hardware features are not currently supported by Zephyr.
 
@@ -77,6 +78,12 @@ Serial Port
 The SAMD21 MCU has 6 SERCOM based USARTs.  On the Adafruit Feather M0
 Basic Proto, SERCOM0 is the Zephyr console and is available on pins 0
 (RX) and 1 (TX).
+
+I2C Port
+========
+
+The SAMD21 MCU has 6 SERCOM based USARTs.  On the Adafruit Feather M0
+Basic Proto, SERCOM3 is available on pin 20 (SDA) and pin 21 (SCL).
 
 SPI Port
 ========
@@ -143,7 +150,7 @@ Flashing
       :goals: flash
       :compact:
 
-   You should see "Hello World! arm" in your terminal.
+   You should see "Hello World! adafruit_feather_m0_basic_proto" in your terminal.
 
 References
 **********

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.13.1)
+cmake_minimum_required(VERSION 3.20.0)
 # Top-level CMakeLists.txt for the skeleton application.
 #
 # Copyright (c) 2017 Open Source Foundries Limited
@@ -9,11 +9,8 @@ cmake_minimum_required(VERSION 3.13.1)
 # mcumgr.  It can be used as a starting point for new applications.
 
 # Standard Zephyr application boilerplate.
-include($ENV{ZEPHYR_BASE}/cmake/app/boilerplate.cmake NO_POLICY_SCOPE)
+find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(smp_svr)
 
-target_sources(app PRIVATE
-    src/main.c
-)
-
-zephyr_link_libraries_ifdef(CONFIG_FILE_SYSTEM_NFFS NFFS)
+target_sources(app PRIVATE src/main.c)
+target_sources_ifdef(CONFIG_MCUMGR_TRANSPORT_BT app PRIVATE src/bluetooth.c)

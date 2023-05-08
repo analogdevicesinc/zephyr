@@ -29,7 +29,6 @@ void mailbox_get(struct k_mbox *mailbox,
  *
  * @brief Receive task
  *
- * @return N/A
  */
 void mailrecvtask(void)
 {
@@ -77,7 +76,7 @@ void mailbox_get(struct k_mbox *mailbox,
 {
 	int i;
 	unsigned int t;
-	s32_t return_value = 0;
+	int32_t return_value = 0;
 	struct k_mbox_msg Message;
 
 	Message.rx_source_thread = K_ANY;

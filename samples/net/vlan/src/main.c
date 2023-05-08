@@ -4,16 +4,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_vlan_sample, LOG_LEVEL_DBG);
 
-#include <zephyr.h>
+#include <zephyr/kernel.h>
 #include <errno.h>
 
-#include <net/net_core.h>
-#include <net/net_l2.h>
-#include <net/net_if.h>
-#include <net/ethernet.h>
+#include <zephyr/net/net_core.h>
+#include <zephyr/net/net_l2.h>
+#include <zephyr/net/net_if.h>
+#include <zephyr/net/ethernet.h>
 
 #if CONFIG_NET_VLAN_COUNT > 1
 #define CREATE_MULTIPLE_TAGS
@@ -109,7 +109,8 @@ static int init_app(void)
 	return ret;
 }
 
-void main(void)
+int main(void)
 {
 	init_app();
+	return 0;
 }

@@ -4,7 +4,9 @@ type: mcu
 arch: arc
 toolchain:
   - zephyr
+  - cross-compile
   - xtools
+  - arcmwdt
 testing:
   ignore_tags:
     - net

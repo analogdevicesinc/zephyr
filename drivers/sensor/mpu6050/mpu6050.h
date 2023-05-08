@@ -7,13 +7,16 @@
 #ifndef ZEPHYR_DRIVERS_SENSOR_MPU6050_MPU6050_H_
 #define ZEPHYR_DRIVERS_SENSOR_MPU6050_MPU6050_H_
 
-#include <device.h>
-#include <drivers/gpio.h>
-#include <sys/util.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/i2c.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/util.h>
 #include <zephyr/types.h>
 
 #define MPU6050_REG_CHIP_ID		0x75
 #define MPU6050_CHIP_ID			0x68
+#define MPU9250_CHIP_ID			0x71
 
 #define MPU6050_REG_GYRO_CFG		0x1B
 #define MPU6050_GYRO_FS_SHIFT		3
@@ -30,50 +33,54 @@
 #define MPU6050_SLEEP_EN		BIT(6)
 
 /* measured in degrees/sec x10 to avoid floating point */
-static const u16_t mpu6050_gyro_sensitivity_x10[] = {
+static const uint16_t mpu6050_gyro_sensitivity_x10[] = {
 	1310, 655, 328, 164
 };
 
 struct mpu6050_data {
-	struct device *i2c;
+	int16_t accel_x;
+	int16_t accel_y;
+	int16_t accel_z;
+	uint16_t accel_sensitivity_shift;
 
-	s16_t accel_x;
-	s16_t accel_y;
-	s16_t accel_z;
-	u16_t accel_sensitivity_shift;
+	int16_t temp;
 
-	s16_t temp;
-
-	s16_t gyro_x;
-	s16_t gyro_y;
-	s16_t gyro_z;
-	u16_t gyro_sensitivity_x10;
+	int16_t gyro_x;
+	int16_t gyro_y;
+	int16_t gyro_z;
+	uint16_t gyro_sensitivity_x10;
 
 #ifdef CONFIG_MPU6050_TRIGGER
-	struct device *gpio;
+	const struct device *dev;
 	struct gpio_callback gpio_cb;
 
-	struct sensor_trigger data_ready_trigger;
+	const struct sensor_trigger *data_ready_trigger;
 	sensor_trigger_handler_t data_ready_handler;
 
 #if defined(CONFIG_MPU6050_TRIGGER_OWN_THREAD)
-	K_THREAD_STACK_MEMBER(thread_stack, CONFIG_MPU6050_THREAD_STACK_SIZE);
+	K_KERNEL_STACK_MEMBER(thread_stack, CONFIG_MPU6050_THREAD_STACK_SIZE);
 	struct k_thread thread;
 	struct k_sem gpio_sem;
 #elif defined(CONFIG_MPU6050_TRIGGER_GLOBAL_THREAD)
 	struct k_work work;
-	struct device *dev;
 #endif
 
 #endif /* CONFIG_MPU6050_TRIGGER */
 };
 
+struct mpu6050_config {
+	struct i2c_dt_spec i2c;
 #ifdef CONFIG_MPU6050_TRIGGER
-int mpu6050_trigger_set(struct device *dev,
+	struct gpio_dt_spec int_gpio;
+#endif /* CONFIG_MPU6050_TRIGGER */
+};
+
+#ifdef CONFIG_MPU6050_TRIGGER
+int mpu6050_trigger_set(const struct device *dev,
 			const struct sensor_trigger *trig,
 			sensor_trigger_handler_t handler);
 
-int mpu6050_init_interrupt(struct device *dev);
+int mpu6050_init_interrupt(const struct device *dev);
 #endif
 
 #endif /* __SENSOR_MPU6050__ */

@@ -1,12 +1,12 @@
 tests:
   arch.interrupt:
-    arch_exclude: nios2 riscv32 arc
-    platform_exclude: qemu_x86 qemu_x86_coverage qemu_x86_64
-    tags: interrupt
+    # nios2 excluded, see #22956
+    arch_exclude: nios2
+    tags: kernel interrupt
+    filter: not CONFIG_TRUSTED_EXECUTION_NONSECURE
 
-  # Platforms without relevant (gen isr) dynamic interrupt support:
-  arch.interrupt.nodyn:
-    arch_whitelist: arc qemu_x86 qemu_x86_coverage qemu_x86_64
-    tags: interrupt
+  arch.interrupt.linker_generator:
+    platform_allow: qemu_cortex_m3
+    tags: interrupt linker_generator
     extra_configs:
-      - CONFIG_DYNAMIC_INTERRUPTS=n
+      - CONFIG_CMAKE_LINKER_GENERATOR=y

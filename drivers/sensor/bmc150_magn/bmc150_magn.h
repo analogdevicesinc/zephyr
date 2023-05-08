@@ -10,8 +10,8 @@
 #define ZEPHYR_DRIVERS_SENSOR_BMC150_MAGN_BMC150_MAGN_H_
 
 #include <zephyr/types.h>
-#include <drivers/i2c.h>
-#include <sys/util.h>
+#include <zephyr/drivers/i2c.h>
+#include <zephyr/sys/util.h>
 
 #define BMC150_MAGN_REG_CHIP_ID		0x40
 #define BMC150_MAGN_CHIP_ID_VAL		0x32
@@ -73,8 +73,6 @@
 #define BMC150_MAGN_MASK_DRDY_LATCHING          BIT(1)
 #define BMC150_MAGN_MASK_DRDY_INT3_POLARITY     BIT(0)
 
-#define BMC150_MAGN_I2C_ADDR			CONFIG_BMC150_MAGN_I2C_ADDR
-
 #if defined(CONFIG_BMC150_MAGN_SAMPLING_REP_XY) || \
 	defined(CONFIG_BMC150_MAGN_SAMPLING_REP_Z)
 	#define BMC150_MAGN_SET_ATTR_REP
@@ -86,47 +84,43 @@
 #endif
 
 struct bmc150_magn_config {
-	char *i2c_master_dev_name;
-	u16_t i2c_slave_addr;
-
+	struct i2c_dt_spec i2c;
 #if defined(CONFIG_BMC150_MAGN_TRIGGER_DRDY)
-	char *gpio_drdy_dev_name;
-	u8_t gpio_drdy_int_pin;
+	struct gpio_dt_spec int_gpio;
 #endif
 };
 
 struct bmc150_magn_trim_regs {
-	s8_t x1;
-	s8_t y1;
-	u16_t reserved1;
-	u8_t reserved2;
-	s16_t z4;
-	s8_t x2;
-	s8_t y2;
-	u16_t reserved3;
-	s16_t z2;
-	u16_t z1;
-	u16_t xyz1;
-	s16_t z3;
-	s8_t xy2;
-	u8_t xy1;
+	int8_t x1;
+	int8_t y1;
+	uint16_t reserved1;
+	uint8_t reserved2;
+	int16_t z4;
+	int8_t x2;
+	int8_t y2;
+	uint16_t reserved3;
+	int16_t z2;
+	uint16_t z1;
+	uint16_t xyz1;
+	int16_t z3;
+	int8_t xy2;
+	uint8_t xy1;
 } __packed;
 
 struct bmc150_magn_data {
-	struct device *i2c_master;
 	struct k_sem sem;
 
 #if defined(CONFIG_BMC150_MAGN_TRIGGER)
-	K_THREAD_STACK_MEMBER(thread_stack,
+	K_KERNEL_STACK_MEMBER(thread_stack,
 			      CONFIG_BMC150_MAGN_TRIGGER_THREAD_STACK);
 	struct k_thread thread;
 #endif
 
 #if defined(CONFIG_BMC150_MAGN_TRIGGER_DRDY)
-	struct device *gpio_drdy;
-	struct device *dev;
+	const struct device *gpio_drdy;
+	const struct device *dev;
 	struct gpio_callback gpio_cb;
-	struct sensor_trigger trigger_drdy;
+	const struct sensor_trigger *trigger_drdy;
 	sensor_trigger_handler_t handler_drdy;
 #endif
 
@@ -168,11 +162,11 @@ enum bmc150_magn_axis {
 };
 
 #if defined(CONFIG_BMC150_MAGN_TRIGGER)
-int bmc150_magn_trigger_set(struct device *dev,
+int bmc150_magn_trigger_set(const struct device *dev,
 			    const struct sensor_trigger *trig,
 			    sensor_trigger_handler_t handler);
 
-int bmc150_magn_init_interrupt(struct device *dev);
+int bmc150_magn_init_interrupt(const struct device *dev);
 #endif
 
 #endif /* ZEPHYR_DRIVERS_SENSOR_BMC150_MAGN_BMC150_MAGN_H_ */

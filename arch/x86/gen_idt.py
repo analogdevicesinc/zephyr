@@ -7,7 +7,7 @@
 """Generate Interrupt Descriptor Table for x86 CPUs.
 
 This script generates the interrupt descriptor table (IDT) for x86.
-Please consule the IA Architecture SW Developer Manual, volume 3,
+Please consult the IA Architecture SW Developer Manual, volume 3,
 for more details on this data structure.
 
 This script accepts as input the zephyr_prebuilt.elf binary,
@@ -33,11 +33,11 @@ import sys
 import struct
 import os
 import elftools
-from distutils.version import LooseVersion
+from packaging import version
 from elftools.elf.elffile import ELFFile
 from elftools.elf.sections import SymbolTableSection
 
-if LooseVersion(elftools.__version__) < LooseVersion('0.24'):
+if version.parse(elftools.__version__) < version.parse('0.24'):
     sys.exit("pyelftools is out of date, need version 0.24 or later")
 
 # This will never change, first selector in the GDT after the null selector
@@ -251,7 +251,7 @@ def parse_args():
     global args
     parser = argparse.ArgumentParser(
         description=__doc__,
-        formatter_class=argparse.RawDescriptionHelpFormatter)
+        formatter_class=argparse.RawDescriptionHelpFormatter, allow_abbrev=False)
 
     parser.add_argument("-m", "--vector-map", required=True,
                         help="Output file mapping IRQ lines to IDT vectors")

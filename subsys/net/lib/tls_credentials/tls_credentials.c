@@ -5,8 +5,8 @@
  */
 #include <string.h>
 
-#include <init.h>
-#include <kernel.h>
+#include <zephyr/init.h>
+#include <zephyr/kernel.h>
 
 #include "tls_internal.h"
 
@@ -16,7 +16,7 @@ static struct tls_credential credentials[CONFIG_TLS_MAX_CREDENTIALS_NUMBER];
 /* A mutex for protecting access to the credentials array. */
 static struct k_mutex credential_lock;
 
-static int credentials_init(struct device *unused)
+static int credentials_init(void)
 {
 	(void)memset(credentials, 0, sizeof(credentials));
 

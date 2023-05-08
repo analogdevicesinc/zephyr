@@ -1,11 +1,9 @@
-# Kconfig - Config options for logger sample app
-#
-# Copyright (c) 2018 Nordic Semiconductor ASA
-#
-# SPDX-License-Identifier: Apache-2.0
-#
+# Config options for logger sample app
 
-mainmenu "Logger sample application"
+# Copyright (c) 2018 Nordic Semiconductor ASA
+# SPDX-License-Identifier: Apache-2.0
+
+mainmenu "Shell module sample application"
 
 menu "Application configuration"
 

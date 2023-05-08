@@ -15,21 +15,25 @@
 
 #include <zephyr/types.h>
 
-#include <net/net_ip.h>
-#include <net/net_pkt.h>
+#include <zephyr/net/net_ip.h>
+#include <zephyr/net/net_pkt.h>
 
 #define NET_ICMPV4_DST_UNREACH  3	/* Destination unreachable */
 #define NET_ICMPV4_ECHO_REQUEST 8
 #define NET_ICMPV4_ECHO_REPLY   0
+#define NET_ICMPV4_TIME_EXCEEDED 11	/* Time exceeded */
+#define NET_ICMPV4_BAD_IP_HEADER 12	/* Bad IP header */
 
 #define NET_ICMPV4_DST_UNREACH_NO_PROTO  2 /* Protocol not supported */
 #define NET_ICMPV4_DST_UNREACH_NO_PORT   3 /* Port unreachable */
+#define NET_ICMPV4_TIME_EXCEEDED_FRAGMENT_REASSEMBLY_TIME 1 /* Fragment reassembly time exceeded */
+#define NET_ICMPV4_BAD_IP_HEADER_LENGTH  2 /* Bad length field */
 
 #define NET_ICMPV4_UNUSED_LEN 4
 
 struct net_icmpv4_echo_req {
-	u16_t identifier;
-	u16_t sequence;
+	uint16_t identifier;
+	uint16_t sequence;
 } __packed;
 
 typedef enum net_verdict (*icmpv4_callback_handler_t)(
@@ -40,8 +44,8 @@ typedef enum net_verdict (*icmpv4_callback_handler_t)(
 struct net_icmpv4_handler {
 	sys_snode_t node;
 	icmpv4_callback_handler_t handler;
-	u8_t type;
-	u8_t code;
+	uint8_t type;
+	uint8_t code;
 };
 
 /**
@@ -51,7 +55,7 @@ struct net_icmpv4_handler {
  * @param code Code of the type of the error message.
  * @return Return 0 if the sending succeed, <0 otherwise.
  */
-int net_icmpv4_send_error(struct net_pkt *pkt, u8_t type, u8_t code);
+int net_icmpv4_send_error(struct net_pkt *pkt, uint8_t type, uint8_t code);
 
 /**
  * @brief Send ICMPv4 echo request message.
@@ -62,24 +66,30 @@ int net_icmpv4_send_error(struct net_pkt *pkt, u8_t type, u8_t code);
  * to this Echo Request. May be zero.
  * @param sequence A sequence number to aid in matching Echo Replies
  * to this Echo Request. May be zero.
+ * @param tos IPv4 Type-of-service field value. Represents combined DSCP and ECN
+ * values.
  * @param data Arbitrary payload data that will be included in the
- * Echo Reply verbatim. May be zero.
- * @param data_size Size of the Payload Data in bytes. May be zero.
+ * Echo Reply verbatim. May be NULL.
+ * @param data_size Size of the Payload Data in bytes. May be zero. In case data
+ * pointer is NULL, the function will generate the payload up to the requested
+ * size.
  *
  * @return Return 0 if the sending succeed, <0 otherwise.
  */
 #if defined(CONFIG_NET_NATIVE_IPV4)
 int net_icmpv4_send_echo_request(struct net_if *iface,
 				 struct in_addr *dst,
-				 u16_t identifier,
-				 u16_t sequence,
+				 uint16_t identifier,
+				 uint16_t sequence,
+				 uint8_t tos,
 				 const void *data,
 				 size_t data_size);
 #else
 static inline int net_icmpv4_send_echo_request(struct net_if *iface,
 					       struct in_addr *dst,
-					       u16_t identifier,
-					       u16_t sequence,
+					       uint16_t identifier,
+					       uint16_t sequence,
+					       uint8_t tos,
 					       const void *data,
 					       size_t data_size)
 {
@@ -87,6 +97,7 @@ static inline int net_icmpv4_send_echo_request(struct net_if *iface,
 	ARG_UNUSED(dst);
 	ARG_UNUSED(identifier);
 	ARG_UNUSED(sequence);
+	ARG_UNUSED(tos);
 	ARG_UNUSED(data);
 	ARG_UNUSED(data_size);
 

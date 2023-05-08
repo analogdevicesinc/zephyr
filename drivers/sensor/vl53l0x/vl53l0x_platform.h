@@ -30,7 +30,7 @@ typedef struct {
 	uint8_t   I2cDevAddr;      /* i2c device address user specific field */
 	uint8_t   comms_type;      /* VL53L0X_COMMS_I2C or VL53L0X_COMMS_SPI */
 	uint16_t  comms_speed_khz; /* Comms speed [kHz] */
-	struct device *i2c;
+	const struct device *i2c;
 } VL53L0X_Dev_t;
 
 
@@ -41,7 +41,6 @@ typedef struct {
 typedef VL53L0X_Dev_t *VL53L0X_DEV;
 
 /**
- * @def PALDevDataGet
  * @brief Get ST private structure @a VL53L0X_DevData_t data access
  *
  * @param Dev       Device Handle
@@ -53,7 +52,6 @@ typedef VL53L0X_Dev_t *VL53L0X_DEV;
 #define PALDevDataGet(Dev, field) (Dev->Data.field)
 
 /**
- * @def PALDevDataSet(Dev, field, data)
  * @brief  Set ST private structure @a VL53L0X_DevData_t data field
  * @param Dev       Device Handle
  * @param field     ST structure field name
@@ -193,6 +191,3 @@ VL53L0X_Error VL53L0X_PollingDelay(VL53L0X_DEV Dev);
 #endif
 
 #endif  /* ZEPHYR_DRIVERS_SENSOR_VL53L0X_VL53L0X_PLATFORM_H_ */
-
-
-

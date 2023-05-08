@@ -1,24 +1,31 @@
 /*
  * Copyright (c) 2019 Intel Corporation
+ * Copyright (c) 2021 Nordic Semiconductor
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include <stdbool.h>
+#ifdef CONFIG_ARCH_POSIX
 #include <fcntl.h>
+#else
+#include <zephyr/posix/fcntl.h>
+#endif
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_sock_packet, CONFIG_NET_SOCKETS_LOG_LEVEL);
 
-#include <kernel.h>
-#include <drivers/entropy.h>
-#include <sys/util.h>
-#include <net/net_context.h>
-#include <net/net_pkt.h>
-#include <net/socket.h>
-#include <net/ethernet.h>
-#include <syscall_handler.h>
-#include <sys/fdtable.h>
+#include <zephyr/kernel.h>
+#include <zephyr/drivers/entropy.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/net/net_context.h>
+#include <zephyr/net/net_pkt.h>
+#include <zephyr/net/socket.h>
+#include <zephyr/net/ethernet.h>
+#include <zephyr/syscall_handler.h>
+#include <zephyr/sys/fdtable.h>
+
+#include "../../ip/net_stats.h"
 
 #include "sockets_internal.h"
 
@@ -26,7 +33,8 @@ extern const struct socket_op_vtable sock_fd_op_vtable;
 
 static const struct socket_op_vtable packet_sock_fd_op_vtable;
 
-static inline int k_fifo_wait_non_empty(struct k_fifo *fifo, int32_t timeout)
+static inline int k_fifo_wait_non_empty(struct k_fifo *fifo,
+					k_timeout_t timeout)
 {
 	struct k_poll_event events[] = {
 		K_POLL_EVENT_INITIALIZER(K_POLL_TYPE_FIFO_DATA_AVAILABLE,
@@ -65,14 +73,6 @@ static int zpacket_socket(int family, int type, int proto)
 
 	/* recv_q and accept_q are in union */
 	k_fifo_init(&ctx->recv_q);
-
-#ifdef CONFIG_USERSPACE
-	/* Set net context object as initialized and grant access to the
-	 * calling thread (and only the calling thread)
-	 */
-	z_object_recycle(ctx);
-#endif
-
 	z_finalize_fd(fd, ctx,
 		      (const struct fd_op_vtable *)&packet_sock_fd_op_vtable);
 
@@ -140,11 +140,97 @@ static int zpacket_bind_ctx(struct net_context *ctx,
 	return 0;
 }
 
+static void zpacket_set_eth_pkttype(struct net_if *iface,
+				    struct sockaddr_ll *addr,
+				    struct net_linkaddr *lladdr)
+{
+	if (net_eth_is_addr_broadcast((struct net_eth_addr *)lladdr->addr)) {
+		addr->sll_pkttype = PACKET_BROADCAST;
+	} else if (net_eth_is_addr_multicast(
+			   (struct net_eth_addr *)lladdr->addr)) {
+		addr->sll_pkttype = PACKET_MULTICAST;
+	} else if (!net_linkaddr_cmp(net_if_get_link_addr(iface), lladdr)) {
+		addr->sll_pkttype = PACKET_HOST;
+	} else {
+		addr->sll_pkttype = PACKET_OTHERHOST;
+	}
+}
+
+static void zpacket_set_source_addr(struct net_context *ctx,
+				    struct net_pkt *pkt,
+				    struct sockaddr *src_addr,
+				    socklen_t *addrlen)
+{
+	struct sockaddr_ll addr = {0};
+	struct net_if *iface = net_context_get_iface(ctx);
+
+	if (iface == NULL) {
+		return;
+	}
+
+	addr.sll_family = AF_PACKET;
+	addr.sll_ifindex = net_if_get_by_iface(iface);
+
+	if (net_pkt_is_l2_processed(pkt)) {
+		/* L2 has already processed the packet - can copy information
+		 * directly from the net_pkt structure
+		 */
+		addr.sll_halen = pkt->lladdr_src.len;
+		memcpy(addr.sll_addr, pkt->lladdr_src.addr,
+		       MIN(sizeof(addr.sll_addr), pkt->lladdr_src.len));
+
+		addr.sll_protocol = net_pkt_ll_proto_type(pkt);
+
+		if (net_if_get_link_addr(iface)->type == NET_LINK_ETHERNET) {
+			addr.sll_hatype = ARPHRD_ETHER;
+			zpacket_set_eth_pkttype(iface, &addr,
+						net_pkt_lladdr_dst(pkt));
+		}
+	} else if (net_if_get_link_addr(iface)->type == NET_LINK_ETHERNET) {
+		/* Need to extract information from the L2 header. Only
+		 * Ethernet L2 supported currently.
+		 */
+		struct net_eth_hdr *hdr;
+		struct net_linkaddr dst_addr;
+		struct net_pkt_cursor cur;
+
+		net_pkt_cursor_backup(pkt, &cur);
+		net_pkt_cursor_init(pkt);
+
+		hdr = NET_ETH_HDR(pkt);
+		if (hdr == NULL ||
+		    pkt->buffer->len < sizeof(struct net_eth_hdr)) {
+			net_pkt_cursor_restore(pkt, &cur);
+			return;
+		}
+
+		addr.sll_halen = sizeof(struct net_eth_addr);
+		memcpy(addr.sll_addr, hdr->src.addr,
+		       sizeof(struct net_eth_addr));
+
+		addr.sll_protocol = ntohs(hdr->type);
+		addr.sll_hatype = ARPHRD_ETHER;
+
+		dst_addr.addr = hdr->dst.addr;
+		dst_addr.len = sizeof(struct net_eth_addr);
+		dst_addr.type = NET_LINK_ETHERNET;
+
+		zpacket_set_eth_pkttype(iface, &addr, &dst_addr);
+		net_pkt_cursor_restore(pkt, &cur);
+	}
+
+	/* Copy the result sockaddr_ll structure into provided buffer. If the
+	 * buffer is smaller than the structure size, it will be truncated.
+	 */
+	memcpy(src_addr, &addr, MIN(sizeof(struct sockaddr_ll), *addrlen));
+	*addrlen = sizeof(struct sockaddr_ll);
+}
+
 ssize_t zpacket_sendto_ctx(struct net_context *ctx, const void *buf, size_t len,
 			   int flags, const struct sockaddr *dest_addr,
 			   socklen_t addrlen)
 {
-	s32_t timeout = K_FOREVER;
+	k_timeout_t timeout = K_FOREVER;
 	int status;
 
 	if (!dest_addr) {
@@ -154,6 +240,8 @@ ssize_t zpacket_sendto_ctx(struct net_context *ctx, const void *buf, size_t len,
 
 	if ((flags & ZSOCK_MSG_DONTWAIT) || sock_is_nonblock(ctx)) {
 		timeout = K_NO_WAIT;
+	} else {
+		net_context_get_option(ctx, NET_OPT_SNDTIMEO, &timeout, NULL);
 	}
 
 	/* Register the callback before sending in order to receive the response
@@ -177,16 +265,39 @@ ssize_t zpacket_sendto_ctx(struct net_context *ctx, const void *buf, size_t len,
 	return status;
 }
 
+ssize_t zpacket_sendmsg_ctx(struct net_context *ctx, const struct msghdr *msg,
+			    int flags)
+{
+	k_timeout_t timeout = K_FOREVER;
+	int status;
+
+	if ((flags & ZSOCK_MSG_DONTWAIT) || sock_is_nonblock(ctx)) {
+		timeout = K_NO_WAIT;
+	} else {
+		net_context_get_option(ctx, NET_OPT_SNDTIMEO, &timeout, NULL);
+	}
+
+	status = net_context_sendmsg(ctx, msg, flags, NULL, timeout, NULL);
+	if (status < 0) {
+		errno = -status;
+		return -1;
+	}
+
+	return status;
+}
+
 ssize_t zpacket_recvfrom_ctx(struct net_context *ctx, void *buf, size_t max_len,
 			     int flags, struct sockaddr *src_addr,
 			     socklen_t *addrlen)
 {
 	size_t recv_len = 0;
-	s32_t timeout = K_FOREVER;
+	k_timeout_t timeout = K_FOREVER;
 	struct net_pkt *pkt;
 
 	if ((flags & ZSOCK_MSG_DONTWAIT) || sock_is_nonblock(ctx)) {
 		timeout = K_NO_WAIT;
+	} else {
+		net_context_get_option(ctx, NET_OPT_RCVTIMEO, &timeout, NULL);
 	}
 
 	if (flags & ZSOCK_MSG_PEEK) {
@@ -220,6 +331,15 @@ ssize_t zpacket_recvfrom_ctx(struct net_context *ctx, void *buf, size_t max_len,
 	if (net_pkt_read(pkt, buf, recv_len)) {
 		errno = ENOBUFS;
 		return -1;
+	}
+
+	if (src_addr && addrlen) {
+		zpacket_set_source_addr(ctx, pkt, src_addr, addrlen);
+	}
+
+	if (IS_ENABLED(CONFIG_NET_PKT_RXTIME_STATS) &&
+	    !(flags & ZSOCK_MSG_PEEK)) {
+		net_socket_update_tc_rx_time(pkt, k_cycle_get_32());
 	}
 
 	if (!(flags & ZSOCK_MSG_PEEK)) {
@@ -307,6 +427,12 @@ static ssize_t packet_sock_sendto_vmeth(void *obj, const void *buf, size_t len,
 	return zpacket_sendto_ctx(obj, buf, len, flags, dest_addr, addrlen);
 }
 
+static ssize_t packet_sock_sendmsg_vmeth(void *obj, const struct msghdr *msg,
+					 int flags)
+{
+	return zpacket_sendmsg_ctx(obj, msg, flags);
+}
+
 static ssize_t packet_sock_recvfrom_vmeth(void *obj, void *buf, size_t max_len,
 					  int flags, struct sockaddr *src_addr,
 					  socklen_t *addrlen)
@@ -327,10 +453,16 @@ static int packet_sock_setsockopt_vmeth(void *obj, int level, int optname,
 	return zpacket_setsockopt_ctx(obj, level, optname, optval, optlen);
 }
 
+static int packet_sock_close_vmeth(void *obj)
+{
+	return zsock_close_ctx(obj);
+}
+
 static const struct socket_op_vtable packet_sock_fd_op_vtable = {
 	.fd_vtable = {
 		.read = packet_sock_read_vmeth,
 		.write = packet_sock_write_vmeth,
+		.close = packet_sock_close_vmeth,
 		.ioctl = packet_sock_ioctl_vmeth,
 	},
 	.bind = packet_sock_bind_vmeth,
@@ -338,6 +470,7 @@ static const struct socket_op_vtable packet_sock_fd_op_vtable = {
 	.listen = packet_sock_listen_vmeth,
 	.accept = packet_sock_accept_vmeth,
 	.sendto = packet_sock_sendto_vmeth,
+	.sendmsg = packet_sock_sendmsg_vmeth,
 	.recvfrom = packet_sock_recvfrom_vmeth,
 	.getsockopt = packet_sock_getsockopt_vmeth,
 	.setsockopt = packet_sock_setsockopt_vmeth,
@@ -345,11 +478,20 @@ static const struct socket_op_vtable packet_sock_fd_op_vtable = {
 
 static bool packet_is_supported(int family, int type, int proto)
 {
-	if (type != SOCK_RAW || proto != ETH_P_ALL) {
+	switch (type) {
+	case SOCK_RAW:
+		return proto == ETH_P_ALL
+		  || proto == ETH_P_ECAT
+		  || proto == ETH_P_IEEE802154
+		  || proto == IPPROTO_RAW;
+
+	case SOCK_DGRAM:
+		return proto > 0;
+
+	default:
 		return false;
 	}
-
-	return true;
 }
 
-NET_SOCKET_REGISTER(af_packet, AF_PACKET, packet_is_supported, zpacket_socket);
+NET_SOCKET_REGISTER(af_packet, NET_SOCKET_DEFAULT_PRIO, AF_PACKET,
+		    packet_is_supported, zpacket_socket);

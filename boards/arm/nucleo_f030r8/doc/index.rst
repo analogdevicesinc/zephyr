@@ -21,8 +21,6 @@ The STM32 Nucleo board comes with the STM32 comprehensive software HAL library t
 with various packaged software examples.
 
 .. image:: img/nucleo_f030r8.jpg
-   :width: 500px
-   :height: 367px
    :align: center
    :alt: Nucleo F030R8
 
@@ -65,9 +63,10 @@ Nucleo F030R8 provides the following hardware components:
   - ARM Keil
   - GCC-based IDEs
 
-More information about STM32F030R8 can be found in the
-`STM32F030 reference manual`_
+More information about STM32F030R8 can be found here:
 
+- `STM32F030 reference manual`_
+- `STM32F030 data sheet`_
 
 Supported Features
 ==================
@@ -94,6 +93,8 @@ The Zephyr nucleo_f030r8 board configuration supports the following hardware fea
 +-----------+------------+-------------------------------------+
 | I2C       | on-chip    | i2c controller                      |
 +-----------+------------+-------------------------------------+
+| ADC       | on-chip    | ADC controller                      |
++-----------+------------+-------------------------------------+
 
 Other hardware features are not yet supported in this Zephyr port.
 
@@ -110,10 +111,8 @@ capable except for analog inputs.
 
 Board connectors:
 -----------------
-.. image:: img/nucleo_f030r8_connectors.png
-   :width: 800px
+.. image:: img/nucleo_f030r8_connectors.jpg
    :align: center
-   :height: 619px
    :alt: Nucleo F030R8 connectors
 
 Default Zephyr Peripheral Mapping:
@@ -122,11 +121,12 @@ Default Zephyr Peripheral Mapping:
 - UART_1 TX/RX : PA9/PA10
 - UART_2 TX/RX : PA2/PA3 (ST-Link Virtual COM Port)
 - I2C1 SCL/SDA : PB8/PB9 (Arduino I2C)
-- I2C2 SCL/SDA : PA11/PA12
-- SPI1 NSS/SCK/MISO/MOSI : PA4/PA5/PA6/PA7 (Arduino SPI)
+- I2C2 SCL/SDA : PB10/PB11
+- SPI1 NSS/SCK/MISO/MOSI : PB6/PA5/PA6/PA7 (Arduino SPI)
 - SPI2 NSS/SCK/MISO/MOSI : PB12/PB13/PB14/PB15
 - USER_PB : PC13
 - LD1 : PA5
+- ADC : PA0
 
 
 For mode details please refer to `STM32 Nucleo-64 board User Manual`_.
@@ -137,6 +137,8 @@ Programming and Debugging
 Applications for the ``nucleo_f030r8`` board configuration can be built and
 flashed in the usual way (see :ref:`build_an_application` and
 :ref:`application_run` for more details).
+
+.. _nucleo-f030r8-flashing:
 
 Flashing
 ========
@@ -156,6 +158,13 @@ Here is an example for the :ref:`blinky-sample` application.
 
 You will see the LED blinking every second.
 
+If using the C-01 board, select revision '1' that supports the board.
+
+.. zephyr-app-commands::
+   :zephyr-app: samples/basic/blinky
+   :board: nucleo_f030r8@1
+   :goals: build flash
+
 Debugging
 =========
 
@@ -168,16 +177,41 @@ You can debug an application in the usual way.  Here is an example for the
    :maybe-skip-config:
    :goals: debug
 
+Again you have to use the adapted command for C-01.
+
+.. zephyr-app-commands::
+   :zephyr-app: samples/basic/blinky
+   :board: nucleo_f030r8@1
+   :maybe-skip-config:
+   :goals: debug
+
+Board Revisions
+***************
+
+Nucleo F030R8 has some version of board variants.
+`STM32 Nucleo-64 board User Manual`_ mentions to Nucleo board variants.
+
+   | *The board version MB1136 C-01 or MB1136 C-02 is mentioned on the sticker, placed on the bottom side of the PCB.*
+   | *The board marking MB1136 C-01 corresponds to a board, configured as HSE not used.*
+   | *The board marking MB1136 C-02 (or higher) corresponds to a board, configured to use ST-LINK MCO as the clock input.*
+
+Using revision **2** adapted for C-02(or higher) as default when not explicitly selecting revisions.
+If using the C-01 board, select revision **1**.
+Please see :ref:`Flashing <nucleo-f030r8-flashing>` section.
+
 References
 **********
 
 .. target-notes::
 
 .. _Nucleo F030R8 website:
-   http://www.st.com/content/st_com/en/products/microcontrollers/stm32-32-bit-arm-cortex-mcus/stm32-mainstream-mcus/stm32f0-series/stm32f0x0-value-line/stm32f030r8.html
+   https://www.st.com/en/evaluation-tools/nucleo-f030r8.html
 
 .. _STM32F030 reference manual:
-   http://www.st.com/resource/en/reference_manual/dm00091010.pdf
+   https://www.st.com/resource/en/reference_manual/dm00091010.pdf
+
+.. _STM32F030 data sheet:
+   https://www.st.com/resource/en/datasheet/stm32f030r8.pdf
 
 .. _STM32 Nucleo-64 board User Manual:
-   http://www.st.com/resource/en/user_manual/dm00105823.pdf
+   https://www.st.com/resource/en/user_manual/dm00105823.pdf

@@ -1,5 +1,7 @@
 /* ieee802154_cc2520.c - TI CC2520 driver */
 
+#define DT_DRV_COMPAT ti_cc2520
+
 /*
  * Copyright (c) 2016 Intel Corporation.
  *
@@ -9,33 +11,34 @@
 #define LOG_MODULE_NAME ieee802154_cc2520
 #define LOG_LEVEL CONFIG_IEEE802154_DRIVER_LOG_LEVEL
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
 #include <errno.h>
 
-#include <kernel.h>
-#include <arch/cpu.h>
+#include <zephyr/kernel.h>
+#include <zephyr/arch/cpu.h>
+#include <zephyr/debug/stack.h>
 
-#include <device.h>
-#include <init.h>
-#include <net/net_if.h>
-#include <net/net_pkt.h>
+#include <zephyr/device.h>
+#include <zephyr/init.h>
+#include <zephyr/net/net_if.h>
+#include <zephyr/net/net_pkt.h>
 
-#include <sys/byteorder.h>
+#include <zephyr/sys/byteorder.h>
 #include <string.h>
-#include <random/rand32.h>
+#include <zephyr/random/rand32.h>
 
-#include <drivers/gpio.h>
+#include <zephyr/drivers/gpio.h>
 
 #ifdef CONFIG_IEEE802154_CC2520_CRYPTO
 
-#include <crypto/cipher.h>
-#include <crypto/cipher_structs.h>
+#include <zephyr/crypto/crypto.h>
+#include <zephyr/crypto/cipher.h>
 
 #endif /* CONFIG_IEEE802154_CC2520_CRYPTO */
 
-#include <net/ieee802154_radio.h>
+#include <zephyr/net/ieee802154_radio.h>
 
 #include "ieee802154_cc2520.h"
 
@@ -56,34 +59,30 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #define CC2520_TX_THRESHOLD		(0x7F)
 #define CC2520_FCS_LENGTH		(2)
 
-#if defined(CONFIG_IEEE802154_CC2520_GPIO_SPI_CS)
-static struct spi_cs_control cs_ctrl;
-#endif
-
 /*********
  * DEBUG *
  ********/
 #if LOG_LEVEL == LOG_LEVEL_DBG
-static inline void cc2520_print_gpio_config(struct device *dev)
+static inline void cc2520_print_gpio_config(const struct device *dev)
 {
-	struct cc2520_context *cc2520 = dev->driver_data;
+	struct cc2520_context *cc2520 = dev->data;
 
 	LOG_DBG("GPIOCTRL0/1/2/3/4/5 = 0x%x/0x%x/0x%x/0x%x/0x%x/0x%x",
-		    read_reg_gpioctrl0(cc2520),
-		    read_reg_gpioctrl1(cc2520),
-		    read_reg_gpioctrl2(cc2520),
-		    read_reg_gpioctrl3(cc2520),
-		    read_reg_gpioctrl4(cc2520),
-		    read_reg_gpioctrl5(cc2520));
+		read_reg_gpioctrl0(cc2520),
+		read_reg_gpioctrl1(cc2520),
+		read_reg_gpioctrl2(cc2520),
+		read_reg_gpioctrl3(cc2520),
+		read_reg_gpioctrl4(cc2520),
+		read_reg_gpioctrl5(cc2520));
 	LOG_DBG("GPIOPOLARITY: 0x%x",
-		    read_reg_gpiopolarity(cc2520));
+		read_reg_gpiopolarity(cc2520));
 	LOG_DBG("GPIOCTRL: 0x%x",
-		    read_reg_gpioctrl(cc2520));
+		read_reg_gpioctrl(cc2520));
 }
 
 static inline void cc2520_print_exceptions(struct cc2520_context *cc2520)
 {
-	u8_t flag = read_reg_excflag0(cc2520);
+	uint8_t flag = read_reg_excflag0(cc2520);
 
 	LOG_DBG("EXCFLAG0:");
 
@@ -158,7 +157,7 @@ static inline void cc2520_print_exceptions(struct cc2520_context *cc2520)
 
 static inline void cc2520_print_errors(struct cc2520_context *cc2520)
 {
-	u8_t flag = read_reg_excflag2(cc2520);
+	uint8_t flag = read_reg_excflag2(cc2520);
 
 	LOG_DBG("EXCFLAG2:");
 
@@ -202,10 +201,11 @@ static inline void cc2520_print_errors(struct cc2520_context *cc2520)
  ********************/
 #define z_usleep(usec) k_busy_wait(usec)
 
-bool z_cc2520_access(struct cc2520_context *ctx, bool read, u8_t ins,
-		    u16_t addr, void *data, size_t length)
+bool z_cc2520_access(const struct device *dev, bool read, uint8_t ins,
+		     uint16_t addr, void *data, size_t length)
 {
-	u8_t cmd_buf[2];
+	const struct cc2520_config *cfg = dev->config;
+	uint8_t cmd_buf[2];
 	struct spi_buf buf[2] = {
 		{
 			.buf = cmd_buf,
@@ -226,10 +226,10 @@ bool z_cc2520_access(struct cc2520_context *ctx, bool read, u8_t ins,
 
 	if (ins == CC2520_INS_MEMRD || ins == CC2520_INS_MEMWR) {
 		buf[0].len = 2;
-		cmd_buf[0] |= (u8_t)(addr >> 8);
-		cmd_buf[1] = (u8_t)(addr & 0xff);
+		cmd_buf[0] |= (uint8_t)(addr >> 8);
+		cmd_buf[1] = (uint8_t)(addr & 0xff);
 	} else if (ins == CC2520_INS_REGRD || ins == CC2520_INS_REGWR) {
-		cmd_buf[0] |= (u8_t)(addr & 0xff);
+		cmd_buf[0] |= (uint8_t)(addr & 0xff);
 	}
 
 	if (read) {
@@ -240,32 +240,32 @@ bool z_cc2520_access(struct cc2520_context *ctx, bool read, u8_t ins,
 
 		tx.count = 1;
 
-		return (spi_transceive(ctx->spi, &ctx->spi_cfg, &tx, &rx) == 0);
+		return (spi_transceive_dt(&cfg->bus, &tx, &rx) == 0);
 	}
 
 	tx.count = data ? 2 : 1;
 
-	return (spi_write(ctx->spi, &ctx->spi_cfg, &tx) == 0);
+	return (spi_write_dt(&cfg->bus, &tx) == 0);
 }
 
-static inline u8_t cc2520_status(struct cc2520_context *ctx)
+static inline uint8_t cc2520_status(const struct device *dev)
 {
-	u8_t status;
+	uint8_t status;
 
-	if (z_cc2520_access(ctx, true, CC2520_INS_SNOP, 0, &status, 1)) {
+	if (z_cc2520_access(dev, true, CC2520_INS_SNOP, 0, &status, 1)) {
 		return status;
 	}
 
 	return 0;
 }
 
-static bool verify_osc_stabilization(struct cc2520_context *cc2520)
+static bool verify_osc_stabilization(const struct device *dev)
 {
-	u8_t timeout = 100U;
-	u8_t status;
+	uint8_t timeout = 100U;
+	uint8_t status;
 
 	do {
-		status = cc2520_status(cc2520);
+		status = cc2520_status(dev);
 		z_usleep(1);
 		timeout--;
 	} while (!(status & CC2520_STATUS_XOSC_STABLE_N_RUNNING) && timeout);
@@ -274,12 +274,12 @@ static bool verify_osc_stabilization(struct cc2520_context *cc2520)
 }
 
 
-static inline u8_t *get_mac(struct device *dev)
+static inline uint8_t *get_mac(const struct device *dev)
 {
-	struct cc2520_context *cc2520 = dev->driver_data;
+	struct cc2520_context *cc2520 = dev->data;
 
 #if defined(CONFIG_IEEE802154_CC2520_RANDOM_MAC)
-	u32_t *ptr = (u32_t *)(cc2520->mac_addr + 4);
+	uint32_t *ptr = (uint32_t *)(cc2520->mac_addr + 4);
 
 	UNALIGNED_PUT(sys_rand32_get(), ptr);
 
@@ -299,15 +299,13 @@ static inline u8_t *get_mac(struct device *dev)
 	return cc2520->mac_addr;
 }
 
-static int cc2520_set_pan_id(struct device *dev, u16_t pan_id)
+static int cc2520_set_pan_id(const struct device *dev, uint16_t pan_id)
 {
-	struct cc2520_context *cc2520 = dev->driver_data;
-
 	LOG_DBG("0x%x", pan_id);
 
 	pan_id = sys_le16_to_cpu(pan_id);
 
-	if (!write_mem_pan_id(cc2520, (u8_t *) &pan_id)) {
+	if (!write_mem_pan_id(dev, (uint8_t *) &pan_id)) {
 		LOG_ERR("Failed");
 		return -EIO;
 	}
@@ -315,15 +313,14 @@ static int cc2520_set_pan_id(struct device *dev, u16_t pan_id)
 	return 0;
 }
 
-static int cc2520_set_short_addr(struct device *dev, u16_t short_addr)
+static int cc2520_set_short_addr(const struct device *dev,
+				 uint16_t short_addr)
 {
-	struct cc2520_context *cc2520 = dev->driver_data;
-
 	LOG_DBG("0x%x", short_addr);
 
 	short_addr = sys_le16_to_cpu(short_addr);
 
-	if (!write_mem_short_addr(cc2520, (u8_t *) &short_addr)) {
+	if (!write_mem_short_addr(dev, (uint8_t *) &short_addr)) {
 		LOG_ERR("Failed");
 		return -EIO;
 	}
@@ -331,18 +328,17 @@ static int cc2520_set_short_addr(struct device *dev, u16_t short_addr)
 	return 0;
 }
 
-static int cc2520_set_ieee_addr(struct device *dev, const u8_t *ieee_addr)
+static int cc2520_set_ieee_addr(const struct device *dev,
+				const uint8_t *ieee_addr)
 {
-	struct cc2520_context *cc2520 = dev->driver_data;
-
-	if (!write_mem_ext_addr(cc2520, (void *)ieee_addr)) {
+	if (!write_mem_ext_addr(dev, (void *)ieee_addr)) {
 		LOG_ERR("Failed");
 		return -EIO;
 	}
 
 	LOG_DBG("IEEE address %02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x",
-		    ieee_addr[7], ieee_addr[6], ieee_addr[5], ieee_addr[4],
-		    ieee_addr[3], ieee_addr[2], ieee_addr[1], ieee_addr[0]);
+		ieee_addr[7], ieee_addr[6], ieee_addr[5], ieee_addr[4],
+		ieee_addr[3], ieee_addr[2], ieee_addr[1], ieee_addr[0]);
 
 	return 0;
 }
@@ -350,54 +346,43 @@ static int cc2520_set_ieee_addr(struct device *dev, const u8_t *ieee_addr)
 /******************
  * GPIO functions *
  *****************/
-static inline void set_reset(struct device *dev, u32_t value)
+static inline void set_reset(const struct device *dev, uint32_t value)
 {
-	struct cc2520_context *cc2520 = dev->driver_data;
+	const struct cc2520_config *cfg = dev->config;
 
-	gpio_pin_write(cc2520->gpios[CC2520_GPIO_IDX_RESET].dev,
-		       cc2520->gpios[CC2520_GPIO_IDX_RESET].pin, value);
+	gpio_pin_set_raw(cfg->reset.port, cfg->reset.pin, value);
 }
 
-static inline void set_vreg_en(struct device *dev, u32_t value)
+static inline void set_vreg_en(const struct device *dev, uint32_t value)
 {
-	struct cc2520_context *cc2520 = dev->driver_data;
+	const struct cc2520_config *cfg = dev->config;
 
-	gpio_pin_write(cc2520->gpios[CC2520_GPIO_IDX_VREG_EN].dev,
-		       cc2520->gpios[CC2520_GPIO_IDX_VREG_EN].pin, value);
+	gpio_pin_set_raw(cfg->vreg_en.port, cfg->vreg_en.pin, value);
 }
 
-static inline u32_t get_fifo(struct cc2520_context *cc2520)
+static inline uint32_t get_fifo(const struct device *dev)
 {
-	u32_t pin_value;
+	const struct cc2520_config *cfg = dev->config;
 
-	gpio_pin_read(cc2520->gpios[CC2520_GPIO_IDX_FIFO].dev,
-		      cc2520->gpios[CC2520_GPIO_IDX_FIFO].pin, &pin_value);
-
-	return pin_value;
+	return gpio_pin_get_raw(cfg->fifo.port, cfg->fifo.pin);
 }
 
-static inline u32_t get_fifop(struct cc2520_context *cc2520)
+static inline uint32_t get_fifop(const struct device *dev)
 {
-	u32_t pin_value;
+	const struct cc2520_config *cfg = dev->config;
 
-	gpio_pin_read(cc2520->gpios[CC2520_GPIO_IDX_FIFOP].dev,
-		      cc2520->gpios[CC2520_GPIO_IDX_FIFOP].pin, &pin_value);
-
-	return pin_value;
+	return gpio_pin_get_raw(cfg->fifop.port, cfg->fifop.pin);
 }
 
-static inline u32_t get_cca(struct cc2520_context *cc2520)
+static inline uint32_t get_cca(const struct device *dev)
 {
-	u32_t pin_value;
+	const struct cc2520_config *cfg = dev->config;
 
-	gpio_pin_read(cc2520->gpios[CC2520_GPIO_IDX_CCA].dev,
-		      cc2520->gpios[CC2520_GPIO_IDX_CCA].pin, &pin_value);
-
-	return pin_value;
+	return gpio_pin_get_raw(cfg->cca.port, cfg->cca.pin);
 }
 
-static inline void sfd_int_handler(struct device *port,
-				   struct gpio_callback *cb, u32_t pins)
+static inline void sfd_int_handler(const struct device *port,
+				   struct gpio_callback *cb, uint32_t pins)
 {
 	struct cc2520_context *cc2520 =
 		CONTAINER_OF(cb, struct cc2520_context, sfd_cb);
@@ -408,104 +393,98 @@ static inline void sfd_int_handler(struct device *port,
 	}
 }
 
-static inline void fifop_int_handler(struct device *port,
-				     struct gpio_callback *cb, u32_t pins)
+static inline void fifop_int_handler(const struct device *port,
+				     struct gpio_callback *cb, uint32_t pins)
 {
 	struct cc2520_context *cc2520 =
 		CONTAINER_OF(cb, struct cc2520_context, fifop_cb);
 
 	/* Note: Errata document - 1.2 */
-	if (!get_fifop(cc2520) && !get_fifop(cc2520)) {
+	if (!get_fifop(cc2520->dev) && !get_fifop(cc2520->dev)) {
 		return;
 	}
 
-	if (!get_fifo(cc2520)) {
+	if (!get_fifo(cc2520->dev)) {
 		cc2520->overflow = true;
 	}
 
 	k_sem_give(&cc2520->rx_lock);
 }
 
-static void enable_fifop_interrupt(struct cc2520_context *cc2520,
+static void enable_fifop_interrupt(const struct device *dev,
 				   bool enable)
 {
-	if (enable) {
-		gpio_pin_enable_callback(
-			cc2520->gpios[CC2520_GPIO_IDX_FIFOP].dev,
-			cc2520->gpios[CC2520_GPIO_IDX_FIFOP].pin);
-	} else {
-		gpio_pin_disable_callback(
-			cc2520->gpios[CC2520_GPIO_IDX_FIFOP].dev,
-			cc2520->gpios[CC2520_GPIO_IDX_FIFOP].pin);
-	}
+	const struct cc2520_config *cfg = dev->config;
+	gpio_flags_t mode = enable ? GPIO_INT_EDGE_TO_ACTIVE : GPIO_INT_DISABLE;
+
+	gpio_pin_interrupt_configure_dt(&cfg->fifop, mode);
 }
 
-static void enable_sfd_interrupt(struct cc2520_context *cc2520,
+static void enable_sfd_interrupt(const struct device *dev,
 				 bool enable)
 {
-	if (enable) {
-		gpio_pin_enable_callback(
-			cc2520->gpios[CC2520_GPIO_IDX_SFD].dev,
-			cc2520->gpios[CC2520_GPIO_IDX_SFD].pin);
-	} else {
-		gpio_pin_disable_callback(
-			cc2520->gpios[CC2520_GPIO_IDX_SFD].dev,
-			cc2520->gpios[CC2520_GPIO_IDX_SFD].pin);
-	}
+	const struct cc2520_config *cfg = dev->config;
+	gpio_flags_t mode = enable ? GPIO_INT_EDGE_TO_ACTIVE : GPIO_INT_DISABLE;
+
+	gpio_pin_interrupt_configure_dt(&cfg->sfd, mode);
 }
 
-static inline void setup_gpio_callbacks(struct device *dev)
+static inline int setup_gpio_callbacks(const struct device *dev)
 {
-	struct cc2520_context *cc2520 = dev->driver_data;
+	const struct cc2520_config *cfg = dev->config;
+	struct cc2520_context *cc2520 = dev->data;
 
-	gpio_init_callback(&cc2520->sfd_cb, sfd_int_handler,
-			   BIT(cc2520->gpios[CC2520_GPIO_IDX_SFD].pin));
-	gpio_add_callback(cc2520->gpios[CC2520_GPIO_IDX_SFD].dev,
-			  &cc2520->sfd_cb);
+	gpio_init_callback(&cc2520->sfd_cb, sfd_int_handler, BIT(cfg->sfd.pin));
+	if (gpio_add_callback(cfg->sfd.port, &cc2520->sfd_cb) != 0) {
+		return -EIO;
+	}
 
-	gpio_init_callback(&cc2520->fifop_cb, fifop_int_handler,
-			   BIT(cc2520->gpios[CC2520_GPIO_IDX_FIFOP].pin));
-	gpio_add_callback(cc2520->gpios[CC2520_GPIO_IDX_FIFOP].dev,
-			  &cc2520->fifop_cb);
+
+	gpio_init_callback(&cc2520->fifop_cb, fifop_int_handler, BIT(cfg->fifop.pin));
+	if (gpio_add_callback(cfg->fifop.port, &cc2520->fifop_cb) != 0) {
+		return -EIO;
+	}
+
+	return 0;
 }
 
 
 /****************
  * TX functions *
  ***************/
-static inline bool write_txfifo_length(struct cc2520_context *ctx, u8_t len)
+static inline bool write_txfifo_length(const struct device *dev, uint8_t len)
 {
-	u8_t length = len + CC2520_FCS_LENGTH;
+	uint8_t length = len + CC2520_FCS_LENGTH;
 
-	return z_cc2520_access(ctx, false, CC2520_INS_TXBUF, 0, &length, 1);
+	return z_cc2520_access(dev, false, CC2520_INS_TXBUF, 0, &length, 1);
 }
 
-static inline bool write_txfifo_content(struct cc2520_context *ctx,
-					u8_t *frame, u8_t len)
+static inline bool write_txfifo_content(const struct device *dev,
+					uint8_t *frame, uint8_t len)
 {
-	return z_cc2520_access(ctx, false, CC2520_INS_TXBUF, 0, frame, len);
+	return z_cc2520_access(dev, false, CC2520_INS_TXBUF, 0, frame, len);
 }
 
-static inline bool verify_txfifo_status(struct cc2520_context *cc2520,
-					u8_t len)
+static inline bool verify_txfifo_status(const struct device *dev,
+					uint8_t len)
 {
-	if (read_reg_txfifocnt(cc2520) < len ||
-	    (read_reg_excflag0(cc2520) & EXCFLAG0_TX_UNDERFLOW)) {
+	if (read_reg_txfifocnt(dev) < len ||
+	    (read_reg_excflag0(dev) & EXCFLAG0_TX_UNDERFLOW)) {
 		return false;
 	}
 
 	return true;
 }
 
-static inline bool verify_tx_done(struct cc2520_context *cc2520)
+static inline bool verify_tx_done(const struct device *dev)
 {
-	u8_t timeout = 10U;
-	u8_t status;
+	uint8_t timeout = 10U;
+	uint8_t status;
 
 	do {
 		z_usleep(1);
 		timeout--;
-		status = read_reg_excflag0(cc2520);
+		status = read_reg_excflag0(dev);
 	} while (!(status & EXCFLAG0_TX_FRM_DONE) && timeout);
 
 	return !!(status & EXCFLAG0_TX_FRM_DONE);
@@ -515,39 +494,39 @@ static inline bool verify_tx_done(struct cc2520_context *cc2520)
  * RX functions *
  ***************/
 
-static inline void flush_rxfifo(struct cc2520_context *cc2520)
+static inline void flush_rxfifo(const struct device *dev)
 {
 	/* Note: Errata document - 1.1 */
-	enable_fifop_interrupt(cc2520, false);
+	enable_fifop_interrupt(dev, false);
 
-	instruct_sflushrx(cc2520);
-	instruct_sflushrx(cc2520);
+	instruct_sflushrx(dev);
+	instruct_sflushrx(dev);
 
-	enable_fifop_interrupt(cc2520, true);
+	enable_fifop_interrupt(dev, true);
 
-	write_reg_excflag0(cc2520, EXCFLAG0_RESET_RX_FLAGS);
+	write_reg_excflag0(dev, EXCFLAG0_RESET_RX_FLAGS);
 }
 
-static inline u8_t read_rxfifo_length(struct cc2520_context *ctx)
+static inline uint8_t read_rxfifo_length(const struct device *dev)
 {
-	u8_t len;
+	uint8_t len;
 
 
-	if (z_cc2520_access(ctx, true, CC2520_INS_RXBUF, 0, &len, 1)) {
+	if (z_cc2520_access(dev, true, CC2520_INS_RXBUF, 0, &len, 1)) {
 		return len;
 	}
 
 	return 0;
 }
 
-static inline bool read_rxfifo_content(struct cc2520_context *ctx,
-				       struct net_buf *buf, u8_t len)
+static inline bool read_rxfifo_content(const struct device *dev,
+				       struct net_buf *buf, uint8_t len)
 {
-	if (!z_cc2520_access(ctx, true, CC2520_INS_RXBUF, 0, buf->data, len)) {
+	if (!z_cc2520_access(dev, true, CC2520_INS_RXBUF, 0, buf->data, len)) {
 		return false;
 	}
 
-	if (read_reg_excflag0(ctx) & EXCFLAG0_RX_UNDERFLOW) {
+	if (read_reg_excflag0(dev) & EXCFLAG0_RX_UNDERFLOW) {
 		LOG_ERR("RX underflow!");
 		return false;
 	}
@@ -557,9 +536,9 @@ static inline bool read_rxfifo_content(struct cc2520_context *ctx,
 	return true;
 }
 
-static inline void insert_radio_noise_details(struct net_pkt *pkt, u8_t *buf)
+static inline void insert_radio_noise_details(struct net_pkt *pkt, uint8_t *buf)
 {
-	u8_t lqi;
+	uint8_t lqi;
 
 	net_pkt_set_ieee802154_rssi(pkt, buf[0]);
 
@@ -585,11 +564,11 @@ static inline void insert_radio_noise_details(struct net_pkt *pkt, u8_t *buf)
 	net_pkt_set_ieee802154_lqi(pkt, lqi);
 }
 
-static inline bool verify_crc(struct cc2520_context *ctx, struct net_pkt *pkt)
+static inline bool verify_crc(const struct device *dev, struct net_pkt *pkt)
 {
-	u8_t fcs[2];
+	uint8_t fcs[2];
 
-	if (!z_cc2520_access(ctx, true, CC2520_INS_RXBUF, 0, &fcs, 2)) {
+	if (!z_cc2520_access(dev, true, CC2520_INS_RXBUF, 0, &fcs, 2)) {
 		return false;
 	}
 
@@ -602,22 +581,22 @@ static inline bool verify_crc(struct cc2520_context *ctx, struct net_pkt *pkt)
 	return true;
 }
 
-static inline bool verify_rxfifo_validity(struct cc2520_context *ctx,
-					  u8_t pkt_len)
+static inline bool verify_rxfifo_validity(const struct device *dev,
+					  uint8_t pkt_len)
 {
-	if (pkt_len < 2 || read_reg_rxfifocnt(ctx) != pkt_len) {
+	if (pkt_len < 2 || read_reg_rxfifocnt(dev) != pkt_len) {
 		return false;
 	}
 
 	return true;
 }
 
-static void cc2520_rx(int arg)
+static void cc2520_rx(void *arg)
 {
-	struct device *dev = INT_TO_POINTER(arg);
-	struct cc2520_context *cc2520 = dev->driver_data;
+	const struct device *dev = arg;
+	struct cc2520_context *cc2520 = dev->data;
 	struct net_pkt *pkt;
-	u8_t pkt_len;
+	uint8_t pkt_len;
 
 	while (1) {
 		pkt = NULL;
@@ -631,14 +610,14 @@ static void cc2520_rx(int arg)
 			goto flush;
 		}
 
-		pkt_len = read_rxfifo_length(cc2520) & 0x7f;
-		if (!verify_rxfifo_validity(cc2520, pkt_len)) {
+		pkt_len = read_rxfifo_length(dev) & 0x7f;
+		if (!verify_rxfifo_validity(dev, pkt_len)) {
 			LOG_ERR("Invalid content");
 			goto flush;
 		}
 
-		pkt = net_pkt_alloc_with_buffer(cc2520->iface, pkt_len,
-						AF_UNSPEC, 0, K_NO_WAIT);
+		pkt = net_pkt_rx_alloc_with_buffer(cc2520->iface, pkt_len,
+						   AF_UNSPEC, 0, K_NO_WAIT);
 		if (!pkt) {
 			LOG_ERR("No pkt available");
 			goto flush;
@@ -648,12 +627,12 @@ static void cc2520_rx(int arg)
 			pkt_len -= 2U;
 		}
 
-		if (!read_rxfifo_content(cc2520, pkt->buffer, pkt_len)) {
+		if (!read_rxfifo_content(dev, pkt->buffer, pkt_len)) {
 			LOG_ERR("No content read");
 			goto flush;
 		}
 
-		if (!verify_crc(cc2520, pkt)) {
+		if (!verify_crc(dev, pkt)) {
 			LOG_ERR("Bad packet CRC");
 			goto out;
 		}
@@ -670,14 +649,12 @@ static void cc2520_rx(int arg)
 			goto out;
 		}
 
-		net_analyze_stack("CC2520 Rx Fiber stack",
-				Z_THREAD_STACK_BUFFER(cc2520->cc2520_rx_stack),
-				K_THREAD_STACK_SIZEOF(cc2520->cc2520_rx_stack));
+		log_stack_usage(&cc2520->cc2520_rx_thread);
 		continue;
 flush:
 		cc2520_print_exceptions(cc2520);
 		cc2520_print_errors(cc2520);
-		flush_rxfifo(cc2520);
+		flush_rxfifo(dev);
 out:
 		if (pkt) {
 			net_pkt_unref(pkt);
@@ -688,7 +665,7 @@ out:
 /********************
  * Radio device API *
  *******************/
-static enum ieee802154_hw_caps cc2520_get_capabilities(struct device *dev)
+static enum ieee802154_hw_caps cc2520_get_capabilities(const struct device *dev)
 {
 	/* ToDo: Add support for IEEE802154_HW_PROMISC */
 	return IEEE802154_HW_FCS |
@@ -696,11 +673,9 @@ static enum ieee802154_hw_caps cc2520_get_capabilities(struct device *dev)
 		IEEE802154_HW_FILTER;
 }
 
-static int cc2520_cca(struct device *dev)
+static int cc2520_cca(const struct device *dev)
 {
-	struct cc2520_context *cc2520 = dev->driver_data;
-
-	if (!get_cca(cc2520)) {
+	if (!get_cca(dev)) {
 		LOG_WRN("Busy");
 		return -EBUSY;
 	}
@@ -708,10 +683,8 @@ static int cc2520_cca(struct device *dev)
 	return 0;
 }
 
-static int cc2520_set_channel(struct device *dev, u16_t channel)
+static int cc2520_set_channel(const struct device *dev, uint16_t channel)
 {
-	struct cc2520_context *cc2520 = dev->driver_data;
-
 	LOG_DBG("%u", channel);
 
 	if (channel < 11 || channel > 26) {
@@ -721,7 +694,7 @@ static int cc2520_set_channel(struct device *dev, u16_t channel)
 	/* See chapter 16 */
 	channel = 11 + (channel - 11) * 5U;
 
-	if (!write_reg_freqctrl(cc2520, FREQCTRL_FREQ(channel))) {
+	if (!write_reg_freqctrl(dev, FREQCTRL_FREQ(channel))) {
 		LOG_ERR("Failed");
 		return -EIO;
 	}
@@ -729,7 +702,7 @@ static int cc2520_set_channel(struct device *dev, u16_t channel)
 	return 0;
 }
 
-static int cc2520_filter(struct device *dev,
+static int cc2520_filter(const struct device *dev,
 			 bool set,
 			 enum ieee802154_filter_type type,
 			 const struct ieee802154_filter *filter)
@@ -751,10 +724,9 @@ static int cc2520_filter(struct device *dev,
 	return -ENOTSUP;
 }
 
-static int cc2520_set_txpower(struct device *dev, s16_t dbm)
+static int cc2520_set_txpower(const struct device *dev, int16_t dbm)
 {
-	struct cc2520_context *cc2520 = dev->driver_data;
-	u8_t pwr;
+	uint8_t pwr;
 
 	LOG_DBG("%d", dbm);
 
@@ -791,7 +763,7 @@ static int cc2520_set_txpower(struct device *dev, s16_t dbm)
 		goto error;
 	}
 
-	if (!write_reg_txpower(cc2520, pwr)) {
+	if (!write_reg_txpower(dev, pwr)) {
 		goto error;
 	}
 
@@ -801,26 +773,32 @@ error:
 	return -EIO;
 }
 
-static int cc2520_tx(struct device *dev,
+static int cc2520_tx(const struct device *dev,
+		     enum ieee802154_tx_mode mode,
 		     struct net_pkt *pkt,
 		     struct net_buf *frag)
 {
-	u8_t *frame = frag->data;
-	u8_t len = frag->len;
-	struct cc2520_context *cc2520 = dev->driver_data;
-	u8_t retry = 2U;
+	uint8_t *frame = frag->data;
+	uint8_t len = frag->len;
+	struct cc2520_context *cc2520 = dev->data;
+	uint8_t retry = 2U;
 	bool status;
+
+	if (mode != IEEE802154_TX_MODE_DIRECT) {
+		NET_ERR("TX mode %d not supported", mode);
+		return -ENOTSUP;
+	}
 
 	LOG_DBG("%p (%u)", frag, len);
 
-	if (!write_reg_excflag0(cc2520, EXCFLAG0_RESET_TX_FLAGS) ||
-	    !write_txfifo_length(cc2520, len) ||
-	    !write_txfifo_content(cc2520, frame, len)) {
+	if (!write_reg_excflag0(dev, EXCFLAG0_RESET_TX_FLAGS) ||
+	    !write_txfifo_length(dev, len) ||
+	    !write_txfifo_content(dev, frame, len)) {
 		LOG_ERR("Cannot feed in TX fifo");
 		goto error;
 	}
 
-	if (!verify_txfifo_status(cc2520, len)) {
+	if (!verify_txfifo_status(dev, len)) {
 		LOG_ERR("Did not write properly into TX FIFO");
 		goto error;
 	}
@@ -832,17 +810,17 @@ static int cc2520_tx(struct device *dev,
 	/* 1 retry is allowed here */
 	do {
 		atomic_set(&cc2520->tx, 1);
-		k_sem_init(&cc2520->tx_sync, 0, UINT_MAX);
+		k_sem_init(&cc2520->tx_sync, 0, K_SEM_MAX_LIMIT);
 
-		if (!instruct_stxoncca(cc2520)) {
+		if (!instruct_stxoncca(dev)) {
 			LOG_ERR("Cannot start transmission");
 			goto error;
 		}
 
-		k_sem_take(&cc2520->tx_sync, 10);
+		k_sem_take(&cc2520->tx_sync, K_MSEC(10));
 
 		retry--;
-		status = verify_tx_done(cc2520);
+		status = verify_tx_done(dev);
 	} while (!status && retry);
 
 #ifdef CONFIG_IEEE802154_CC2520_CRYPTO
@@ -862,41 +840,37 @@ error:
 	cc2520_print_errors(cc2520);
 
 	atomic_set(&cc2520->tx, 0);
-	instruct_sflushtx(cc2520);
+	instruct_sflushtx(dev);
 
 	return -EIO;
 }
 
-static int cc2520_start(struct device *dev)
+static int cc2520_start(const struct device *dev)
 {
-	struct cc2520_context *cc2520 = dev->driver_data;
-
-	if (!instruct_sxoscon(cc2520) ||
-	    !instruct_srxon(cc2520) ||
-	    !verify_osc_stabilization(cc2520)) {
+	if (!instruct_sxoscon(dev) ||
+	    !instruct_srxon(dev) ||
+	    !verify_osc_stabilization(dev)) {
 		LOG_ERR("Error starting CC2520");
 		return -EIO;
 	}
 
-	flush_rxfifo(cc2520);
+	flush_rxfifo(dev);
 
-	enable_fifop_interrupt(cc2520, true);
-	enable_sfd_interrupt(cc2520, true);
+	enable_fifop_interrupt(dev, true);
+	enable_sfd_interrupt(dev, true);
 
 	return 0;
 }
 
-static int cc2520_stop(struct device *dev)
+static int cc2520_stop(const struct device *dev)
 {
-	struct cc2520_context *cc2520 = dev->driver_data;
+	flush_rxfifo(dev);
 
-	flush_rxfifo(cc2520);
+	enable_fifop_interrupt(dev, false);
+	enable_sfd_interrupt(dev, false);
 
-	enable_fifop_interrupt(cc2520, false);
-	enable_sfd_interrupt(cc2520, false);
-
-	if (!instruct_srfoff(cc2520) ||
-	    !instruct_sxoscoff(cc2520)) {
+	if (!instruct_srfoff(dev) ||
+	    !instruct_sxoscoff(dev)) {
 		LOG_ERR("Error stopping CC2520");
 		return -EIO;
 	}
@@ -907,10 +881,8 @@ static int cc2520_stop(struct device *dev)
 /******************
  * Initialization *
  *****************/
-static int power_on_and_setup(struct device *dev)
+static int power_on_and_setup(const struct device *dev)
 {
-	struct cc2520_context *cc2520 = dev->driver_data;
-
 	/* Switching to LPM2 mode */
 	set_reset(dev, 0);
 	z_usleep(150);
@@ -925,22 +897,22 @@ static int power_on_and_setup(struct device *dev)
 	set_reset(dev, 1);
 	z_usleep(150);
 
-	if (!verify_osc_stabilization(cc2520)) {
+	if (!verify_osc_stabilization(dev)) {
 		return -EIO;
 	}
 
 	/* Default settings to always write (see chapter 28 part 1) */
-	if (!write_reg_txpower(cc2520, CC2520_TXPOWER_DEFAULT) ||
-	    !write_reg_ccactrl0(cc2520, CC2520_CCACTRL0_DEFAULT) ||
-	    !write_reg_mdmctrl0(cc2520, CC2520_MDMCTRL0_DEFAULT) ||
-	    !write_reg_mdmctrl1(cc2520, CC2520_MDMCTRL1_DEFAULT) ||
-	    !write_reg_rxctrl(cc2520, CC2520_RXCTRL_DEFAULT) ||
-	    !write_reg_fsctrl(cc2520, CC2520_FSCTRL_DEFAULT) ||
-	    !write_reg_fscal1(cc2520, CC2520_FSCAL1_DEFAULT) ||
-	    !write_reg_agcctrl1(cc2520, CC2520_AGCCTRL1_DEFAULT) ||
-	    !write_reg_adctest0(cc2520, CC2520_ADCTEST0_DEFAULT) ||
-	    !write_reg_adctest1(cc2520, CC2520_ADCTEST1_DEFAULT) ||
-	    !write_reg_adctest2(cc2520, CC2520_ADCTEST2_DEFAULT)) {
+	if (!write_reg_txpower(dev, CC2520_TXPOWER_DEFAULT) ||
+	    !write_reg_ccactrl0(dev, CC2520_CCACTRL0_DEFAULT) ||
+	    !write_reg_mdmctrl0(dev, CC2520_MDMCTRL0_DEFAULT) ||
+	    !write_reg_mdmctrl1(dev, CC2520_MDMCTRL1_DEFAULT) ||
+	    !write_reg_rxctrl(dev, CC2520_RXCTRL_DEFAULT) ||
+	    !write_reg_fsctrl(dev, CC2520_FSCTRL_DEFAULT) ||
+	    !write_reg_fscal1(dev, CC2520_FSCAL1_DEFAULT) ||
+	    !write_reg_agcctrl1(dev, CC2520_AGCCTRL1_DEFAULT) ||
+	    !write_reg_adctest0(dev, CC2520_ADCTEST0_DEFAULT) ||
+	    !write_reg_adctest1(dev, CC2520_ADCTEST1_DEFAULT) ||
+	    !write_reg_adctest2(dev, CC2520_ADCTEST2_DEFAULT)) {
 		return -EIO;
 	}
 
@@ -950,83 +922,75 @@ static int power_on_and_setup(struct device *dev)
 	 * FRMFILT0: Frame filtering (setting CC2520_FRAME_FILTERING)
 	 * FIFOPCTRL: Set TX threshold (setting CC2520_TX_THRESHOLD)
 	 */
-	if (!write_reg_extclock(cc2520, 0) ||
-	    !write_reg_frmctrl0(cc2520, CC2520_AUTOMATISM) ||
-	    !write_reg_frmctrl1(cc2520, FRMCTRL1_IGNORE_TX_UNDERF |
+	if (!write_reg_extclock(dev, 0) ||
+	    !write_reg_frmctrl0(dev, CC2520_AUTOMATISM) ||
+	    !write_reg_frmctrl1(dev, FRMCTRL1_IGNORE_TX_UNDERF |
 				FRMCTRL1_SET_RXENMASK_ON_TX) ||
-	    !write_reg_frmfilt0(cc2520, FRMFILT0_FRAME_FILTER_EN |
+	    !write_reg_frmfilt0(dev, FRMFILT0_FRAME_FILTER_EN |
 				FRMFILT0_MAX_FRAME_VERSION(3)) ||
-	    !write_reg_frmfilt1(cc2520, FRMFILT1_ACCEPT_ALL) ||
-	    !write_reg_srcmatch(cc2520, SRCMATCH_DEFAULTS) ||
-	    !write_reg_fifopctrl(cc2520,
+	    !write_reg_frmfilt1(dev, FRMFILT1_ACCEPT_ALL) ||
+	    !write_reg_srcmatch(dev, SRCMATCH_DEFAULTS) ||
+	    !write_reg_fifopctrl(dev,
 				 FIFOPCTRL_FIFOP_THR(CC2520_TX_THRESHOLD))) {
 		return -EIO;
 	}
 
 	/* Cleaning up TX fifo */
-	instruct_sflushtx(cc2520);
+	instruct_sflushtx(dev);
 
-	setup_gpio_callbacks(dev);
+	if (setup_gpio_callbacks(dev) != 0) {
+		return -EIO;
+	}
 
 	cc2520_print_gpio_config(dev);
 
 	return 0;
 }
 
-static inline int configure_spi(struct device *dev)
+static int configure_gpios(const struct device *dev)
 {
-	struct cc2520_context *cc2520 = dev->driver_data;
+	const struct cc2520_config *cfg = dev->config;
 
-	cc2520->spi = device_get_binding(DT_INST_0_TI_CC2520_BUS_NAME);
-	if (!cc2520->spi) {
-		LOG_ERR("Unable to get SPI device");
+	if (!device_is_ready(cfg->vreg_en.port) ||
+	    !device_is_ready(cfg->reset.port) ||
+	    !device_is_ready(cfg->fifo.port) ||
+	    !device_is_ready(cfg->cca.port) ||
+	    !device_is_ready(cfg->sfd.port) ||
+	    !device_is_ready(cfg->fifop.port)) {
 		return -ENODEV;
 	}
 
-#if defined(CONFIG_IEEE802154_CC2520_GPIO_SPI_CS)
-	cs_ctrl.gpio_dev = device_get_binding(
-		DT_INST_0_TI_CC2520_CS_GPIOS_CONTROLLER);
-	if (!cs_ctrl.gpio_dev) {
-		LOG_ERR("Unable to get GPIO SPI CS device");
-		return -ENODEV;
-	}
-
-	cs_ctrl.gpio_pin = DT_INST_0_TI_CC2520_CS_GPIOS_PIN;
-	cs_ctrl.delay = 0U;
-
-	cc2520->spi_cfg.cs = &cs_ctrl;
-
-	LOG_DBG("SPI GPIO CS configured on %s:%u",
-		    DT_INST_0_TI_CC2520_CS_GPIOS_CONTROLLER,
-		    DT_INST_0_TI_CC2520_CS_GPIOS_PIN);
-#endif /* CONFIG_IEEE802154_CC2520_GPIO_SPI_CS */
-
-	cc2520->spi_cfg.frequency = DT_INST_0_TI_CC2520_SPI_MAX_FREQUENCY;
-	cc2520->spi_cfg.operation = SPI_WORD_SET(8);
-	cc2520->spi_cfg.slave = DT_INST_0_TI_CC2520_BASE_ADDRESS;
+	gpio_pin_configure_dt(&cfg->vreg_en, GPIO_OUTPUT_LOW);
+	gpio_pin_configure_dt(&cfg->reset, GPIO_OUTPUT_LOW);
+	gpio_pin_configure_dt(&cfg->fifo, GPIO_INPUT);
+	gpio_pin_configure_dt(&cfg->cca, GPIO_INPUT);
+	gpio_pin_configure_dt(&cfg->sfd, GPIO_INPUT);
+	gpio_pin_configure_dt(&cfg->fifop, GPIO_INPUT);
 
 	return 0;
 }
 
-static int cc2520_init(struct device *dev)
+static int cc2520_init(const struct device *dev)
 {
-	struct cc2520_context *cc2520 = dev->driver_data;
+	const struct cc2520_config *cfg = dev->config;
+	struct cc2520_context *cc2520 = dev->data;
+
+	cc2520->dev = dev;
 
 	atomic_set(&cc2520->tx, 0);
-	k_sem_init(&cc2520->rx_lock, 0, UINT_MAX);
+	k_sem_init(&cc2520->rx_lock, 0, K_SEM_MAX_LIMIT);
 
 #ifdef CONFIG_IEEE802154_CC2520_CRYPTO
 	k_sem_init(&cc2520->access_lock, 1, 1);
 #endif
 
-	cc2520->gpios = cc2520_configure_gpios();
-	if (!cc2520->gpios) {
+	if (configure_gpios(dev) != 0) {
 		LOG_ERR("Configuring GPIOS failed");
 		return -EIO;
 	}
 
-	if (configure_spi(dev) != 0) {
-		LOG_ERR("Configuring SPI failed");
+	if (!spi_is_ready_dt(&cfg->bus)) {
+		LOG_ERR("SPI bus %s not ready", cfg->bus.bus->name);
 		return -EIO;
 	}
 
@@ -1040,7 +1004,8 @@ static int cc2520_init(struct device *dev)
 	k_thread_create(&cc2520->cc2520_rx_thread, cc2520->cc2520_rx_stack,
 			CONFIG_IEEE802154_CC2520_RX_STACK_SIZE,
 			(k_thread_entry_t)cc2520_rx,
-			dev, NULL, NULL, K_PRIO_COOP(2), 0, K_NO_WAIT);
+			(void *)dev, NULL, NULL, K_PRIO_COOP(2), 0, K_NO_WAIT);
+	k_thread_name_set(&cc2520->cc2520_rx_thread, "cc2520_rx");
 
 	LOG_INF("CC2520 initialized");
 
@@ -1049,9 +1014,9 @@ static int cc2520_init(struct device *dev)
 
 static void cc2520_iface_init(struct net_if *iface)
 {
-	struct device *dev = net_if_get_device(iface);
-	struct cc2520_context *cc2520 = dev->driver_data;
-	u8_t *mac = get_mac(dev);
+	const struct device *dev = net_if_get_device(iface);
+	struct cc2520_context *cc2520 = dev->data;
+	uint8_t *mac = get_mac(dev);
 
 	net_if_set_link_addr(iface, mac, 8, NET_LINK_IEEE802154);
 
@@ -1059,6 +1024,16 @@ static void cc2520_iface_init(struct net_if *iface)
 
 	ieee802154_init(iface);
 }
+
+static const struct cc2520_config cc2520_config = {
+	.bus = SPI_DT_SPEC_INST_GET(0, SPI_WORD_SET(8), 0),
+	.vreg_en = GPIO_DT_SPEC_INST_GET(0, vreg_en_gpios),
+	.reset = GPIO_DT_SPEC_INST_GET(0, reset_gpios),
+	.fifo = GPIO_DT_SPEC_INST_GET(0, fifo_gpios),
+	.cca = GPIO_DT_SPEC_INST_GET(0, cca_gpios),
+	.sfd = GPIO_DT_SPEC_INST_GET(0, sfd_gpios),
+	.fifop = GPIO_DT_SPEC_INST_GET(0, fifop_gpios)
+};
 
 static struct cc2520_context cc2520_context_data;
 
@@ -1076,52 +1051,46 @@ static struct ieee802154_radio_api cc2520_radio_api = {
 };
 
 #if defined(CONFIG_IEEE802154_RAW_MODE)
-DEVICE_AND_API_INIT(cc2520, CONFIG_IEEE802154_CC2520_DRV_NAME,
-		    cc2520_init, &cc2520_context_data, NULL,
-		    POST_KERNEL, CONFIG_IEEE802154_CC2520_INIT_PRIO,
-		    &cc2520_radio_api);
+DEVICE_DT_INST_DEFINE(0, cc2520_init, NULL, &cc2520_context_data, NULL,
+		      POST_KERNEL, CONFIG_IEEE802154_CC2520_INIT_PRIO,
+		      &cc2520_radio_api);
 #else
-NET_DEVICE_INIT(cc2520, CONFIG_IEEE802154_CC2520_DRV_NAME,
-		cc2520_init, &cc2520_context_data, NULL,
-		CONFIG_IEEE802154_CC2520_INIT_PRIO,
-		&cc2520_radio_api, IEEE802154_L2,
-		NET_L2_GET_CTX_TYPE(IEEE802154_L2), 125);
-
-NET_STACK_INFO_ADDR(RX, cc2520,
-		    CONFIG_IEEE802154_CC2520_RX_STACK_SIZE,
-		    CONFIG_IEEE802154_CC2520_RX_STACK_SIZE,
-		    cc2520_context_data.cc2520_rx_stack,
-		    0);
+NET_DEVICE_DT_INST_DEFINE(0, cc2520_init, NULL, &cc2520_context_data,
+			  &cc2520_config, CONFIG_IEEE802154_CC2520_INIT_PRIO,
+			  &cc2520_radio_api, IEEE802154_L2,
+			  NET_L2_GET_CTX_TYPE(IEEE802154_L2), 125);
 #endif
 
 
 #ifdef CONFIG_IEEE802154_CC2520_CRYPTO
 
-static inline bool cc2520_read_ram(struct cc2520_context *ctx, u16_t addr,
-				    u8_t *data_buf, u8_t len)
+static inline bool cc2520_read_ram(const struct device *dev, uint16_t addr,
+				   uint8_t *data_buf, uint8_t len)
 {
-	return z_cc2520_access(ctx, true, CC2520_INS_MEMRD,
-			      addr, data_buf, len);
+	return z_cc2520_access(dev, true, CC2520_INS_MEMRD,
+			       addr, data_buf, len);
 }
 
-static inline bool cc2520_write_ram(struct cc2520_context *ctx, u16_t addr,
-				     u8_t *data_buf, u8_t len)
+static inline bool cc2520_write_ram(const struct device *dev, uint16_t addr,
+				    uint8_t *data_buf, uint8_t len)
 {
-	return z_cc2520_access(ctx, false, CC2520_INS_MEMWR,
-			      addr, data_buf, len);
+	return z_cc2520_access(dev, false, CC2520_INS_MEMWR,
+			       addr, data_buf, len);
 }
 
-static inline bool instruct_uccm_ccm(struct cc2520_context *cc2520,
+static inline bool instruct_uccm_ccm(const struct device *dev,
 				     bool uccm,
-				     u8_t key_addr,
-				     u8_t auth_crypt,
-				     u8_t nonce_addr,
-				     u16_t input_addr,
-				     u16_t output_addr,
-				     u8_t in_len,
-				     u8_t m)
+				     uint8_t key_addr,
+				     uint8_t auth_crypt,
+				     uint8_t nonce_addr,
+				     uint16_t input_addr,
+				     uint16_t output_addr,
+				     uint8_t in_len,
+				     uint8_t m)
 {
-	u8_t cmd[9];
+	const struct cc2520_config *cfg = dev->config;
+	struct cc2520_context *ctx = dev->data;
+	uint8_t cmd[9];
 	const struct spi_buf buf[1] = {
 		{
 			.buf = cmd,
@@ -1144,18 +1113,18 @@ static inline bool instruct_uccm_ccm(struct cc2520_context *cc2520,
 	cmd[1] = key_addr;
 	cmd[2] = (auth_crypt & 0x7f);
 	cmd[3] = nonce_addr;
-	cmd[4] = (u8_t)(((input_addr & 0x0f00) >> 4) |
+	cmd[4] = (uint8_t)(((input_addr & 0x0f00) >> 4) |
 			   ((output_addr & 0x0f00) >> 8));
-	cmd[5] = (u8_t)(input_addr & 0x00ff);
-	cmd[6] = (u8_t)(output_addr & 0x00ff);
+	cmd[5] = (uint8_t)(input_addr & 0x00ff);
+	cmd[6] = (uint8_t)(output_addr & 0x00ff);
 	cmd[7] = (in_len & 0x7f);
 	cmd[8] = (m & 0x03);
 
-	k_sem_take(&cc2520->access_lock, K_FOREVER);
+	k_sem_take(&ctx->access_lock, K_FOREVER);
 
-	ret = spi_write(cc2520->spi, &cc2520->spi_cfg, &tx);
+	ret = spi_write_dt(&cfg->bus, &tx);
 
-	k_sem_give(&cc2520->access_lock);
+	k_sem_give(&ctx->access_lock);
 
 	if (ret) {
 		LOG_ERR("%sCCM Failed", uccm ? "U" : "");
@@ -1165,15 +1134,15 @@ static inline bool instruct_uccm_ccm(struct cc2520_context *cc2520,
 	return true;
 }
 
-static inline void generate_nonce(u8_t *ccm_nonce, u8_t *nonce,
-				  struct cipher_aead_pkt *apkt, u8_t m)
+static inline void generate_nonce(uint8_t *ccm_nonce, uint8_t *nonce,
+				  struct cipher_aead_pkt *apkt, uint8_t m)
 {
 	nonce[0] = 0 | (apkt->ad_len ? 0x40 : 0) | (m << 3) | 1;
 
 	memcpy(&nonce[1], ccm_nonce, 13);
 
-	nonce[14] = (u8_t)(apkt->pkt->in_len >> 8);
-	nonce[15] = (u8_t)(apkt->pkt->in_len);
+	nonce[14] = (uint8_t)(apkt->pkt->in_len >> 8);
+	nonce[15] = (uint8_t)(apkt->pkt->in_len);
 
 	/* See section 26.8.1 */
 	sys_mem_swap(nonce, 16);
@@ -1181,13 +1150,13 @@ static inline void generate_nonce(u8_t *ccm_nonce, u8_t *nonce,
 
 static int insert_crypto_parameters(struct cipher_ctx *ctx,
 				    struct cipher_aead_pkt *apkt,
-				    u8_t *ccm_nonce, u8_t *auth_crypt)
+				    uint8_t *ccm_nonce, uint8_t *auth_crypt)
 {
-	struct cc2520_context *cc2520 = ctx->device->driver_data;
-	u8_t data[128];
-	u8_t *in_buf;
-	u8_t in_len;
-	u8_t m = 0U;
+	const struct device *cc2520 = ctx->device;
+	uint8_t data[128];
+	uint8_t *in_buf;
+	uint8_t in_len;
+	uint8_t m = 0U;
 
 	if (!apkt->pkt->out_buf || !apkt->pkt->out_buf_max) {
 		LOG_ERR("Out buffer needs to be set");
@@ -1272,10 +1241,10 @@ static int insert_crypto_parameters(struct cipher_ctx *ctx,
 
 static int cc2520_crypto_ccm(struct cipher_ctx *ctx,
 			      struct cipher_aead_pkt *apkt,
-			      u8_t *ccm_nonce)
+			      uint8_t *ccm_nonce)
 {
-	struct cc2520_context *cc2520 = ctx->device->driver_data;
-	u8_t auth_crypt;
+	const struct device *cc2520 = ctx->device;
+	uint8_t auth_crypt;
 	int m;
 
 	if (!apkt || !apkt->pkt) {
@@ -1317,10 +1286,10 @@ static int cc2520_crypto_ccm(struct cipher_ctx *ctx,
 
 static int cc2520_crypto_uccm(struct cipher_ctx *ctx,
 			       struct cipher_aead_pkt *apkt,
-			       u8_t *ccm_nonce)
+			       uint8_t *ccm_nonce)
 {
-	struct cc2520_context *cc2520 = ctx->device->driver_data;
-	u8_t auth_crypt;
+	const struct device *cc2520 = ctx->device;
+	uint8_t auth_crypt;
 	int m;
 
 	if (!apkt || !apkt->pkt) {
@@ -1357,12 +1326,12 @@ static int cc2520_crypto_uccm(struct cipher_ctx *ctx,
 	return 0;
 }
 
-static int cc2520_crypto_hw_caps(struct device *dev)
+static int cc2520_crypto_hw_caps(const struct device *dev)
 {
 	return CAP_RAW_KEY | CAP_INPLACE_OPS | CAP_SYNC_OPS;
 }
 
-static int cc2520_crypto_begin_session(struct device *dev,
+static int cc2520_crypto_begin_session(const struct device *dev,
 				       struct cipher_ctx *ctx,
 				       enum cipher_algo algo,
 				       enum cipher_mode mode,
@@ -1391,7 +1360,7 @@ static int cc2520_crypto_begin_session(struct device *dev,
 	return 0;
 }
 
-static int cc2520_crypto_free_session(struct device *dev,
+static int cc2520_crypto_free_session(const struct device *dev,
 				      struct cipher_ctx *ctx)
 {
 	ARG_UNUSED(dev);
@@ -1402,7 +1371,7 @@ static int cc2520_crypto_free_session(struct device *dev,
 	return 0;
 }
 
-static int cc2520_crypto_init(struct device *dev)
+static int cc2520_crypto_init(const struct device *dev)
 {
 	LOG_INF("CC2520 crypto part initialized");
 
@@ -1411,14 +1380,14 @@ static int cc2520_crypto_init(struct device *dev)
 
 struct crypto_driver_api cc2520_crypto_api = {
 	.query_hw_caps			= cc2520_crypto_hw_caps,
-	.begin_session			= cc2520_crypto_begin_session,
-	.free_session			= cc2520_crypto_free_session,
-	.crypto_async_callback_set	= NULL
+	.cipher_begin_session			= cc2520_crypto_begin_session,
+	.cipher_free_session			= cc2520_crypto_free_session,
+	.cipher_async_callback_set	= NULL
 };
 
-DEVICE_AND_API_INIT(cc2520_crypto, CONFIG_IEEE802154_CC2520_CRYPTO_DRV_NAME,
-		    cc2520_crypto_init, &cc2520_context_data, NULL,
-		    POST_KERNEL, CONFIG_IEEE802154_CC2520_CRYPTO_INIT_PRIO,
-		    &cc2520_crypto_api);
+DEVICE_DEFINE(cc2520_crypto, "cc2520_crypto",
+		cc2520_crypto_init, NULL,
+		&cc2520_context_data, NULL, POST_KERNEL,
+		CONFIG_IEEE802154_CC2520_CRYPTO_INIT_PRIO, &cc2520_crypto_api);
 
 #endif /* CONFIG_IEEE802154_CC2520_CRYPTO */

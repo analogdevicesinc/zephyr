@@ -15,10 +15,8 @@ CPU and the following devices:
 - Cortex-M System Design Kit GPIO
 - Cortex-M System Design Kit UART
 
-.. image:: img/mps2_an521.png
-     :width: 666px
+.. image:: img/mps2_an521.jpg
      :align: center
-     :height: 546px
      :alt: ARM MPS2+ AN521
 
 In addition to enabling actual hardware usage, this board configuration can
@@ -30,22 +28,88 @@ More information about the board can be found at the `MPS2 FPGA Website`_.
    This board configuration makes no claims about its suitability for use
    with actual MPS2 hardware systems using AN521, or any other hardware
    system. It has been tested on actual hardware, but its primary purpose is
-   for use with QEMU and unit tests.
+   for use with QEMU and unit tests for the ARM Cortex-M33.
+
+
+Zephyr board options
+====================
+
+The MPS2+ AN521 is a dual core SoC with Cortex-M33 architecture on both cores
+(CPU0 and CPU1). Zephyr provides support for building firmware
+images for both CPU0 and CPU1. For CPU0 supporting ARM Security Extensions
+both Secure and Non-Secure firmware images may be built.
+
+The BOARD options are summarized below:
+
++----------------------+-------------------------------------------------------+
+| BOARD                | Description                                           |
++======================+=======================================================+
+| mps2_an521           | For building Secure (or Secure-only) firmware on CPU0 |
++----------------------+-------------------------------------------------------+
+| mps2_an521_ns        | For building Non-Secure firmware for CPU0             |
++----------------------+-------------------------------------------------------+
+| mps2_an521_remote    | For building firmware on CPU1                         |
++----------------------+-------------------------------------------------------+
+
+Memory Partitioning
+===================
+
+The AN521 has 4MB allocated for code space, and 4MB for SRAM. These memory
+regions are shared across both cores, and are aliased in both secure and
+non-secure regions, where the secure memory alias has an offset of
+0x10000000 relative to non-secure.
+
+The following memory map and partitioning schemes are used by default, where
+the offset value is the offset from the base of the 4MB code or SRAM block,
+ignoring the S/NS alias difference.
+
++-------------------+-----+----------------+----------------+------------+
+| Board             | CPU | Code (Offset)  | SRAM (Offset)  | S/NS Alias |
++===================+=====+================+================+============+
+| mps2_an521        | 0   | 4MB (0)        | 4MB (0)        | S          |
++-------------------+-----+----------------+----------------+------------+
+| mps2_an521_ns     | 0   | 512KB (1MB)    | 512KB (1MB)    | NS         |
++-------------------+-----+----------------+----------------+------------+
+| mps2_an521_remote | 1   | 468KB (3628KB) | 512KB (1.5MB)  | NS         |
++-------------------+-----+----------------+----------------+------------+
+
+The ``mps2_an521_ns`` board target is intended to be used with TF-M, with the
+Zephyr memory map matching the AN521 memory map defined upstream in TF-M. TF-M
+boots the secure processing environment before initialising Zephyr in the
+non-secure processing environment. The non-secure Zephyr image is offset to
+make room for the secure bootloader, and the secure firmware (TF-M), resulting
+in a starting address of 0x00100000. SRAM begins with a 1MB offset at
+0x28100000.
+
+The ``mps2_an521_remote`` board target is setup for the second core on the
+AN521, using the final 468KB code memory in the 4MB code block. This value
+is chosen to maintain compatibility with TF-M, which marks that final 468KB
+code region as ``Unused``. Code memory thus starts with an offset of
+3628KB (address 0x0038B000), and sram starts with an offset of 1.5MB
+(address 0x28180000).
+
+This memory map enables the two alternative board targets to be used together
+if required, at the cost of reducing the amount of code memory available on
+the second core to the worst-case scenario from TF-M.
+
+When using one of the alternative board targets (``mps2_an521_ns`` or
+``mps2_an521_remote``), care needs to be taken with the amount of code or
+SRAM memory used on the primary board target (``mps2_an521``) since there is
+some overlap in the memory maps.
 
 Hardware
 ********
 
 ARM MPS2+ AN521 provides the following hardware components:
 
-
-
-- ARM Cortex-M33
+- Dual core ARM Cortex-M33
 - Soft Macro Model (SMM) implementation of SSE-200 subsystem
 - Memory
 
-  - 16MB internal memory SRAM
+  - 4MB of code memory (SSRAM1)
+  - 4MB of SRAM (SSRAM2 and SSRAM3)
+  - 16MB of parallel SRAM (PSRAM, non-secure only)
   - 8KB of NVM code
-  - 224MB code memory
 
 - Debug
 
@@ -155,8 +219,9 @@ in the following table:
 +------+------------+----------------+--------------------------+
 | 10   | Reserved   |                | not handled              |
 +------+------------+----------------+--------------------------+
-| 11   | SVC        |                | context switch and       |
-|      |            |                | software interrupts      |
+| 11   | SVC        |                | system calls, kernel     |
+|      |            |                | run-time exceptions,     |
+|      |            |                | and IRQ offloading       |
 +------+------------+----------------+--------------------------+
 | 12   | Debug      |                | system fatal error       |
 |      | monitor    |                |                          |
@@ -266,7 +331,7 @@ Peripheral Mapping:
    - I2C_4_SDA : D40
    - I2C_4_SCL : D41
 
-For mode details please refer to `MPS2+ AN521 Technical Reference Manual (TRM)`_.
+For mode details refer to `MPS2+ AN521 Technical Reference Manual (TRM)`_.
 
 LED
 ============
@@ -319,12 +384,75 @@ switches.
 Programming and Debugging
 *************************
 
-MPS2+ AN521 supports the v8m security extension, and by default boots to the
-secure state.
+MPS2+ AN521 (CPU0) supports the Armv8m Security Extension.
+Applications built for the mps2_an521 board by default
+boot in the Secure state.
 
-When building a secure/non-secure application, the secure application will
-have to set the idau/sau and mpc configuration to permit access from the
-non-secure application before jumping.
+MPS2+ AN521 (CPU1) does not support the Armv8m Security Extension.
+
+Building Secure/Non-Secure Zephyr applications with Arm |reg| TrustZone |reg|
+=============================================================================
+
+Applications on the MPS2+ AN521 (CPU0) may contain a Secure and a Non-Secure
+firmware image. The Secure image can be built using either Zephyr
+or `Trusted Firmware M`_ (TF-M). Non-Secure firmware images are always built
+using Zephyr. The two alternatives are described below.
+
+.. note::
+
+   By default the Secure image for the MPS2+ AN521 (CPU0) is built
+   using TF-M.
+
+Building the Secure firmware with TF-M
+--------------------------------------
+
+The process to build the Secure firmware image using TF-M and the Non-Secure
+firmware image using Zephyr requires the following steps:
+
+1. Build the Non-Secure Zephyr application
+   for MPS2+ AN521 (CPU0) using ``-DBOARD=mps2_an521_ns``.
+   To invoke the building of TF-M the Zephyr build system requires the
+   Kconfig option ``BUILD_WITH_TFM`` to be enabled, which is done by
+   default when building Zephyr as a Non-Secure application.
+   The Zephyr build system will perform the following steps automatically:
+
+      * Build the Non-Secure firmware image as a regular Zephyr application
+      * Build a TF-M (secure) firmware image
+      * Merge the output image binaries together
+      * Optionally build a bootloader image (MCUboot)
+
+.. note::
+
+   Depending on the TF-M configuration, an application DTS overlay may be
+   required, to adjust the Non-Secure image Flash and SRAM starting address
+   and sizes.
+
+Building the Secure firmware using Zephyr
+-----------------------------------------
+
+The process to build the Secure and the Non-Secure firmware images
+using Zephyr requires the following steps:
+
+1. Build the Secure Zephyr application for MPS2+ AN521 (CPU0)
+   using ``-DBOARD=mps2_an521`` and
+   ``CONFIG_TRUSTED_EXECUTION_SECURE=y`` and ``CONFIG_BUILD_WITH_TFM=n``
+   in the application project configuration file.
+2. Build the Non-Secure Zephyr application for MPS2+ AN521 (CPU0)
+   using ``-DBOARD=mps2_an521_ns``.
+3. Merge the two binaries together.
+
+Building a Secure only application on MPS2+ AN521 (CPU0)
+========================================================
+
+Build the Zephyr app in the usual way (see :ref:`build_an_application`
+and :ref:`application_run`), using ``-DBOARD=mps2_an521`` for
+the firmware running on the MPS2+ AN521 (CPU0).
+
+When building a Secure/Non-Secure application for the MPS2+ AN521 (CPU0),
+the Secure application will have to set the SAU/IDAU configuration to allow
+Non-Secure access to all CPU resources utilized by the Non-Secure application
+firmware. SAU/IDAU configuration shall take place before jumping to the
+Non-Secure application.
 
 The following system components are required to be properly configured during the
 secure firmware:
@@ -333,7 +461,24 @@ secure firmware:
 - AHB5 TrustZone Peripheral Protection Controller (PPC)
 - Implementation-Defined Attribution Unit (IDAU)
 
-For more details please refer to `Corelink SSE-200 Subsystem`_.
+For more details refer to `Corelink SSE-200 Subsystem`_.
+
+
+
+Building standalone applications on MPS2+ AN521 CPU1
+====================================================
+
+Applications may be built for the second Cortex-M33
+(remote) core of MPS2+ AN521. The core is referred to as CPU1.
+
+Build the Zephyr app in the usual way (see :ref:`build_an_application`
+and :ref:`application_run`), using ``-DBOARD=mps2_an521_remote`` for
+the firmware running on the MPS2+ AN521 (CPU1).
+
+The Zephyr build will automatically trigger building a minimal (empty)
+secure-only firmware for CPU0, which will be used to boot the remote
+core (CPU1).
+
 
 Flashing
 ========
@@ -343,17 +488,15 @@ MPS2+ AN521 provides:
 - A USB connection to the host computer, which exposes a Mass Storage
 - A Serial Port which is J10 on MPS2+ board
 
-Building a secure only application
-----------------------------------
-
-
-You can build applications in the usual way. Here is an example for
-the :ref:`hello_world` application.
+Build applications as described above.
+Here is an example for the :ref:`hello_world` application built as
+a secure-only application for CPU0.
 
 .. zephyr-app-commands::
    :zephyr-app: samples/hello_world
    :board: mps2_an521
    :goals: build
+
 
 Open a serial terminal (minicom, putty, etc.) with the following settings:
 
@@ -369,44 +512,19 @@ serial port:
 
    Hello World! mps2_an521
 
-Building a secure/non-secure with Trusted Firmware
---------------------------------------------------
-
-The process requires five steps:
-
-1. Build Trusted Firmware (tfm).
-2. Import it as a library to the Zephyr source folder.
-3. Build Zephyr with a non-secure configuration.
-4. Merge the two binaries together and sign them.
-5. Concatenate the bootloader with the signed image blob.
-
-In order to build tfm please refer to `Trusted Firmware M Guide`_.
-Follow the build steps for AN521 target while replacing the platform with
-``-DTARGET_PLATFORM=AN521`` and compiler (if required) with ``-DCOMPILER=GNUARM``
-
-Copy over tfm as a library to the Zephyr project source and create a shortcut
-for the secure veneers.
-
-.. code-block:: bash
-
-   cp -r install/ $ZEPHYR_PROJECT/src/ext
-   cp $ZEPHYR_PROJECT/src/ext/install/export/tfm/veneers/s_veneers.o $ZEPHYR_PROJECT/src/ext
-
-
-Build the Zephyr app in the usual way.
 
 Uploading an application to MPS2+ AN521
 ---------------------------------------
 
-Applications can be elf, hex or bin format. The binaries were flashed while
-the board boot up, all files were stored in the on-board Micro SD card in
-advance. The Motherboard Configuration Controller (MCC) will responsible for
-loading the FPGA image and binaries.
+Applications can be in elf, hex or bin format. The binaries are flashed when
+the board boots up, using files stored on the on-board Micro SD card. The
+Motherboard Configuration Controller (MCC) is responsible for loading the FPGA
+image and binaries.
 
 Connect the MPS2+ to your host computer using the USB port. You should see a
 USB connection exposing a Mass Storage (``V2M_MPS2`` by default).
 
-The update needs 3 steps:
+The update requires 3 steps:
 
 1. Copy application files to ``<MPS2 device name>/SOFTWARE/``.
 2. Open ``<MPS2 device name>/MB/HBI0263C/AN521/images.txt``.
@@ -431,24 +549,26 @@ serial port:
 
    Hello World! mps2_an521
 
+.. note:: Refer to the tfm_integration sample for more details about integrating with TF-M and multiple images scenario.
+
 
 .. _MPS2 FPGA Website:
    https://developer.arm.com/tools-and-software/development-boards/fpga-prototyping-boards/mps2
 
 .. _MPS2+ AN521 Technical Reference Manual (TRM):
-   http://infocenter.arm.com/help/topic/com.arm.doc.dai0521c/DAI0521C_Example_SSE200_Subsystem_for_MPS2plus.pdf
+   https://developer.arm.com/documentation/dai0521/latest/
 
 .. _Cortex M33 Generic User Guide:
-   http://infocenter.arm.com/help/topic/com.arm.doc.100235_0004_00_en/arm_cortex_m33_dgug_100235_0004_00_en.pdf
+   https://developer.arm.com/documentation/100235/latest/
 
-.. _Trusted Firmware M Guide:
-   https://git.trustedfirmware.org/trusted-firmware-m.git/tree/docs/user_guides/tfm_build_instruction.rst
+.. _Trusted Firmware M:
+   https://tf-m-user-guide.trustedfirmware.org/building/tfm_build_instruction.html
 
 .. _Corelink SSE-200 Subsystem:
-   https://developer.arm.com/products/system-design/subsystems/corelink-sse-200-subsystem
+   https://developer.arm.com/documentation/dto0051/latest/subsystem-overview/about-the-sse-200
 
 .. _IDAU:
-   https://developer.arm.com/products/architecture/cpu-architecture/m-profile/docs/100690/latest/attribution-units-sau-and-idau
+   https://developer.arm.com/documentation/100690/latest/Attribution-units--SAU-and-IDAU-
 
 .. _AMBA®:
    https://developer.arm.com/products/architecture/system-architectures/amba

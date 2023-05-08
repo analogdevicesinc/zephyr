@@ -11,9 +11,18 @@
  * This module contains the code for testing sprintf() functionality.
  */
 
-#include <ztest.h>
+#include <zephyr/ztest.h>
 #include <stdio.h>
 #include <stdarg.h>
+
+/**
+ *
+ * @brief Test implementation-defined constants library
+ * @defgroup libc_api
+ * @ingroup all_tests
+ * @{
+ *
+ */
 
 #define DEADBEEF  0xdeadbeef
 
@@ -26,6 +35,12 @@
 #define DEADBEEF_OCTAL_STR     "33653337357"
 #define DEADBEEF_OCTAL_ALT_STR "033653337357"
 #define DEADBEEF_PTR_STR       "0xdeadbeef"
+
+#define IS_MINIMAL_LIBC_NANO (IS_ENABLED(CONFIG_MINIMAL_LIBC) \
+	      && IS_ENABLED(CONFIG_CBPRINTF_NANO))
+
+#define IS_MINIMAL_LIBC_NOFP (IS_ENABLED(CONFIG_MINIMAL_LIBC) \
+	      && !IS_ENABLED(CONFIG_CBPRINTF_FP_SUPPORT))
 
 /*
  * A really long string (330 characters + NULL).
@@ -45,13 +60,35 @@
 	"66666666666666666666666666666666"   \
 	"666666666666666666666666666666666"
 
+#ifdef CONFIG_BIG_ENDIAN
 union raw_double_u {
 	double d;
 	struct {
-		u32_t u1;       /* This part contains the exponent */
-		u32_t u2;       /* This part contains the fraction */
+		uint32_t fraction;
+		uint32_t exponent;
 	};
 };
+#else
+union raw_double_u {
+	double d;
+	struct {
+		uint32_t exponent;
+		uint32_t fraction;
+	};
+};
+#endif
+
+static int WriteFrmtd_vf(FILE *stream, char *format, ...)
+{
+	int ret;
+	va_list args;
+
+	va_start(args, format);
+	ret = vfprintf(stream, format, args);
+	va_end(args);
+
+	return ret;
+}
 
 /**
  *
@@ -59,18 +96,27 @@ union raw_double_u {
  *
  */
 
-void test_sprintf_double(void)
+#ifdef CONFIG_STDOUT_CONSOLE
+ZTEST(sprintf, test_sprintf_double)
 {
 	char buffer[400];
 	union raw_double_u var;
 
-#ifndef CONFIG_FLOAT
-	ztest_test_skip();
-	return;
-#endif
 
-	var.u1 = 0x00000000;
-	var.u2 = 0x7ff00000;    /* Bit pattern for +INF (double) */
+	/* Conversion not supported with minimal_libc without
+	 * CBPRINTF_FP_SUPPORT.
+	 *
+	 * Conversion not supported without FPU except on native POSIX.
+	 */
+	if (IS_MINIMAL_LIBC_NOFP
+	    || !(IS_ENABLED(CONFIG_FPU)
+		 || IS_ENABLED(CONFIG_BOARD_NATIVE_POSIX))) {
+		ztest_test_skip();
+		return;
+	}
+
+	var.exponent = 0x00000000;
+	var.fraction = 0x7ff00000; /* Bit pattern for +INF (double) */
 	sprintf(buffer, "%e", var.d);
 	zassert_true((strcmp(buffer, "inf") == 0),
 		     "sprintf(inf) - incorrect output '%s'\n", buffer);
@@ -95,8 +141,8 @@ void test_sprintf_double(void)
 	zassert_true((strcmp(buffer, "INF") == 0),
 		     "sprintf(INF) - incorrect output '%s'\n", buffer);
 
-	var.u1 = 0x00000000;
-	var.u2 = 0xfff00000;    /* Bit pattern for -INF (double) */
+	var.exponent = 0x00000000;
+	var.fraction = 0xfff00000; /* Bit pattern for -INF (double) */
 	sprintf(buffer, "%e", var.d);
 	zassert_true((strcmp(buffer, "-inf") == 0),
 		     "sprintf(-INF) - incorrect output '%s'\n", buffer);
@@ -125,8 +171,8 @@ void test_sprintf_double(void)
 	zassert_true((strcmp(buffer, "      -inf") == 0),
 		     "sprintf(      +inf) - incorrect output '%s'\n", buffer);
 
-	var.u1 = 0x00000000;
-	var.u2 = 0x7ff80000;    /* Bit pattern for NaN (double) */
+	var.exponent = 0x00000000;
+	var.fraction = 0x7ff80000; /* Bit pattern for NaN (double) */
 	sprintf(buffer, "%e", var.d);
 	zassert_true((strcmp(buffer, "nan") == 0),
 		     "sprintf(nan) - incorrect output '%s'\n", buffer);
@@ -155,8 +201,8 @@ void test_sprintf_double(void)
 	zassert_true((strcmp(buffer, "    +nan") == 0),
 		     "sprintf(    +nan) - incorrect output '%s'\n", buffer);
 
-	var.u1 = 0x00000000;
-	var.u2 = 0xfff80000;    /* Bit pattern for -NaN (double) */
+	var.exponent = 0x00000000;
+	var.fraction = 0xfff80000; /* Bit pattern for -NaN (double) */
 	sprintf(buffer, "%e", var.d);
 	zassert_true((strcmp(buffer, "-nan") == 0),
 		     "sprintf(-nan) - incorrect output '%s'\n", buffer);
@@ -222,7 +268,7 @@ void test_sprintf_double(void)
 	var.d = 1234.56789;
 	sprintf(buffer, "%f", var.d);
 	zassert_true((strcmp(buffer, "1234.567890") == 0),
-		     "sprintf(-1.0) - incorrect output '%s'\n", buffer);
+		     "sprintf(1234.56789) - incorrect output '%s'\n", buffer);
 
 	/*
 	 * With very large precision, the output differs significantly in
@@ -244,10 +290,14 @@ void test_sprintf_double(void)
 		      buffer[241]);
 
 	var.d = 0x1p-400;
+
+	/* 3.872E-121 expressed as " 0.0...387" */
 	sprintf(buffer, "% .380f", var.d);
 	zassert_true((strlen(buffer) == 383),
 		     "sprintf(<large output>) - incorrect length %d\n",
 		     strlen(buffer));
+	zassert_equal(strncmp(&buffer[119], "00003872", 8), 0,
+		      "sprintf(<large output>) - misplaced value\n");
 	buffer[10] = 0;  /* log facility doesn't support %.10s */
 	zassert_true((strcmp(buffer, " 0.0000000") == 0),
 		     "sprintf(<large output>) - starts with \"%s\" "
@@ -323,12 +373,18 @@ void test_sprintf_double(void)
 		     "sprintf(0.0001505) - incorrect "
 		     "output '%s'\n", buffer);
 
-	var.u1 = 0x00000001;
-	var.u2 = 0x00000000;    /* smallest denormal value */
+	var.exponent = 0x00000001;
+	var.fraction = 0x00000000; /* smallest denormal value */
 	sprintf(buffer, "%g", var.d);
+#ifdef CONFIG_PICOLIBC
+	zassert_true((strcmp(buffer, "5e-324") == 0),
+		     "sprintf(5e-324) - incorrect "
+		     "output '%s'\n", buffer);
+#else
 	zassert_true((strcmp(buffer, "4.94066e-324") == 0),
 		     "sprintf(4.94066e-324) - incorrect "
 		     "output '%s'\n", buffer);
+#endif
 }
 
 /**
@@ -357,7 +413,7 @@ int tvsnprintf(char *s, size_t len, const char *format, ...)
  *
  */
 
-void test_vsnprintf(void)
+ZTEST(sprintf, test_vsnprintf)
 {
 	int len;
 	char buffer[100];
@@ -412,7 +468,7 @@ int tvsprintf(char *s, const char *format, ...)
  *
  */
 
-void test_vsprintf(void)
+ZTEST(sprintf, test_vsprintf)
 {
 	int len;
 	char buffer[100];
@@ -438,7 +494,7 @@ void test_vsprintf(void)
  *
  */
 
-void test_snprintf(void)
+ZTEST(sprintf, test_snprintf)
 {
 #if defined(__GNUC__) && __GNUC__ >= 7
 	/*
@@ -487,7 +543,7 @@ void test_snprintf(void)
  *
  */
 
-void test_sprintf_misc(void)
+ZTEST(sprintf, test_sprintf_misc)
 {
 	int count;
 	char buffer[100];
@@ -497,31 +553,45 @@ void test_sprintf_misc(void)
 	zassert_false((strcmp(buffer, DEADBEEF_PTR_STR) != 0),
 		      "sprintf(%%p).  Expected '%s', got '%s'", DEADBEEF_PTR_STR, buffer);
 	/*******************/
-	sprintf(buffer, "test data %n test data", &count);
-	zassert_false((count != 10), "sprintf(%%n).  Expected count to be %d, not %d",
-		      10, count);
+	if (IS_MINIMAL_LIBC_NANO) {
+		TC_PRINT(" MINIMAL_LIBC+CPBPRINTF skipped tests\n");
+	} else {
+#ifndef CONFIG_PICOLIBC
+		sprintf(buffer, "test data %n test data", &count);
+		zassert_false((count != 10),
+			      "sprintf(%%n).  Expected count to be %d, not %d",
+			      10, count);
 
-	zassert_false((strcmp(buffer, "test data  test data") != 0),
-		      "sprintf(%%p).  Expected '%s', got '%s'",
-		      "test data  test data", buffer);
+		zassert_false((strcmp(buffer, "test data  test data") != 0),
+			      "sprintf(%%p).  Expected '%s', got '%s'",
+			      "test data  test data", buffer);
+#else
+		/*
+		 * Picolibc doesn't include %n support as it makes format string
+		 * bugs a more serious security issue
+		 */
+		(void) count;
+#endif
 
-	/*******************/
-	sprintf(buffer, "%*d", 10, 1234);
-	zassert_true((strcmp(buffer, "      1234") == 0),
-		     "sprintf(%%p).  Expected '%s', got '%s'",
-		     "      1234", buffer);
 
-	/*******************/
-	sprintf(buffer, "%*d", -10, 1234);
-	zassert_true((strcmp(buffer, "1234      ") == 0),
-		     "sprintf(%%p).  Expected '%s', got '%s'",
-		     "1234      ", buffer);
+		/*******************/
+		sprintf(buffer, "%*d", 10, 1234);
+		zassert_true((strcmp(buffer, "      1234") == 0),
+			     "sprintf(%%p).  Expected '%s', got '%s'",
+			     "      1234", buffer);
 
-	/*******************/
-	sprintf(buffer, "% d", 1234);
-	zassert_true((strcmp(buffer, " 1234") == 0),
-		     "sprintf(%% d). Expected '%s', got '%s'",
-		     " 1234", buffer);
+		/*******************/
+		sprintf(buffer, "%*d", -10, 1234);
+		zassert_true((strcmp(buffer, "1234      ") == 0),
+			     "sprintf(%%p).  Expected '%s', got '%s'",
+			     "1234      ", buffer);
+
+		/*******************/
+		sprintf(buffer, "% d", 1234);
+		zassert_true((strcmp(buffer, " 1234") == 0),
+			     "sprintf(%% d). Expected '%s', got '%s'",
+			     " 1234", buffer);
+	}
 
 	/*******************/
 	sprintf(buffer, "%hx", (unsigned short)1234);
@@ -540,7 +610,7 @@ void test_sprintf_misc(void)
  * @brief Test the sprintf() routine with integers
  *
  */
-void test_sprintf_integer(void)
+ZTEST(sprintf, test_sprintf_integer)
 {
 	int len;
 	char buffer[100];
@@ -572,9 +642,12 @@ void test_sprintf_integer(void)
 		     "sprintf(%%X).  Expected %zu bytes written, not %d\n",
 		     strlen(DEADBEEF_UHEX_STR), len);
 
-	zassert_true((strcmp(buffer, DEADBEEF_UHEX_STR) == 0),
-		     "sprintf(%%X).  Expected '%s', got '%s'\n",
-		     DEADBEEF_UHEX_STR, buffer);
+	/* no upper-case hex support */
+	if (!IS_MINIMAL_LIBC_NANO) {
+		zassert_true((strcmp(buffer, DEADBEEF_UHEX_STR) == 0),
+			     "sprintf(%%X).  Expected '%s', got '%s'\n",
+			     DEADBEEF_UHEX_STR, buffer);
+	}
 
 	/*******************/
 	len = sprintf(buffer, "%u", DEADBEEF);
@@ -596,15 +669,11 @@ void test_sprintf_integer(void)
 		     "sprintf(%%d).  Expected '%s', got '%s'\n",
 		     DEADBEEF_SIGNED_STR, buffer);
 
-	/*******************/
-	len = sprintf(buffer, "%o", DEADBEEF);
-	zassert_true((len == strlen(DEADBEEF_OCTAL_STR)),
-		     "sprintf(%%o).  Expected %zu bytes written, not %d\n",
-		     strlen(DEADBEEF_OCTAL_STR), len);
-
-	zassert_true((strcmp(buffer, DEADBEEF_OCTAL_STR) == 0),
-		     "sprintf(%%o).  Expected '%s', got '%s'\n",
-		     DEADBEEF_OCTAL_STR, buffer);
+	/* MINIMAL_LIBC+NANO doesn't support the following tests */
+	if (IS_MINIMAL_LIBC_NANO) {
+		TC_PRINT(" MINIMAL_LIBC+CBPRINTF_NANO skipped tests\n");
+		return;
+	}
 
 	/*******************/
 	len = sprintf(buffer, "%#o", DEADBEEF);
@@ -615,6 +684,16 @@ void test_sprintf_integer(void)
 	zassert_true((strcmp(buffer, DEADBEEF_OCTAL_ALT_STR) == 0),
 		     "sprintf(%%#o).  Expected '%s', got '%s'\n",
 		     DEADBEEF_OCTAL_ALT_STR, buffer);
+
+	/*******************/
+	len = sprintf(buffer, "%o", DEADBEEF);
+	zassert_true((len == strlen(DEADBEEF_OCTAL_STR)),
+		     "sprintf(%%#o).  Expected %zu bytes written, not %d\n",
+		     strlen(DEADBEEF_OCTAL_STR), len);
+
+	zassert_true((strcmp(buffer, DEADBEEF_OCTAL_STR) == 0),
+		     "sprintf(%%o).  Expected '%s', got '%s'\n",
+		     DEADBEEF_OCTAL_STR, buffer);
 
 	/*******************/
 	len = sprintf(buffer, "%#x", DEADBEEF);
@@ -654,7 +733,7 @@ void test_sprintf_integer(void)
  *
  */
 
-void test_sprintf_string(void)
+ZTEST(sprintf, test_sprintf_string)
 {
 	char buffer[400];
 
@@ -676,21 +755,199 @@ void test_sprintf_string(void)
 		     "sprintf(%%s) of REALLY_LONG_STRING doesn't match!\n");
 }
 
+
+/**
+ *
+ * @brief Test print function
+ *
+ * @see printf().
+ *
+ */
+ZTEST(sprintf, test_print)
+{
+	int ret;
+
+	ret = printf("%d\n", 3);
+	zassert_equal(ret, 2, "printf failed!");
+
+	ret = printf("");
+	zassert_equal(ret, 0, "printf failed!");
+}
+
+/**
+ *
+ * @brief Test fprintf function
+ *
+ * @see fprintf().
+ *
+ */
+ZTEST(sprintf, test_fprintf)
+{
+	int ret, i = 3;
+
+	ret = fprintf(stdout, "%d\n", i);
+	zassert_equal(ret, 2, "fprintf failed!");
+
+	ret = fprintf(stdout, "");
+	zassert_equal(ret, 0, "fprintf failed!");
+
+}
+
+
+/**
+ *
+ * @brief Test vfprintf function
+ *
+ */
+
+ZTEST(sprintf, test_vfprintf)
+{
+	int ret;
+
+	ret = WriteFrmtd_vf(stdout, "This %0-d\n", 3);
+	zassert_equal(ret, 7, "vfprintf \"This 3\" failed");
+
+	ret = WriteFrmtd_vf(stdout,  "%9d\n", 3);
+	zassert_equal(ret, 10, "vfprintf \"3\" failed");
+
+	ret = WriteFrmtd_vf(stdout, "");
+	zassert_equal(ret, 0, "vfprintf \"\" failed");
+
+	ret = WriteFrmtd_vf(stdout, "/%%/%c/\n", 'a');
+	zassert_equal(ret, 6, "vfprintf \'a\' failed");
+
+	ret = WriteFrmtd_vf(stdout,  "11\n");
+	zassert_equal(ret, 3, "vfprintf \"11\" failed");
+
+}
+
+/**
+ *
+ * @brief Test vprintf function
+ *
+ */
+
+static int WriteFrmtd_v(char *format, ...)
+{
+	int ret;
+	va_list args;
+
+	va_start(args, format);
+	ret = vprintf(format, args);
+	va_end(args);
+
+	return ret;
+}
+
+ZTEST(sprintf, test_vprintf)
+{
+	int ret;
+
+	ret = WriteFrmtd_v("This %d\n", 3);
+	zassert_equal(ret, 7, "vprintf \"This 3\" failed");
+
+	ret = WriteFrmtd_v("%9d\n", 3);
+	zassert_equal(ret, 10, "vprintf \"3\" failed");
+
+	ret = WriteFrmtd_v("");
+	zassert_equal(ret, 0, "vprintf \"3\" failed");
+
+	ret = WriteFrmtd_v("/%%/%c/\n", 'a');
+	zassert_equal(ret, 6, "vprintf \'a\' failed");
+
+	ret = WriteFrmtd_v("11\n");
+	zassert_equal(ret, 3, "vprintf \"11\" failed");
+}
+
+/**
+ *
+ * @brief Test put function
+ *
+ * @see fputs(), puts(), fputc(), putc().
+ */
+ZTEST(sprintf, test_put)
+{
+	int ret;
+
+	ret = fputs("This 3\n", stdout);
+	zassert_equal(ret, 0, "fputs \"This 3\" failed");
+
+	ret = fputs("This 3\n", stderr);
+	zassert_equal(ret, 0, "fputs \"This 3\" failed");
+
+	ret = puts("This 3");
+	zassert_equal(ret, 0, "puts \"This 3\" failed");
+
+	ret = fputc('T', stdout);
+	zassert_equal(ret, 84, "fputc \'T\' failed");
+
+	ret = putc('T', stdout);
+	zassert_equal(ret, 84, "putc \'T\' failed");
+
+	ret = fputc('T', stderr);
+	zassert_equal(ret, 84, "fputc \'T\' failed");
+
+	ret = fputc('T', stdin);
+	zassert_equal(ret, EOF, "fputc to stdin");
+}
+
+/**
+ *
+ * @brief Test fwrite function
+ *
+ */
+ZTEST(sprintf, test_fwrite)
+{
+	int ret;
+
+	ret = fwrite("This 3", 0, 0, stdout);
+	zassert_equal(ret, 0, "fwrite failed!");
+
+	ret = fwrite("This 3", 0, 4, stdout);
+	zassert_equal(ret, 0, "fwrite failed!");
+
+	ret = fwrite("This 3", 4, 4, stdout);
+	zassert_equal(ret, 4, "fwrite failed!");
+
+	ret = fwrite("This 3", 4, 4, stdin);
+	zassert_equal(ret, 0, "fwrite failed!");
+}
+
+/**
+ *
+ * @brief Test stdout_hook_default() function
+ *
+ * @details When CONFIG_STDOUT_CONSOLE=n the default
+ * stdout hook function _stdout_hook_default() returns EOF.
+ */
+
+#else
+ZTEST(sprintf, test_EOF)
+{
+	int ret;
+
+	ret = fputc('T', stdout);
+	zassert_equal(ret, EOF, "fputc \'T\' failed");
+
+	ret = fputs("This 3", stdout);
+	zassert_equal(ret, EOF, "fputs \"This 3\" failed");
+
+	ret = puts("This 3");
+	zassert_equal(ret, EOF, "puts \"This 3\" failed");
+
+	ret = WriteFrmtd_vf(stdout, "This %d", 3);
+	zassert_equal(ret, EOF, "vfprintf \"3\" failed");
+}
+#endif
+
+/**
+ * @}
+ */
+
 /**
  *
  * @brief Test entry point
  *
- * @return N/A
  */
 
-void test_main(void)
-{
-	ztest_test_suite(test_sprintf,
-			 ztest_unit_test(test_sprintf_double),
-			 ztest_unit_test(test_sprintf_integer),
-			 ztest_unit_test(test_vsprintf),
-			 ztest_unit_test(test_vsnprintf),
-			 ztest_unit_test(test_sprintf_string),
-			 ztest_unit_test(test_sprintf_misc));
-	ztest_run_test_suite(test_sprintf);
-}
+ZTEST_SUITE(sprintf, NULL, NULL, NULL, NULL, NULL);

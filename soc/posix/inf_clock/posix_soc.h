@@ -7,7 +7,7 @@
 #ifndef _POSIX_POSIX_SOC_INF_CLOCK_H
 #define _POSIX_POSIX_SOC_INF_CLOCK_H
 
-#include "posix_soc_if.h"
+#include <zephyr/arch/posix/posix_soc_if.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -16,6 +16,7 @@ extern "C" {
 void posix_interrupt_raised(void);
 void posix_boot_cpu(void);
 int  posix_is_cpu_running(void);
+void posix_change_cpu_state_and_wait(bool halted);
 
 #ifdef __cplusplus
 }

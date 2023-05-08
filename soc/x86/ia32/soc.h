@@ -15,19 +15,13 @@
 #ifndef __SOC_H_
 #define __SOC_H_
 
-#include <sys/util.h>
+#include <zephyr/sys/util.h>
 
 #ifndef _ASMLANGUAGE
-#include <device.h>
-#include <random/rand32.h>
+#include <zephyr/device.h>
+#include <zephyr/random/rand32.h>
 #endif
 
-/*
- * UART
- */
-#define UART_NS16550_ACCESS_IOPORT
-
-#define INT_VEC_IRQ0 0x20 /* Vector number for IRQ0 */
 /* PCI definitions */
 #define PCI_BUS_NUMBERS 1
 
@@ -54,8 +48,10 @@ static inline int pci_pin2irq(int bus, int dev, int pin)
 {
 	ARG_UNUSED(bus);
 
-	if ((pin < PCI_INTA) || (pin > PCI_INTD))
+	if ((pin < PCI_INTA) || (pin > PCI_INTD)) {
 		return -1;
+	}
+
 	return 10 + (((pin + dev - 1) >> 1) & 1);
 }
 

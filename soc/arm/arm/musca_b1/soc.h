@@ -9,12 +9,11 @@
 
 #ifndef _ASMLANGUAGE
 #include "system_cmsdk_musca_b1.h"
-#include <generated_dts_board.h>
-#include <sys/util.h>
+#include <zephyr/sys/util.h>
 #endif
 
 extern void wakeup_cpu1(void);
 
-extern u32_t sse_200_platform_get_cpu_id(void);
+extern uint32_t sse_200_platform_get_cpu_id(void);
 
 #endif /* _SOC_H_ */

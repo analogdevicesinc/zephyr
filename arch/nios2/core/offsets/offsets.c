@@ -24,8 +24,9 @@
  */
 
 
+#include <zephyr/kernel.h>
+#include <kernel_arch_data.h>
 #include <gen_offset.h>
-#include <kernel_structs.h>
 #include <kernel_offsets.h>
 
 /* struct coop member offsets */
@@ -62,11 +63,5 @@ GEN_OFFSET_SYM(z_arch_esf_t, r15);
 GEN_OFFSET_SYM(z_arch_esf_t, estatus);
 GEN_OFFSET_SYM(z_arch_esf_t, instr);
 GEN_ABSOLUTE_SYM(__z_arch_esf_t_SIZEOF, sizeof(z_arch_esf_t));
-
-/*
- * size of the struct k_thread structure sans save area for floating
- * point regs
- */
-GEN_ABSOLUTE_SYM(_K_THREAD_NO_FLOAT_SIZEOF, sizeof(struct k_thread));
 
 GEN_ABS_SYM_END

@@ -1,58 +1,43 @@
-# Kconfig - STM32F746G DISCOVERY board configuration
-#
+# STM32F746G DISCOVERY board configuration
+
 # Copyright (c) 2018 Yurii Hamann
-#
 # SPDX-License-Identifier: Apache-2.0
-#
 
 if BOARD_STM32F746G_DISCO
 
 config BOARD
 	default "stm32f746g_disco"
 
-if UART_CONSOLE
-
-config UART_1
-	default y
-
-endif # UART_CONSOLE
-
 if NETWORKING
 
 config NET_L2_ETHERNET
 	default y
 
-config ETH_STM32_HAL
-	default y
-
 endif # NETWORKING
 
-if SERIAL
+config INPUT
+	default y if KSCAN
 
-config UART_6
+if DISPLAY
+
+config KSCAN
 	default y
 
-endif # SERIAL
-
-if I2C
-
-config I2C_1
+# MEMC needs to be enabled in order to store
+# display buffer to external SDRAM connected to FMC
+config MEMC
 	default y
 
-endif # I2C
+endif # DISPLAY
 
-if SPI
+if INPUT
 
-config SPI_2
+config INPUT_FT5336_INTERRUPT
 	default y
 
-endif # SPI
+endif # INPUT
 
-if PWM
-
-config PWM_STM32_1
-	default y
-
-endif # PWM
+config DISK_DRIVER_SDMMC
+	default y if DISK_DRIVERS
 
 endif # BOARD_STM32F746G_DISCO

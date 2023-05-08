@@ -4,37 +4,36 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <device.h>
-#include <init.h>
-#include <kernel.h>
-#include <soc.h>
-#include <arch/arc/v2/aux_regs.h>
-#include <arch/arc/v2/mpu/arc_mpu.h>
-#include <arch/arc/v2/mpu/arc_core_mpu.h>
-#include <linker/linker-defs.h>
+#include <zephyr/device.h>
+#include <zephyr/init.h>
+#include <zephyr/kernel.h>
+#include <zephyr/arch/arc/v2/aux_regs.h>
+#include <zephyr/arch/arc/v2/mpu/arc_mpu.h>
+#include <zephyr/arch/arc/v2/mpu/arc_core_mpu.h>
+#include <zephyr/linker/linker-defs.h>
 
 #define LOG_LEVEL CONFIG_MPU_LOG_LEVEL
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(mpu);
 
 /**
  * @brief Get the number of supported MPU regions
  *
  */
-static inline u8_t get_num_regions(void)
+static inline uint8_t get_num_regions(void)
 {
-	u32_t num = z_arc_v2_aux_reg_read(_ARC_V2_MPU_BUILD);
+	uint32_t num = z_arc_v2_aux_reg_read(_ARC_V2_MPU_BUILD);
 
 	num = (num & 0xFF00U) >> 8U;
 
-	return (u8_t)num;
+	return (uint8_t)num;
 }
 
 /**
  * This internal function is utilized by the MPU driver to parse the intent
  * type (i.e. THREAD_STACK_REGION) and return the correct parameter set.
  */
-static inline u32_t get_region_attr_by_type(u32_t type)
+static inline uint32_t get_region_attr_by_type(uint32_t type)
 {
 	switch (type) {
 	case THREAD_STACK_USER_REGION:
@@ -52,8 +51,8 @@ static inline u32_t get_region_attr_by_type(u32_t type)
 	}
 }
 
-#if CONFIG_ARC_MPU_VER == 2
-#include "arc_mpu_v2_internal.h"
-#elif CONFIG_ARC_MPU_VER == 3
-#include "arc_mpu_v3_internal.h"
+#if (CONFIG_ARC_MPU_VER == 4) || (CONFIG_ARC_MPU_VER == 8)
+#include "arc_mpu_v4_internal.h"
+#else
+#include "arc_mpu_common_internal.h"
 #endif

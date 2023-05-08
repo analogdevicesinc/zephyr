@@ -11,11 +11,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <kernel.h>
-#include <init.h>
-#include <drivers/uart.h>
+#include <zephyr/kernel.h>
+#include <zephyr/init.h>
+#include <zephyr/drivers/uart.h>
+#include <zephyr/pm/device.h>
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 
 LOG_MODULE_REGISTER(mdm_receiver, CONFIG_MODEM_LOG_LEVEL);
 
@@ -33,7 +34,7 @@ static struct mdm_receiver_context *contexts[MAX_MDM_CTX];
  *
  * @retval Receiver context or NULL.
  */
-static struct mdm_receiver_context *context_from_dev(struct device *dev)
+static struct mdm_receiver_context *context_from_dev(const struct device *dev)
 {
 	int i;
 
@@ -81,7 +82,7 @@ static int mdm_receiver_get(struct mdm_receiver_context *ctx)
  */
 static void mdm_receiver_flush(struct mdm_receiver_context *ctx)
 {
-	u8_t c;
+	uint8_t c;
 
 	__ASSERT(ctx, "invalid ctx");
 	__ASSERT(ctx->uart_dev, "invalid ctx device");
@@ -101,11 +102,13 @@ static void mdm_receiver_flush(struct mdm_receiver_context *ctx)
  *
  * @retval None.
  */
-static void mdm_receiver_isr(struct device *uart_dev)
+static void mdm_receiver_isr(const struct device *uart_dev, void *user_data)
 {
 	struct mdm_receiver_context *ctx;
 	int rx, ret;
-	static u8_t read_buf[MAX_READ_SIZE];
+	static uint8_t read_buf[MAX_READ_SIZE];
+
+	ARG_UNUSED(user_data);
 
 	/* lookup the device */
 	ctx = context_from_dev(uart_dev);
@@ -160,7 +163,7 @@ struct mdm_receiver_context *mdm_receiver_context_from_id(int id)
 }
 
 int mdm_receiver_recv(struct mdm_receiver_context *ctx,
-		      u8_t *buf, size_t size, size_t *bytes_read)
+		      uint8_t *buf, size_t size, size_t *bytes_read)
 {
 	if (!ctx) {
 		return -EINVAL;
@@ -176,7 +179,7 @@ int mdm_receiver_recv(struct mdm_receiver_context *ctx,
 }
 
 int mdm_receiver_send(struct mdm_receiver_context *ctx,
-		      const u8_t *buf, size_t size)
+		      const uint8_t *buf, size_t size)
 {
 	if (!ctx) {
 		return -EINVAL;
@@ -196,16 +199,16 @@ int mdm_receiver_send(struct mdm_receiver_context *ctx,
 int mdm_receiver_sleep(struct mdm_receiver_context *ctx)
 {
 	uart_irq_rx_disable(ctx->uart_dev);
-#ifdef DEVICE_PM_LOW_POWER_STATE
-	device_set_power_state(ctx->uart_dev, DEVICE_PM_LOW_POWER_STATE, NULL, NULL);
+#ifdef CONFIG_PM_DEVICE
+	pm_device_action_run(ctx->uart_dev, PM_DEVICE_ACTION_SUSPEND);
 #endif
 	return 0;
 }
 
 int mdm_receiver_wake(struct mdm_receiver_context *ctx)
 {
-#ifdef DEVICE_PM_LOW_POWER_STATE
-	device_set_power_state(ctx->uart_dev, DEVICE_PM_ACTIVE_STATE, NULL, NULL);
+#ifdef CONFIG_PM_DEVICE
+	pm_device_action_run(ctx->uart_dev, PM_DEVICE_ACTION_SUSPEND);
 #endif
 	uart_irq_rx_enable(ctx->uart_dev);
 
@@ -213,8 +216,8 @@ int mdm_receiver_wake(struct mdm_receiver_context *ctx)
 }
 
 int mdm_receiver_register(struct mdm_receiver_context *ctx,
-			  const char *uart_dev_name,
-			  u8_t *buf, size_t size)
+			  const struct device *uart_dev,
+			  uint8_t *buf, size_t size)
 {
 	int ret;
 
@@ -222,12 +225,13 @@ int mdm_receiver_register(struct mdm_receiver_context *ctx,
 		return -EINVAL;
 	}
 
-	ctx->uart_dev = device_get_binding(uart_dev_name);
-	if (!ctx->uart_dev) {
-		LOG_ERR("Binding failure for uart: %s", uart_dev_name);
+	if (!device_is_ready(uart_dev)) {
+		LOG_ERR("Device is not ready: %s",
+			uart_dev ? uart_dev->name : "<null>");
 		return -ENODEV;
 	}
 
+	ctx->uart_dev = uart_dev;
 	ring_buf_init(&ctx->rx_rb, size, buf);
 	k_sem_init(&ctx->rx_sem, 0, 1);
 

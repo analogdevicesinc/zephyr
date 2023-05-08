@@ -6,6 +6,8 @@
 
 /dts-v1/;
 #include <atmel/samd21.dtsi>
+#include "adafruit_feather_m0_basic_proto-pinctrl.dtsi"
+#include "feather_connector.dtsi"
 
 / {
 	model = "Adafruit Feather M0 Basic Proto";
@@ -44,6 +46,20 @@
 	current-speed = <115200>;
 	rxpo = <3>;
 	txpo = <1>;
+
+	pinctrl-0 = <&sercom0_uart_default>;
+	pinctrl-names = "default";
+};
+
+&sercom3 {
+	status = "okay";
+	compatible = "atmel,sam0-i2c";
+	clock-frequency = <I2C_BITRATE_FAST>;
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	pinctrl-0 = <&sercom3_i2c_default>;
+	pinctrl-names = "default";
 };
 
 &sercom4 {
@@ -53,6 +69,9 @@
 	#size-cells = <0>;
 	dipo = <0>;
 	dopo = <1>;
+
+	pinctrl-0 = <&sercom4_spi_default>;
+	pinctrl-names = "default";
 };
 
 &flash0 {
@@ -63,27 +82,31 @@
 
 		boot_partition: partition@0 {
 			label = "sam-ba";
-			reg = <0x00000000 0x2000>;
+			reg = <0x00000000 DT_SIZE_K(8)>;
 			read-only;
 		};
 
 		code_partition: partition@2000 {
 			label = "code";
-			reg = <0x2000 0x3A000>;
+			reg = <0x2000 DT_SIZE_K(232)>;
 			read-only;
 		};
 
 		/*
-		 * The final 16 KiB is reserved for the application
-		 * and is used by NFFS if enabled.
+		 * The final 16 KiB is reserved for the application.
+		 * Storage partition will be used by FCB/LittleFS/NVS
+		 * if enabled.
 		 */
 		storage_partition: partition@3c000 {
 			label = "storage";
-			reg = <0x0003c000 0x00004000>;
+			reg = <0x0003c000 DT_SIZE_K(16)>;
 		};
 	};
 };
 
 &usb0 {
 	status = "okay";
+
+	pinctrl-0 = <&usb_dc_default>;
+	pinctrl-names = "default";
 };

@@ -1,9 +1,7 @@
-# Kconfig - FRDM-KL25Z board
-#
+# FRDM-KL25Z board
+
 # Copyright (c) 2017, NXP
-#
 # SPDX-License-Identifier: Apache-2.0
-#
 
 if BOARD_FRDM_KL25Z
 
@@ -25,63 +23,12 @@ config MCG_FRDIV
 config MCG_FCRDIV
 	default 0
 
-if PINMUX_MCUX
+if FXOS8700
 
-config PINMUX_MCUX_PORTA
-	default y
+choice FXOS8700_MODE
+	default FXOS8700_MODE_ACCEL
+endchoice
 
-config PINMUX_MCUX_PORTB
-	default y
-
-config PINMUX_MCUX_PORTC
-	default n
-
-config PINMUX_MCUX_PORTD
-	default y
-
-config PINMUX_MCUX_PORTE
-	default y if I2C_0
-
-endif # PINMUX_MCUX
-
-if GPIO_MCUX
-
-config GPIO_MCUX_PORTA
-	default y
-
-config GPIO_MCUX_PORTB
-	default y
-
-config GPIO_MCUX_PORTC
-	default n
-
-config GPIO_MCUX_PORTD
-	default y
-
-config GPIO_MCUX_PORTE
-	default n
-
-endif # GPIO_MCUX
-
-if UART_MCUX_LPSCI
-
-config UART_MCUX_LPSCI_0
-	default y if UART_CONSOLE
-
-endif # UART_MCUX_LPSCI
-
-if I2C
-
-config I2C_0
-	default y
-
-endif # I2C
-
-if ADC
-
-config ADC_0
-	default y
-
-endif # ADC
+endif # FXOS8700
 
 endif # BOARD_FRDM_KL25Z

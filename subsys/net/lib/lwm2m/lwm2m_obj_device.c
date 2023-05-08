@@ -7,22 +7,24 @@
 
 /*
  * TODO:
- * - Implement UTC_OFFSET & TIMEZONE
  * - Configurable CURRENT_TIME notification delay
  */
 
 #define LOG_MODULE_NAME net_lwm2m_obj_device
 #define LOG_LEVEL CONFIG_LWM2M_LOG_LEVEL
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
 #include <string.h>
 #include <stdio.h>
-#include <init.h>
+#include <zephyr/init.h>
 
 #include "lwm2m_object.h"
 #include "lwm2m_engine.h"
+
+#define DEVICE_VERSION_MAJOR 1
+#define DEVICE_VERSION_MINOR 0
 
 /* Device resource IDs */
 #define DEVICE_MANUFACTURER_ID			0
@@ -63,26 +65,34 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #define DEVICE_PWRSRC_MAX	5
 #endif
 
+#ifdef CONFIG_LWM2M_DEVICE_EXT_DEV_INFO_MAX
+#define DEVICE_EXT_DEV_INFO_MAX CONFIG_LWM2M_DEVICE_EXT_DEV_INFO_MAX
+#else
+#define DEVICE_EXT_DEV_INFO_MAX	1
+#endif
+
 #define DEVICE_STRING_SHORT	8
 
-#define DEVICE_SERVICE_INTERVAL K_SECONDS(10)
+#define DEVICE_SERVICE_INTERVAL_MS (MSEC_PER_SEC * 10)
 
 /*
  * Calculate resource instances as follows:
  * start with DEVICE_MAX_ID
  * subtract EXEC resources (3)
- * subtract MULTI resources because their counts include 0 resource (4)
+ * subtract MULTI resources because their counts include 0 resource (5)
  * add 3x DEVICE_PWRSRC_MAX for POWER SOURCES resource instances
  * add DEVICE_ERROR_CODE_MAX for ERROR CODE resource instances
+ * add DEVICE_EXT_DEV_INFO_MAX for EXT DEV INFO  resource instances
  */
-#define RESOURCE_INSTANCE_COUNT	(DEVICE_MAX_ID - 3 - 4 + \
-				DEVICE_PWRSRC_MAX*3 + DEVICE_ERROR_CODE_MAX)
+#define RESOURCE_INSTANCE_COUNT	(DEVICE_MAX_ID - 3 - 5 + \
+				 DEVICE_PWRSRC_MAX*3 + DEVICE_ERROR_CODE_MAX + \
+				 DEVICE_EXT_DEV_INFO_MAX)
 
 /* resource state variables */
-static u8_t  error_code_list[DEVICE_ERROR_CODE_MAX];
-static s32_t time_temp;
-static u32_t time_offset;
-static u8_t  binding_mode[DEVICE_STRING_SHORT];
+static uint8_t  error_code_list[DEVICE_ERROR_CODE_MAX];
+static time_t time_temp;
+static time_t time_offset;
+static uint8_t  binding_mode[DEVICE_STRING_SHORT];
 
 /* only 1 instance of device object exists */
 static struct lwm2m_engine_obj device;
@@ -109,7 +119,7 @@ static struct lwm2m_engine_obj_field fields[] = {
 	OBJ_FIELD_DATA(DEVICE_SOFTWARE_VERSION_ID, R_OPT, STRING),
 	OBJ_FIELD_DATA(DEVICE_BATTERY_STATUS_ID, R_OPT, U8),
 	OBJ_FIELD_DATA(DEVICE_MEMORY_TOTAL_ID, R_OPT, S32),
-	OBJ_FIELD_DATA(DEVICE_EXT_DEV_INFO_ID, R_OPT, S32)
+	OBJ_FIELD_DATA(DEVICE_EXT_DEV_INFO_ID, R_OPT, OBJLNK)
 };
 
 static struct lwm2m_engine_obj_inst inst;
@@ -121,7 +131,8 @@ static struct lwm2m_engine_res_inst *error_code_ri;
 
 /* callbacks */
 
-static int reset_error_list_cb(u16_t obj_inst_id)
+static int reset_error_list_cb(uint16_t obj_inst_id,
+			       uint8_t *args, uint16_t args_len)
 {
 	int i;
 
@@ -131,11 +142,14 @@ static int reset_error_list_cb(u16_t obj_inst_id)
 		error_code_ri[i].res_inst_id = RES_INSTANCE_NOT_CREATED;
 	}
 
+	/* Default error code indicating no error */
+	error_code_ri[0].res_inst_id = 0;
+
 	return 0;
 }
 
-static void *current_time_read_cb(u16_t obj_inst_id, u16_t res_id,
-				  u16_t res_inst_id, size_t *data_len)
+static void *current_time_read_cb(uint16_t obj_inst_id, uint16_t res_id,
+				  uint16_t res_inst_id, size_t *data_len)
 {
 	time_temp = time_offset + (k_uptime_get() / 1000);
 	*data_len = sizeof(time_temp);
@@ -143,20 +157,23 @@ static void *current_time_read_cb(u16_t obj_inst_id, u16_t res_id,
 	return &time_temp;
 }
 
-static void *current_time_pre_write_cb(u16_t obj_inst_id, u16_t res_id,
-				       u16_t res_inst_id, size_t *data_len)
+static void *current_time_pre_write_cb(uint16_t obj_inst_id, uint16_t res_id,
+				       uint16_t res_inst_id, size_t *data_len)
 {
 	*data_len = sizeof(time_temp);
 	return &time_temp;
 }
 
-static int current_time_post_write_cb(u16_t obj_inst_id, u16_t res_id,
-				      u16_t res_inst_id,
-				      u8_t *data, u16_t data_len,
+static int current_time_post_write_cb(uint16_t obj_inst_id, uint16_t res_id,
+				      uint16_t res_inst_id,
+				      uint8_t *data, uint16_t data_len,
 				      bool last_block, size_t total_size)
 {
 	if (data_len == 4U) {
-		time_offset = *(s32_t *)data - (s32_t)(k_uptime_get() / 1000);
+		time_offset = *(uint32_t *)data - (uint32_t)(k_uptime_get() / 1000);
+		return 0;
+	} else if (data_len == 8U) {
+		time_offset = *(time_t *)data - (time_t)(k_uptime_get() / 1000);
 		return 0;
 	}
 
@@ -164,122 +181,20 @@ static int current_time_post_write_cb(u16_t obj_inst_id, u16_t res_id,
 	return -EINVAL;
 }
 
-/* special setter functions */
-
-__deprecated int lwm2m_device_add_pwrsrc(u8_t pwrsrc_type)
-{
-	int i;
-	struct lwm2m_engine_res *res;
-
-	if (pwrsrc_type >= LWM2M_DEVICE_PWR_SRC_TYPE_MAX) {
-		LOG_ERR("power source id %d is invalid", pwrsrc_type);
-		return -EINVAL;
-	}
-
-	i = lwm2m_engine_get_resource("3/0/6", &res);
-	if (i < 0 || !res || !res->res_instances) {
-		return -ENOENT;
-	}
-
-	for (i = 0; i < res->res_inst_count; i++) {
-		if (res->res_instances[i].res_inst_id ==
-				RES_INSTANCE_NOT_CREATED &&
-		    res->res_instances[i].data_ptr != NULL) {
-			break;
-		}
-	}
-
-	if (i >= res->res_inst_count) {
-		return -ENOMEM;
-	}
-
-	*(u8_t *)res->res_instances[i].data_ptr = pwrsrc_type;
-	res->res_instances[i].res_inst_id = i;
-	NOTIFY_OBSERVER(LWM2M_OBJECT_DEVICE_ID, 0,
-			DEVICE_AVAILABLE_POWER_SOURCES_ID);
-
-	return 0;
-}
-
-/*
- * TODO: this will disable the index, but current printing function expects
- * all indexes to be in order up to pwrsrc_count
- */
-__deprecated int lwm2m_device_remove_pwrsrc(int index)
-{
-	int ret;
-	struct lwm2m_engine_res *res;
-
-	ret = lwm2m_engine_get_resource("3/0/6", &res);
-	if (ret < 0 || !res || !res->res_instances) {
-		return -ENOENT;
-	}
-
-	if (index >= res->res_inst_count) {
-		LOG_ERR("index %d is invalid", index);
-		return -EINVAL;
-	}
-
-	if (res->res_instances[index].res_inst_id ==
-			RES_INSTANCE_NOT_CREATED ||
-	    !res->res_instances[index].data_ptr) {
-		return -ENOMEM;
-	}
-
-	*(u8_t *)res->res_instances[index].data_ptr = 0;
-	res->res_instances[index].res_inst_id = RES_INSTANCE_NOT_CREATED;
-	NOTIFY_OBSERVER(LWM2M_OBJECT_DEVICE_ID, 0,
-			DEVICE_AVAILABLE_POWER_SOURCES_ID);
-
-	return 0;
-}
-
-static int device_set_pwrsrc_value(char *pathstr, int index, s32_t value)
-{
-	int ret;
-	struct lwm2m_engine_res *res;
-
-	ret = lwm2m_engine_get_resource(pathstr, &res);
-	if (ret < 0 || !res || !res->res_instances) {
-		return -ENOENT;
-	}
-
-	if (index >= res->res_inst_count) {
-		LOG_ERR("index %d is invalid", index);
-		return -EINVAL;
-	}
-
-	if (res->res_instances[index].res_inst_id ==
-			RES_INSTANCE_NOT_CREATED ||
-	    !res->res_instances[index].data_ptr) {
-		return -ENOMEM;
-	}
-
-	*(s32_t *)res->res_instances[index].data_ptr = value;
-	NOTIFY_OBSERVER(LWM2M_OBJECT_DEVICE_ID, 0, res->res_id);
-
-	return 0;
-}
-
-__deprecated int lwm2m_device_set_pwrsrc_voltage_mv(int index, int voltage_mv)
-{
-	return device_set_pwrsrc_value("3/0/7", index, voltage_mv);
-}
-
-__deprecated int lwm2m_device_set_pwrsrc_current_ma(int index, int current_ma)
-{
-	return device_set_pwrsrc_value("3/0/8", index, current_ma);
-}
-
 /* error code function */
 
-int lwm2m_device_add_err(u8_t error_code)
+int lwm2m_device_add_err(uint8_t error_code)
 {
 	int i;
 
 	for (i = 0; i < DEVICE_ERROR_CODE_MAX; i++) {
-		if (error_code_ri[i].res_inst_id == RES_INSTANCE_NOT_CREATED) {
+		if (error_code_list[i] == 0) {
 			break;
+		}
+
+		/* No duplicate error codes allowed */
+		if (error_code_list[i] == error_code) {
+			return 0;
 		}
 	}
 
@@ -289,17 +204,22 @@ int lwm2m_device_add_err(u8_t error_code)
 
 	error_code_list[i] = error_code;
 	error_code_ri[i].res_inst_id = i;
-	NOTIFY_OBSERVER(LWM2M_OBJECT_DEVICE_ID, 0, DEVICE_ERROR_CODE_ID);
+	lwm2m_notify_observer(LWM2M_OBJECT_DEVICE_ID, 0, DEVICE_ERROR_CODE_ID);
 
 	return 0;
 }
 
 static void device_periodic_service(struct k_work *work)
 {
-	NOTIFY_OBSERVER(LWM2M_OBJECT_DEVICE_ID, 0, DEVICE_CURRENT_TIME_ID);
+	lwm2m_notify_observer(LWM2M_OBJECT_DEVICE_ID, 0, DEVICE_CURRENT_TIME_ID);
 }
 
-static struct lwm2m_engine_obj_inst *device_create(u16_t obj_inst_id)
+int lwm2m_update_device_service_period(uint32_t period_ms)
+{
+	return lwm2m_engine_update_service_period(device_periodic_service, period_ms);
+}
+
+static struct lwm2m_engine_obj_inst *device_create(uint16_t obj_inst_id)
 {
 	int i = 0, j = 0;
 
@@ -326,10 +246,11 @@ static struct lwm2m_engine_obj_inst *device_create(u16_t obj_inst_id)
 				error_code_list, sizeof(*error_code_list));
 	INIT_OBJ_RES_EXECUTE(DEVICE_RESET_ERROR_CODE_ID, res, i,
 			     reset_error_list_cb);
-	INIT_OBJ_RES_OPT(DEVICE_CURRENT_TIME_ID, res, i, res_inst, j, 1, true,
-			 current_time_read_cb,
-			 current_time_pre_write_cb,
-			 current_time_post_write_cb, NULL);
+	INIT_OBJ_RES_OPT(DEVICE_CURRENT_TIME_ID, res, i, res_inst, j, 1, false,
+			 true, current_time_read_cb, current_time_pre_write_cb,
+			 NULL, current_time_post_write_cb, NULL);
+	INIT_OBJ_RES_OPTDATA(DEVICE_UTC_OFFSET_ID, res, i, res_inst, j);
+	INIT_OBJ_RES_OPTDATA(DEVICE_TIMEZONE_ID, res, i, res_inst, j);
 	INIT_OBJ_RES_DATA(DEVICE_SUPPORTED_BINDING_MODES_ID, res, i,
 			  res_inst, j, binding_mode, DEVICE_STRING_SHORT);
 	INIT_OBJ_RES_OPTDATA(DEVICE_TYPE_ID, res, i, res_inst, j);
@@ -337,6 +258,8 @@ static struct lwm2m_engine_obj_inst *device_create(u16_t obj_inst_id)
 	INIT_OBJ_RES_OPTDATA(DEVICE_SOFTWARE_VERSION_ID, res, i, res_inst, j);
 	INIT_OBJ_RES_OPTDATA(DEVICE_BATTERY_STATUS_ID, res, i, res_inst, j);
 	INIT_OBJ_RES_OPTDATA(DEVICE_MEMORY_TOTAL_ID, res, i, res_inst, j);
+	INIT_OBJ_RES_MULTI_OPTDATA(DEVICE_EXT_DEV_INFO_ID, res, i, res_inst, j,
+				   DEVICE_EXT_DEV_INFO_MAX, false);
 
 	inst.resources = res;
 	inst.resource_count = i;
@@ -345,18 +268,20 @@ static struct lwm2m_engine_obj_inst *device_create(u16_t obj_inst_id)
 	return &inst;
 }
 
-static int lwm2m_device_init(struct device *dev)
+static int lwm2m_device_init(void)
 {
 	struct lwm2m_engine_obj_inst *obj_inst = NULL;
 	int ret = 0;
 
 	/* Set default values */
 	time_offset = 0U;
-	/* currently only support UDP binding mode (no SMS or Queue mode) */
-	strcpy(binding_mode, "U");
+	lwm2m_engine_get_binding(binding_mode);
 
 	/* initialize the device field data */
 	device.obj_id = LWM2M_OBJECT_DEVICE_ID;
+	device.version_major = DEVICE_VERSION_MAJOR;
+	device.version_minor = DEVICE_VERSION_MINOR;
+	device.is_core = true;
 	device.fields = fields;
 	device.field_count = ARRAY_SIZE(fields);
 	device.max_instance_count = 1U;
@@ -369,9 +294,12 @@ static int lwm2m_device_init(struct device *dev)
 		LOG_DBG("Create LWM2M instance 0 error: %d", ret);
 	}
 
+	/* Create the default error code resource instance */
+	lwm2m_device_add_err(0);
+
 	/* call device_periodic_service() every 10 seconds */
 	ret = lwm2m_engine_add_service(device_periodic_service,
-				       DEVICE_SERVICE_INTERVAL);
+				       DEVICE_SERVICE_INTERVAL_MS);
 	return ret;
 }
 

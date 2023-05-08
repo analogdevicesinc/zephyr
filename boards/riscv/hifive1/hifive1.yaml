@@ -5,11 +5,17 @@ arch: riscv32
 toolchain:
   - zephyr
 ram: 16
+simulation: renode
+simulation_exec: renode
 supported:
   - pwm
   - gpio
   - spi
+  - arduino_gpio
+  - arduino_i2c
 testing:
   ignore_tags:
     - net
     - bluetooth
+    - flash
+    - newlib

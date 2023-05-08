@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import argparse
+import itertools
 from unittest.mock import patch
 
 import pytest
@@ -18,34 +19,40 @@ from conftest import RC_BUILD_DIR, RC_GDB, RC_KERNEL_HEX, RC_KERNEL_ELF
 
 TEST_PYOCD = 'test-pyocd'
 TEST_ADDR = 0xadd
-TEST_BOARD_ID = 'test-board-id'
+TEST_DEV_ID = 'test-dev-id'
 TEST_FREQUENCY = 'test-frequency'
 TEST_DAPARG = 'test-daparg'
 TEST_TARGET = 'test-target'
 TEST_FLASH_OPTS = ['--test-flash', 'args']
-TEST_PORT = 1
+TEST_GDB_PORT = 1
+TEST_TELNET_PORT = 2
+TEST_TOOL_OPTS = ['test-opt-1', 'test-opt-2']
 
 TEST_ALL_KWARGS = {
     'pyocd': TEST_PYOCD,
     'flash_addr': TEST_ADDR,
     'flash_opts': TEST_FLASH_OPTS,
-    'gdb_port': TEST_PORT,
+    'gdb_port': TEST_GDB_PORT,
+    'telnet_port': TEST_TELNET_PORT,
     'tui': False,
-    'board_id': TEST_BOARD_ID,
+    'dev_id': TEST_DEV_ID,
     'frequency': TEST_FREQUENCY,
     'daparg': TEST_DAPARG,
+    'tool_opt': TEST_TOOL_OPTS
 }
 
 TEST_DEF_KWARGS = {}
 
-TEST_ALL_PARAMS = (['--target', TEST_TARGET,
-                    '--daparg', TEST_DAPARG,
-                    '--pyocd', TEST_PYOCD] +
-                   ['--flash-opt={}'.format(o) for o in
-                    TEST_FLASH_OPTS] +
-                   ['--gdb-port', str(TEST_PORT),
-                    '--board-id', TEST_BOARD_ID,
-                    '--frequency', str(TEST_FREQUENCY)])
+TEST_ALL_PARAMS = list(itertools.chain(
+    ['--target', TEST_TARGET,
+     '--daparg', TEST_DAPARG,
+     '--pyocd', TEST_PYOCD],
+    [f'--flash-opt={o}' for o in TEST_FLASH_OPTS],
+    ['--gdb-port', str(TEST_GDB_PORT),
+     '--telnet-port', str(TEST_TELNET_PORT),
+     '--dev-id', TEST_DEV_ID,
+     '--frequency', str(TEST_FREQUENCY)],
+    [f'--tool-opt={o}' for o in TEST_TOOL_OPTS]))
 
 TEST_DEF_PARAMS = ['--target', TEST_TARGET]
 
@@ -65,8 +72,9 @@ FLASH_ALL_EXPECTED_CALL = ([TEST_PYOCD,
                             'flash',
                             '-e', 'sector',
                             '-a', hex(TEST_ADDR), '-da', TEST_DAPARG,
-                            '-t', TEST_TARGET, '-u', TEST_BOARD_ID,
+                            '-t', TEST_TARGET, '-u', TEST_DEV_ID,
                             '-f', TEST_FREQUENCY] +
+                           TEST_TOOL_OPTS +
                            TEST_FLASH_OPTS +
                            [RC_KERNEL_HEX])
 FLASH_DEF_EXPECTED_CALL = ['pyocd', 'flash', '-e', 'sector',
@@ -76,18 +84,20 @@ FLASH_DEF_EXPECTED_CALL = ['pyocd', 'flash', '-e', 'sector',
 DEBUG_ALL_EXPECTED_SERVER = [TEST_PYOCD,
                              'gdbserver',
                              '-da', TEST_DAPARG,
-                             '-p', str(TEST_PORT),
+                             '-p', str(TEST_GDB_PORT),
+                             '-T', str(TEST_TELNET_PORT),
                              '-t', TEST_TARGET,
-                             '-u', TEST_BOARD_ID,
-                             '-f', TEST_FREQUENCY]
+                             '-u', TEST_DEV_ID,
+                             '-f', TEST_FREQUENCY] + TEST_TOOL_OPTS
 DEBUG_ALL_EXPECTED_CLIENT = [RC_GDB, RC_KERNEL_ELF,
-                             '-ex', 'target remote :{}'.format(TEST_PORT),
+                             '-ex', 'target remote :{}'.format(TEST_GDB_PORT),
                              '-ex', 'monitor halt',
                              '-ex', 'monitor reset',
                              '-ex', 'load']
 DEBUG_DEF_EXPECTED_SERVER = ['pyocd',
                              'gdbserver',
                              '-p', '3333',
+                             '-T', '4444',
                              '-t', TEST_TARGET]
 DEBUG_DEF_EXPECTED_CLIENT = [RC_GDB, RC_KERNEL_ELF,
                              '-ex', 'target remote :3333',
@@ -99,13 +109,15 @@ DEBUG_DEF_EXPECTED_CLIENT = [RC_GDB, RC_KERNEL_ELF,
 DEBUGSERVER_ALL_EXPECTED_CALL = [TEST_PYOCD,
                                  'gdbserver',
                                  '-da', TEST_DAPARG,
-                                 '-p', str(TEST_PORT),
+                                 '-p', str(TEST_GDB_PORT),
+                                 '-T', str(TEST_TELNET_PORT),
                                  '-t', TEST_TARGET,
-                                 '-u', TEST_BOARD_ID,
-                                 '-f', TEST_FREQUENCY]
+                                 '-u', TEST_DEV_ID,
+                                 '-f', TEST_FREQUENCY] + TEST_TOOL_OPTS
 DEBUGSERVER_DEF_EXPECTED_CALL = ['pyocd',
                                  'gdbserver',
                                  '-p', '3333',
+                                 '-T', '4444',
                                  '-t', TEST_TARGET]
 
 
@@ -129,7 +141,7 @@ def pyocd(runner_config, tmpdir):
         if isinstance(args, dict):
             return PyOcdBinaryRunner(runner_config, TEST_TARGET, **args)
         elif isinstance(args, list):
-            parser = argparse.ArgumentParser()
+            parser = argparse.ArgumentParser(allow_abbrev=False)
             PyOcdBinaryRunner.add_parser(parser)
             arg_namespace = parser.parse_args(args)
             return PyOcdBinaryRunner.create(runner_config, arg_namespace)

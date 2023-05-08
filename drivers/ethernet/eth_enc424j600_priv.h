@@ -6,8 +6,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <kernel.h>
-#include <drivers/gpio.h>
+#include <zephyr/kernel.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/spi.h>
 
 #ifndef _ENC424J600_
 #define _ENC424J600_
@@ -273,34 +274,27 @@
 #define ENC424J600_PHY_READY_DELAY		260U
 
 struct enc424j600_config {
-	const char *gpio_port;
-	u8_t gpio_pin;
-	const char *spi_port;
-	u8_t spi_cs_pin;
-	const char *spi_cs_port;
-	u32_t spi_freq;
-	u8_t spi_slave;
-	u8_t full_duplex;
-	s32_t timeout;
+	struct spi_dt_spec spi;
+	struct gpio_dt_spec interrupt;
+	uint8_t full_duplex;
+	int32_t timeout;
 };
 
 struct enc424j600_runtime {
 	struct net_if *iface;
+	const struct device *dev;
 
-	K_THREAD_STACK_MEMBER(thread_stack,
+	K_KERNEL_STACK_MEMBER(thread_stack,
 			      CONFIG_ETH_ENC424J600_RX_THREAD_STACK_SIZE);
 
 	struct k_thread thread;
-	u8_t mac_address[6];
-	struct device *gpio;
-	struct device *spi;
-	struct spi_cs_control spi_cs;
-	struct spi_config spi_cfg;
+	uint8_t mac_address[6];
 	struct gpio_callback gpio_cb;
 	struct k_sem tx_rx_sem;
 	struct k_sem int_sem;
-	u16_t next_pkt_ptr;
-	bool suspended;
+	uint16_t next_pkt_ptr;
+	bool suspended : 1;
+	bool iface_initialized : 1;
 };
 
 #endif /*_ENC424J600_*/

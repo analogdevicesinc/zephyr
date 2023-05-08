@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 
-if(CONFIG_NEWLIB_LIBC)
-  add_subdirectory(newlib)
-else()
-  add_subdirectory(minimal)
-endif()
+add_subdirectory_ifdef(CONFIG_ARCMWDT_LIBC      arcmwdt)
+add_subdirectory_ifdef(CONFIG_ARMCLANG_STD_LIBC armstdc)
+add_subdirectory_ifdef(CONFIG_MINIMAL_LIBC      minimal)
+add_subdirectory_ifdef(CONFIG_NEWLIB_LIBC       newlib)
+add_subdirectory_ifdef(CONFIG_PICOLIBC          picolibc)
+
+add_subdirectory(common)

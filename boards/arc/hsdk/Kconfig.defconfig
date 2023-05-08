@@ -1,6 +1,4 @@
-#
 # Copyright (c) 2019 Synopsys, Inc. All rights reserved.
-#
 # SPDX-License-Identifier: Apache-2.0
 
 if BOARD_HSDK
@@ -10,22 +8,13 @@ config BOARD
 
 if GPIO
 
-config GPIO_DW
+config GPIO_INIT_PRIORITY
+	default 60
+
+config I2C
 	default y
-
-if GPIO_DW
-
-config GPIO_DW_0
-	default y
-
-endif # GPIO_DW
 
 endif # GPIO
-
-if SPI
-
-config SPI_DW
-	default y
 
 if SPI_DW
 
@@ -38,17 +27,13 @@ config SPI_DW_ARC_AUX_REGS
 config SPI_DW_ACCESS_WORD_ONLY
 	default y
 
-config SPI_0
-	default y
-
-config SPI_1
-	default y
-
-config SPI_2
-	default y
-
 endif # SPI_DW
 
-endif # SPI
+if I2C_DW
+
+config I2C_DW_CLOCK_SPEED
+	default 200
+
+endif #I2C_DW
 
 endif # BOARD_HSDK

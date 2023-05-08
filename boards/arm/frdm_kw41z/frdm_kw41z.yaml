@@ -2,15 +2,20 @@ identifier: frdm_kw41z
 name: NXP FRDM-KW41Z
 type: mcu
 arch: arm
+ram: 128
+flash: 512
 toolchain:
   - zephyr
   - gnuarmemb
   - xtools
 supported:
-  - ieee802154
   - adc
+  - arduino_gpio
   - counter
-  - hwinfo
+  - gpio
   - i2c
   - spi
-  - gpio
+  - pwm
+testing:
+  ignore_tags:
+    - bluetooth

@@ -4,7 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <net/socket.h>
+#include <zephyr/kernel.h>
+#include <zephyr/syscall_handler.h>
+#include <zephyr/sys/math_extras.h>
+#include <zephyr/net/socket.h>
+#include "sockets_internal.h"
 
 /* Get size, in elements, of an array within a struct. */
 #define STRUCT_MEMBER_ARRAY_SIZE(type, field) ARRAY_SIZE(((type *)0)->field)
@@ -27,7 +31,7 @@ void ZSOCK_FD_ZERO(zsock_fd_set *set)
 
 int ZSOCK_FD_ISSET(int fd, zsock_fd_set *set)
 {
-	u32_t word_idx, bit_mask;
+	uint32_t word_idx, bit_mask;
 
 	if (fd < 0 || fd >= ZSOCK_FD_SETSIZE) {
 		return 0;
@@ -40,7 +44,7 @@ int ZSOCK_FD_ISSET(int fd, zsock_fd_set *set)
 
 void ZSOCK_FD_CLR(int fd, zsock_fd_set *set)
 {
-	u32_t word_idx, bit_mask;
+	uint32_t word_idx, bit_mask;
 
 	if (fd < 0 || fd >= ZSOCK_FD_SETSIZE) {
 		return;
@@ -53,7 +57,7 @@ void ZSOCK_FD_CLR(int fd, zsock_fd_set *set)
 
 void ZSOCK_FD_SET(int fd, zsock_fd_set *set)
 {
-	u32_t word_idx, bit_mask;
+	uint32_t word_idx, bit_mask;
 
 	if (fd < 0 || fd >= ZSOCK_FD_SETSIZE) {
 		return;
@@ -64,19 +68,20 @@ void ZSOCK_FD_SET(int fd, zsock_fd_set *set)
 	set->bitset[word_idx] |= bit_mask;
 }
 
-int zsock_select(int nfds, zsock_fd_set *readfds, zsock_fd_set *writefds,
-		 zsock_fd_set *exceptfds, struct zsock_timeval *timeout)
+int z_impl_zsock_select(int nfds, zsock_fd_set *readfds, zsock_fd_set *writefds,
+			zsock_fd_set *exceptfds, struct zsock_timeval *timeout)
 {
 	struct zsock_pollfd pfds[CONFIG_NET_SOCKETS_POLL_MAX];
-	int i, res, poll_timeout;
+	k_timeout_t poll_timeout;
+	int i, res;
 	int num_pfds = 0;
 	int num_selects = 0;
 	int fd_no = 0;
 
 	for (i = 0; i < STRUCT_MEMBER_ARRAY_SIZE(zsock_fd_set, bitset); i++) {
-		u32_t bit_mask = 1U;
-		u32_t read_mask = 0U, write_mask = 0U, except_mask = 0U;
-		u32_t ored_mask;
+		uint32_t bit_mask = 1U;
+		uint32_t read_mask = 0U, write_mask = 0U, except_mask = 0U;
+		uint32_t ored_mask;
 
 		if (readfds != NULL) {
 			read_mask = readfds->bitset[i];
@@ -92,6 +97,7 @@ int zsock_select(int nfds, zsock_fd_set *readfds, zsock_fd_set *writefds,
 
 		ored_mask = read_mask | write_mask | except_mask;
 		if (ored_mask == 0U) {
+			fd_no += sizeof(ored_mask) * 8;
 			continue;
 		}
 
@@ -125,13 +131,14 @@ int zsock_select(int nfds, zsock_fd_set *readfds, zsock_fd_set *writefds,
 		} while (bit_mask != 0U);
 	}
 
-	poll_timeout = -1;
-	if (timeout != NULL) {
-		poll_timeout = timeout->tv_sec * 1000
-			       + timeout->tv_usec / 1000;
+	if (timeout == NULL) {
+		poll_timeout = K_FOREVER;
+	} else {
+		poll_timeout =
+			K_USEC(timeout->tv_sec * 1000000UL + timeout->tv_usec);
 	}
 
-	res = zsock_poll(pfds, num_pfds, poll_timeout);
+	res = zsock_poll_internal(pfds, num_pfds, poll_timeout);
 	if (res == -1) {
 		return -1;
 	}
@@ -196,3 +203,81 @@ int zsock_select(int nfds, zsock_fd_set *readfds, zsock_fd_set *writefds,
 
 	return num_selects;
 }
+
+#ifdef CONFIG_USERSPACE
+static int z_vrfy_zsock_select(int nfds, zsock_fd_set *readfds,
+			       zsock_fd_set *writefds,
+			       zsock_fd_set *exceptfds,
+			       struct zsock_timeval *timeout)
+{
+	zsock_fd_set *readfds_copy = NULL, *writefds_copy = NULL,
+		*exceptfds_copy = NULL;
+	struct zsock_timeval *timeval = NULL;
+	int ret = -1;
+
+	if (readfds) {
+		readfds_copy = z_user_alloc_from_copy((void *)readfds,
+						      sizeof(zsock_fd_set));
+		if (!readfds_copy) {
+			errno = ENOMEM;
+			goto out;
+		}
+	}
+
+	if (writefds) {
+		writefds_copy = z_user_alloc_from_copy((void *)writefds,
+						       sizeof(zsock_fd_set));
+		if (!writefds_copy) {
+			errno = ENOMEM;
+			goto out;
+		}
+	}
+
+	if (exceptfds) {
+		exceptfds_copy = z_user_alloc_from_copy((void *)exceptfds,
+							sizeof(zsock_fd_set));
+		if (!exceptfds_copy) {
+			errno = ENOMEM;
+			goto out;
+		}
+	}
+
+	if (timeout) {
+		timeval = z_user_alloc_from_copy((void *)timeout,
+						 sizeof(struct zsock_timeval));
+		if (!timeval) {
+			errno = ENOMEM;
+			goto out;
+		}
+	}
+
+	ret = z_impl_zsock_select(nfds, readfds_copy, writefds_copy,
+				  exceptfds_copy, timeval);
+
+	if (ret >= 0) {
+		if (readfds_copy) {
+			z_user_to_copy((void *)readfds, readfds_copy,
+				       sizeof(zsock_fd_set));
+		}
+
+		if (writefds_copy) {
+			z_user_to_copy((void *)writefds, writefds_copy,
+				       sizeof(zsock_fd_set));
+		}
+
+		if (exceptfds_copy) {
+			z_user_to_copy((void *)exceptfds, exceptfds_copy,
+				       sizeof(zsock_fd_set));
+		}
+	}
+
+out:
+	k_free(timeval);
+	k_free(readfds_copy);
+	k_free(writefds_copy);
+	k_free(exceptfds_copy);
+
+	return ret;
+}
+#include <syscalls/zsock_select_mrsh.c>
+#endif

@@ -13,11 +13,11 @@
  * in a thread's stack region when a preemptive context switch occurs.
  *
  * Note: If the kernel has been built without floating point register sharing
- * support (CONFIG_FP_SHARING), the floating point registers can still be used
+ * support (CONFIG_FPU_SHARING), the floating point registers can still be used
  * safely by one or more cooperative threads OR by a single preemptive thread,
  * but not by both.
  *
- * This code is not necessary for systems with CONFIG_EAGER_FP_SHARING, as
+ * This code is not necessary for systems with CONFIG_EAGER_FPU_SHARING, as
  * the floating point context is unconditionally saved/restored with every
  * context switch.
  *
@@ -43,20 +43,17 @@
  * to enable FP register sharing on its behalf.
  */
 
-#include <kernel_structs.h>
-#include <toolchain.h>
+#include <zephyr/kernel.h>
+#include <kernel_internal.h>
 
 /* SSE control/status register default value (used by assembler code) */
-extern u32_t _sse_mxcsr_default_value;
+extern uint32_t _sse_mxcsr_default_value;
 
 /**
- *
  * @brief Disallow use of floating point capabilities
  *
  * This routine sets CR0[TS] to 1, which disallows the use of FP instructions
  * by the currently executing thread.
- *
- * @return N/A
  */
 static inline void z_FpAccessDisable(void)
 {
@@ -73,15 +70,12 @@ static inline void z_FpAccessDisable(void)
 
 
 /**
- *
  * @brief Save non-integer context information
  *
  * This routine saves the system's "live" non-integer context into the
  * specified area.  If the specified thread supports SSE then
  * x87/MMX/SSEx thread info is saved, otherwise only x87/MMX thread is saved.
  * Function is invoked by FpCtxSave(struct k_thread *thread)
- *
- * @return N/A
  */
 static inline void z_do_fp_regs_save(void *preemp_float_reg)
 {
@@ -92,15 +86,12 @@ static inline void z_do_fp_regs_save(void *preemp_float_reg)
 }
 
 /**
- *
  * @brief Save non-integer context information
  *
  * This routine saves the system's "live" non-integer context into the
  * specified area.  If the specified thread supports SSE then
  * x87/MMX/SSEx thread info is saved, otherwise only x87/MMX thread is saved.
  * Function is invoked by FpCtxSave(struct k_thread *thread)
- *
- * @return N/A
  */
 static inline void z_do_fp_and_sse_regs_save(void *preemp_float_reg)
 {
@@ -111,12 +102,9 @@ static inline void z_do_fp_and_sse_regs_save(void *preemp_float_reg)
 }
 
 /**
- *
  * @brief Initialize floating point register context information.
  *
  * This routine initializes the system's "live" floating point registers.
- *
- * @return N/A
  */
 static inline void z_do_fp_regs_init(void)
 {
@@ -124,12 +112,9 @@ static inline void z_do_fp_regs_init(void)
 }
 
 /**
- *
  * @brief Initialize SSE register context information.
  *
  * This routine initializes the system's "live" SSE registers.
- *
- * @return N/A
  */
 static inline void z_do_sse_regs_init(void)
 {
@@ -145,7 +130,7 @@ static inline void z_do_sse_regs_init(void)
  */
 static void FpCtxSave(struct k_thread *thread)
 {
-#ifdef CONFIG_SSE
+#ifdef CONFIG_X86_SSE
 	if ((thread->base.user_options & K_SSE_REGS) != 0) {
 		z_do_fp_and_sse_regs_save(&thread->arch.preempFloatReg);
 		return;
@@ -163,7 +148,7 @@ static void FpCtxSave(struct k_thread *thread)
 static inline void FpCtxInit(struct k_thread *thread)
 {
 	z_do_fp_regs_init();
-#ifdef CONFIG_SSE
+#ifdef CONFIG_X86_SSE
 	if ((thread->base.user_options & K_SSE_REGS) != 0) {
 		z_do_sse_regs_init();
 	}
@@ -179,7 +164,7 @@ static inline void FpCtxInit(struct k_thread *thread)
  * The locking isn't really needed when the routine is called by a cooperative
  * thread (since context switching can't occur), but it is harmless.
  */
-void k_float_enable(struct k_thread *thread, unsigned int options)
+void z_float_enable(struct k_thread *thread, unsigned int options)
 {
 	unsigned int imask;
 	struct k_thread *fp_owner;
@@ -190,7 +175,7 @@ void k_float_enable(struct k_thread *thread, unsigned int options)
 
 	/* Indicate thread requires floating point context saving */
 
-	thread->base.user_options |= (u8_t)options;
+	thread->base.user_options |= (uint8_t)options;
 
 	/*
 	 * The current thread might not allow FP instructions, so clear CR0[TS]
@@ -328,4 +313,5 @@ void _FpNotAvailableExcHandler(z_arch_esf_t *pEsf)
 
 	k_float_enable(_current, _FP_USER_MASK);
 }
-_EXCEPTION_CONNECT_NOCODE(_FpNotAvailableExcHandler, IV_DEVICE_NOT_AVAILABLE);
+_EXCEPTION_CONNECT_NOCODE(_FpNotAvailableExcHandler,
+		IV_DEVICE_NOT_AVAILABLE, 0);

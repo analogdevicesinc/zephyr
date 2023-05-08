@@ -10,15 +10,14 @@
 
 #include "vl53l0x_platform.h"
 
-#include <drivers/sensor.h>
-#include <kernel.h>
-#include <device.h>
-#include <init.h>
-#include <drivers/i2c.h>
-#include <logging/log.h>
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/init.h>
+#include <zephyr/drivers/i2c.h>
+#include <zephyr/logging/log.h>
 
-#define LOG_LEVEL CONFIG_SENSOR_LOG_LEVEL
-LOG_MODULE_DECLARE(VL53L0X);
+LOG_MODULE_DECLARE(VL53L0X, CONFIG_SENSOR_LOG_LEVEL);
 
 VL53L0X_Error VL53L0X_WriteMulti(VL53L0X_DEV Dev, uint8_t index, uint8_t *pdata,
 				 uint32_t count)
@@ -175,7 +174,7 @@ VL53L0X_Error  VL53L0X_RdDWord(VL53L0X_DEV Dev, uint8_t index, uint32_t *data)
 {
 	VL53L0X_Error Status = VL53L0X_ERROR_NONE;
 	int32_t status_int;
-	u8_t buf[4];
+	uint8_t buf[4];
 
 	status_int = i2c_burst_read(Dev->i2c, Dev->I2cDevAddr, index, buf, 4);
 	if (status_int < 0) {
@@ -190,7 +189,6 @@ VL53L0X_Error  VL53L0X_RdDWord(VL53L0X_DEV Dev, uint8_t index, uint32_t *data)
 
 VL53L0X_Error VL53L0X_PollingDelay(VL53L0X_DEV Dev)
 {
-	k_sleep(2);
+	k_sleep(K_MSEC(2));
 	return VL53L0X_ERROR_NONE;
 }
-

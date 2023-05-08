@@ -42,7 +42,7 @@ This sample builds one application for the HDC1080 sensor.
 Build/Flash Steps:
 
 .. zephyr-app-commands::
-   :zephyr-app: samples/boards/nucleo_l496zg/sensors
+   :zephyr-app: samples/sensor/ti_hdc/
    :board: nucleo_l496zg
    :goals: build flash
    :compact:
@@ -64,14 +64,14 @@ Build Testing
 
 .. code-block:: bash
 
-    $ZEPHYR_BASE/scripts/sanitycheck -T $ZEPHYR_BASE/samples/sensor/ti_hdc/ -p nucleo_l496zg --device-testing --device-serial /dev/ttyACM0 -t build
+    $ZEPHYR_BASE/scripts/twister -T $ZEPHYR_BASE/samples/sensor/ti_hdc/ -p nucleo_l496zg --device-testing --device-serial /dev/ttyACM0 -t build
 
 Target Testing
 **************
 
 .. code-block:: bash
 
-    $ZEPHYR_BASE/scripts/sanitycheck -T $ZEPHYR_BASE/samples/sensor/ti_hdc/ -p nucleo_l496zg --device-testing --device-serial /dev/ttyACM0 -t target
+    $ZEPHYR_BASE/scripts/twister -T $ZEPHYR_BASE/samples/sensor/ti_hdc/ -p nucleo_l496zg --device-testing --device-serial /dev/ttyACM0 -t target
 
 
 References

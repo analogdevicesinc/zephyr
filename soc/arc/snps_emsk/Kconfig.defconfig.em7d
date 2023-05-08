@@ -1,14 +1,11 @@
-#
 # Copyright (c) 2014 Wind River Systems, Inc.
 # Copyright (c) 2018 Synopsys, Inc. All rights reserved.
-#
 # SPDX-License-Identifier: Apache-2.0
-#
 
 if SOC_EMSK_EM7D
 
 config CPU_EM4_DMIPS
-	def_bool y
+	default y
 
 config NUM_IRQ_PRIO_LEVELS
 	# This processor supports 4 priority levels:
@@ -21,7 +18,7 @@ config NUM_IRQS
 	default 36 if BOARD_EM_STARTERKIT_R22
 
 config ARC_MPU_VER
-	default 3 if BOARD_EM_STARTERKIT_R23
+	default 4 if BOARD_EM_STARTERKIT_R23
 	default 2 if BOARD_EM_STARTERKIT_R22
 
 config RGF_NUM_BANKS
@@ -38,7 +35,7 @@ config ARC_FIRQ
 	default n if BOARD_EM_STARTERKIT_R23
 	default y if BOARD_EM_STARTERKIT_R22
 
-config CACHE_FLUSHING
+config CACHE_MANAGEMENT
 	default y
 
 if (ARC_MPU_VER = 2)
@@ -49,13 +46,10 @@ config MAIN_STACK_SIZE
 config IDLE_STACK_SIZE
 	default 2048
 
-if ZTEST
-
-config ZTEST_STACKSIZE
+config ZTEST_STACK_SIZE
 	default 2048
-
-endif # ZTEST
+	depends on ZTEST
 
 endif # ARC_MPU_VER
 
-endif #SOC_EMSK_EM7D
+endif # SOC_EMSK_EM7D

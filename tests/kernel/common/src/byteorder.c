@@ -5,9 +5,9 @@
  */
 
 
-#include <ztest.h>
+#include <zephyr/ztest.h>
 
-#include <sys/byteorder.h>
+#include <zephyr/sys/byteorder.h>
 
 /**
  * @addtogroup kernel_common_tests
@@ -21,13 +21,13 @@
  *
  * @see sys_memcpy_swap()
  */
-void test_byteorder_memcpy_swap(void)
+ZTEST(byteorder, test_byteorder_memcpy_swap)
 {
-	u8_t buf_orig[8] = { 0x00, 0x01, 0x02, 0x03,
+	uint8_t buf_orig[8] = { 0x00, 0x01, 0x02, 0x03,
 			     0x04, 0x05, 0x06, 0x07 };
-	u8_t buf_chk[8] = { 0x07, 0x06, 0x05, 0x04,
+	uint8_t buf_chk[8] = { 0x07, 0x06, 0x05, 0x04,
 			    0x03, 0x02, 0x01, 0x00 };
-	u8_t buf_dst[8] = { 0 };
+	uint8_t buf_dst[8] = { 0 };
 
 	sys_memcpy_swap(buf_dst, buf_orig, 8);
 	zassert_true((memcmp(buf_dst, buf_chk, 8) == 0),
@@ -45,16 +45,16 @@ void test_byteorder_memcpy_swap(void)
  *
  * @see sys_mem_swap()
  */
-void test_byteorder_mem_swap(void)
+ZTEST(byteorder, test_byteorder_mem_swap)
 {
-	u8_t buf_orig_1[8] = { 0x00, 0x01, 0x02, 0x03,
+	uint8_t buf_orig_1[8] = { 0x00, 0x01, 0x02, 0x03,
 			       0x04, 0x05, 0x06, 0x07 };
-	u8_t buf_orig_2[11] = { 0x00, 0x01, 0x02, 0x03,
+	uint8_t buf_orig_2[11] = { 0x00, 0x01, 0x02, 0x03,
 				0x04, 0x05, 0x06, 0x07,
 				0x08, 0x09, 0xa0 };
-	u8_t buf_chk_1[8] = { 0x07, 0x06, 0x05, 0x04,
+	uint8_t buf_chk_1[8] = { 0x07, 0x06, 0x05, 0x04,
 			      0x03, 0x02, 0x01, 0x00 };
-	u8_t buf_chk_2[11] = { 0xa0, 0x09, 0x08, 0x07,
+	uint8_t buf_chk_2[11] = { 0xa0, 0x09, 0x08, 0x07,
 			       0x06, 0x05, 0x04, 0x03,
 			       0x02, 0x01, 0x00 };
 
@@ -74,10 +74,10 @@ void test_byteorder_mem_swap(void)
  *
  * @see sys_get_be64()
  */
-void test_sys_get_be64(void)
+ZTEST(byteorder, test_sys_get_be64)
 {
-	u64_t val = 0xf0e1d2c3b4a59687, tmp;
-	u8_t buf[] = {
+	uint64_t val = 0xf0e1d2c3b4a59687, tmp;
+	uint8_t buf[] = {
 		0xf0, 0xe1, 0xd2, 0xc3, 0xb4, 0xa5, 0x96, 0x87
 	};
 
@@ -93,17 +93,55 @@ void test_sys_get_be64(void)
  *
  * @see sys_put_be64()
  */
-void test_sys_put_be64(void)
+ZTEST(byteorder, test_sys_put_be64)
 {
-	u64_t val = 0xf0e1d2c3b4a59687;
-	u8_t buf[] = {
+	uint64_t val = 0xf0e1d2c3b4a59687;
+	uint8_t buf[] = {
 		0xf0, 0xe1, 0xd2, 0xc3, 0xb4, 0xa5, 0x96, 0x87
 	};
-	u8_t tmp[sizeof(u64_t)];
+	uint8_t tmp[sizeof(uint64_t)];
 
 	sys_put_be64(val, tmp);
 
-	zassert_mem_equal(tmp, buf, sizeof(u64_t), "sys_put_be64() failed");
+	zassert_mem_equal(tmp, buf, sizeof(uint64_t), "sys_put_be64() failed");
+}
+
+/**
+ * @brief Test sys_get_be48() functionality
+ *
+ * @details Test if sys_get_be48() correctly handles endianness.
+ *
+ * @see sys_get_be48()
+ */
+ZTEST(byteorder, test_sys_get_be48)
+{
+	uint64_t val = 0xf0e1d2c3b4a5, tmp;
+	uint8_t buf[] = {
+		0xf0, 0xe1, 0xd2, 0xc3, 0xb4, 0xa5
+	};
+
+	tmp = sys_get_be48(buf);
+
+	zassert_equal(tmp, val, "sys_get_be64() failed");
+}
+
+/**
+ * @brief Test sys_put_be48() functionality
+ *
+ * @details Test if sys_put_be48() correctly handles endianness.
+ *
+ * @see sys_put_be48()
+ */
+ZTEST(byteorder, test_sys_put_be48)
+{
+	uint64_t val = 0xf0e1d2c3b4a5;
+	uint8_t buf[] = {
+		0xf0, 0xe1, 0xd2, 0xc3, 0xb4, 0xa5
+	};
+	uint8_t tmp[sizeof(buf)];
+
+	sys_put_be48(val, tmp);
+	zassert_mem_equal(tmp, buf, sizeof(buf), "sys_put_be48() failed");
 }
 
 /**
@@ -113,10 +151,10 @@ void test_sys_put_be64(void)
  *
  * @see sys_get_be32()
  */
-void test_sys_get_be32(void)
+ZTEST(byteorder, test_sys_get_be32)
 {
-	u32_t val = 0xf0e1d2c3, tmp;
-	u8_t buf[] = {
+	uint32_t val = 0xf0e1d2c3, tmp;
+	uint8_t buf[] = {
 		0xf0, 0xe1, 0xd2, 0xc3
 	};
 
@@ -132,17 +170,56 @@ void test_sys_get_be32(void)
  *
  * @see sys_put_be32()
  */
-void test_sys_put_be32(void)
+ZTEST(byteorder, test_sys_put_be32)
 {
-	u64_t val = 0xf0e1d2c3;
-	u8_t buf[] = {
+	uint64_t val = 0xf0e1d2c3;
+	uint8_t buf[] = {
 		0xf0, 0xe1, 0xd2, 0xc3
 	};
-	u8_t tmp[sizeof(u32_t)];
+	uint8_t tmp[sizeof(uint32_t)];
 
 	sys_put_be32(val, tmp);
 
-	zassert_mem_equal(tmp, buf, sizeof(u32_t), "sys_put_be32() failed");
+	zassert_mem_equal(tmp, buf, sizeof(uint32_t), "sys_put_be32() failed");
+}
+
+/**
+ * @brief Test sys_get_be24() functionality
+ *
+ * @details Test if sys_get_be24() correctly handles endianness.
+ *
+ * @see sys_get_be24()
+ */
+ZTEST(byteorder, test_sys_get_be24)
+{
+	uint32_t val = 0xf0e1d2, tmp;
+	uint8_t buf[] = {
+		0xf0, 0xe1, 0xd2
+	};
+
+	tmp = sys_get_be24(buf);
+
+	zassert_equal(tmp, val, "sys_get_be24() failed");
+}
+
+/**
+ * @brief Test sys_put_be24() functionality
+ *
+ * @details Test if sys_put_be24() correctly handles endianness.
+ *
+ * @see sys_put_be24()
+ */
+ZTEST(byteorder, test_sys_put_be24)
+{
+	uint64_t val = 0xf0e1d2;
+	uint8_t buf[] = {
+		0xf0, 0xe1, 0xd2
+	};
+	uint8_t tmp[sizeof(buf)];
+
+	sys_put_be24(val, tmp);
+
+	zassert_mem_equal(tmp, buf, sizeof(buf), "sys_put_be24() failed");
 }
 
 /**
@@ -152,10 +229,10 @@ void test_sys_put_be32(void)
  *
  * @see sys_get_be16()
  */
-void test_sys_get_be16(void)
+ZTEST(byteorder, test_sys_get_be16)
 {
-	u32_t val = 0xf0e1, tmp;
-	u8_t buf[] = {
+	uint32_t val = 0xf0e1, tmp;
+	uint8_t buf[] = {
 		0xf0, 0xe1
 	};
 
@@ -171,17 +248,17 @@ void test_sys_get_be16(void)
  *
  * @see sys_put_be16()
  */
-void test_sys_put_be16(void)
+ZTEST(byteorder, test_sys_put_be16)
 {
-	u64_t val = 0xf0e1;
-	u8_t buf[] = {
+	uint64_t val = 0xf0e1;
+	uint8_t buf[] = {
 		0xf0, 0xe1
 	};
-	u8_t tmp[sizeof(u16_t)];
+	uint8_t tmp[sizeof(uint16_t)];
 
 	sys_put_be16(val, tmp);
 
-	zassert_mem_equal(tmp, buf, sizeof(u16_t), "sys_put_be16() failed");
+	zassert_mem_equal(tmp, buf, sizeof(uint16_t), "sys_put_be16() failed");
 }
 
 /**
@@ -191,10 +268,10 @@ void test_sys_put_be16(void)
  *
  * @see sys_get_le16()
  */
-void test_sys_get_le16(void)
+ZTEST(byteorder, test_sys_get_le16)
 {
-	u32_t val = 0xf0e1, tmp;
-	u8_t buf[] = {
+	uint32_t val = 0xf0e1, tmp;
+	uint8_t buf[] = {
 		0xe1, 0xf0
 	};
 
@@ -210,17 +287,56 @@ void test_sys_get_le16(void)
  *
  * @see sys_put_le16()
  */
-void test_sys_put_le16(void)
+ZTEST(byteorder, test_sys_put_le16)
 {
-	u64_t val = 0xf0e1;
-	u8_t buf[] = {
+	uint64_t val = 0xf0e1;
+	uint8_t buf[] = {
 		0xe1, 0xf0
 	};
-	u8_t tmp[sizeof(u16_t)];
+	uint8_t tmp[sizeof(uint16_t)];
 
 	sys_put_le16(val, tmp);
 
-	zassert_mem_equal(tmp, buf, sizeof(u16_t), "sys_put_le16() failed");
+	zassert_mem_equal(tmp, buf, sizeof(uint16_t), "sys_put_le16() failed");
+}
+
+/**
+ * @brief Test sys_get_le24() functionality
+ *
+ * @details Test if sys_get_le24() correctly handles endianness.
+ *
+ * @see sys_get_le24()
+ */
+ZTEST(byteorder, test_sys_get_le24)
+{
+	uint32_t val = 0xf0e1d2, tmp;
+	uint8_t buf[] = {
+		0xd2, 0xe1, 0xf0
+	};
+
+	tmp = sys_get_le24(buf);
+
+	zassert_equal(tmp, val, "sys_get_le24() failed");
+}
+
+/**
+ * @brief Test sys_put_le24() functionality
+ *
+ * @details Test if sys_put_le24() correctly handles endianness.
+ *
+ * @see sys_put_le24()
+ */
+ZTEST(byteorder, test_sys_put_le24)
+{
+	uint64_t val = 0xf0e1d2;
+	uint8_t buf[] = {
+		0xd2, 0xe1, 0xf0
+	};
+	uint8_t tmp[sizeof(uint32_t)];
+
+	sys_put_le24(val, tmp);
+
+	zassert_mem_equal(tmp, buf, sizeof(buf), "sys_put_le24() failed");
 }
 
 /**
@@ -230,10 +346,10 @@ void test_sys_put_le16(void)
  *
  * @see sys_get_le32()
  */
-void test_sys_get_le32(void)
+ZTEST(byteorder, test_sys_get_le32)
 {
-	u32_t val = 0xf0e1d2c3, tmp;
-	u8_t buf[] = {
+	uint32_t val = 0xf0e1d2c3, tmp;
+	uint8_t buf[] = {
 		0xc3, 0xd2, 0xe1, 0xf0
 	};
 
@@ -249,17 +365,56 @@ void test_sys_get_le32(void)
  *
  * @see sys_put_le32()
  */
-void test_sys_put_le32(void)
+ZTEST(byteorder, test_sys_put_le32)
 {
-	u64_t val = 0xf0e1d2c3;
-	u8_t buf[] = {
+	uint64_t val = 0xf0e1d2c3;
+	uint8_t buf[] = {
 		0xc3, 0xd2, 0xe1, 0xf0
 	};
-	u8_t tmp[sizeof(u32_t)];
+	uint8_t tmp[sizeof(uint32_t)];
 
 	sys_put_le32(val, tmp);
 
-	zassert_mem_equal(tmp, buf, sizeof(u32_t), "sys_put_le32() failed");
+	zassert_mem_equal(tmp, buf, sizeof(uint32_t), "sys_put_le32() failed");
+}
+
+/**
+ * @brief Test sys_get_le48() functionality
+ *
+ * @details Test if sys_get_le48() correctly handles endianness.
+ *
+ * @see sys_get_le48()
+ */
+ZTEST(byteorder, test_sys_get_le48)
+{
+	uint64_t val = 0xf0e1d2c3b4a5, tmp;
+	uint8_t buf[] = {
+		0xa5, 0xb4, 0xc3, 0xd2, 0xe1, 0xf0
+	};
+
+	tmp = sys_get_le48(buf);
+
+	zassert_equal(tmp, val, "sys_get_le48() failed");
+}
+
+/**
+ * @brief Test sys_put_le48() functionality
+ *
+ * @details Test if sys_put_le48() correctly handles endianness.
+ *
+ * @see sys_put_le48()
+ */
+ZTEST(byteorder, test_sys_put_le48)
+{
+	uint64_t val = 0xf0e1d2c3b4a5;
+	uint8_t buf[] = {
+		0xa5, 0xb4, 0xc3, 0xd2, 0xe1, 0xf0
+	};
+	uint8_t tmp[sizeof(uint64_t)];
+
+	sys_put_le48(val, tmp);
+
+	zassert_mem_equal(tmp, buf, sizeof(buf), "sys_put_le48() failed");
 }
 
 /**
@@ -269,10 +424,10 @@ void test_sys_put_le32(void)
  *
  * @see sys_get_le64()
  */
-void test_sys_get_le64(void)
+ZTEST(byteorder, test_sys_get_le64)
 {
-	u64_t val = 0xf0e1d2c3b4a59687, tmp;
-	u8_t buf[] = {
+	uint64_t val = 0xf0e1d2c3b4a59687, tmp;
+	uint8_t buf[] = {
 		0x87, 0x96, 0xa5, 0xb4, 0xc3, 0xd2, 0xe1, 0xf0
 	};
 
@@ -288,17 +443,17 @@ void test_sys_get_le64(void)
  *
  * @see sys_put_le64()
  */
-void test_sys_put_le64(void)
+ZTEST(byteorder, test_sys_put_le64)
 {
-	u64_t val = 0xf0e1d2c3b4a59687;
-	u8_t buf[] = {
+	uint64_t val = 0xf0e1d2c3b4a59687;
+	uint8_t buf[] = {
 		0x87, 0x96, 0xa5, 0xb4, 0xc3, 0xd2, 0xe1, 0xf0
 	};
-	u8_t tmp[sizeof(u64_t)];
+	uint8_t tmp[sizeof(uint64_t)];
 
 	sys_put_le64(val, tmp);
 
-	zassert_mem_equal(tmp, buf, sizeof(u64_t), "sys_put_le64() failed");
+	zassert_mem_equal(tmp, buf, sizeof(uint64_t), "sys_put_le64() failed");
 }
 
 /**

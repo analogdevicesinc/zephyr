@@ -21,6 +21,12 @@ import shlex
 import shutil
 import signal
 import subprocess
+import re
+from functools import partial
+from enum import Enum
+from inspect import isabstract
+from typing import Dict, List, NamedTuple, NoReturn, Optional, Set, Type, \
+    Union
 
 # Turn on to enable just logging the commands that would be run (at
 # info rather than debug level), without actually running them. This
@@ -121,13 +127,13 @@ class BuildConfiguration:
     Configuration options can be read as if the object were a dict,
     either object['CONFIG_FOO'] or object.get('CONFIG_FOO').
 
-    Configuration values in .config and generated_dts_board.conf are
-    available.'''
+    Kconfig configuration values are available (parsed from .config).'''
 
-    def __init__(self, build_dir):
+    def __init__(self, build_dir: str):
         self.build_dir = build_dir
-        self.options = {}
-        self._init()
+        self.options: Dict[str, Union[str, int]] = {}
+        self.path = os.path.join(self.build_dir, 'zephyr', '.config')
+        self._parse()
 
     def __contains__(self, item):
         return item in self.options
@@ -138,32 +144,47 @@ class BuildConfiguration:
     def get(self, option, *args):
         return self.options.get(option, *args)
 
-    def _init(self):
-        build_z = os.path.join(self.build_dir, 'zephyr')
-        generated = os.path.join(build_z, 'include', 'generated')
-        files = [os.path.join(build_z, '.config'),
-                 os.path.join(generated, 'generated_dts_board.conf')]
-        for f in files:
-            self._parse(f)
+    def getboolean(self, option):
+        '''If a boolean option is explicitly set to y or n,
+        returns its value. Otherwise, falls back to False.
+        '''
+        return self.options.get(option, False)
 
-    def _parse(self, filename):
+    def _parse(self):
+        filename = self.path
+        opt_value = re.compile('^(?P<option>CONFIG_[A-Za-z0-9_]+)=(?P<value>.*)$')
+        not_set = re.compile('^# (?P<option>CONFIG_[A-Za-z0-9_]+) is not set$')
+
         with open(filename, 'r') as f:
             for line in f:
-                line = line.strip()
-                if not line or line.startswith('#'):
+                match = opt_value.match(line)
+                if match:
+                    value = match.group('value').rstrip()
+                    if value.startswith('"') and value.endswith('"'):
+                        # A string literal should have the quotes stripped,
+                        # but otherwise be left as is.
+                        value = value[1:-1]
+                    elif value == 'y':
+                        # The character 'y' is a boolean option
+                        # that is set to True.
+                        value = True
+                    else:
+                        # Neither a string nor 'y', so try to parse it
+                        # as an integer.
+                        try:
+                            base = 16 if value.startswith('0x') else 10
+                            self.options[match.group('option')] = int(value, base=base)
+                            continue
+                        except ValueError:
+                            pass
+
+                    self.options[match.group('option')] = value
                     continue
-                option, value = line.split('=', 1)
-                self.options[option] = self._parse_value(value)
 
-    @staticmethod
-    def _parse_value(value):
-        if value.startswith('"') or value.startswith("'"):
-            return value.split()
-        try:
-            return int(value, 0)
-        except ValueError:
-            return value
-
+                match = not_set.match(line)
+                if match:
+                    # '# CONFIG_FOO is not set' means a boolean option is false.
+                    self.options[match.group('option')] = False
 
 class MissingProgram(FileNotFoundError):
     '''FileNotFoundError subclass for missing program dependencies.
@@ -189,66 +210,88 @@ class RunnerCaps:
     - commands: set of supported commands; default is {'flash',
       'debug', 'debugserver', 'attach'}.
 
+    - dev_id: whether the runner supports device identifiers, in the form of an
+      -i, --dev-id option. This is useful when the user has multiple debuggers
+      connected to a single computer, in order to select which one will be used
+      with the command provided.
+
     - flash_addr: whether the runner supports flashing to an
       arbitrary address. Default is False. If true, the runner
       must honor the --dt-flash option.
+
+    - erase: whether the runner supports an --erase option, which
+      does a mass-erase of the entire addressable flash on the target
+      before flashing. On multi-core SoCs, this may only erase portions of
+      flash specific the actual target core. (This option can be useful for
+      things like clearing out old settings values or other subsystem state
+      that may affect the behavior of the zephyr image. It is also sometimes
+      needed by SoCs which have flash-like areas that can't be sector
+      erased by the underlying tool before flashing; UICR on nRF SoCs
+      is one example.)
+
+    - tool_opt: whether the runner supports a --tool-opt (-O) option, which
+      can be given multiple times and is passed on to the underlying tool
+      that the runner wraps.
     '''
 
     def __init__(self,
-                 commands={'flash', 'debug', 'debugserver', 'attach'},
-                 flash_addr=False):
+                 commands: Set[str] = {'flash', 'debug',
+                                       'debugserver', 'attach'},
+                 dev_id: bool = False,
+                 flash_addr: bool = False,
+                 erase: bool = False,
+                 tool_opt: bool = False,
+                 file: bool = False):
         self.commands = commands
+        self.dev_id = dev_id
         self.flash_addr = bool(flash_addr)
+        self.erase = bool(erase)
+        self.tool_opt = bool(tool_opt)
+        self.file = bool(file)
 
     def __str__(self):
-        return 'RunnerCaps(commands={}, flash_addr={})'.format(
-            self.commands, self.flash_addr)
+        return (f'RunnerCaps(commands={self.commands}, '
+                f'dev_id={self.dev_id}, '
+                f'flash_addr={self.flash_addr}, '
+                f'erase={self.erase}, '
+                f'tool_opt={self.tool_opt}, '
+                f'file={self.file}'
+                ')')
 
 
-class RunnerConfig:
+def _missing_cap(cls: Type['ZephyrBinaryRunner'], option: str) -> NoReturn:
+    # Helper function that's called when an option was given on the
+    # command line that corresponds to a missing capability in the
+    # runner class cls.
+
+    raise ValueError(f"{cls.name()} doesn't support {option} option")
+
+
+class FileType(Enum):
+    OTHER = 0
+    HEX = 1
+    BIN = 2
+    ELF = 3
+
+
+class RunnerConfig(NamedTuple):
     '''Runner execution-time configuration.
 
     This is a common object shared by all runners. Individual runners
     can register specific configuration options using their
     do_add_parser() hooks.
-
-    This class's __slots__ contains exactly the configuration variables.
     '''
-
-    __slots__ = ['build_dir', 'board_dir', 'elf_file', 'hex_file',
-                 'bin_file', 'gdb', 'openocd', 'openocd_search']
-
-    # TODO: revisit whether we can get rid of some of these.  Having
-    # tool-specific configuration options here is a layering
-    # violation, but it's very convenient to have a single place to
-    # store the locations of tools (like gdb and openocd) that are
-    # needed by multiple ZephyrBinaryRunner subclasses.
-    def __init__(self, build_dir, board_dir,
-                 elf_file, hex_file, bin_file,
-                 gdb=None, openocd=None, openocd_search=None):
-        self.build_dir = build_dir
-        '''Zephyr application build directory'''
-
-        self.board_dir = board_dir
-        '''Zephyr board directory'''
-
-        self.elf_file = elf_file
-        '''Path to the elf file that the runner should operate on'''
-
-        self.hex_file = hex_file
-        '''Path to the hex file that the runner should operate on'''
-
-        self.bin_file = bin_file
-        '''Path to the bin file that the runner should operate on'''
-
-        self.gdb = gdb
-        ''''Path to GDB compatible with the target, may be None.'''
-
-        self.openocd = openocd
-        '''Path to OpenOCD to use for this target, may be None.'''
-
-        self.openocd_search = openocd_search
-        '''directory to add to OpenOCD search path, may be None.'''
+    build_dir: str                  # application build directory
+    board_dir: str                  # board definition directory
+    elf_file: Optional[str]         # zephyr.elf path, or None
+    hex_file: Optional[str]         # zephyr.hex path, or None
+    bin_file: Optional[str]         # zephyr.bin path, or None
+    uf2_file: Optional[str]         # zephyr.uf2 path, or None
+    file: Optional[str]             # binary file path (provided by the user), or None
+    file_type: Optional[FileType] = FileType.OTHER  # binary file type
+    gdb: Optional[str] = None       # path to a usable gdb
+    openocd: Optional[str] = None   # path to a usable openocd
+    openocd_search: List[str] = []  # add these paths to the openocd search path
 
 
 _YN_CHOICES = ['Y', 'y', 'N', 'n', 'yes', 'no', 'YES', 'NO']
@@ -263,10 +306,31 @@ class _DTFlashAction(argparse.Action):
             namespace.dt_flash = False
 
 
+class _ToggleAction(argparse.Action):
+
+    def __call__(self, parser, args, ignored, option):
+        setattr(args, self.dest, not option.startswith('--no-'))
+
+class DeprecatedAction(argparse.Action):
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        _logger.warning(f'Argument {self.option_strings[0]} is deprecated' +
+                        (f' for your runner {self._cls.name()}'  if self._cls is not None else '') +
+                        f', use {self._replacement} instead.')
+        setattr(namespace, self.dest, values)
+
+def depr_action(*args, cls=None, replacement=None, **kwargs):
+    action = DeprecatedAction(*args, **kwargs)
+    setattr(action, '_cls', cls)
+    setattr(action, '_replacement', replacement)
+    return action
+
 class ZephyrBinaryRunner(abc.ABC):
     '''Abstract superclass for binary runners (flashers, debuggers).
 
-    **Note**: these APIs are still evolving, and will change!
+    **Note**: this class's API has changed relatively rarely since it
+    as added, but it is not considered a stable Zephyr API, and may change
+    without notice.
 
     With some exceptions, boards supported by Zephyr must provide
     generic means to be flashed (have a Zephyr firmware binary
@@ -298,12 +362,12 @@ class ZephyrBinaryRunner(abc.ABC):
     This class provides an API for these commands. Every subclass is
     called a 'runner' for short. Each runner has a name (like
     'pyocd'), and declares commands it can handle (like
-    'flash'). Boards (like 'nrf52_pca10040') declare which runner(s)
+    'flash'). Boards (like 'nrf52dk_nrf52832') declare which runner(s)
     are compatible with them to the Zephyr build system, along with
     information on how to configure the runner to work with the board.
 
     The build system will then place enough information in the build
-    directory so to create and use runners with this class's create()
+    directory to create and use runners with this class's create()
     method, which provides a command line argument parsing API. You
     can also create runners by instantiating subclasses directly.
 
@@ -319,7 +383,13 @@ class ZephyrBinaryRunner(abc.ABC):
     3. Give your runner's name to the Zephyr build system in your
        board's board.cmake.
 
-    Some advice on input and output:
+    Additional advice:
+
+    - If you need to import any non-standard-library modules, make sure
+      to catch ImportError and defer complaints about it to a RuntimeError
+      if one is missing. This avoids affecting users that don't require your
+      runner, while still making it clear what went wrong to users that do
+      require it that don't have the necessary modules installed.
 
     - If you need to ask the user something (e.g. using input()), do it
       in your create() classmethod, not do_run(). That ensures your
@@ -342,10 +412,9 @@ class ZephyrBinaryRunner(abc.ABC):
     commands in its constructor.  The actual command execution is
     handled in the run() method.'''
 
-    def __init__(self, cfg):
-        '''Initialize core runner state.
+    def __init__(self, cfg: RunnerConfig):
+        '''Initialize core runner state.'''
 
-        ``cfg`` is a RunnerConfig instance.'''
         self.cfg = cfg
         '''RunnerConfig for this instance.'''
 
@@ -353,22 +422,33 @@ class ZephyrBinaryRunner(abc.ABC):
         '''logging.Logger for this instance.'''
 
     @staticmethod
-    def get_runners():
+    def get_runners() -> List[Type['ZephyrBinaryRunner']]:
         '''Get a list of all currently defined runner classes.'''
-        return ZephyrBinaryRunner.__subclasses__()
+        def inheritors(klass):
+            subclasses = set()
+            work = [klass]
+            while work:
+                parent = work.pop()
+                for child in parent.__subclasses__():
+                    if child not in subclasses:
+                        if not isabstract(child):
+                            subclasses.add(child)
+                        work.append(child)
+            return subclasses
+
+        return inheritors(ZephyrBinaryRunner)
 
     @classmethod
     @abc.abstractmethod
-    def name(cls):
+    def name(cls) -> str:
         '''Return this runner's user-visible name.
 
         When choosing a name, pick something short and lowercase,
         based on the name of the tool (like openocd, jlink, etc.) or
-        the target architecture/board (like xtensa, em-starterkit,
-        etc.).'''
+        the target architecture/board (like xtensa etc.).'''
 
     @classmethod
-    def capabilities(cls):
+    def capabilities(cls) -> RunnerCaps:
         '''Returns a RunnerCaps representing this runner's capabilities.
 
         This implementation returns the default capabilities.
@@ -390,13 +470,64 @@ class ZephyrBinaryRunner(abc.ABC):
 
         Runner-specific options are added through the do_add_parser()
         hook.'''
-        # Common options that depend on runner capabilities.
-        if cls.capabilities().flash_addr:
+        # Unfortunately, the parser argument's type is not documented
+        # in typeshed, so we can't type annotate much here.
+
+        # Common options that depend on runner capabilities. If a
+        # capability is not supported, the option string or strings
+        # are added anyway, to prevent an individual runner class from
+        # using them to mean something else.
+        caps = cls.capabilities()
+
+        if caps.dev_id:
+            parser.add_argument('-i', '--dev-id',
+                                dest='dev_id',
+                                help=cls.dev_id_help())
+        else:
+            parser.add_argument('-i', '--dev-id', help=argparse.SUPPRESS)
+
+        if caps.flash_addr:
             parser.add_argument('--dt-flash', default='n', choices=_YN_CHOICES,
                                 action=_DTFlashAction,
-                                help='''If 'yes', use configuration generated
-                                by device tree (DT) to compute flash
-                                addresses.''')
+                                help='''If 'yes', try to use flash address
+                                information from devicetree when flash
+                                addresses are unknown (e.g. when flashing a .bin)''')
+        else:
+            parser.add_argument('--dt-flash', help=argparse.SUPPRESS)
+
+        if caps.file:
+            parser.add_argument('-f', '--file',
+                                dest='file',
+                                help="path to binary file")
+            parser.add_argument('-t', '--file-type',
+                                dest='file_type',
+                                help="type of binary file")
+        else:
+            parser.add_argument('-f', '--file', help=argparse.SUPPRESS)
+            parser.add_argument('-t', '--file-type', help=argparse.SUPPRESS)
+
+        parser.add_argument('--elf-file',
+                        metavar='FILE',
+                        action=(partial(depr_action, cls=cls, replacement='-f/--file') if caps.file else None),
+                        help='path to zephyr.elf' if not caps.file else 'Deprecated, use -f/--file instead.')
+        parser.add_argument('--hex-file',
+                        metavar='FILE',
+                        action=(partial(depr_action, cls=cls, replacement='-f/--file') if caps.file else None),
+                        help='path to zephyr.hex' if not caps.file else 'Deprecated, use -f/--file instead.')
+        parser.add_argument('--bin-file',
+                        metavar='FILE',
+                        action=(partial(depr_action, cls=cls, replacement='-f/--file') if caps.file else None),
+                        help='path to zephyr.bin' if not caps.file else 'Deprecated, use -f/--file instead.')
+
+        parser.add_argument('--erase', '--no-erase', nargs=0,
+                            action=_ToggleAction,
+                            help=("mass erase flash before loading, or don't"
+                                  if caps.erase else argparse.SUPPRESS))
+
+        parser.add_argument('-O', '--tool-opt', dest='tool_opt',
+                            default=[], action='append',
+                            help=(cls.tool_opt_help() if caps.tool_opt
+                                  else argparse.SUPPRESS))
 
         # Runner-specific options.
         cls.do_add_parser(parser)
@@ -407,36 +538,69 @@ class ZephyrBinaryRunner(abc.ABC):
         '''Hook for adding runner-specific options.'''
 
     @classmethod
-    @abc.abstractmethod
-    def create(cls, cfg, args):
+    def create(cls, cfg: RunnerConfig,
+               args: argparse.Namespace) -> 'ZephyrBinaryRunner':
         '''Create an instance from command-line arguments.
 
-        - ``cfg``: RunnerConfig instance (pass to superclass __init__)
-        - ``args``: runner-specific argument namespace parsed from
-          execution environment, as specified by ``add_parser()``.'''
+        - ``cfg``: runner configuration (pass to superclass __init__)
+        - ``args``: arguments parsed from execution environment, as
+          specified by ``add_parser()``.'''
+        caps = cls.capabilities()
+        if args.dev_id and not caps.dev_id:
+            _missing_cap(cls, '--dev-id')
+        if args.dt_flash and not caps.flash_addr:
+            _missing_cap(cls, '--dt-flash')
+        if args.erase and not caps.erase:
+            _missing_cap(cls, '--erase')
+        if args.tool_opt and not caps.tool_opt:
+            _missing_cap(cls, '--tool-opt')
+        if args.file and not caps.file:
+            _missing_cap(cls, '--file')
+        if args.file_type and not args.file:
+            raise ValueError("--file-type requires --file")
+        if args.file_type and not caps.file:
+            _missing_cap(cls, '--file-type')
+
+        ret = cls.do_create(cfg, args)
+        if args.erase:
+            ret.logger.info('mass erase requested')
+        return ret
 
     @classmethod
-    def get_flash_address(cls, args, build_conf, default=0x0):
+    @abc.abstractmethod
+    def do_create(cls, cfg: RunnerConfig,
+                  args: argparse.Namespace) -> 'ZephyrBinaryRunner':
+        '''Hook for instance creation from command line arguments.'''
+
+    @staticmethod
+    def get_flash_address(args: argparse.Namespace,
+                          build_conf: BuildConfiguration,
+                          default: int = 0x0) -> int:
         '''Helper method for extracting a flash address.
 
-        If args.dt_flash is true, get the address from the
-        BoardConfiguration, build_conf. (If
-        CONFIG_HAS_FLASH_LOAD_OFFSET is n in that configuration, it
-        returns CONFIG_FLASH_BASE_ADDRESS. Otherwise, it returns
-        CONFIG_FLASH_BASE_ADDRESS + CONFIG_FLASH_LOAD_OFFSET.)
+        If args.dt_flash is true, returns the address obtained from
+        ZephyrBinaryRunner.flash_address_from_build_conf(build_conf).
 
         Otherwise (when args.dt_flash is False), the default value is
         returned.'''
         if args.dt_flash:
-            if build_conf['CONFIG_HAS_FLASH_LOAD_OFFSET']:
-                return (build_conf['CONFIG_FLASH_BASE_ADDRESS'] +
-                        build_conf['CONFIG_FLASH_LOAD_OFFSET'])
-            else:
-                return build_conf['CONFIG_FLASH_BASE_ADDRESS']
+            return ZephyrBinaryRunner.flash_address_from_build_conf(build_conf)
         else:
             return default
 
-    def run(self, command, **kwargs):
+    @staticmethod
+    def flash_address_from_build_conf(build_conf: BuildConfiguration):
+        '''If CONFIG_HAS_FLASH_LOAD_OFFSET is n in build_conf,
+        return the CONFIG_FLASH_BASE_ADDRESS value. Otherwise, return
+        CONFIG_FLASH_BASE_ADDRESS + CONFIG_FLASH_LOAD_OFFSET.
+        '''
+        if build_conf.getboolean('CONFIG_HAS_FLASH_LOAD_OFFSET'):
+            return (build_conf['CONFIG_FLASH_BASE_ADDRESS'] +
+                    build_conf['CONFIG_FLASH_LOAD_OFFSET'])
+        else:
+            return build_conf['CONFIG_FLASH_BASE_ADDRESS']
+
+    def run(self, command: str, **kwargs):
         '''Runs command ('flash', 'debug', 'debugserver', 'attach').
 
         This is the main entry point to this runner.'''
@@ -447,13 +611,43 @@ class ZephyrBinaryRunner(abc.ABC):
         self.do_run(command, **kwargs)
 
     @abc.abstractmethod
-    def do_run(self, command, **kwargs):
+    def do_run(self, command: str, **kwargs):
         '''Concrete runner; run() delegates to this. Implement in subclasses.
 
         In case of an unsupported command, raise a ValueError.'''
 
+    @property
+    def build_conf(self) -> BuildConfiguration:
+        '''Get a BuildConfiguration for the build directory.'''
+        if not hasattr(self, '_build_conf'):
+            self._build_conf = BuildConfiguration(self.cfg.build_dir)
+        return self._build_conf
+
+    @property
+    def thread_info_enabled(self) -> bool:
+        '''Returns True if self.build_conf has
+        CONFIG_DEBUG_THREAD_INFO enabled.
+        '''
+        return self.build_conf.getboolean('CONFIG_DEBUG_THREAD_INFO')
+
+    @classmethod
+    def dev_id_help(cls) -> str:
+        ''' Get the ArgParse help text for the --dev-id option.'''
+        return '''Device identifier. Use it to select
+                  which debugger, device, node or instance to
+                  target when multiple ones are available or
+                  connected.'''
+
+    @classmethod
+    def tool_opt_help(cls) -> str:
+        ''' Get the ArgParse help text for the --tool-opt option.'''
+        return '''Option to pass on to the underlying tool used
+                  by this runner. This can be given multiple times;
+                  the resulting arguments will be given to the tool
+                  in the order they appear on the command line.'''
+
     @staticmethod
-    def require(program):
+    def require(program: str) -> str:
         '''Require that a program is installed before proceeding.
 
         :param program: name of the program that is required,
@@ -463,9 +657,12 @@ class ZephyrBinaryRunner(abc.ABC):
         binary, this call succeeds. Otherwise, try to find the program
         by name on the system PATH.
 
-        On error, raises MissingProgram.'''
-        if shutil.which(program) is None:
+        If the program can be found, its path is returned.
+        Otherwise, raises MissingProgram.'''
+        ret = shutil.which(program)
+        if ret is None:
             raise MissingProgram(program)
+        return ret
 
     def run_server_and_client(self, server, client):
         '''Run a server that ignores SIGINT, and a client that handles it.
@@ -479,22 +676,28 @@ class ZephyrBinaryRunner(abc.ABC):
 
         It's useful to e.g. open a GDB server and client.'''
         server_proc = self.popen_ignore_int(server)
+        try:
+            self.run_client(client)
+        finally:
+            server_proc.terminate()
+            server_proc.wait()
+
+    def run_client(self, client):
+        '''Run a client that handles SIGINT.'''
         previous = signal.signal(signal.SIGINT, signal.SIG_IGN)
         try:
             self.check_call(client)
         finally:
             signal.signal(signal.SIGINT, previous)
-            server_proc.terminate()
-            server_proc.wait()
 
-    def _log_cmd(self, cmd):
+    def _log_cmd(self, cmd: List[str]):
         escaped = ' '.join(shlex.quote(s) for s in cmd)
         if not _DRY_RUN:
             self.logger.debug(escaped)
         else:
             self.logger.info(escaped)
 
-    def call(self, cmd):
+    def call(self, cmd: List[str], **kwargs) -> int:
         '''Subclass subprocess.call() wrapper.
 
         Subclasses should use this method to run command in a
@@ -504,9 +707,9 @@ class ZephyrBinaryRunner(abc.ABC):
         self._log_cmd(cmd)
         if _DRY_RUN:
             return 0
-        return subprocess.call(cmd)
+        return subprocess.call(cmd, **kwargs)
 
-    def check_call(self, cmd):
+    def check_call(self, cmd: List[str], **kwargs):
         '''Subclass subprocess.check_call() wrapper.
 
         Subclasses should use this method to run command in a
@@ -516,9 +719,9 @@ class ZephyrBinaryRunner(abc.ABC):
         self._log_cmd(cmd)
         if _DRY_RUN:
             return
-        subprocess.check_call(cmd)
+        subprocess.check_call(cmd, **kwargs)
 
-    def check_output(self, cmd):
+    def check_output(self, cmd: List[str], **kwargs) -> bytes:
         '''Subclass subprocess.check_output() wrapper.
 
         Subclasses should use this method to run command in a
@@ -528,9 +731,9 @@ class ZephyrBinaryRunner(abc.ABC):
         self._log_cmd(cmd)
         if _DRY_RUN:
             return b''
-        return subprocess.check_output(cmd)
+        return subprocess.check_output(cmd, **kwargs)
 
-    def popen_ignore_int(self, cmd):
+    def popen_ignore_int(self, cmd: List[str], **kwargs) -> subprocess.Popen:
         '''Spawn a child command, ensuring it ignores SIGINT.
 
         The returned subprocess.Popen object must be manually terminated.'''
@@ -539,12 +742,38 @@ class ZephyrBinaryRunner(abc.ABC):
         system = platform.system()
 
         if system == 'Windows':
-            cflags |= subprocess.CREATE_NEW_PROCESS_GROUP
+            # We can't type check this line on Unix operating systems:
+            # mypy thinks the subprocess module has no such attribute.
+            cflags |= subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore
         elif system in {'Linux', 'Darwin'}:
-            preexec = os.setsid
+            # We can't type check this on Windows for the same reason.
+            preexec = os.setsid # type: ignore
 
         self._log_cmd(cmd)
         if _DRY_RUN:
-            return _DebugDummyPopen()
+            return _DebugDummyPopen()  # type: ignore
 
-        return subprocess.Popen(cmd, creationflags=cflags, preexec_fn=preexec)
+        return subprocess.Popen(cmd, creationflags=cflags, preexec_fn=preexec, **kwargs)
+
+    def ensure_output(self, output_type: str) -> None:
+        '''Ensure self.cfg has a particular output artifact.
+
+        For example, ensure_output('bin') ensures that self.cfg.bin_file
+        refers to an existing file. Errors out if it's missing or undefined.
+
+        :param output_type: string naming the output type
+        '''
+        output_file = getattr(self.cfg, f'{output_type}_file', None)
+
+        if output_file is None:
+            err = f'{output_type} file location is unknown.'
+        elif not os.path.isfile(output_file):
+            err = f'{output_file} does not exist.'
+        else:
+            return
+
+        if output_type in ('elf', 'hex', 'bin', 'uf2'):
+            err += f' Try enabling CONFIG_BUILD_OUTPUT_{output_type.upper()}.'
+
+        # RuntimeError avoids a stack trace saved in run_common.
+        raise RuntimeError(err)

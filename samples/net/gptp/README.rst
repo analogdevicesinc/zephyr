@@ -25,9 +25,10 @@ Building and Running
 
 A good way to run this sample is to run this gPTP application inside
 native_posix board as described in :ref:`networking_with_native_posix` or with
-embedded device like NXP FRDM-K64F or Atmel SAM-E70 Xplained. Note that gPTP is
-only supported for boards that have an Ethernet port and which has support for
-collecting timestamps for sent and received Ethernet frames.
+embedded device like NXP FRDM-K64F, Nucleo-H743-ZI, Nucleo-H745ZI-Q,
+Nucleo-F767ZI or Atmel SAM-E70 Xplained. Note that gPTP is only supported for
+boards that have an Ethernet port and which has support for collecting
+timestamps for sent and received Ethernet frames.
 
 Follow these steps to build the gPTP sample application:
 
@@ -122,7 +123,7 @@ If Zephyr syncs properly with gptp daemon, then this is printed:
 
 By default gPTP in Zephyr will not print any gPTP debug messages to console.
 One can enable debug prints by setting
-:option:`CONFIG_NET_GPTP_LOG_LEVEL_DBG` in the config file.
+:kconfig:option:`CONFIG_NET_GPTP_LOG_LEVEL_DBG` in the config file.
 
 For native_posix board, use ``linuxptp`` project as that supports
 software timestamping.
@@ -141,3 +142,44 @@ Compile the ``ptp4l`` daemon and start it like this:
 
 Use the ``default.cfg`` as a base, copy it to ``gPTP-zephyr.cfg``, and modify
 it according to your needs.
+
+
+Multiport Setup
+===============
+
+If you set :kconfig:option:`CONFIG_NET_GPTP_NUM_PORTS` larger than 1, then gPTP sample
+will create multiple TSN ports. This configuration is currently only supported
+in native_posix board.
+
+You need to enable the ports in the net-tools. If the number of ports is set
+to 2, then give following commands to create the network interfaces in host
+side:
+
+.. code-block:: console
+
+    sudo ./net-setup.sh -c zeth0-gptp.conf -i zeth0 start
+    sudo ./net-setup.sh -c zeth1-gptp.conf -i zeth1 start
+
+After that you can start ptp4l daemon for both interfaces. Please use two
+terminals when starting ptp4l daemon. Note that you must use ptp4l as OpenAVNU
+does not work with software clock available in native_posix.
+
+.. code-block:: console
+
+    cd <ptp4l directory>
+    sudo ./ptp4l -2 -f gPTP-zephyr.cfg -m -q -l 6 -S -i zeth0
+    sudo ./ptp4l -2 -f gPTP-zephyr.cfg -m -q -l 6 -S -i zeth1
+
+Compile Zephyr application.
+
+.. zephyr-app-commands::
+   :zephyr-app: samples/net/gptp
+   :board: native_posix
+   :goals: build
+   :compact:
+
+When the Zephyr image is build, you can start it like this:
+
+.. code-block:: console
+
+    build/zephyr/zephyr.exe -attach_uart

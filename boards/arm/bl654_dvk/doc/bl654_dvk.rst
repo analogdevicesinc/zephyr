@@ -1,13 +1,13 @@
 .. _bl654_dvk:
 
-BL654 DVK
-#################
+Laird Connectivity BL654 DVK
+############################
 
 Overview
 ********
 
 The BL654 Development Kit hardware provides
-support for the Laird BL654 module powered by a Nordic Semiconductor nRF52840 ARM Cortex-M4F CPU.
+support for the Laird Connectivity BL654 module powered by a Nordic Semiconductor nRF52840 ARM Cortex-M4F CPU.
 
 This development kit has the following features:
 
@@ -28,14 +28,12 @@ This development kit has the following features:
 * :abbr:`WDT (Watchdog Timer)`
 
 .. figure:: img/bl654_dvk.jpg
-     :width: 500px
      :align: center
      :alt: BL654 Development Kit
 
      BL654 Development Kit Board
 
 .. figure:: img/455-00001_BoxContents.jpg
-     :width: 500px
      :align: center
      :alt: 455-00001 Box Contents
 
@@ -88,7 +86,7 @@ hardware features:
 | WDT       | on-chip    | watchdog             |
 +-----------+------------+----------------------+
 
-Other hardware features are not supported by the Zephyr kernel.
+Other hardware features have not been enabled yet for this board.
 See `BL654 website`_
 for a complete list of BL654 Development Kit board hardware features.
 
@@ -115,10 +113,9 @@ Push buttons
 Programming and Debugging
 *************************
 
-Applications for the ``bl654_dvk`` board configuration can be
-built and flashed in the usual way (see :ref:`build_an_application`
-and :ref:`application_run` for more details); however, the standard
-debugging targets are not currently available.
+Applications for the ``bl654_dvk`` board configuration can be built, flashed,
+and debugged in the usual way. See :ref:`build_an_application` and
+:ref:`application_run` for more details on building and running.
 
 Flashing
 ========
@@ -186,4 +183,3 @@ References
 
 .. _BL654 website: https://connectivity.lairdtech.com/wireless-modules/bluetooth-modules/bluetooth-5-modules/bl654-series
 .. _J-Link Software and documentation pack: https://www.segger.com/jlink-software.html
-

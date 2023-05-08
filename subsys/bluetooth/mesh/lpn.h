@@ -1,5 +1,3 @@
-/*  Bluetooth Mesh */
-
 /*
  * Copyright (c) 2017 Intel Corporation
  *
@@ -24,7 +22,7 @@ static inline bool bt_mesh_lpn_established(void)
 #endif
 }
 
-static inline bool bt_mesh_lpn_match(u16_t addr)
+static inline bool bt_mesh_lpn_match(uint16_t addr)
 {
 #if defined(CONFIG_BT_MESH_LOW_POWER)
 	if (bt_mesh_lpn_established()) {
@@ -43,20 +41,13 @@ static inline bool bt_mesh_lpn_waiting_update(void)
 #endif
 }
 
-static inline bool bt_mesh_lpn_timer(void)
-{
-#if defined(CONFIG_BT_MESH_LPN_AUTO)
-	return (bt_mesh.lpn.state == BT_MESH_LPN_TIMER);
-#else
-	return false;
-#endif
-}
 
 void bt_mesh_lpn_msg_received(struct bt_mesh_net_rx *rx);
 
-void bt_mesh_lpn_group_add(u16_t group);
-void bt_mesh_lpn_group_del(u16_t *groups, size_t group_count);
+void bt_mesh_lpn_group_add(uint16_t group);
+void bt_mesh_lpn_group_del(uint16_t *groups, size_t group_count);
 
 void bt_mesh_lpn_disable(bool force);
+void bt_mesh_lpn_friendship_end(void);
 
 int bt_mesh_lpn_init(void);

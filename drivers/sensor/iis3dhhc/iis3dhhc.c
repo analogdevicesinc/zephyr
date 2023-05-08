@@ -8,55 +8,53 @@
  * https://www.st.com/resource/en/datasheet/iis3dhhc.pdf
  */
 
-#include <kernel.h>
-#include <device.h>
-#include <init.h>
-#include <sys/byteorder.h>
-#include <sys/__assert.h>
-#include <logging/log.h>
+#define DT_DRV_COMPAT st_iis3dhhc
+
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/init.h>
+#include <zephyr/sys/byteorder.h>
+#include <zephyr/sys/__assert.h>
+#include <zephyr/logging/log.h>
 
 #include "iis3dhhc.h"
 
-#define LOG_LEVEL CONFIG_SENSOR_LOG_LEVEL
-LOG_MODULE_REGISTER(IIS3DHHC);
+LOG_MODULE_REGISTER(IIS3DHHC, CONFIG_SENSOR_LOG_LEVEL);
 
-static int iis3dhhc_sample_fetch(struct device *dev,
+static int iis3dhhc_sample_fetch(const struct device *dev,
 				 enum sensor_channel chan)
 {
-	struct iis3dhhc_data *data = dev->driver_data;
-	axis3bit16_t raw_accel;
+	struct iis3dhhc_data *data = dev->data;
+	int16_t raw_accel[3];
 
 	__ASSERT_NO_MSG(chan == SENSOR_CHAN_ALL);
 
-	iis3dhhc_acceleration_raw_get(data->ctx, raw_accel.u8bit);
-	data->acc[0] = sys_le16_to_cpu(raw_accel.i16bit[0]);
-	data->acc[1] = sys_le16_to_cpu(raw_accel.i16bit[1]);
-	data->acc[2] = sys_le16_to_cpu(raw_accel.i16bit[2]);
+	iis3dhhc_acceleration_raw_get(data->ctx, raw_accel);
+	data->acc[0] = sys_le16_to_cpu(raw_accel[0]);
+	data->acc[1] = sys_le16_to_cpu(raw_accel[1]);
+	data->acc[2] = sys_le16_to_cpu(raw_accel[2]);
 
 	return 0;
 }
 
-#define IIS3DHHC_FROM_LSB_TO_ums2(lsb)	\
-		((IIS3DHHC_FROM_LSB_TO_mg((s64_t)lsb) * SENSOR_G) / 1000LL)
-
 static inline void iis3dhhc_convert(struct sensor_value *val,
-					s16_t raw_val)
+					int16_t raw_val)
 {
-	s64_t micro_ms2;
+	int64_t micro_ms2;
 
 	/* Convert to m/s^2 */
-	micro_ms2 = IIS3DHHC_FROM_LSB_TO_ums2((s64_t)raw_val);
+	micro_ms2 = ((iis3dhhc_from_lsb_to_mg(raw_val) * SENSOR_G) / 1000LL);
 	val->val1 = micro_ms2 / 1000000LL;
 	val->val2 = micro_ms2 % 1000000LL;
 }
 
-static inline void iis3dhhc_channel_get_acc(struct device *dev,
+static inline void iis3dhhc_channel_get_acc(const struct device *dev,
 					     enum sensor_channel chan,
 					     struct sensor_value *val)
 {
 	int i;
-	u8_t ofs_start, ofs_stop;
-	struct iis3dhhc_data *iis3dhhc = dev->driver_data;
+	uint8_t ofs_start, ofs_stop;
+	struct iis3dhhc_data *iis3dhhc = dev->data;
 	struct sensor_value *pval = val;
 
 	switch (chan) {
@@ -79,7 +77,7 @@ static inline void iis3dhhc_channel_get_acc(struct device *dev,
 	}
 }
 
-static int iis3dhhc_channel_get(struct device *dev,
+static int iis3dhhc_channel_get(const struct device *dev,
 				enum sensor_channel chan,
 				struct sensor_value *val)
 {
@@ -98,10 +96,10 @@ static int iis3dhhc_channel_get(struct device *dev,
 	return -ENOTSUP;
 }
 
-static int iis3dhhc_odr_set(struct device *dev,
-			   const struct sensor_value *val)
+static int iis3dhhc_odr_set(const struct device *dev,
+			    const struct sensor_value *val)
 {
-	struct iis3dhhc_data *data = dev->driver_data;
+	struct iis3dhhc_data *data = dev->data;
 	iis3dhhc_norm_mod_en_t en;
 
 	switch (val->val1) {
@@ -123,9 +121,10 @@ static int iis3dhhc_odr_set(struct device *dev,
 	return 0;
 }
 
-static int iis3dhhc_attr_set(struct device *dev, enum sensor_channel chan,
-			    enum sensor_attribute attr,
-			    const struct sensor_value *val)
+static int iis3dhhc_attr_set(const struct device *dev,
+			     enum sensor_channel chan,
+			     enum sensor_attribute attr,
+			     const struct sensor_value *val)
 {
 	if (chan != SENSOR_CHAN_ALL) {
 		LOG_WRN("attr_set() not supported on this channel.");
@@ -152,10 +151,10 @@ static const struct sensor_driver_api iis3dhhc_api_funcs = {
 #endif
 };
 
-static int iis3dhhc_init_chip(struct device *dev)
+static int iis3dhhc_init_chip(const struct device *dev)
 {
-	struct iis3dhhc_data *data = dev->driver_data;
-	u8_t chip_id, rst;
+	struct iis3dhhc_data *data = dev->data;
+	uint8_t chip_id, rst;
 
 	if (iis3dhhc_device_id_get(data->ctx, &chip_id) < 0) {
 		LOG_DBG("Failed reading chip id");
@@ -191,15 +190,13 @@ static int iis3dhhc_init_chip(struct device *dev)
 	return 0;
 }
 
-static int iis3dhhc_init(struct device *dev)
+static int iis3dhhc_init(const struct device *dev)
 {
-	const struct iis3dhhc_config * const config = dev->config->config_info;
-	struct iis3dhhc_data *data = dev->driver_data;
+	const struct iis3dhhc_config * const config = dev->config;
 
-	data->bus = device_get_binding(config->master_dev_name);
-	if (!data->bus) {
-		LOG_DBG("bus master not found: %s", config->master_dev_name);
-		return -EINVAL;
+	if (!spi_is_ready_dt(&config->spi)) {
+		LOG_ERR("SPI bus is not ready");
+		return -ENODEV;
 	}
 
 	config->bus_init(dev);
@@ -210,48 +207,38 @@ static int iis3dhhc_init(struct device *dev)
 	}
 
 #ifdef CONFIG_IIS3DHHC_TRIGGER
-	if (iis3dhhc_init_interrupt(dev) < 0) {
-		LOG_ERR("Failed to initialize interrupt.");
-		return -EIO;
+	if (config->int_gpio.port) {
+		if (iis3dhhc_init_interrupt(dev) < 0) {
+			LOG_ERR("Failed to initialize interrupt.");
+			return -EIO;
+		}
 	}
 #endif
 
 	return 0;
 }
 
-static struct iis3dhhc_data iis3dhhc_data;
+#define IIS3DHHC_DEFINE(inst)									\
+	static struct iis3dhhc_data iis3dhhc_data_##inst;					\
+												\
+	static const struct iis3dhhc_config iis3dhhc_config_##inst = {				\
+		IF_ENABLED(CONFIG_IIS3DHHC_TRIGGER,						\
+			   (COND_CODE_1(CONFIG_IIS3DHHC_DRDY_INT1,				\
+					(.int_gpio = GPIO_DT_SPEC_INST_GET_BY_IDX(inst,		\
+										  irq_gpios,	\
+										  0),),		\
+					(.int_gpio = GPIO_DT_SPEC_INST_GET_BY_IDX(inst,		\
+										  irq_gpios,	\
+										  1),))))	\
+												\
+		.bus_init = iis3dhhc_spi_init,							\
+		.spi = SPI_DT_SPEC_INST_GET(inst, SPI_OP_MODE_MASTER |				\
+					    SPI_MODE_CPOL | SPI_MODE_CPHA |			\
+					    SPI_WORD_SET(8), 0U),				\
+	};											\
+												\
+	SENSOR_DEVICE_DT_INST_DEFINE(inst, iis3dhhc_init, NULL,					\
+			      &iis3dhhc_data_##inst, &iis3dhhc_config_##inst, POST_KERNEL,	\
+			      CONFIG_SENSOR_INIT_PRIORITY, &iis3dhhc_api_funcs);		\
 
-static const struct iis3dhhc_config iis3dhhc_config = {
-	.master_dev_name = DT_INST_0_ST_IIS3DHHC_BUS_NAME,
-#ifdef CONFIG_IIS3DHHC_TRIGGER
-#ifdef CONFIG_IIS3DHHC_DRDY_INT1
-	.int_port	= DT_INST_0_ST_IIS3DHHC_IRQ_GPIOS_CONTROLLER_0,
-	.int_pin	= DT_INST_0_ST_IIS3DHHC_IRQ_GPIOS_PIN_0,
-#else
-	.int_port	= DT_INST_0_ST_IIS3DHHC_IRQ_GPIOS_CONTROLLER_1,
-	.int_pin	= DT_INST_0_ST_IIS3DHHC_IRQ_GPIOS_PIN_1,
-#endif /* CONFIG_IIS3DHHC_DRDY_INT1 */
-#endif /* CONFIG_IIS3DHHC_TRIGGER */
-#if defined(DT_ST_IIS3DHHC_BUS_SPI)
-	.bus_init = iis3dhhc_spi_init,
-	.spi_conf.frequency = DT_INST_0_ST_IIS3DHHC_SPI_MAX_FREQUENCY,
-	.spi_conf.operation = (SPI_OP_MODE_MASTER | SPI_MODE_CPOL |
-			       SPI_MODE_CPHA | SPI_WORD_SET(8) |
-			       SPI_LINES_SINGLE),
-	.spi_conf.slave     = DT_INST_0_ST_IIS3DHHC_BASE_ADDRESS,
-#if defined(DT_INST_0_ST_IIS3DHHC_CS_GPIOS_CONTROLLER)
-	.gpio_cs_port	    = DT_INST_0_ST_IIS3DHHC_CS_GPIOS_CONTROLLER,
-	.cs_gpio	    = DT_INST_0_ST_IIS3DHHC_CS_GPIOS_PIN,
-
-	.spi_conf.cs        =  &iis3dhhc_data.cs_ctrl,
-#else
-	.spi_conf.cs        = NULL,
-#endif
-#else
-#error "BUS MACRO NOT DEFINED IN DTS"
-#endif
-};
-
-DEVICE_AND_API_INIT(iis3dhhc, DT_INST_0_ST_IIS3DHHC_LABEL, iis3dhhc_init,
-		    &iis3dhhc_data, &iis3dhhc_config, POST_KERNEL,
-		    CONFIG_SENSOR_INIT_PRIORITY, &iis3dhhc_api_funcs);
+DT_INST_FOREACH_STATUS_OKAY(IIS3DHHC_DEFINE)

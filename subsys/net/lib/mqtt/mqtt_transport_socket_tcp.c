@@ -9,28 +9,22 @@
  * @brief Internal functions to handle transport over TCP socket.
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_mqtt_sock_tcp, CONFIG_MQTT_LOG_LEVEL);
 
 #include <errno.h>
-#include <net/socket.h>
-#include <net/mqtt.h>
+#include <zephyr/net/socket.h>
+#include <zephyr/net/mqtt.h>
 
 #include "mqtt_os.h"
 
-/**@brief Handles connect request for TCP socket transport.
- *
- * @param[in] client Identifies the client on which the procedure is requested.
- *
- * @retval 0 or an error code indicating reason for failure.
- */
 int mqtt_client_tcp_connect(struct mqtt_client *client)
 {
 	const struct sockaddr *broker = client->broker;
 	int ret;
 
-	client->transport.tcp.sock = socket(broker->sa_family, SOCK_STREAM,
-					    IPPROTO_TCP);
+	client->transport.tcp.sock = zsock_socket(broker->sa_family, SOCK_STREAM,
+						  IPPROTO_TCP);
 	if (client->transport.tcp.sock < 0) {
 		return -errno;
 	}
@@ -42,12 +36,12 @@ int mqtt_client_tcp_connect(struct mqtt_client *client)
 				 &client->transport.proxy.addr,
 				 client->transport.proxy.addrlen);
 		if (ret < 0) {
-			return -errno;
+			goto error;
 		}
 	}
 #endif
 
-	MQTT_TRC("Created socket %d", client->transport.tcp.sock);
+	NET_DBG("Created socket %d", client->transport.tcp.sock);
 
 	size_t peer_addr_size = sizeof(struct sockaddr_in6);
 
@@ -55,34 +49,29 @@ int mqtt_client_tcp_connect(struct mqtt_client *client)
 		peer_addr_size = sizeof(struct sockaddr_in);
 	}
 
-	ret = connect(client->transport.tcp.sock, client->broker,
-		      peer_addr_size);
+	ret = zsock_connect(client->transport.tcp.sock, client->broker,
+			    peer_addr_size);
 	if (ret < 0) {
-		(void)close(client->transport.tcp.sock);
-		return -errno;
+		goto error;
 	}
 
-	MQTT_TRC("Connect completed");
+	NET_DBG("Connect completed");
 	return 0;
+
+error:
+	(void)zsock_close(client->transport.tcp.sock);
+	return -errno;
 }
 
-/**@brief Handles write requests on TCP socket transport.
- *
- * @param[in] client Identifies the client on which the procedure is requested.
- * @param[in] data Data to be written on the transport.
- * @param[in] datalen Length of data to be written on the transport.
- *
- * @retval 0 or an error code indicating reason for failure.
- */
-int mqtt_client_tcp_write(struct mqtt_client *client, const u8_t *data,
-			  u32_t datalen)
+int mqtt_client_tcp_write(struct mqtt_client *client, const uint8_t *data,
+			  uint32_t datalen)
 {
-	u32_t offset = 0U;
+	uint32_t offset = 0U;
 	int ret;
 
 	while (offset < datalen) {
-		ret = send(client->transport.tcp.sock, data + offset,
-			   datalen - offset, 0);
+		ret = zsock_send(client->transport.tcp.sock, data + offset,
+				 datalen - offset, 0);
 		if (ret < 0) {
 			return -errno;
 		}
@@ -93,27 +82,57 @@ int mqtt_client_tcp_write(struct mqtt_client *client, const u8_t *data,
 	return 0;
 }
 
-/**@brief Handles read requests on TCP socket transport.
- *
- * @param[in] client Identifies the client on which the procedure is requested.
- * @param[in] data Pointer where read data is to be fetched.
- * @param[in] buflen Size of memory provided for the operation.
- * @param[in] shall_block Information whether the call should block or not.
- *
- * @retval Number of bytes read or an error code indicating reason for failure.
- *         0 if connection was closed.
- */
-int mqtt_client_tcp_read(struct mqtt_client *client, u8_t *data, u32_t buflen,
+int mqtt_client_tcp_write_msg(struct mqtt_client *client,
+			      const struct msghdr *message)
+
+{
+	int ret, i;
+	size_t offset = 0;
+	size_t total_len = 0;
+
+	for (i = 0; i < message->msg_iovlen; i++) {
+		total_len += message->msg_iov[i].iov_len;
+	}
+
+	while (offset < total_len) {
+		ret = zsock_sendmsg(client->transport.tcp.sock, message, 0);
+		if (ret < 0) {
+			return -errno;
+		}
+
+		offset += ret;
+		if (offset >= total_len) {
+			break;
+		}
+
+		/* Update msghdr for the next iteration. */
+		for (i = 0; i < message->msg_iovlen; i++) {
+			if (ret < message->msg_iov[i].iov_len) {
+				message->msg_iov[i].iov_len -= ret;
+				message->msg_iov[i].iov_base =
+					(uint8_t *)message->msg_iov[i].iov_base + ret;
+				break;
+			}
+
+			ret -= message->msg_iov[i].iov_len;
+			message->msg_iov[i].iov_len = 0;
+		}
+	}
+
+	return 0;
+}
+
+int mqtt_client_tcp_read(struct mqtt_client *client, uint8_t *data, uint32_t buflen,
 			 bool shall_block)
 {
 	int flags = 0;
 	int ret;
 
 	if (!shall_block) {
-		flags |= MSG_DONTWAIT;
+		flags |= ZSOCK_MSG_DONTWAIT;
 	}
 
-	ret = recv(client->transport.tcp.sock, data, buflen, flags);
+	ret = zsock_recv(client->transport.tcp.sock, data, buflen, flags);
 	if (ret < 0) {
 		return -errno;
 	}
@@ -121,19 +140,13 @@ int mqtt_client_tcp_read(struct mqtt_client *client, u8_t *data, u32_t buflen,
 	return ret;
 }
 
-/**@brief Handles transport disconnection requests on TCP socket transport.
- *
- * @param[in] client Identifies the client on which the procedure is requested.
- *
- * @retval 0 or an error code indicating reason for failure.
- */
 int mqtt_client_tcp_disconnect(struct mqtt_client *client)
 {
 	int ret;
 
-	MQTT_TRC("Closing socket %d", client->transport.tcp.sock);
+	NET_INFO("Closing socket %d", client->transport.tcp.sock);
 
-	ret = close(client->transport.tcp.sock);
+	ret = zsock_close(client->transport.tcp.sock);
 	if (ret < 0) {
 		return -errno;
 	}

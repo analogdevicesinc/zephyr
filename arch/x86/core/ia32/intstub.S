@@ -14,11 +14,10 @@
  * entering and exiting a C interrupt handler.
  */
 
-#include <kernel_structs.h>
-#include <arch/x86/ia32/asm.h>
+#include <zephyr/arch/x86/ia32/asm.h>
 #include <offsets_short.h>
-#include <arch/cpu.h>
-#include <drivers/interrupt_controller/sysapic.h>
+#include <zephyr/arch/cpu.h>
+#include <zephyr/drivers/interrupt_controller/sysapic.h>
 
 	/* exports (internal APIs) */
 
@@ -30,12 +29,11 @@
 
 	/* externs */
 
-	GTEXT(__swap)
+	GTEXT(arch_swap)
 
-#ifdef CONFIG_SYS_POWER_MANAGEMENT
-	GTEXT(z_sys_power_save_idle_exit)
+#ifdef CONFIG_PM
+	GTEXT(z_pm_save_idle_exit)
 #endif
-
 
 /**
  *
@@ -58,13 +56,11 @@
  * created by this routine to determine the locations of volatile registers.
  * These tools must be updated to reflect any changes to the stack frame.
  *
- * @return N/A
- *
  * C function prototype:
  *
  * void _interrupt_enter(void *isr, void *isr_param);
  */
-SECTION_FUNC(TEXT, _interrupt_enter)
+SECTION_FUNC(PINNED_TEXT, _interrupt_enter)
 	/*
 	 * Note that the processor has pushed both the EFLAGS register
 	 * and the logical return address (cs:eip) onto the stack prior
@@ -80,15 +76,6 @@ SECTION_FUNC(TEXT, _interrupt_enter)
 	 *  0  isr   <-- stack pointer
 	 */
 
-#ifdef CONFIG_EXECUTION_BENCHMARKING
-	pushl %eax
-	pushl %edx
-	rdtsc
-	mov %eax, __start_intr_time
-	mov %edx, __start_intr_time+4
-	pop %edx
-	pop %eax
-#endif
 	/*
 	 * The gen_idt tool creates an interrupt-gate descriptor for
 	 * all connections.  The processor will automatically clear the IF
@@ -126,22 +113,9 @@ SECTION_FUNC(TEXT, _interrupt_enter)
 
 	/* Push EDI as we will use it for scratch space.
 	 * Rest of the callee-saved regs get saved by invocation of C
-	 * functions (isr handler, __swap(), etc)
+	 * functions (isr handler, arch_swap(), etc)
 	 */
 	pushl	%edi
-
-
-#if defined(CONFIG_TRACING)
-
-	/* Save these as we are using to keep track of isr and isr_param */
-	pushl	%eax
-	pushl	%edx
-
-	call	z_sys_trace_isr_enter
-
-	popl	%edx
-	popl	%eax
-#endif
 
 	/* load %ecx with &_kernel */
 
@@ -168,11 +142,11 @@ SECTION_FUNC(TEXT, _interrupt_enter)
 
 	pushl	%edi			/* Save stack pointer */
 
-#ifdef CONFIG_SYS_POWER_MANAGEMENT
+#ifdef CONFIG_PM
 	cmpl	$0, _kernel_offset_to_idle(%ecx)
 	jne	handle_idle
 	/* fast path is !idle, in the pipeline */
-#endif /* CONFIG_SYS_POWER_MANAGEMENT */
+#endif /* CONFIG_PM */
 
 	/* fall through to nested case */
 
@@ -180,28 +154,30 @@ alreadyOnIntStack:
 
 	push	%eax	/* interrupt handler argument */
 
-#ifdef CONFIG_EXECUTION_BENCHMARKING
-	/* Save the eax and edx registers before reading the time stamp
-	* once done pop the values
-	*/
-	pushl %eax
-	pushl %edx
-	rdtsc
-	mov %eax,__end_intr_time
-	mov %edx,__end_intr_time+4
-	pop %edx
-	pop %eax
+#if defined(CONFIG_TRACING_ISR)
+	/* Save these as we are using to keep track of isr and isr_param */
+	pushl	%eax
+	pushl	%edx
+	call	sys_trace_isr_enter
+	popl	%edx
+	popl	%eax
 #endif
 
 #ifdef CONFIG_NESTED_INTERRUPTS
 	sti			/* re-enable interrupts */
 #endif
 	/* Now call the interrupt handler */
-	INDIRECT_CALL(%edx)
+	call	*%edx
 	/* Discard ISR argument */
 	addl	$0x4, %esp
 #ifdef CONFIG_NESTED_INTERRUPTS
 	cli			/* disable interrupts again */
+#endif
+
+#if defined(CONFIG_TRACING_ISR)
+	pushl	%eax
+	call	sys_trace_isr_exit
+	popl	%eax
 #endif
 
 	xorl	%eax, %eax
@@ -210,14 +186,18 @@ alreadyOnIntStack:
 	movl	$(X86_X2APIC_BASE_MSR + (LOAPIC_EOI >> 4)), %ecx
 	wrmsr
 #else /* xAPIC */
+#ifdef DEVICE_MMIO_IS_IN_RAM
+	movl	z_loapic_regs, %edx
+	movl	%eax, LOAPIC_EOI(%edx)
+#else
 	movl	%eax, (CONFIG_LOAPIC_BASE_ADDRESS + LOAPIC_EOI)
-#endif
+#endif /* DEVICE_MMIO_IS_IN_RAM */
+#endif /* CONFIG_X2APIC */
 
 	/* determine whether exiting from a nested interrupt */
 	movl	$_kernel, %ecx
 	decl	_kernel_offset_to_nested(%ecx)	/* dec interrupt nest count */
 	jne	nestedInterrupt                 /* 'iret' if nested case */
-
 
 #ifdef CONFIG_PREEMPT_ENABLED
 	movl	_kernel_offset_to_current(%ecx), %edx
@@ -228,19 +208,19 @@ alreadyOnIntStack:
 
 	/*
 	 * Set X86_THREAD_FLAG_INT bit in k_thread to allow the upcoming call
-	 * to __swap() to determine whether non-floating registers need to be
+	 * to arch_swap() to determine whether non-floating registers need to be
 	 * preserved using the lazy save/restore algorithm, or to indicate to
 	 * debug tools that a preemptive context switch has occurred.
 	 */
 
-#if defined(CONFIG_LAZY_FP_SHARING)
+#if defined(CONFIG_LAZY_FPU_SHARING)
 	orb	$X86_THREAD_FLAG_INT, _thread_offset_to_flags(%edx)
 #endif
 
 	/*
 	 * A context reschedule is required: keep the volatile registers of
 	 * the interrupted thread on the context's stack.  Utilize
-	 * the existing __swap() primitive to save the remaining
+	 * the existing arch_swap() primitive to save the remaining
 	 * thread's registers (including floating point) and perform
 	 * a switch to the new thread.
 	 */
@@ -251,27 +231,27 @@ alreadyOnIntStack:
 	call	z_check_stack_sentinel
 #endif
 	pushfl			/* push KERNEL_LOCK_KEY argument */
-	call	__swap
+	call	arch_swap
 	addl 	$4, %esp	/* pop KERNEL_LOCK_KEY argument */
 
 	/*
 	 * The interrupted thread has now been scheduled,
-	 * as the result of a _later_ invocation of __swap().
+	 * as the result of a _later_ invocation of arch_swap().
 	 *
 	 * Now need to restore the interrupted thread's environment before
 	 * returning control to it at the point where it was interrupted ...
 	 */
 
-#if defined(CONFIG_LAZY_FP_SHARING)
+#if defined(CONFIG_LAZY_FPU_SHARING)
 	/*
-	 * __swap() has restored the floating point registers, if needed.
+	 * arch_swap() has restored the floating point registers, if needed.
 	 * Clear X86_THREAD_FLAG_INT in the interrupted thread's state
 	 * since it has served its purpose.
 	 */
 
 	movl	_kernel + _kernel_offset_to_current, %eax
 	andb	$~X86_THREAD_FLAG_INT, _thread_offset_to_flags(%eax)
-#endif /* CONFIG_LAZY_FP_SHARING */
+#endif /* CONFIG_LAZY_FPU_SHARING */
 
 	/* Restore volatile registers and return to the interrupted thread */
 	popl	%edi
@@ -315,29 +295,25 @@ nestedInterrupt:
 	KPTI_IRET
 
 
-#ifdef CONFIG_SYS_POWER_MANAGEMENT
+#ifdef CONFIG_PM
 handle_idle:
 	pushl	%eax
 	pushl	%edx
-	/* Populate 'ticks' argument to z_sys_power_save_idle_exit */
-	push	_kernel_offset_to_idle(%ecx)
 	/* Zero out _kernel.idle */
 	movl	$0, _kernel_offset_to_idle(%ecx)
 
 	/*
-	 * Beware that a timer driver's z_sys_power_save_idle_exit() implementation might
+	 * Beware that a timer driver's z_pm_save_idle_exit() implementation might
 	 * expect that interrupts are disabled when invoked.  This ensures that
 	 * the calculation and programming of the device for the next timer
 	 * deadline is not interrupted.
 	 */
 
-	call	z_sys_power_save_idle_exit
-	/* discard 'ticks' argument passed on the stack */
-	add	$0x4, %esp
+	call	z_pm_save_idle_exit
 	popl	%edx
 	popl	%eax
 	jmp	alreadyOnIntStack
-#endif /* CONFIG_SYS_POWER_MANAGEMENT */
+#endif /* CONFIG_PM */
 
 /**
  *
@@ -367,14 +343,14 @@ handle_idle:
  * thus z_SpuriousIntNoErrCodeHandler()/z_SpuriousIntHandler() shall be
  * invoked with interrupts disabled.
  */
-SECTION_FUNC(TEXT, z_SpuriousIntNoErrCodeHandler)
+SECTION_FUNC(PINNED_TEXT, z_SpuriousIntNoErrCodeHandler)
 
 	pushl	$0			/* push dummy err code onto stk */
 
 	/* fall through to z_SpuriousIntHandler */
 
 
-SECTION_FUNC(TEXT, z_SpuriousIntHandler)
+SECTION_FUNC(PINNED_TEXT, z_SpuriousIntHandler)
 
 	cld				/* Clear direction flag */
 
@@ -402,7 +378,7 @@ SECTION_FUNC(TEXT, z_SpuriousIntHandler)
 	/* handler doesn't  return */
 
 #if CONFIG_IRQ_OFFLOAD
-SECTION_FUNC(TEXT, _irq_sw_handler)
+SECTION_FUNC(PINNED_TEXT, _irq_sw_handler)
 	push $0
 	push $z_irq_do_offload
 	jmp _interrupt_enter

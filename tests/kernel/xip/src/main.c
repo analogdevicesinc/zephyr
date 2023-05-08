@@ -20,7 +20,7 @@
  * @}
  */
 
-#include <ztest.h>
+#include <zephyr/ztest.h>
 
 /* This test relies on these values being one larger than the one before */
 #define TEST_VAL_1  0x1
@@ -30,13 +30,13 @@
 
 #define XIP_TEST_ARRAY_SZ 4
 
-extern u32_t xip_array[XIP_TEST_ARRAY_SZ];
+extern uint32_t xip_array[XIP_TEST_ARRAY_SZ];
 
 /*
  * This array is deliberately defined outside of the scope of the main test
  * module to avoid optimization issues.
  */
-u32_t xip_array[XIP_TEST_ARRAY_SZ] = {
+uint32_t xip_array[XIP_TEST_ARRAY_SZ] = {
 	TEST_VAL_1, TEST_VAL_2, TEST_VAL_3, TEST_VAL_4};
 
 /**
@@ -44,11 +44,11 @@ u32_t xip_array[XIP_TEST_ARRAY_SZ] = {
  *
  * @ingroup kernel_xip_tests
  */
-void test_globals(void)
+ZTEST(xip, test_globals)
 {
 	int  i;
 
-	/* Array should be filled with monotomically incrementing values */
+	/* Array should be filled with monotonically incrementing values */
 	for (i = 0; i < XIP_TEST_ARRAY_SZ; i++) {
 
 		/**TESTPOINT: Check if the array value is correct*/
@@ -57,9 +57,4 @@ void test_globals(void)
 }
 
 /**test case main entry*/
-void test_main(void)
-{
-	ztest_test_suite(xip,
-		ztest_unit_test(test_globals));
-	ztest_run_test_suite(xip);
-}
+ZTEST_SUITE(xip, NULL, NULL, NULL, NULL, NULL);

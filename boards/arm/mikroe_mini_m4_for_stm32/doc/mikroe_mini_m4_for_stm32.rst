@@ -1,7 +1,7 @@
 .. _mikroe_mini_m4_for_stm32:
 
 Mikroe MINI-M4 for STM32
-#########################
+########################
 
 Overview
 ********
@@ -16,7 +16,6 @@ It operates on a 3.3V power supply. An on-board voltage regulator allows
 the board to be powered directly from a USB cable.
 
 .. image:: img/mikroe_mini_m4_for_stm32.jpg
-   :width: 720px
    :align: center
    :alt: MINI-M4 for STM32
 
@@ -51,7 +50,6 @@ The board can be flashed by using STLinkV2 with the following connections.
 +------------------+---------------------+
 
 .. image:: img/st-linkv2.jpg
-   :width: 720px
    :align: center
    :alt: ST-Link/V2
 
@@ -64,6 +62,8 @@ features:
 +-----------+------------+----------------------+
 | Interface | Controller | Driver/Component     |
 +===========+============+======================+
+| CRYP      | on-chip    | crypto               |
++-----------+------------+----------------------+
 | NVIC      | on-chip    | nested vectored      |
 |           |            | interrupt controller |
 +-----------+------------+----------------------+
@@ -83,7 +83,7 @@ features:
 +-----------+------------+----------------------+
 
 
-Other hardware features are not supported by the Zephyr kernel.
+Other hardware features have not been enabled yet for this board.
 
 The default configuration can be found in the defconfig file:
 
@@ -148,4 +148,3 @@ You can debug an application in the usual way.  Here is an example for the
         https://www.st.com/resource/en/datasheet/stm32f415rg.pdf
 .. _MINI-M4 for STM32 User Manual:
         https://download.mikroe.com/documents/starter-boards/mini/stm32/f4/mini-m4-stm32-manual-v100.pdf
-

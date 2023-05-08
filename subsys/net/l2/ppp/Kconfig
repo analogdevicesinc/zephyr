@@ -1,11 +1,9 @@
-#
 # Copyright (c) 2019 Intel Corporation.
-#
 # SPDX-License-Identifier: Apache-2.0
-#
 
 menuconfig NET_L2_PPP
-	bool "Enable point-to-point (PPP) support [EXPERIMENTAL]"
+	bool "Point-to-point (PPP) support [EXPERIMENTAL]"
+	select EXPERIMENTAL
 	help
 	  Add support for PPP.
 
@@ -51,18 +49,35 @@ config NET_L2_PPP_MAX_NACK_LOOPS
 	help
 	  How many times to accept NACK loops.
 
-config NET_L2_PPP_MAX_OPTIONS
-	int "Maximum number of options supported"
-	default 8
-	range 0 16
+config NET_L2_PPP_OPTION_DNS_USE
+	bool "Use negotiated DNS servers"
+	depends on DNS_RESOLVER
 	help
-	  How many options we support. This is used to allocate space for
-	  each option. The default (8) is a reasonably small value.
+	  Use the DNS servers negotiated in the IPCP configuration.
 
-config NET_L2_PPP_OPTION_MRU_NEG
-	bool "Negotiate MRU option if needed"
+config NET_L2_PPP_AUTH_SUPPORT
+	bool
+
+config NET_L2_PPP_PAP
+	bool "PAP authentication protocol"
+	select NET_L2_PPP_AUTH_SUPPORT
 	help
-	  Try to negotiate with peer for MRU (MTU) for the link.
+	  Enable support for PAP authentication protocol.
+
+config NET_L2_PPP_OPTION_MRU
+	bool "LCP MRU option support"
+	help
+	  Enable support for LCP MRU option.
+
+config NET_L2_PPP_OPTION_SERVE_IP
+	bool "Serve IP address to peer"
+	help
+	  Enable support for serving IP address to PPP peer.
+
+config NET_L2_PPP_OPTION_SERVE_DNS
+	bool "Serve DNS addresses to peer"
+	help
+	  Enable support for serving DNS addresses to PPP peer.
 
 module = NET_L2_PPP
 module-dep = NET_LOG
@@ -71,11 +86,18 @@ module-help = Enables ppp L2 to output debug messages.
 source "subsys/net/Kconfig.template.log_config.net"
 
 config NET_L2_PPP_MGMT
-	bool "Enable ppp network management interface"
+	bool "Ppp network management interface"
 	select NET_MGMT
 	select NET_MGMT_EVENT
 	help
 	  Enable support net_mgmt ppp interface which can be used to
 	  configure at run-time ppp drivers and L2 settings.
+
+config NET_L2_PPP_TX_STACK_SIZE
+	int "Stack size for TX handler"
+	default 2048 if COVERAGE_GCOV
+	default 1024
+	help
+	  Set the TX handler stack size.
 
 endif # NET_L2_PPP

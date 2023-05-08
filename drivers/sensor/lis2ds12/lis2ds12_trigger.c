@@ -8,28 +8,27 @@
  * https://www.st.com/resource/en/datasheet/lis2ds12.pdf
  */
 
-#include <device.h>
-#include <drivers/i2c.h>
-#include <sys/__assert.h>
-#include <sys/util.h>
-#include <kernel.h>
-#include <drivers/sensor.h>
+#define DT_DRV_COMPAT st_lis2ds12
 
+#include <zephyr/logging/log.h>
 #include "lis2ds12.h"
 
-#define LOG_LEVEL CONFIG_SENSOR_LOG_LEVEL
-#include <logging/log.h>
-LOG_MODULE_DECLARE(LIS2DS12);
+LOG_MODULE_DECLARE(LIS2DS12, CONFIG_SENSOR_LOG_LEVEL);
 
-static void lis2ds12_gpio_callback(struct device *dev,
-				  struct gpio_callback *cb, u32_t pins)
+static void lis2ds12_gpio_callback(const struct device *dev,
+				   struct gpio_callback *cb, uint32_t pins)
 {
 	struct lis2ds12_data *data =
 		CONTAINER_OF(cb, struct lis2ds12_data, gpio_cb);
+	const struct lis2ds12_config *cfg = data->dev->config;
+	int ret;
 
 	ARG_UNUSED(pins);
 
-	gpio_pin_disable_callback(dev, DT_INST_0_ST_LIS2DS12_IRQ_GPIOS_PIN);
+	ret = gpio_pin_interrupt_configure_dt(&cfg->gpio_int, GPIO_INT_DISABLE);
+	if (ret < 0) {
+		LOG_ERR("%s: Not able to configure pin_int", dev->name);
+	}
 
 #if defined(CONFIG_LIS2DS12_TRIGGER_OWN_THREAD)
 	k_sem_give(&data->trig_sem);
@@ -38,44 +37,41 @@ static void lis2ds12_gpio_callback(struct device *dev,
 #endif
 }
 
-static void lis2ds12_handle_drdy_int(struct device *dev)
+static void lis2ds12_handle_drdy_int(const struct device *dev)
 {
-	struct lis2ds12_data *data = dev->driver_data;
+	struct lis2ds12_data *data = dev->data;
 
 	if (data->data_ready_handler != NULL) {
-		data->data_ready_handler(dev, &data->data_ready_trigger);
+		data->data_ready_handler(dev, data->data_ready_trigger);
 	}
 }
 
-static void lis2ds12_handle_int(void *arg)
+static void lis2ds12_handle_int(const struct device *dev)
 {
-	struct device *dev = arg;
-	struct lis2ds12_data *data = dev->driver_data;
-	u8_t status;
+	const struct lis2ds12_config *cfg = dev->config;
+	stmdev_ctx_t *ctx = (stmdev_ctx_t *)&cfg->ctx;
+	lis2ds12_all_sources_t sources;
+	int ret;
 
-	if (data->hw_tf->read_reg(data, LIS2DS12_REG_STATUS, &status) < 0) {
-		LOG_ERR("status reading error");
-		return;
-	}
+	lis2ds12_all_sources_get(ctx, &sources);
 
-	if (status & LIS2DS12_INT_DRDY) {
+	if (sources.status_dup.drdy) {
 		lis2ds12_handle_drdy_int(dev);
 	}
 
-	gpio_pin_enable_callback(data->gpio, DT_INST_0_ST_LIS2DS12_IRQ_GPIOS_PIN);
+	ret = gpio_pin_interrupt_configure_dt(&cfg->gpio_int,
+					      GPIO_INT_EDGE_TO_ACTIVE);
+	if (ret < 0) {
+		LOG_ERR("%s: Not able to configure pin_int", dev->name);
+	}
 }
 
 #ifdef CONFIG_LIS2DS12_TRIGGER_OWN_THREAD
-static void lis2ds12_thread(int dev_ptr, int unused)
+static void lis2ds12_thread(struct lis2ds12_data *data)
 {
-	struct device *dev = INT_TO_POINTER(dev_ptr);
-	struct lis2ds12_data *data = dev->driver_data;
-
-	ARG_UNUSED(unused);
-
 	while (1) {
 		k_sem_take(&data->trig_sem, K_FOREVER);
-		lis2ds12_handle_int(dev);
+		lis2ds12_handle_int(data->dev);
 	}
 }
 #endif
@@ -90,84 +86,113 @@ static void lis2ds12_work_cb(struct k_work *work)
 }
 #endif
 
-static int lis2ds12_init_interrupt(struct device *dev)
+static int lis2ds12_init_interrupt(const struct device *dev)
 {
-	struct lis2ds12_data *data = dev->driver_data;
+	const struct lis2ds12_config *cfg = dev->config;
+	stmdev_ctx_t *ctx = (stmdev_ctx_t *)&cfg->ctx;
+	lis2ds12_pin_int1_route_t route;
+	int err;
 
-	/* Enable latched mode */
-	if (data->hw_tf->update_reg(data,
-				    LIS2DS12_REG_CTRL3,
-				    LIS2DS12_MASK_LIR,
-				    (1 << LIS2DS12_SHIFT_LIR)) < 0) {
-		LOG_ERR("Could not enable LIR mode.");
-		return -EIO;
+	/* Enable pulsed mode */
+	err = lis2ds12_int_notification_set(ctx, LIS2DS12_INT_PULSED);
+	if (err < 0) {
+		return err;
 	}
 
-	/* enable data-ready interrupt */
-	if (data->hw_tf->update_reg(data,
-				    LIS2DS12_REG_CTRL4,
-				    LIS2DS12_MASK_INT1_DRDY,
-				    (1 << LIS2DS12_SHIFT_INT1_DRDY)) < 0) {
-		LOG_ERR("Could not enable data-ready interrupt.");
-		return -EIO;
+	/* route data-ready interrupt on int1 */
+	err = lis2ds12_pin_int1_route_get(ctx, &route);
+	if (err < 0) {
+		return err;
+	}
+
+	route.int1_drdy = 1;
+
+	err = lis2ds12_pin_int1_route_set(ctx, route);
+	if (err < 0) {
+		return err;
 	}
 
 	return 0;
 }
 
-int lis2ds12_trigger_init(struct device *dev)
+int lis2ds12_trigger_init(const struct device *dev)
 {
-	struct lis2ds12_data *data = dev->driver_data;
+	struct lis2ds12_data *data = dev->data;
+	const struct lis2ds12_config *cfg = dev->config;
+	int ret;
 
-	/* setup data ready gpio interrupt */
-	data->gpio = device_get_binding(DT_INST_0_ST_LIS2DS12_IRQ_GPIOS_CONTROLLER);
-	if (data->gpio == NULL) {
-		LOG_ERR("Cannot get pointer to %s device.",
-			    DT_INST_0_ST_LIS2DS12_IRQ_GPIOS_CONTROLLER);
-		return -EINVAL;
+	/* setup data ready gpio interrupt (INT1 or INT2) */
+	if (!device_is_ready(cfg->gpio_int.port)) {
+		if (cfg->gpio_int.port) {
+			LOG_ERR("%s: device %s is not ready", dev->name,
+						cfg->gpio_int.port->name);
+			return -ENODEV;
+		}
+
+		LOG_DBG("%s: gpio_int not defined in DT", dev->name);
+		return 0;
 	}
 
-	gpio_pin_configure(data->gpio, DT_INST_0_ST_LIS2DS12_IRQ_GPIOS_PIN,
-			   GPIO_DIR_IN | GPIO_INT | GPIO_INT_EDGE |
-			   GPIO_INT_ACTIVE_HIGH | GPIO_INT_DEBOUNCE);
+	data->dev = dev;
+
+	ret = gpio_pin_configure_dt(&cfg->gpio_int, GPIO_INPUT);
+	if (ret < 0) {
+		LOG_ERR("Could not configure gpio");
+		return ret;
+	}
+
+	LOG_INF("%s: int on %s.%02u", dev->name, cfg->gpio_int.port->name,
+				      cfg->gpio_int.pin);
 
 	gpio_init_callback(&data->gpio_cb,
 			   lis2ds12_gpio_callback,
-			   BIT(DT_INST_0_ST_LIS2DS12_IRQ_GPIOS_PIN));
+			   BIT(cfg->gpio_int.pin));
 
-	if (gpio_add_callback(data->gpio, &data->gpio_cb) < 0) {
-		LOG_ERR("Could not set gpio callback.");
-		return -EIO;
+	ret = gpio_add_callback(cfg->gpio_int.port, &data->gpio_cb);
+	if (ret < 0) {
+		LOG_ERR("Could not set gpio callback");
+		return ret;
 	}
 
 #if defined(CONFIG_LIS2DS12_TRIGGER_OWN_THREAD)
-	k_sem_init(&data->trig_sem, 0, UINT_MAX);
+	k_sem_init(&data->trig_sem, 0, K_SEM_MAX_LIMIT);
 
 	k_thread_create(&data->thread, data->thread_stack,
 			CONFIG_LIS2DS12_THREAD_STACK_SIZE,
-			(k_thread_entry_t)lis2ds12_thread, dev,
-			0, NULL, K_PRIO_COOP(CONFIG_LIS2DS12_THREAD_PRIORITY),
-			0, 0);
+			(k_thread_entry_t)lis2ds12_thread,
+			data, NULL, NULL,
+			K_PRIO_COOP(CONFIG_LIS2DS12_THREAD_PRIORITY),
+			0, K_NO_WAIT);
 #elif defined(CONFIG_LIS2DS12_TRIGGER_GLOBAL_THREAD)
 	data->work.handler = lis2ds12_work_cb;
-	data->dev = dev;
 #endif
 
-	gpio_pin_enable_callback(data->gpio, DT_INST_0_ST_LIS2DS12_IRQ_GPIOS_PIN);
-
-	return 0;
+	return gpio_pin_interrupt_configure_dt(&cfg->gpio_int,
+					       GPIO_INT_EDGE_TO_ACTIVE);
 }
 
-int lis2ds12_trigger_set(struct device *dev,
-			const struct sensor_trigger *trig,
-			sensor_trigger_handler_t handler)
+int lis2ds12_trigger_set(const struct device *dev,
+			 const struct sensor_trigger *trig,
+			 sensor_trigger_handler_t handler)
 {
-	struct lis2ds12_data *data = dev->driver_data;
-	u8_t buf[6];
+	struct lis2ds12_data *data = dev->data;
+	const struct lis2ds12_config *cfg = dev->config;
+	stmdev_ctx_t *ctx = (stmdev_ctx_t *)&cfg->ctx;
+	int16_t raw[3];
+	int ret;
 
 	__ASSERT_NO_MSG(trig->type == SENSOR_TRIG_DATA_READY);
 
-	gpio_pin_disable_callback(data->gpio, DT_INST_0_ST_LIS2DS12_IRQ_GPIOS_PIN);
+	if (cfg->gpio_int.port == NULL) {
+		LOG_ERR("trigger_set is not supported");
+		return -ENOTSUP;
+	}
+
+	ret = gpio_pin_interrupt_configure_dt(&cfg->gpio_int, GPIO_INT_DISABLE);
+	if (ret < 0) {
+		LOG_ERR("%s: Not able to configure pin_int", dev->name);
+		return ret;
+	}
 
 	data->data_ready_handler = handler;
 	if (handler == NULL) {
@@ -176,17 +201,11 @@ int lis2ds12_trigger_set(struct device *dev,
 	}
 
 	/* re-trigger lost interrupt */
-	if (data->hw_tf->read_data(data, LIS2DS12_REG_OUTX_L,
-				   buf, sizeof(buf)) < 0) {
-		LOG_ERR("status reading error");
-		return -EIO;
-	}
+	lis2ds12_acceleration_raw_get(ctx, raw);
 
-	data->data_ready_trigger = *trig;
+	data->data_ready_trigger = trig;
 
 	lis2ds12_init_interrupt(dev);
-	gpio_pin_enable_callback(data->gpio, DT_INST_0_ST_LIS2DS12_IRQ_GPIOS_PIN);
-
-	return 0;
+	return gpio_pin_interrupt_configure_dt(&cfg->gpio_int,
+					       GPIO_INT_EDGE_TO_ACTIVE);
 }
-

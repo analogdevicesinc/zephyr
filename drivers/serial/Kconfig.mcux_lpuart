@@ -1,43 +1,24 @@
-# Kconfig - MCUXpresso SDK LPUART
-#
-# Copyright (c) 2017, NXP
-#
-# SPDX-License-Identifier: Apache-2.0
-#
+# MCUXpresso SDK LPUART
 
-menuconfig UART_MCUX_LPUART
+# Copyright (c) 2017, NXP
+# SPDX-License-Identifier: Apache-2.0
+
+config UART_MCUX_LPUART
 	bool "MCUX LPUART driver"
-	depends on HAS_MCUX_LPUART && CLOCK_CONTROL
+	default y
+	depends on DT_HAS_NXP_KINETIS_LPUART_ENABLED
+	depends on CLOCK_CONTROL
 	select SERIAL_HAS_DRIVER
 	select SERIAL_SUPPORT_INTERRUPT
+	select SERIAL_SUPPORT_ASYNC
+	select DMA if UART_ASYNC_API
+	select PINCTRL
 	help
 	  Enable the MCUX LPUART driver.
 
-if UART_MCUX_LPUART
-
-menuconfig UART_MCUX_LPUART_0
-	bool "UART 0"
+config UART_MCUX_LPUART_ISR_SUPPORT
+	bool
+	depends on UART_MCUX_LPUART
+	default y if UART_INTERRUPT_DRIVEN || PM || UART_ASYNC_API
 	help
-	  Enable UART 0.
-
-menuconfig UART_MCUX_LPUART_1
-	bool "UART 1"
-	help
-	  Enable UART 1.
-
-menuconfig UART_MCUX_LPUART_2
-	bool "UART 2"
-	help
-	  Enable UART 2.
-
-menuconfig UART_MCUX_LPUART_3
-	bool "UART 3"
-	help
-	  Enable UART 3.
-
-menuconfig UART_MCUX_LPUART_4
-	bool "UART 4"
-	help
-	  Enable UART 4.
-
-endif # UART_MCUX_LPUART
+	  Enable UART interrupt service routine.

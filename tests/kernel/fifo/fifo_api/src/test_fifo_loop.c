@@ -6,7 +6,7 @@
 
 #include "test_fifo.h"
 
-#define STACK_SIZE (512 + CONFIG_TEST_EXTRA_STACKSIZE)
+#define STACK_SIZE (512 + CONFIG_TEST_EXTRA_STACK_SIZE)
 #define LIST_LEN 4
 #define LOOPS 32
 
@@ -32,12 +32,12 @@ static void tfifo_get(struct k_fifo *pfifo)
 	for (int i = 0; i < LIST_LEN; i++) {
 		/**TESTPOINT: fifo get*/
 		rx_data = k_fifo_get(pfifo, K_NO_WAIT);
-		zassert_equal(rx_data, (void *)&data[i], NULL);
+		zassert_equal(rx_data, (void *)&data[i]);
 	}
 }
 
 /*entry of contexts*/
-static void tIsr_entry(void *p)
+static void tIsr_entry(const void *p)
 {
 	TC_PRINT("isr fifo get\n");
 	tfifo_get((struct k_fifo *)p);
@@ -62,7 +62,7 @@ static void tfifo_read_write(struct k_fifo *pfifo)
 	/**TESTPOINT: thread-isr-thread data passing via fifo*/
 	k_tid_t tid = k_thread_create(&tdata, tstack, STACK_SIZE,
 				      tThread_entry, pfifo, NULL, NULL,
-				      K_PRIO_PREEMPT(0), 0, 0);
+				      K_PRIO_PREEMPT(0), 0, K_NO_WAIT);
 
 	TC_PRINT("main fifo put ---> ");
 	tfifo_put(pfifo);
@@ -96,7 +96,7 @@ static void tfifo_read_write(struct k_fifo *pfifo)
  *
  * @see k_fifo_init(), k_fifo_put(), k_fifo_get()
  */
-void test_fifo_loop(void)
+ZTEST(fifo_api_1cpu, test_fifo_loop)
 {
 	k_fifo_init(&fifo);
 	for (int i = 0; i < LOOPS; i++) {

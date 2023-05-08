@@ -8,8 +8,8 @@
 #define ZEPHYR_DRIVERS_SENSOR_ADT7420_ADT7420_H_
 
 #include <zephyr/types.h>
-#include <device.h>
-#include <drivers/gpio.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/gpio.h>
 
 /* ADT7420 registers */
 #define ADT7420_REG_TEMP_MSB		0x00 /* Temperature value MSB */
@@ -59,42 +59,39 @@
 #define ADT7420_TEMP_SCALE		15625
 
 struct adt7420_data {
-	struct device *i2c;
-	s16_t sample;
+	int16_t sample;
 #ifdef CONFIG_ADT7420_TRIGGER
-	struct device *gpio;
 	struct gpio_callback gpio_cb;
 
 	sensor_trigger_handler_t th_handler;
-	struct sensor_trigger th_trigger;
+	const struct sensor_trigger *th_trigger;
+
+	const struct device *dev;
 
 #if defined(CONFIG_ADT7420_TRIGGER_OWN_THREAD)
-	K_THREAD_STACK_MEMBER(thread_stack, CONFIG_ADT7420_THREAD_STACK_SIZE);
+	K_KERNEL_STACK_MEMBER(thread_stack, CONFIG_ADT7420_THREAD_STACK_SIZE);
 	struct k_sem gpio_sem;
 	struct k_thread thread;
 #elif defined(CONFIG_ADT7420_TRIGGER_GLOBAL_THREAD)
 	struct k_work work;
-	struct device *dev;
 #endif
 #endif /* CONFIG_ADT7420_TRIGGER */
 
 };
 
 struct adt7420_dev_config {
-	const char *i2c_port;
-	u16_t i2c_addr;
+	struct i2c_dt_spec i2c;
 #ifdef CONFIG_ADT7420_TRIGGER
-	const char *gpio_port;
-	u8_t int_gpio;
+	struct gpio_dt_spec int_gpio;
 #endif
 };
 
 #ifdef CONFIG_ADT7420_TRIGGER
-int adt7420_trigger_set(struct device *dev,
+int adt7420_trigger_set(const struct device *dev,
 			const struct sensor_trigger *trig,
 			sensor_trigger_handler_t handler);
 
-int adt7420_init_interrupt(struct device *dev);
+int adt7420_init_interrupt(const struct device *dev);
 #endif /* CONFIG_ADT7420_TRIGGER */
 
 

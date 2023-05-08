@@ -8,23 +8,24 @@
  * https://www.st.com/resource/en/datasheet/stts751.pdf
  */
 
-#include <kernel.h>
-#include <sensor.h>
-#include <gpio.h>
-#include <logging/log.h>
+#define DT_DRV_COMPAT st_stts751
+
+#include <zephyr/kernel.h>
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/logging/log.h>
 
 #include "stts751.h"
 
-#define LOG_LEVEL CONFIG_SENSOR_LOG_LEVEL
-LOG_MODULE_DECLARE(STTS751);
+LOG_MODULE_DECLARE(STTS751, CONFIG_SENSOR_LOG_LEVEL);
 
 /**
  * stts751_enable_int - enable selected int pin to generate interrupt
  */
-static int stts751_enable_int(struct device *dev, int enable)
+static int stts751_enable_int(const struct device *dev, int enable)
 {
-	struct stts751_data *stts751 = dev->driver_data;
-	u8_t en = (enable) ? 0 : 1;
+	struct stts751_data *stts751 = dev->data;
+	uint8_t en = (enable) ? 0 : 1;
 
 	return stts751_pin_event_route_set(stts751->ctx, en);
 }
@@ -32,14 +33,20 @@ static int stts751_enable_int(struct device *dev, int enable)
 /**
  * stts751_trigger_set - link external trigger to event data ready
  */
-int stts751_trigger_set(struct device *dev,
+int stts751_trigger_set(const struct device *dev,
 			  const struct sensor_trigger *trig,
 			  sensor_trigger_handler_t handler)
 {
-	struct stts751_data *stts751 = dev->driver_data;
+	struct stts751_data *stts751 = dev->data;
+	const struct stts751_config *config = dev->config;
+
+	if (!config->int_gpio.port) {
+		return -ENOTSUP;
+	}
 
 	if (trig->chan == SENSOR_CHAN_ALL) {
 		stts751->thsld_handler = handler;
+		stts751->thsld_trigger = trig;
 		if (handler) {
 			return stts751_enable_int(dev, 1);
 		} else {
@@ -54,36 +61,32 @@ int stts751_trigger_set(struct device *dev,
  * stts751_handle_interrupt - handle the thsld event
  * read data and call handler if registered any
  */
-static void stts751_handle_interrupt(void *arg)
+static void stts751_handle_interrupt(const struct device *dev)
 {
-	struct device *dev = arg;
-	struct stts751_data *stts751 = dev->driver_data;
-	const struct stts751_config *cfg = dev->config->config_info;
-	struct sensor_trigger thsld_trigger = {
-		.type = SENSOR_TRIG_THRESHOLD,
-	};
+	struct stts751_data *stts751 = dev->data;
+	const struct stts751_config *cfg = dev->config;
 	stts751_status_t status;
 
 	stts751_status_reg_get(stts751->ctx, &status);
 
 	if (stts751->thsld_handler != NULL &&
 	    (status.t_high || status.t_low)) {
-		stts751->thsld_handler(dev, &thsld_trigger);
+		stts751->thsld_handler(dev, stts751->thsld_trigger);
 	}
 
-	gpio_pin_enable_callback(stts751->gpio, cfg->event_pin);
+	gpio_pin_interrupt_configure_dt(&cfg->int_gpio, GPIO_INT_EDGE_TO_ACTIVE);
 }
 
-static void stts751_gpio_callback(struct device *dev,
-				  struct gpio_callback *cb, u32_t pins)
+static void stts751_gpio_callback(const struct device *dev,
+				  struct gpio_callback *cb, uint32_t pins)
 {
-	const struct stts751_config *cfg = dev->config->config_info;
 	struct stts751_data *stts751 =
 		CONTAINER_OF(cb, struct stts751_data, gpio_cb);
+	const struct stts751_config *cfg = stts751->dev->config;
 
 	ARG_UNUSED(pins);
 
-	gpio_pin_disable_callback(dev, cfg->event_pin);
+	gpio_pin_interrupt_configure_dt(&cfg->int_gpio, GPIO_INT_DISABLE);
 
 #if defined(CONFIG_STTS751_TRIGGER_OWN_THREAD)
 	k_sem_give(&stts751->gpio_sem);
@@ -93,16 +96,11 @@ static void stts751_gpio_callback(struct device *dev,
 }
 
 #ifdef CONFIG_STTS751_TRIGGER_OWN_THREAD
-static void stts751_thread(int dev_ptr, int unused)
+static void stts751_thread(struct stts751_data *stts751)
 {
-	struct device *dev = INT_TO_POINTER(dev_ptr);
-	struct stts751_data *stts751 = dev->driver_data;
-
-	ARG_UNUSED(unused);
-
 	while (1) {
 		k_sem_take(&stts751->gpio_sem, K_FOREVER);
-		stts751_handle_interrupt(dev);
+		stts751_handle_interrupt(stts751->dev);
 	}
 }
 #endif /* CONFIG_STTS751_TRIGGER_OWN_THREAD */
@@ -117,44 +115,38 @@ static void stts751_work_cb(struct k_work *work)
 }
 #endif /* CONFIG_STTS751_TRIGGER_GLOBAL_THREAD */
 
-int stts751_init_interrupt(struct device *dev)
+int stts751_init_interrupt(const struct device *dev)
 {
-	struct stts751_data *stts751 = dev->driver_data;
-	const struct stts751_config *cfg = dev->config->config_info;
+	struct stts751_data *stts751 = dev->data;
+	const struct stts751_config *cfg = dev->config;
 	int ret;
 
-	/* setup data ready gpio interrupt */
-	stts751->gpio = device_get_binding(cfg->event_port);
-	if (stts751->gpio == NULL) {
-		LOG_DBG("Cannot get pointer to %s device", cfg->event_port);
-		return -EINVAL;
+	if (!device_is_ready(cfg->int_gpio.port)) {
+		LOG_ERR("GPIO device not ready");
+		return -ENODEV;
 	}
 
 #if defined(CONFIG_STTS751_TRIGGER_OWN_THREAD)
-	k_sem_init(&stts751->gpio_sem, 0, UINT_MAX);
+	k_sem_init(&stts751->gpio_sem, 0, K_SEM_MAX_LIMIT);
 
 	k_thread_create(&stts751->thread, stts751->thread_stack,
-		       CONFIG_STTS751_THREAD_STACK_SIZE,
-		       (k_thread_entry_t)stts751_thread, dev,
-		       0, NULL, K_PRIO_COOP(CONFIG_STTS751_THREAD_PRIORITY),
-		       0, K_NO_WAIT);
+			CONFIG_STTS751_THREAD_STACK_SIZE,
+			(k_thread_entry_t)stts751_thread, stts751,
+			NULL, NULL, K_PRIO_COOP(CONFIG_STTS751_THREAD_PRIORITY),
+			0, K_NO_WAIT);
 #elif defined(CONFIG_STTS751_TRIGGER_GLOBAL_THREAD)
 	stts751->work.handler = stts751_work_cb;
-	stts751->dev = dev;
 #endif /* CONFIG_STTS751_TRIGGER_OWN_THREAD */
 
-	ret = gpio_pin_configure(stts751->gpio, cfg->event_pin,
-				 GPIO_DIR_IN | GPIO_INT | GPIO_INT_EDGE |
-				 GPIO_INT_ACTIVE_LOW | GPIO_INT_DEBOUNCE);
+	ret = gpio_pin_configure_dt(&cfg->int_gpio, GPIO_INPUT);
 	if (ret < 0) {
 		LOG_DBG("Could not configure gpio");
 		return ret;
 	}
 
-	gpio_init_callback(&stts751->gpio_cb, stts751_gpio_callback,
-			   BIT(cfg->event_pin));
+	gpio_init_callback(&stts751->gpio_cb, stts751_gpio_callback, BIT(cfg->int_gpio.pin));
 
-	if (gpio_add_callback(stts751->gpio, &stts751->gpio_cb) < 0) {
+	if (gpio_add_callback(cfg->int_gpio.port, &stts751->gpio_cb) < 0) {
 		LOG_DBG("Could not set gpio callback");
 		return -EIO;
 	}
@@ -169,5 +161,5 @@ int stts751_init_interrupt(struct device *dev)
 	stts751_low_temperature_threshold_set(stts751->ctx,
 					stts751_from_celsius_to_lsb(temp_lo));
 
-	return gpio_pin_enable_callback(stts751->gpio, cfg->event_pin);
+	return gpio_pin_interrupt_configure_dt(&cfg->int_gpio, GPIO_INT_EDGE_TO_ACTIVE);
 }

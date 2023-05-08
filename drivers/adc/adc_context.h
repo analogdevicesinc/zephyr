@@ -8,8 +8,8 @@
 #ifndef ZEPHYR_DRIVERS_ADC_ADC_CONTEXT_H_
 #define ZEPHYR_DRIVERS_ADC_ADC_CONTEXT_H_
 
-#include <drivers/adc.h>
-#include <sys/atomic.h>
+#include <zephyr/drivers/adc.h>
+#include <zephyr/sys/atomic.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -38,6 +38,15 @@ static void adc_context_update_buffer_pointer(struct adc_context *ctx,
 static void adc_context_enable_timer(struct adc_context *ctx);
 static void adc_context_disable_timer(struct adc_context *ctx);
 
+/*
+ * If a driver needs to do something after a context complete then
+ * then this optional function can be overwritten. This will be called
+ * after a sequence has ended, and *not* when restarted with ADC_ACTION_REPEAT.
+ * To enable this function define ADC_CONTEXT_ENABLE_ON_COMPLETE.
+ */
+#ifdef ADC_CONTEXT_ENABLE_ON_COMPLETE
+static void adc_context_on_complete(struct adc_context *ctx, int status);
+#endif /* ADC_CONTEXT_ENABLE_ON_COMPLETE */
 
 struct adc_context {
 	atomic_t sampling_requested;
@@ -56,7 +65,7 @@ struct adc_context {
 
 	struct adc_sequence sequence;
 	struct adc_sequence_options options;
-	u16_t sampling_index;
+	uint16_t sampling_index;
 };
 
 #ifdef ADC_CONTEXT_USES_KERNEL_TIMER
@@ -72,6 +81,18 @@ struct adc_context {
 #define ADC_CONTEXT_INIT_SYNC(_data, _ctx_name) \
 	._ctx_name.sync = Z_SEM_INITIALIZER(_data._ctx_name.sync, 0, 1)
 
+#ifdef ADC_CONTEXT_USES_KERNEL_TIMER
+static void adc_context_on_timer_expired(struct k_timer *timer_id);
+#endif
+
+static inline void adc_context_init(struct adc_context *ctx)
+{
+#ifdef ADC_CONTEXT_USES_KERNEL_TIMER
+	k_timer_init(&ctx->timer, adc_context_on_timer_expired, NULL);
+#endif
+	k_sem_init(&ctx->lock, 0, 1);
+	k_sem_init(&ctx->sync, 0, 1);
+}
 
 static inline void adc_context_request_next_sampling(struct adc_context *ctx)
 {
@@ -92,10 +113,7 @@ static inline void adc_context_request_next_sampling(struct adc_context *ctx)
 #ifdef ADC_CONTEXT_USES_KERNEL_TIMER
 static inline void adc_context_enable_timer(struct adc_context *ctx)
 {
-	u32_t interval_us = ctx->options.interval_us;
-	u32_t interval_ms = ceiling_fraction(interval_us, 1000UL);
-
-	k_timer_start(&ctx->timer, 0, interval_ms);
+	k_timer_start(&ctx->timer, K_NO_WAIT, K_USEC(ctx->options.interval_us));
 }
 
 static inline void adc_context_disable_timer(struct adc_context *ctx)
@@ -111,7 +129,6 @@ static void adc_context_on_timer_expired(struct k_timer *timer_id)
 	adc_context_request_next_sampling(ctx);
 }
 #endif /* ADC_CONTEXT_USES_KERNEL_TIMER */
-
 
 static inline void adc_context_lock(struct adc_context *ctx,
 				    bool asynchronous,
@@ -157,6 +174,10 @@ static inline int adc_context_wait_for_completion(struct adc_context *ctx)
 
 static inline void adc_context_complete(struct adc_context *ctx, int status)
 {
+#ifdef ADC_CONTEXT_ENABLE_ON_COMPLETE
+	adc_context_on_complete(ctx, status);
+#endif /* ADC_CONTEXT_ENABLE_ON_COMPLETE */
+
 #ifdef CONFIG_ADC_ASYNC
 	if (ctx->asynchronous) {
 		if (ctx->signal) {
@@ -206,7 +227,7 @@ static inline void adc_context_start_read(struct adc_context *ctx,
  * function if required and takes further actions accordingly.
  */
 static inline void adc_context_on_sampling_done(struct adc_context *ctx,
-						struct device *dev)
+						const struct device *dev)
 {
 	if (ctx->sequence.options) {
 		adc_sequence_callback callback = ctx->options.callback;

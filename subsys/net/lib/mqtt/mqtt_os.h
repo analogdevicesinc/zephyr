@@ -19,22 +19,16 @@
 #define MQTT_OS_H_
 
 #include <stddef.h>
-#include <kernel.h>
-#include <sys/mutex.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/mutex.h>
 
-#include <net/net_core.h>
+#include <zephyr/net/net_core.h>
 
 #include "mqtt_internal.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-/**@brief Method to get trace logs from the module. */
-#define MQTT_TRC(...) NET_DBG(__VA_ARGS__)
-
-/**@brief Method to error logs from the module. */
-#define MQTT_ERR(...) NET_ERR(__VA_ARGS__)
 
 /**@brief Initialize the mutex for the module, if any.
  *
@@ -72,7 +66,7 @@ static inline void mqtt_mutex_unlock(struct mqtt_client *client)
  *
  * @retval Current wall clock or sys tick value in milliseconds.
  */
-static inline u32_t mqtt_sys_tick_in_ms_get(void)
+static inline uint32_t mqtt_sys_tick_in_ms_get(void)
 {
 	return k_uptime_get_32();
 }
@@ -83,9 +77,9 @@ static inline u32_t mqtt_sys_tick_in_ms_get(void)
  *
  * @retval Time elapsed since last_activity time.
  */
-static inline u32_t mqtt_elapsed_time_in_ms_get(u32_t last_activity)
+static inline uint32_t mqtt_elapsed_time_in_ms_get(uint32_t last_activity)
 {
-	s32_t diff = k_uptime_get_32() - last_activity;
+	int32_t diff = k_uptime_get_32() - last_activity;
 
 	if (diff < 0) {
 		return 0;

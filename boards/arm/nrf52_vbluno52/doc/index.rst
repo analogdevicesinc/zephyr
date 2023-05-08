@@ -18,7 +18,7 @@ the following devices:
 * FLASH
 * RADIO (Bluetooth Low Energy 5.0)
 
-.. figure:: img/nrf52_vbluno52.png
+.. figure:: img/nrf52_vbluno52.jpg
      :align: center
      :alt: nRF52 VBLUno52
 
@@ -58,7 +58,7 @@ hardware features:
 | SPI       | on-chip    | spi                  |
 +-----------+------------+----------------------+
 
-Other hardware features are not supported by the Zephyr kernel.
+Other hardware features have not been enabled yet for this board.
 
 Connections and IOs
 ===================
@@ -105,4 +105,3 @@ components on the VBLUno52 board:
 * :ref:`button-sample`
 * :ref:`bluetooth-beacon-sample`
 * :ref:`peripheral_hr`
-

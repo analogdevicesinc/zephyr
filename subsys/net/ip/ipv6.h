@@ -15,10 +15,10 @@
 
 #include <zephyr/types.h>
 
-#include <net/net_ip.h>
-#include <net/net_pkt.h>
-#include <net/net_if.h>
-#include <net/net_context.h>
+#include <zephyr/net/net_ip.h>
+#include <zephyr/net/net_pkt.h>
+#include <zephyr/net/net_if.h>
+#include <zephyr/net/net_context.h>
 
 #include "icmpv6.h"
 #include "nbr.h"
@@ -29,6 +29,10 @@
 #define NET_IPV6_DEFAULT_PREFIX_LEN 64
 
 #define NET_MAX_RS_COUNT 3
+
+#define NET_IPV6_DSCP_MASK 0xFC
+#define NET_IPV6_DSCP_OFFSET 2
+#define NET_IPV6_ECN_MASK 0x03
 
 /**
  * @brief Bitmaps for IPv6 extension header processing
@@ -87,22 +91,22 @@ struct net_ipv6_nbr_data {
 	struct in6_addr addr;
 
 	/** Reachable timer. */
-	s64_t reachable;
+	int64_t reachable;
 
 	/** Reachable timeout */
-	s32_t reachable_timeout;
+	int32_t reachable_timeout;
 
 	/** Neighbor Solicitation reply timer */
-	s64_t send_ns;
+	int64_t send_ns;
 
 	/** State of the neighbor discovery */
 	enum net_ipv6_nbr_state state;
 
 	/** Link metric for the neighbor */
-	u16_t link_metric;
+	uint16_t link_metric;
 
 	/** How many times we have sent NS */
-	u8_t ns_count;
+	uint8_t ns_count;
 
 	/** Is the neighbor a router */
 	bool is_router;
@@ -111,7 +115,7 @@ struct net_ipv6_nbr_data {
 	/** Stale counter used to removed oldest nbr in STALE state,
 	 *  when table is full.
 	 */
-	u32_t stale_counter;
+	uint32_t stale_counter;
 #endif
 };
 
@@ -133,13 +137,15 @@ int net_ipv6_start_rs(struct net_if *iface);
 
 int net_ipv6_send_na(struct net_if *iface, const struct in6_addr *src,
 		     const struct in6_addr *dst, const struct in6_addr *tgt,
-		     u8_t flags);
+		     uint8_t flags);
 
 
-static inline bool net_ipv6_is_nexthdr_upper_layer(u8_t nexthdr)
+static inline bool net_ipv6_is_nexthdr_upper_layer(uint8_t nexthdr)
 {
 	return (nexthdr == IPPROTO_ICMPV6 || nexthdr == IPPROTO_UDP ||
-		nexthdr == IPPROTO_TCP);
+		nexthdr == IPPROTO_TCP ||
+		(IS_ENABLED(CONFIG_NET_L2_VIRTUAL) &&
+		 ((nexthdr == IPPROTO_IPV6) || (nexthdr == IPPROTO_IPIP))));
 }
 
 /**
@@ -180,10 +186,10 @@ static inline int net_ipv6_create(struct net_pkt *pkt,
  * @return 0 on success, negative errno otherwise.
  */
 #if defined(CONFIG_NET_NATIVE_IPV6)
-int net_ipv6_finalize(struct net_pkt *pkt, u8_t next_header_proto);
+int net_ipv6_finalize(struct net_pkt *pkt, uint8_t next_header_proto);
 #else
 static inline int net_ipv6_finalize(struct net_pkt *pkt,
-				    u8_t next_header_proto)
+				    uint8_t next_header_proto)
 {
 	ARG_UNUSED(pkt);
 	ARG_UNUSED(next_header_proto);
@@ -203,7 +209,14 @@ static inline int net_ipv6_finalize(struct net_pkt *pkt,
 #if defined(CONFIG_NET_IPV6_MLD)
 int net_ipv6_mld_join(struct net_if *iface, const struct in6_addr *addr);
 #else
-#define net_ipv6_mld_join(...)
+static inline int
+net_ipv6_mld_join(struct net_if *iface, const struct in6_addr *addr)
+{
+	ARG_UNUSED(iface);
+	ARG_UNUSED(addr);
+
+	return -ENOTSUP;
+}
 #endif /* CONFIG_NET_IPV6_MLD */
 
 /**
@@ -217,7 +230,14 @@ int net_ipv6_mld_join(struct net_if *iface, const struct in6_addr *addr);
 #if defined(CONFIG_NET_IPV6_MLD)
 int net_ipv6_mld_leave(struct net_if *iface, const struct in6_addr *addr);
 #else
-#define net_ipv6_mld_leave(...)
+static inline int
+net_ipv6_mld_leave(struct net_if *iface, const struct in6_addr *addr)
+{
+	ARG_UNUSED(iface);
+	ARG_UNUSED(addr);
+
+	return -ENOTSUP;
+}
 #endif /* CONFIG_NET_IPV6_MLD */
 
 /**
@@ -278,7 +298,7 @@ static inline struct net_nbr *net_ipv6_nbr_lookup(struct net_if *iface,
  *
  * @return A valid pointer on a neighbor on success, NULL otherwise
  */
-struct net_nbr *net_ipv6_get_nbr(struct net_if *iface, u8_t idx);
+struct net_nbr *net_ipv6_get_nbr(struct net_if *iface, uint8_t idx);
 
 /**
  * @brief Look for a neighbor from it's link local address index
@@ -291,11 +311,11 @@ struct net_nbr *net_ipv6_get_nbr(struct net_if *iface, u8_t idx);
  */
 #if defined(CONFIG_NET_IPV6_NBR_CACHE) && defined(CONFIG_NET_NATIVE_IPV6)
 struct in6_addr *net_ipv6_nbr_lookup_by_index(struct net_if *iface,
-					      u8_t idx);
+					      uint8_t idx);
 #else
 static inline
 struct in6_addr *net_ipv6_nbr_lookup_by_index(struct net_if *iface,
-					      u8_t idx)
+					      uint8_t idx)
 {
 	return NULL;
 }
@@ -318,14 +338,14 @@ struct in6_addr *net_ipv6_nbr_lookup_by_index(struct net_if *iface,
  */
 #if defined(CONFIG_NET_IPV6_NBR_CACHE) && defined(CONFIG_NET_NATIVE_IPV6)
 struct net_nbr *net_ipv6_nbr_add(struct net_if *iface,
-				 struct in6_addr *addr,
-				 struct net_linkaddr *lladdr,
+				 const struct in6_addr *addr,
+				 const struct net_linkaddr *lladdr,
 				 bool is_router,
 				 enum net_ipv6_nbr_state state);
 #else
 static inline struct net_nbr *net_ipv6_nbr_add(struct net_if *iface,
-					       struct in6_addr *addr,
-					       struct net_linkaddr *lladdr,
+					       const struct in6_addr *addr,
+					       const struct net_linkaddr *lladdr,
 					       bool is_router,
 					       enum net_ipv6_nbr_state state)
 {
@@ -382,14 +402,7 @@ static inline void net_ipv6_nbr_set_reachable_timer(struct net_if *iface,
 }
 #endif
 
-/* We do not have to accept larger than 1500 byte IPv6 packet (RFC 2460 ch 5).
- * This means that we should receive everything within first two fragments.
- * The first one being 1280 bytes and the second one 220 bytes.
- */
-#if !defined(NET_IPV6_FRAGMENTS_MAX_PKT)
-#define NET_IPV6_FRAGMENTS_MAX_PKT 2
-#endif
-
+#if defined(CONFIG_NET_IPV6_FRAGMENT)
 /** Store pending IPv6 fragment information that is needed for reassembly. */
 struct net_ipv6_reassembly {
 	/** IPv6 source address of the fragment */
@@ -402,14 +415,17 @@ struct net_ipv6_reassembly {
 	 * Timeout for cancelling the reassembly. The timer is used
 	 * also to detect if this reassembly slot is used or not.
 	 */
-	struct k_delayed_work timer;
+	struct k_work_delayable timer;
 
 	/** Pointers to pending fragments */
-	struct net_pkt *pkt[NET_IPV6_FRAGMENTS_MAX_PKT];
+	struct net_pkt *pkt[CONFIG_NET_IPV6_FRAGMENT_MAX_PKT];
 
 	/** IPv6 fragment identification */
-	u32_t id;
+	uint32_t id;
 };
+#else
+struct net_ipv6_reassembly;
+#endif
 
 /**
  * @typedef net_ipv6_frag_cb_t
@@ -440,8 +456,8 @@ void net_ipv6_frag_foreach(net_ipv6_frag_cb_t cb, void *user_data);
  *
  * @return 0 on success, a negative errno otherwise.
  */
-int net_ipv6_find_last_ext_hdr(struct net_pkt *pkt, u16_t *next_hdr_off,
-			       u16_t *last_hdr_off);
+int net_ipv6_find_last_ext_hdr(struct net_pkt *pkt, uint16_t *next_hdr_off,
+			       uint16_t *last_hdr_off);
 
 /**
  * @brief Handles IPv6 fragmented packets.
@@ -455,12 +471,12 @@ int net_ipv6_find_last_ext_hdr(struct net_pkt *pkt, u16_t *next_hdr_off,
 #if defined(CONFIG_NET_IPV6_FRAGMENT) && defined(CONFIG_NET_NATIVE_IPV6)
 enum net_verdict net_ipv6_handle_fragment_hdr(struct net_pkt *pkt,
 					      struct net_ipv6_hdr *hdr,
-					      u8_t nexthdr);
+					      uint8_t nexthdr);
 #else
 static inline
 enum net_verdict net_ipv6_handle_fragment_hdr(struct net_pkt *pkt,
 					      struct net_ipv6_hdr *hdr,
-					      u8_t nexthdr)
+					      uint8_t nexthdr)
 {
 	ARG_UNUSED(pkt);
 	ARG_UNUSED(hdr);
@@ -482,5 +498,54 @@ void net_ipv6_mld_init(void);
 #define net_ipv6_init(...)
 #define net_ipv6_nbr_init(...)
 #endif
+
+/**
+ * @brief Decode DSCP value from TC field.
+ *
+ * @param tc TC field value from the IPv6 header.
+ *
+ * @return Decoded DSCP value.
+ */
+static inline uint8_t net_ipv6_get_dscp(uint8_t tc)
+{
+	return (tc & NET_IPV6_DSCP_MASK) >> NET_IPV6_DSCP_OFFSET;
+}
+
+/**
+ * @brief Encode DSCP value into TC field.
+ *
+ * @param tc A pointer to the TC field.
+ * @param dscp DSCP value to set.
+ */
+static inline void net_ipv6_set_dscp(uint8_t *tc, uint8_t dscp)
+{
+	*tc &= ~NET_IPV6_DSCP_MASK;
+	*tc |= (dscp << NET_IPV6_DSCP_OFFSET) & NET_IPV6_DSCP_MASK;
+}
+
+/**
+ * @brief Decode ECN value from TC field.
+ *
+ * @param tc TC field value from the IPv6 header.
+ *
+ * @return Decoded ECN value.
+ */
+static inline uint8_t net_ipv6_get_ecn(uint8_t tc)
+{
+	return tc & NET_IPV6_ECN_MASK;
+}
+
+/**
+ * @brief Encode ECN value into TC field.
+ *
+ * @param tc A pointer to the TC field.
+ * @param ecn ECN value to set.
+ */
+static inline void net_ipv6_set_ecn(uint8_t *tc, uint8_t ecn)
+{
+	*tc &= ~NET_IPV6_ECN_MASK;
+	*tc |= ecn & NET_IPV6_ECN_MASK;
+}
+
 
 #endif /* __IPV6_H */

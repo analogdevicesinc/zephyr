@@ -1,21 +1,20 @@
 # Copyright (c) 2018, Linaro Limited
 # SPDX-License-Identifier: Apache-2.0
 
-title: PWM LEDs
-
 description: PWM LEDs parent node
 
 compatible: "pwm-leds"
 
 child-binding:
-    title: PWM LED node
-    description: PWM LED child node
-    properties:
-        pwms:
-          type: phandle-array
-          required: true
+  description: PWM LED child node
+  properties:
+    pwms:
+      required: true
+      type: phandle-array
 
-        label:
-          required: false
-          type: string
-          description: Human readable string describing the device (used by Zephyr for API name)
+    label:
+      type: string
+      description: |
+        Human readable string describing the LED. It can be used by an
+        application to identify this LED or to retrieve its number/index
+        (i.e. child node number) on the parent device.

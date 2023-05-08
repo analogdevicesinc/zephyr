@@ -4,24 +4,25 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <kernel.h>
-#include <drivers/flash.h>
-#include <device.h>
-#include <ztest.h>
+#include <zephyr/kernel.h>
+#include <zephyr/drivers/flash.h>
+#include <zephyr/device.h>
+#include <zephyr/ztest.h>
 
 #define MAX_NUM_OF_SECTORS		1024
 #define NUM_OF_SECTORS_TO_TEST		4
 #define FLASH_SECTOR_SIZE		65536
 #define TEST_DATA_LEN			4
 
-void test_qspi_flash(void)
+ZTEST(nios2_qspi, test_qspi_flash)
 {
-	struct device *flash_dev;
-	u32_t i, offset, rd_val, wr_val;
+	const struct device *flash_dev;
+	uint32_t i, offset, rd_val, wr_val;
+	uint8_t wr_buf[4] = {0xAA, 0xBB, 0xCC, 0xDD};
+	uint8_t rd_buf[2];
 
-	flash_dev = device_get_binding(CONFIG_SOC_FLASH_NIOS2_QSPI_DEV_NAME);
-	zassert_equal(!flash_dev, TC_PASS, "Flash device not found!");
+	flash_dev = DEVICE_DT_GET(DT_NODELABEL(n25q512ax3));
+	zassert_true(!device_is_ready(flash_dev), TC_PASS, "Flash device is not ready!");
 
 	for (i = 0U; i < NUM_OF_SECTORS_TO_TEST; i++) {
 		TC_PRINT("\nTesting: Flash Sector-%d\n", i);
@@ -56,46 +57,18 @@ void test_qspi_flash(void)
 		TC_PRINT("PASS\n");
 
 
-		/* Flash Lock Test */
-		TC_PRINT("	Flash Lock Test...");
-		zassert_equal(flash_write_protection_set(flash_dev, true),
-				TC_PASS, "Flash write protection call failed!");
-		/* Ignore erase failure as it is expected */
-		flash_erase(flash_dev, offset, FLASH_SECTOR_SIZE);
-		zassert_equal(flash_read(flash_dev, offset,
-				&rd_val, TEST_DATA_LEN),
+		/* Flash Unaligned Read Test */
+		TC_PRINT("	Flash Unaligned Read Test...");
+		zassert_equal(flash_write(flash_dev, offset + sizeof(wr_val),
+				&wr_buf, sizeof(wr_buf)),
+				TC_PASS, "Flash write call failed!");
+		zassert_equal(flash_read(flash_dev, offset + sizeof(wr_val) + 1,
+				&rd_buf, sizeof(rd_buf)),
 				TC_PASS, "Flash read call failed!");
-		/*
-		 * we should read back the previous value (wr_val)
-		 * as we have locked the flash which will block erase
-		 * and write operations.
-		 */
-		zassert_equal(rd_val != wr_val, TC_PASS,
-					"Flash Lock Test failed!!");
-		TC_PRINT("PASS\n");
-
-
-		/* Flash Unlock Test */
-		TC_PRINT("	Flash Unlock Test...");
-		zassert_equal(flash_write_protection_set(flash_dev, false),
-				TC_PASS, "Flash write protection call failed!");
-		zassert_equal(flash_erase(flash_dev,
-				offset, FLASH_SECTOR_SIZE),
-				TC_PASS, "Flash erase call failed!");
-		zassert_equal(flash_read(flash_dev, offset,
-				&rd_val, TEST_DATA_LEN),
-				TC_PASS, "Flash read call failed!");
-		/* In case of erase all bits will be set to 1 */
-		wr_val = 0xffffffff;
-		zassert_equal(rd_val != wr_val, TC_PASS,
-					"Flash Unlock Test failed!!");
+		zassert_equal(memcmp(wr_buf + 1, rd_buf, sizeof(rd_buf)),
+				TC_PASS, "Flash Write & Read Test failed!!");
 		TC_PRINT("PASS\n");
 	}
 }
 
-void test_main(void)
-{
-	ztest_test_suite(nios2_qspi_test_suite,
-			ztest_unit_test(test_qspi_flash));
-	ztest_run_test_suite(nios2_qspi_test_suite);
-}
+ZTEST_SUITE(nios2_qspi, NULL, NULL, NULL, NULL, NULL);

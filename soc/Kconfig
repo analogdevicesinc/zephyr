@@ -3,14 +3,19 @@
 choice
 	prompt "SoC/CPU/Configuration Selection"
 
-source "$(SOC_DIR)/$(ARCH)/*/Kconfig.soc"
+# This loads custom SoC root Kconfig (only available if custom SoC root are defined)
+osource "$(KCONFIG_BINARY_DIR)/Kconfig.soc"
+# This loads Zephyr base SoC root Kconfig
+osource "soc/$(ARCH)/*/Kconfig.soc"
 
 endchoice
 
 menu "Hardware Configuration"
-osource "$(SOC_DIR)/$(ARCH)/Kconfig"
-osource "$(SOC_DIR)/$(ARCH)/*/Kconfig"
-
+# This loads custom SoC root Kconfig (only available if custom SoC root are defined)
+osource "$(KCONFIG_BINARY_DIR)/Kconfig.soc.arch"
+# This loads Zephyr base SoC Kconfigs
+osource "soc/$(ARCH)/Kconfig"
+osource "soc/$(ARCH)/*/Kconfig"
 
 module = SOC
 module-str = SOC
@@ -28,46 +33,29 @@ config SOC_COMPATIBLE_NRF
 config SOC_COMPATIBLE_NRF52X
 	bool
 
-config SOC_COMPATIBLE_NRF52832
+config SOC_COMPATIBLE_NRF52833
 	bool
 
 #
 # SOC_*_LD: SoC specific Linker script additions
 #
 
-if ARC || ARM || X86 || NIOS2 || RISCV
+config SOC_DEPRECATED_RELEASE
+	string
+	help
+	  This hidden option is set in the SoC configuration and indicates
+	  the Zephyr release that the SoC configuration will be removed.
+	  When set, any build for that SoC will generate a clearly visible
+	  deprecation warning.
 
-config SOC_NOINIT_LD
+config SOC_HAS_TIMING_FUNCTIONS
 	bool
 	help
-	  Note: This is deprecated, use Cmake function zephyr_linker_sources() instead.
-	  Include an SoC specific linker script fragment named soc-noinit.ld
-	  for inserting additional data and linker directives into
-	  the noinit section.
+	  Should be selected if SoC provides custom method for retrieving
+	  timestamps and cycle count.
 
-	  This only has effect if the SoC uses the common linker script
-	  under include/arch/.
-
-config SOC_RODATA_LD
+config SOC_HAS_RUNTIME_NUM_CPUS
 	bool
 	help
-	  Note: This is deprecated, use Cmake function zephyr_linker_sources() instead.
-	  Include an SoC specific linker script fragment named soc-rodata.ld
-	  for inserting additional data and linker directives into
-	  the rodata section.
-
-	  This only has effect if the SoC uses the common linker script
-	  under include/arch/.
-
-config SOC_RWDATA_LD
-	bool
-	help
-	  Note: This is deprecated, use Cmake function zephyr_linker_sources() instead.
-	  Include an SoC specific linker script fragment named soc-rwdata.ld
-	  for inserting additional data and linker directives into
-	  the data section.
-
-	  This only has effect if the SoC uses the common linker script
-	  under include/arch/.
-
-endif # ARC || ARM || X86 || NIOS2 || RISCV
+	  Should be selected if SoC handles determining the number of CPUs
+	  at runtime.

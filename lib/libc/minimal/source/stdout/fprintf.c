@@ -8,51 +8,49 @@
 
 #include <stdarg.h>
 #include <stdio.h>
+#include <zephyr/sys/cbprintf.h>
 
 #define DESC(d) ((void *)d)
 
-extern int z_prf(int (*func)(), void *dest,
-				const char *format, va_list vargs);
-
-int fprintf(FILE *_MLIBC_RESTRICT F, const char *_MLIBC_RESTRICT format, ...)
+int fprintf(FILE *ZRESTRICT stream, const char *ZRESTRICT format, ...)
 {
 	va_list vargs;
 	int     r;
 
 	va_start(vargs, format);
-	r = z_prf(fputc, DESC(F), format, vargs);
+	r = cbvprintf(fputc, DESC(stream), format, vargs);
 	va_end(vargs);
 
 	return r;
 }
 
-int vfprintf(FILE *_MLIBC_RESTRICT F, const char *_MLIBC_RESTRICT format,
+int vfprintf(FILE *ZRESTRICT stream, const char *ZRESTRICT format,
 	     va_list vargs)
 {
 	int r;
 
-	r = z_prf(fputc, DESC(F), format, vargs);
+	r = cbvprintf(fputc, DESC(stream), format, vargs);
 
 	return r;
 }
 
-int printf(const char *_MLIBC_RESTRICT format, ...)
+int printf(const char *ZRESTRICT format, ...)
 {
 	va_list vargs;
 	int     r;
 
 	va_start(vargs, format);
-	r = z_prf(fputc, DESC(stdout), format, vargs);
+	r = cbvprintf(fputc, DESC(stdout), format, vargs);
 	va_end(vargs);
 
 	return r;
 }
 
-int vprintf(const char *_MLIBC_RESTRICT format, va_list vargs)
+int vprintf(const char *ZRESTRICT format, va_list vargs)
 {
 	int r;
 
-	r = z_prf(fputc, DESC(stdout), format, vargs);
+	r = cbvprintf(fputc, DESC(stdout), format, vargs);
 
 	return r;
 }

@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <ztest.h>
+#include <zephyr/ztest.h>
 #include <soc.h>
-#include <kernel_structs.h>
-#include <device.h>
-#include <drivers/dma.h>
+#include <kernel_arch_func.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/dma.h>
 
 #define DMA_BUFF_SIZE		1024
 
@@ -26,7 +26,8 @@ static char rx_data[DMA_BUFF_SIZE];
 static struct dma_config dma_cfg = {0};
 static struct dma_block_config dma_block_cfg = {0};
 
-static void dma_user_callback(void *arg, u32_t id, int error_code)
+static void dma_user_callback(const struct device *dma_dev, void *arg,
+			      uint32_t id, int error_code)
 {
 	if (error_code == 0) {
 		TC_PRINT("DMA completed successfully\n");
@@ -37,14 +38,14 @@ static void dma_user_callback(void *arg, u32_t id, int error_code)
 	}
 }
 
-void test_msgdma(void)
+ZTEST(nios2_msgdma, test_msgdma)
 {
-	struct device *dma;
-	static u32_t chan_id;
+	const struct device *dma;
+	static uint32_t chan_id;
 	int i;
 
-	dma = device_get_binding(CONFIG_DMA_0_NAME);
-	zassert_true(dma != NULL, "DMA_0 device not found!!");
+	dma = DEVICE_DT_GET(DT_NODELABEL(dma));
+	__ASSERT_NO_MSG(device_is_ready(dma));
 
 	/* Init tx buffer */
 	for (i = 0; i < DMA_BUFF_SIZE; i++) {
@@ -69,8 +70,8 @@ void test_msgdma(void)
 
 	/* Init DMA descriptor info */
 	dma_block_cfg.block_size = DMA_BUFF_SIZE;
-	dma_block_cfg.source_address = (u32_t)tx_data;
-	dma_block_cfg.dest_address = (u32_t)rx_data;
+	dma_block_cfg.source_address = (uint32_t)tx_data;
+	dma_block_cfg.dest_address = (uint32_t)rx_data;
 
 	/* Configure DMA */
 	zassert_true(dma_config(dma, chan_id, &dma_cfg) == 0,
@@ -97,9 +98,4 @@ void test_msgdma(void)
 
 }
 
-void test_main(void)
-{
-	ztest_test_suite(nios2_msgdma_test,
-			 ztest_unit_test(test_msgdma));
-	ztest_run_test_suite(nios2_msgdma_test);
-}
+ZTEST_SUITE(nios2_msgdma, NULL, NULL, NULL, NULL, NULL);

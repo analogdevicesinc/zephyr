@@ -4,38 +4,40 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_test, CONFIG_NET_SOCKETS_LOG_LEVEL);
 
 #include <stdio.h>
-#include <ztest_assert.h>
-#include <sys_clock.h>
-#include <net/net_ip.h>
-#include <net/socket.h>
-#include <net/socket_net_mgmt.h>
-#include <net/net_event.h>
-#include <net/ethernet_mgmt.h>
+#include <zephyr/ztest_assert.h>
+#include <zephyr/sys_clock.h>
+#include <zephyr/net/net_ip.h>
+#include <zephyr/net/socket.h>
+#include <zephyr/net/socket_net_mgmt.h>
+#include <zephyr/net/net_event.h>
+#include <zephyr/net/ethernet_mgmt.h>
 
 #define MAX_BUF_LEN 64
 #define STACK_SIZE 1024
 #define THREAD_PRIORITY K_PRIO_COOP(8)
 
+static struct net_if *default_iface;
+
 static ZTEST_BMEM int fd;
 static ZTEST_BMEM struct in6_addr addr_v6;
 static ZTEST_DMEM struct in_addr addr_v4 = { { { 192, 0, 2, 3 } } };
 
-#if IS_ENABLED(CONFIG_NET_SOCKETS_LOG_LEVEL_DBG)
+#if defined(CONFIG_NET_SOCKETS_LOG_LEVEL_DBG)
 #define DBG(fmt, ...) printk(fmt, ##__VA_ARGS__)
 #else
 #define DBG(fmt, ...)
 #endif
 
-static const u8_t mac_addr_init[6] = { 0x01, 0x02, 0x03,
+static const uint8_t mac_addr_init[6] = { 0x01, 0x02, 0x03,
 				       0x04,  0x05,  0x06 };
 
 struct eth_fake_context {
 	struct net_if *iface;
-	u8_t mac_address[6];
+	uint8_t mac_address[6];
 
 	bool auto_negotiation;
 	bool full_duplex;
@@ -53,8 +55,8 @@ static struct eth_fake_context eth_fake_data;
 
 static void eth_fake_iface_init(struct net_if *iface)
 {
-	struct device *dev = net_if_get_device(iface);
-	struct eth_fake_context *ctx = dev->driver_data;
+	const struct device *dev = net_if_get_device(iface);
+	struct eth_fake_context *ctx = dev->data;
 
 	ctx->iface = iface;
 
@@ -65,7 +67,7 @@ static void eth_fake_iface_init(struct net_if *iface)
 	ethernet_init(iface);
 }
 
-static int eth_fake_send(struct device *dev,
+static int eth_fake_send(const struct device *dev,
 			 struct net_pkt *pkt)
 {
 	ARG_UNUSED(dev);
@@ -120,11 +122,11 @@ static void eth_fake_recalc_qav_idle_slopes(struct eth_fake_context *ctx)
 	}
 }
 
-static int eth_fake_set_config(struct device *dev,
+static int eth_fake_set_config(const struct device *dev,
 			       enum ethernet_config_type type,
 			       const struct ethernet_config *config)
 {
-	struct eth_fake_context *ctx = dev->driver_data;
+	struct eth_fake_context *ctx = dev->data;
 	int priority_queues_num = ARRAY_SIZE(ctx->priority_queues);
 	enum ethernet_qav_param_type qav_param_type;
 	int queue_id;
@@ -167,11 +169,11 @@ static int eth_fake_set_config(struct device *dev,
 	return 0;
 }
 
-static int eth_fake_get_config(struct device *dev,
+static int eth_fake_get_config(const struct device *dev,
 			       enum ethernet_config_type type,
 			       struct ethernet_config *config)
 {
-	struct eth_fake_context *ctx = dev->driver_data;
+	struct eth_fake_context *ctx = dev->data;
 	int priority_queues_num = ARRAY_SIZE(ctx->priority_queues);
 	enum ethernet_qav_param_type qav_param_type;
 	int queue_id;
@@ -217,7 +219,7 @@ static int eth_fake_get_config(struct device *dev,
 	return 0;
 }
 
-static enum ethernet_hw_caps eth_fake_get_capabilities(struct device *dev)
+static enum ethernet_hw_caps eth_fake_get_capabilities(const struct device *dev)
 {
 	return ETHERNET_AUTO_NEGOTIATION_SET | ETHERNET_LINK_10BASE_T |
 		ETHERNET_LINK_100BASE_T | ETHERNET_DUPLEX_SET | ETHERNET_QAV |
@@ -233,9 +235,9 @@ static struct ethernet_api eth_fake_api_funcs = {
 	.send = eth_fake_send,
 };
 
-static int eth_fake_init(struct device *dev)
+static int eth_fake_init(const struct device *dev)
 {
-	struct eth_fake_context *ctx = dev->driver_data;
+	struct eth_fake_context *ctx = dev->data;
 	int i;
 
 	ctx->auto_negotiation = true;
@@ -262,9 +264,9 @@ static int eth_fake_init(struct device *dev)
 	return 0;
 }
 
-ETH_NET_DEVICE_INIT(eth_fake, "eth_fake", eth_fake_init, &eth_fake_data,
-		    NULL, CONFIG_ETH_INIT_PRIORITY, &eth_fake_api_funcs,
-		    NET_ETH_MTU);
+ETH_NET_DEVICE_INIT(eth_fake, "eth_fake", eth_fake_init, NULL,
+		    &eth_fake_data, NULL, CONFIG_ETH_INIT_PRIORITY,
+		    &eth_fake_api_funcs, NET_ETH_MTU);
 
 /* A test thread that spits out events that we can catch and show to user */
 static void trigger_events(void)
@@ -274,7 +276,7 @@ static void trigger_events(void)
 	struct net_if *iface;
 	int ret;
 
-	iface = net_if_get_default();
+	iface = default_iface;
 
 	net_ipv6_addr_create(&addr_v6, 0x2001, 0x0db8, 0, 0, 0, 0, 0, 0x0003);
 
@@ -327,7 +329,7 @@ static void trigger_events(void)
 
 K_THREAD_DEFINE(trigger_events_thread_id, STACK_SIZE,
 		trigger_events, NULL, NULL, NULL,
-		THREAD_PRIORITY, 0, K_FOREVER);
+		THREAD_PRIORITY, 0, -1);
 
 static char *get_ip_addr(char *ipaddr, size_t len, sa_family_t family,
 			 struct net_mgmt_msghdr *hdr)
@@ -342,18 +344,42 @@ static char *get_ip_addr(char *ipaddr, size_t len, sa_family_t family,
 	return buf;
 }
 
+static void iface_cb(struct net_if *iface, void *user_data)
+{
+	struct net_if **my_iface = user_data;
+
+	if (net_if_l2(iface) == &NET_L2_GET_NAME(ETHERNET)) {
+		if (PART_OF_ARRAY(NET_IF_GET_NAME(eth_fake, 0), iface)) {
+			*my_iface = iface;
+		}
+	}
+}
+
 static void test_net_mgmt_setup(void)
 {
 	struct sockaddr_nm sockaddr;
 	int ret;
 
+	net_if_foreach(iface_cb, &default_iface);
+	zassert_not_null(default_iface, "Cannot find test interface");
+
 	fd = socket(AF_NET_MGMT, SOCK_DGRAM, NET_MGMT_EVENT_PROTO);
 	zassert_false(fd < 0, "Cannot create net_mgmt socket (%d)", errno);
+
+#ifdef CONFIG_USERSPACE
+	/* Set the underlying net_context to global access scope so that
+	 * other scenario threads may use it
+	 */
+	void *ctx = zsock_get_context_object(fd);
+
+	zassert_not_null(ctx, "null net_context");
+	k_object_access_all_grant(ctx);
+#endif /* CONFIG_USERSPACE */
 
 	memset(&sockaddr, 0, sizeof(sockaddr));
 
 	sockaddr.nm_family = AF_NET_MGMT;
-	sockaddr.nm_ifindex = net_if_get_by_iface(net_if_get_default());
+	sockaddr.nm_ifindex = net_if_get_by_iface(default_iface);
 	sockaddr.nm_pid = (uintptr_t)k_current_get();
 	sockaddr.nm_mask = NET_EVENT_IPV6_DAD_SUCCEED |
 			   NET_EVENT_IPV6_ADDR_ADD |
@@ -370,7 +396,7 @@ static void test_net_mgmt_catch_events(void)
 	struct sockaddr_nm event_addr;
 	socklen_t event_addr_len;
 	char ipaddr[INET6_ADDRSTRLEN];
-	u8_t buf[MAX_BUF_LEN];
+	uint8_t buf[MAX_BUF_LEN];
 	int event_count = 2;
 	int ret;
 
@@ -421,17 +447,17 @@ static void test_net_mgmt_catch_events(void)
 	}
 }
 
-static void test_net_mgmt_catch_kernel(void)
+ZTEST(net_socket_net_mgmt, test_net_mgmt_catch_kernel)
 {
 	test_net_mgmt_catch_events();
 }
 
-static void test_net_mgmt_catch_user(void)
+ZTEST_USER(net_socket_net_mgmt, test_net_mgmt_catch_user)
 {
 	test_net_mgmt_catch_events();
 }
 
-static void test_net_mgmt_cleanup(void)
+ZTEST(net_socket_net_mgmt, test_net_mgmt_cleanup)
 {
 	k_thread_abort(trigger_events_thread_id);
 }
@@ -453,12 +479,12 @@ static void test_ethernet_set_qav(void)
 	zassert_equal(ret, 0, "Cannot set Qav parameters");
 }
 
-static void test_ethernet_set_qav_kernel(void)
+ZTEST(net_socket_net_mgmt, test_ethernet_set_qav_kernel)
 {
 	test_ethernet_set_qav();
 }
 
-static void test_ethernet_set_qav_user(void)
+ZTEST_USER(net_socket_net_mgmt, test_ethernet_set_qav_user)
 {
 	test_ethernet_set_qav();
 }
@@ -483,12 +509,12 @@ static void test_ethernet_get_qav(void)
 	zassert_true(params.qav_param.enabled, "Qav not enabled");
 }
 
-static void test_ethernet_get_qav_kernel(void)
+ZTEST(net_socket_net_mgmt, test_ethernet_get_qav_kernel)
 {
 	test_ethernet_get_qav();
 }
 
-static void test_ethernet_get_qav_user(void)
+ZTEST_USER(net_socket_net_mgmt, test_ethernet_get_qav_user)
 {
 	test_ethernet_get_qav();
 }
@@ -508,12 +534,12 @@ static void test_ethernet_get_unknown_option(void)
 	zassert_equal(errno, EINVAL, "prio queue get parameters");
 }
 
-static void test_ethernet_get_unknown_opt_kernel(void)
+ZTEST(net_socket_net_mgmt, test_ethernet_get_unknown_opt_kernel)
 {
 	test_ethernet_get_unknown_option();
 }
 
-static void test_ethernet_get_unknown_opt_user(void)
+ZTEST_USER(net_socket_net_mgmt, test_ethernet_get_unknown_opt_user)
 {
 	test_ethernet_get_unknown_option();
 }
@@ -533,35 +559,21 @@ static void test_ethernet_set_unknown_option(void)
 	zassert_equal(errno, EINVAL, "promisc_mode set parameters");
 }
 
-static void test_ethernet_set_unknown_opt_kernel(void)
+ZTEST(net_socket_net_mgmt, test_ethernet_set_unknown_opt_kernel)
 {
 	test_ethernet_set_unknown_option();
 }
 
-static void test_ethernet_set_unknown_opt_user(void)
+ZTEST_USER(net_socket_net_mgmt, test_ethernet_set_unknown_opt_user)
 {
 	test_ethernet_set_unknown_option();
 }
 
-void test_main(void)
+static void *setup(void)
 {
 	k_thread_system_pool_assign(k_current_get());
-
-	ztest_test_suite(socket_net_mgmt,
-			 ztest_unit_test(test_net_mgmt_setup),
-			 ztest_unit_test(test_net_mgmt_catch_kernel),
-			 ztest_user_unit_test(test_net_mgmt_catch_user),
-			 ztest_unit_test(test_net_mgmt_cleanup),
-			 ztest_unit_test(test_ethernet_set_qav_kernel),
-			 ztest_user_unit_test(test_ethernet_set_qav_user),
-			 ztest_unit_test(test_ethernet_get_qav_kernel),
-			 ztest_user_unit_test(test_ethernet_get_qav_user),
-			 ztest_unit_test(test_ethernet_get_unknown_opt_kernel),
-			 ztest_user_unit_test(
-				 test_ethernet_get_unknown_opt_user),
-			 ztest_unit_test(test_ethernet_set_unknown_opt_kernel),
-			 ztest_user_unit_test(
-				 test_ethernet_set_unknown_opt_user));
-
-	ztest_run_test_suite(socket_net_mgmt);
+	test_net_mgmt_setup();
+	return NULL;
 }
+
+ZTEST_SUITE(net_socket_net_mgmt, NULL, setup, NULL, NULL, NULL);

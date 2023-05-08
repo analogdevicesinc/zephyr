@@ -1,3 +1,5 @@
+/* SPDX-License-Identifier: MIT */
+
 /*
  * Copyright © 2005-2014 Rich Felker, et al.
  *
@@ -31,7 +33,7 @@ int atoi(const char *s)
 	int n = 0;
 	int neg = 0;
 
-	while (isspace(*s)) {
+	while (isspace((unsigned char)*s) != 0) {
 		s++;
 	}
 	switch (*s) {
@@ -41,9 +43,15 @@ int atoi(const char *s)
 		break;	/* artifact to quiet coverity warning */
 	case '+':
 		s++;
+	default:
+		/* Add an empty default with break, this is a defensive programming.
+		 * Static analysis tool won't raise a violation if default is empty,
+		 * but has that comment.
+		 */
+		break;
 	}
 	/* Compute n as a negative number to avoid overflow on INT_MIN */
-	while (isdigit(*s)) {
+	while (isdigit((unsigned char)*s) != 0) {
 		n = 10*n - (*s++ - '0');
 	}
 	return neg ? n : -n;

@@ -4,25 +4,23 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <ztest.h>
-#include <tc_util.h>
+#include <zephyr/ztest.h>
+#include <zephyr/tc_util.h>
 
-#include <sys/byteorder.h>
-#include <usb/usb_device.h>
-#include <usb/usb_common.h>
+#include <zephyr/sys/byteorder.h>
+#include <zephyr/usb/usb_device.h>
 #include <os_desc.h>
 
 #define MSOS_STRING_LENGTH	18
 static struct string_desc {
-	u8_t bLength;
-	u8_t bDescriptorType;
-	u8_t bString[MSOS_STRING_LENGTH - 4];
-	u8_t bMS_VendorCode;
-	u8_t bPad;
+	uint8_t bLength;
+	uint8_t bDescriptorType;
+	uint8_t bString[MSOS_STRING_LENGTH - 4];
+	uint8_t bMS_VendorCode;
+	uint8_t bPad;
 } __packed msosv1_string_descriptor = {
 	.bLength = MSOS_STRING_LENGTH,
-	.bDescriptorType = USB_STRING_DESC,
+	.bDescriptorType = USB_DESC_STRING,
 	/* Signature MSFT100 */
 	.bString = {
 		'M', 0x00, 'S', 0x00, 'F', 0x00, 'T', 0x00,
@@ -34,18 +32,18 @@ static struct string_desc {
 
 static struct compat_id_desc {
 	/* MS OS 1.0 Header Section */
-	u32_t dwLength;
-	u16_t bcdVersion;
-	u16_t wIndex;
-	u8_t bCount;
-	u8_t Reserved[7];
+	uint32_t dwLength;
+	uint16_t bcdVersion;
+	uint16_t wIndex;
+	uint8_t bCount;
+	uint8_t Reserved[7];
 	/* MS OS 1.0 Function Section */
 	struct compat_id_func {
-		u8_t bFirstInterfaceNumber;
-		u8_t Reserved1;
-		u8_t compatibleID[8];
-		u8_t subCompatibleID[8];
-		u8_t Reserved2[6];
+		uint8_t bFirstInterfaceNumber;
+		uint8_t Reserved1;
+		uint8_t compatibleID[8];
+		uint8_t subCompatibleID[8];
+		uint8_t Reserved2[6];
 	} __packed func[1];
 } __packed msosv1_compatid_descriptor = {
 	.dwLength = sys_cpu_to_le32(40),
@@ -74,10 +72,10 @@ static struct compat_id_desc {
 };
 
 static struct usb_os_descriptor os_desc = {
-	.string = (u8_t *)&msosv1_string_descriptor,
+	.string = (uint8_t *)&msosv1_string_descriptor,
 	.string_len = sizeof(msosv1_string_descriptor),
 	.vendor_code = 0x03,
-	.compat_id = (u8_t *)&msosv1_compatid_descriptor,
+	.compat_id = (uint8_t *)&msosv1_compatid_descriptor,
 	.compat_id_len = sizeof(msosv1_compatid_descriptor),
 };
 
@@ -91,11 +89,11 @@ void test_register_osdesc(void)
 static void test_handle_os_desc(void)
 {
 	struct usb_setup_packet setup;
-	s32_t len = 0;
-	u8_t *data = NULL;
+	int32_t len = 0;
+	uint8_t *data = NULL;
 	int ret;
 
-	setup.wValue = (DESC_STRING & 0xFF) << 8;
+	setup.wValue = (USB_DESC_STRING & 0xFF) << 8;
 	setup.wValue |= USB_OSDESC_STRING_DESC_INDEX;
 
 	ret = usb_handle_os_desc(&setup, &len, &data);
@@ -111,8 +109,8 @@ static void test_handle_os_desc(void)
 static void test_handle_os_desc_feature(void)
 {
 	struct usb_setup_packet setup;
-	s32_t len = 0;
-	u8_t *data = NULL;
+	int32_t len = 0;
+	uint8_t *data = NULL;
 	int ret;
 
 	setup.bRequest = os_desc.vendor_code;
@@ -128,23 +126,17 @@ static void test_handle_os_desc_feature(void)
 		     "Wrong data");
 }
 
-static void test_osdesc_string(void)
+ZTEST(os_desc, test_osdesc_string)
 {
 	test_register_osdesc();
 	test_handle_os_desc();
 }
 
-static void test_osdesc_feature(void)
+ZTEST(os_desc, test_osdesc_feature)
 {
 	test_register_osdesc();
 	test_handle_os_desc_feature();
 }
 
-/*test case main entry*/
-void test_main(void)
-{
-	ztest_test_suite(test_osdesc,
-			 ztest_unit_test(test_osdesc_string),
-			 ztest_unit_test(test_osdesc_feature));
-	ztest_run_test_suite(test_osdesc);
-}
+/* test case main entry */
+ZTEST_SUITE(os_desc, NULL, NULL, NULL, NULL, NULL);

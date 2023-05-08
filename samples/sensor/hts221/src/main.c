@@ -4,13 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <device.h>
-#include <drivers/sensor.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/sensor.h>
 #include <stdio.h>
-#include <sys/util.h>
+#include <zephyr/sys/util.h>
 
-static void process_sample(struct device *dev)
+static void process_sample(const struct device *dev)
 {
 	static unsigned int obs;
 	struct sensor_value temp, hum;
@@ -40,19 +40,19 @@ static void process_sample(struct device *dev)
 	       sensor_value_to_double(&hum));
 }
 
-static void hts221_handler(struct device *dev,
-			   struct sensor_trigger *trig)
+static void hts221_handler(const struct device *dev,
+			   const struct sensor_trigger *trig)
 {
 	process_sample(dev);
 }
 
-void main(void)
+int main(void)
 {
-	struct device *dev = device_get_binding("HTS221");
+	const struct device *const dev = DEVICE_DT_GET_ONE(st_hts221);
 
-	if (dev == NULL) {
-		printf("Could not get HTS221 device\n");
-		return;
+	if (!device_is_ready(dev)) {
+		printk("sensor: device not ready.\n");
+		return 0;
 	}
 
 	if (IS_ENABLED(CONFIG_HTS221_TRIGGER)) {
@@ -62,13 +62,14 @@ void main(void)
 		};
 		if (sensor_trigger_set(dev, &trig, hts221_handler) < 0) {
 			printf("Cannot configure trigger\n");
-			return;
-		};
+			return 0;
+		}
 	}
 
 	while (!IS_ENABLED(CONFIG_HTS221_TRIGGER)) {
 		process_sample(dev);
-		k_sleep(2000);
+		k_sleep(K_MSEC(2000));
 	}
 	k_sleep(K_FOREVER);
+	return 0;
 }

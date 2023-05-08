@@ -1,22 +1,19 @@
-# Kconfig.dw - Intel SoC GPIO configuration options
-#
-#
+# Intel SoC GPIO configuration options
+
 # Copyright (c) 2018 Intel Corporation
-#
 # SPDX-License-Identifier: Apache-2.0
-#
 
-menuconfig GPIO_INTEL_APL
-	bool "Intel Apollo Lake SoC GPIO"
-	select HAS_DTS_GPIO
+config GPIO_INTEL
+	bool "Intel Soc GPIO"
+	default y
+	depends on DT_HAS_INTEL_GPIO_ENABLED
 	help
-	  Enable driver for Intel Apollo Lake SoC GPIO
+	  Enable driver for Intel SoC GPIO
 
-if GPIO_INTEL_APL
-
-config GPIO_INTEL_APL_CHECK_PERMS
+config GPIO_INTEL_CHECK_PERMS
 	bool "Check permissions before manipulating GPIO"
 	default y
+	depends on GPIO_INTEL
 	help
 	  This option enables the checks to make sure the GPIO
 	  pin can be manipulated. Only if the pin is owned by
@@ -24,5 +21,3 @@ config GPIO_INTEL_APL_CHECK_PERMS
 	  the driver allows manipulating the pin.
 
 	  Say y if unsure.
-
-endif # GPIO_INTEL_APL

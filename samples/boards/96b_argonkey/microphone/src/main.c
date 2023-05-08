@@ -5,20 +5,20 @@
  */
 
 #include <string.h>
-#include <zephyr.h>
-#include <sys/printk.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/printk.h>
 
-#include <drivers/gpio.h>
-#include <drivers/led.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/led.h>
 
-#include <audio/dmic.h>
+#include <zephyr/audio/dmic.h>
 
 /* uncomment if you want PCM output in ascii */
 /*#define PCM_OUTPUT_IN_ASCII		1  */
 
 #define AUDIO_FREQ		16000
 #define CHAN_SIZE		16
-#define PCM_BLK_SIZE_MS		((AUDIO_FREQ/1000) * sizeof(s16_t))
+#define PCM_BLK_SIZE_MS		((AUDIO_FREQ/1000) * sizeof(int16_t))
 
 #define NUM_MS		5000
 
@@ -46,61 +46,51 @@ struct dmic_cfg cfg = {
 #define NUM_LEDS 12
 #define DELAY_TIME K_MSEC(25)
 
+static const struct gpio_dt_spec led0 = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
+static const struct gpio_dt_spec led1 = GPIO_DT_SPEC_GET(DT_ALIAS(led1), gpios);
+
 void signal_sampling_started(void)
 {
-	static struct device *led0, *led1;
-
-	led0 = device_get_binding(DT_ALIAS_LED0_GPIOS_CONTROLLER);
-	gpio_pin_configure(led0, DT_ALIAS_LED0_GPIOS_PIN, GPIO_DIR_OUT);
-	gpio_pin_write(led0, DT_ALIAS_LED0_GPIOS_PIN, 1);
-
-	led1 = device_get_binding(DT_ALIAS_LED1_GPIOS_CONTROLLER);
-	gpio_pin_configure(led1, DT_ALIAS_LED1_GPIOS_PIN, GPIO_DIR_OUT);
-	gpio_pin_write(led1, DT_ALIAS_LED1_GPIOS_PIN, 0);
+	gpio_pin_configure_dt(&led0, GPIO_OUTPUT_ACTIVE);
+	gpio_pin_configure_dt(&led1, GPIO_OUTPUT_INACTIVE);
 }
 
 void signal_sampling_stopped(void)
 {
-	static struct device *led0, *led1;
-
-	led0 = device_get_binding(DT_ALIAS_LED0_GPIOS_CONTROLLER);
-	gpio_pin_configure(led0, DT_ALIAS_LED0_GPIOS_PIN, GPIO_DIR_OUT);
-	gpio_pin_write(led0, DT_ALIAS_LED0_GPIOS_PIN, 1);
-
-	led1 = device_get_binding(DT_ALIAS_LED1_GPIOS_CONTROLLER);
-	gpio_pin_configure(led1, DT_ALIAS_LED1_GPIOS_PIN, GPIO_DIR_OUT);
-	gpio_pin_write(led1, DT_ALIAS_LED1_GPIOS_PIN, 1);
+	gpio_pin_configure_dt(&led0, GPIO_OUTPUT_ACTIVE);
+	gpio_pin_configure_dt(&led1, GPIO_OUTPUT_ACTIVE);
 }
 
 void signal_print_stopped(void)
 {
-	static struct device *led0, *led1;
-
-	led0 = device_get_binding(DT_ALIAS_LED0_GPIOS_CONTROLLER);
-	gpio_pin_configure(led0, DT_ALIAS_LED0_GPIOS_PIN, GPIO_DIR_OUT);
-	gpio_pin_write(led0, DT_ALIAS_LED0_GPIOS_PIN, 0);
-
-	led1 = device_get_binding(DT_ALIAS_LED1_GPIOS_CONTROLLER);
-	gpio_pin_configure(led1, DT_ALIAS_LED1_GPIOS_PIN, GPIO_DIR_OUT);
-	gpio_pin_write(led1, DT_ALIAS_LED1_GPIOS_PIN, 1);
+	gpio_pin_configure_dt(&led0, GPIO_OUTPUT_INACTIVE);
+	gpio_pin_configure_dt(&led1, GPIO_OUTPUT_ACTIVE);
 }
 
 void *rx_block[NUM_MS];
 size_t rx_size = PCM_BLK_SIZE_MS;
 
-void main(void)
+int main(void)
 {
 	int i;
-	u32_t ms;
+	uint32_t ms;
+
+	if (!device_is_ready(led0.port)) {
+		printk("LED0 GPIO controller device is not ready\n");
+		return 0;
+	}
+
+	if (!device_is_ready(led1.port)) {
+		printk("LED1 GPIO controller device is not ready\n");
+		return 0;
+	}
 
 #ifdef CONFIG_LP3943
-	static struct device *ledc;
+	static const struct device *const ledc = DEVICE_DT_GET_ONE(ti_lp3943);
 
-	ledc = device_get_binding(DT_INST_0_TI_LP3943_LABEL);
-	if (!ledc) {
-		printk("Could not get pointer to %s sensor\n",
-			DT_INST_0_TI_LP3943_LABEL);
-		return;
+	if (!device_is_ready(ledc)) {
+		printk("Device %s is not ready\n", ledc->name);
+		return 0;
 	}
 
 	/* turn all leds on */
@@ -121,24 +111,23 @@ void main(void)
 
 	int ret;
 
-	struct device *mic_dev = device_get_binding(DT_INST_0_ST_MPXXDTYY_LABEL);
+	const struct device *const mic_dev = DEVICE_DT_GET_ONE(st_mpxxdtyy);
 
-	if (!mic_dev) {
-		printk("Could not get pointer to %s device\n",
-			DT_INST_0_ST_MPXXDTYY_LABEL);
-		return;
+	if (!device_is_ready(mic_dev)) {
+		printk("Device %s is not ready\n", mic_dev->name);
+		return 0;
 	}
 
 	ret = dmic_configure(mic_dev, &cfg);
 	if (ret < 0) {
 		printk("microphone configuration error\n");
-		return;
+		return 0;
 	}
 
 	ret = dmic_trigger(mic_dev, DMIC_TRIGGER_START);
 	if (ret < 0) {
 		printk("microphone start trigger error\n");
-		return;
+		return 0;
 	}
 
 	signal_sampling_started();
@@ -148,11 +137,17 @@ void main(void)
 		ret = dmic_read(mic_dev, 0, &rx_block[ms], &rx_size, 2000);
 		if (ret < 0) {
 			printk("microphone audio read error\n");
-			return;
+			return 0;
 		}
 	}
 
 	signal_sampling_stopped();
+
+	ret = dmic_trigger(mic_dev, DMIC_TRIGGER_STOP);
+	if (ret < 0) {
+		printk("microphone stop trigger error\n");
+		return 0;
+	}
 
 	/* print PCM stream */
 #ifdef PCM_OUTPUT_IN_ASCII
@@ -160,7 +155,7 @@ void main(void)
 	int j;
 
 	for (i = 0; i < NUM_MS; i++) {
-		u16_t *pcm_out = rx_block[i];
+		uint16_t *pcm_out = rx_block[i];
 
 		for (j = 0; j < rx_size/2; j++) {
 			printk("0x%04x,\n", pcm_out[j]);
@@ -172,7 +167,7 @@ void main(void)
 	int j;
 
 	for (i = 0; i < NUM_MS; i++) {
-		u16_t *pcm_out = rx_block[i];
+		uint16_t *pcm_out = rx_block[i];
 
 		for (j = 0; j < rx_size/2; j++) {
 			pcm_l = (char)(pcm_out[j] & 0xFF);
@@ -185,5 +180,5 @@ void main(void)
 #endif
 
 	signal_print_stopped();
+	return 0;
 }
-

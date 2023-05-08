@@ -20,18 +20,16 @@
 #ifndef ZEPHYR_ARCH_ARC_INCLUDE_KERNEL_ARCH_DATA_H_
 #define ZEPHYR_ARCH_ARC_INCLUDE_KERNEL_ARCH_DATA_H_
 
-#include <toolchain.h>
-#include <linker/sections.h>
-#include <arch/cpu.h>
+#include <zephyr/toolchain.h>
+#include <zephyr/linker/sections.h>
+#include <zephyr/arch/cpu.h>
 #include <vector_table.h>
-#include <kernel_arch_thread.h>
 
 #ifndef _ASMLANGUAGE
-#include <kernel.h>
-#include <kernel_internal.h>
+#include <zephyr/kernel.h>
 #include <zephyr/types.h>
-#include <sys/util.h>
-#include <sys/dlist.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/sys/dlist.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -39,70 +37,74 @@ extern "C" {
 
 #ifdef CONFIG_ARC_HAS_SECURE
 struct _irq_stack_frame {
-	u32_t lp_end;
-	u32_t lp_start;
-	u32_t lp_count;
+#ifdef CONFIG_ARC_HAS_ZOL
+	uintptr_t lp_end;
+	uintptr_t lp_start;
+	uintptr_t lp_count;
+#endif /* CONFIG_ARC_HAS_ZOL */
 #ifdef CONFIG_CODE_DENSITY
 	/*
 	 * Currently unsupported. This is where those registers are
 	 * automatically pushed on the stack by the CPU when taking a regular
 	 * IRQ.
 	 */
-	u32_t ei_base;
-	u32_t ldi_base;
-	u32_t jli_base;
+	uintptr_t ei_base;
+	uintptr_t ldi_base;
+	uintptr_t jli_base;
 #endif
-	u32_t r0;
-	u32_t r1;
-	u32_t r2;
-	u32_t r3;
-	u32_t r4;
-	u32_t r5;
-	u32_t r6;
-	u32_t r7;
-	u32_t r8;
-	u32_t r9;
-	u32_t r10;
-	u32_t r11;
-	u32_t r12;
-	u32_t r13;
-	u32_t blink;
-	u32_t pc;
-	u32_t sec_stat;
-	u32_t status32;
+	uintptr_t r0;
+	uintptr_t r1;
+	uintptr_t r2;
+	uintptr_t r3;
+	uintptr_t r4;
+	uintptr_t r5;
+	uintptr_t r6;
+	uintptr_t r7;
+	uintptr_t r8;
+	uintptr_t r9;
+	uintptr_t r10;
+	uintptr_t r11;
+	uintptr_t r12;
+	uintptr_t r13;
+	uintptr_t blink;
+	uintptr_t pc;
+	uintptr_t sec_stat;
+	uintptr_t status32;
 };
 #else
 struct _irq_stack_frame {
-	u32_t r0;
-	u32_t r1;
-	u32_t r2;
-	u32_t r3;
-	u32_t r4;
-	u32_t r5;
-	u32_t r6;
-	u32_t r7;
-	u32_t r8;
-	u32_t r9;
-	u32_t r10;
-	u32_t r11;
-	u32_t r12;
-	u32_t r13;
-	u32_t blink;
-	u32_t lp_end;
-	u32_t lp_start;
-	u32_t lp_count;
+	uintptr_t r0;
+	uintptr_t r1;
+	uintptr_t r2;
+	uintptr_t r3;
+	uintptr_t r4;
+	uintptr_t r5;
+	uintptr_t r6;
+	uintptr_t r7;
+	uintptr_t r8;
+	uintptr_t r9;
+	uintptr_t r10;
+	uintptr_t r11;
+	uintptr_t r12;
+	uintptr_t r13;
+	uintptr_t blink;
+#ifdef CONFIG_ARC_HAS_ZOL
+	uintptr_t lp_end;
+	uintptr_t lp_start;
+	uintptr_t lp_count;
+#endif /* CONFIG_ARC_HAS_ZOL */
 #ifdef CONFIG_CODE_DENSITY
 	/*
 	 * Currently unsupported. This is where those registers are
 	 * automatically pushed on the stack by the CPU when taking a regular
 	 * IRQ.
 	 */
-	u32_t ei_base;
-	u32_t ldi_base;
-	u32_t jli_base;
+	uintptr_t ei_base;
+	uintptr_t ldi_base;
+	uintptr_t jli_base;
 #endif
-	u32_t pc;
-	u32_t status32;
+	uintptr_t pc;
+	uintptr_t status32;
 };
 #endif
 
@@ -112,52 +114,114 @@ typedef struct _irq_stack_frame _isf_t;
 
 /* callee-saved registers pushed on the stack, not in k_thread */
 struct _callee_saved_stack {
-	u32_t r13;
-	u32_t r14;
-	u32_t r15;
-	u32_t r16;
-	u32_t r17;
-	u32_t r18;
-	u32_t r19;
-	u32_t r20;
-	u32_t r21;
-	u32_t r22;
-	u32_t r23;
-	u32_t r24;
-	u32_t r25;
-	u32_t r26;
-	u32_t fp; /* r27 */
+	uintptr_t r13;
+	uintptr_t r14;
+	uintptr_t r15;
+	uintptr_t r16;
+	uintptr_t r17;
+	uintptr_t r18;
+	uintptr_t r19;
+	uintptr_t r20;
+	uintptr_t r21;
+	uintptr_t r22;
+	uintptr_t r23;
+	uintptr_t r24;
+	uintptr_t r25;
+	uintptr_t r26;
+	uintptr_t fp; /* r27 */
 
 #ifdef CONFIG_USERSPACE
 #ifdef CONFIG_ARC_HAS_SECURE
-	u32_t user_sp;
-	u32_t kernel_sp;
+	uintptr_t user_sp;
+	uintptr_t kernel_sp;
 #else
-	u32_t user_sp;
+	uintptr_t user_sp;
 #endif
 #endif
 	/* r28 is the stack pointer and saved separately */
 	/* r29 is ILINK and does not need to be saved */
-	u32_t r30;
+	uintptr_t r30;
 
 #ifdef CONFIG_ARC_HAS_ACCL_REGS
-	u32_t r58;
-	u32_t r59;
+	uintptr_t r58;
+#ifndef CONFIG_64BIT
+	uintptr_t r59;
+#endif /* !CONFIG_64BIT */
 #endif
 
-#ifdef CONFIG_FP_SHARING
-	u32_t fpu_status;
-	u32_t fpu_ctrl;
+#ifdef CONFIG_FPU_SHARING
+	uintptr_t fpu_status;
+	uintptr_t fpu_ctrl;
 #ifdef CONFIG_FP_FPU_DA
-	u32_t dpfp2h;
-	u32_t dpfp2l;
-	u32_t dpfp1h;
-	u32_t dpfp1l;
+	uintptr_t dpfp2h;
+	uintptr_t dpfp2l;
+	uintptr_t dpfp1h;
+	uintptr_t dpfp1l;
+#endif
 #endif
 
+#ifdef CONFIG_ARC_DSP_SHARING
+#ifdef CONFIG_ARC_DSP_BFLY_SHARING
+	uintptr_t dsp_fft_ctrl;
+	uintptr_t dsp_bfly0;
+#endif
+	uintptr_t acc0_ghi;
+	uintptr_t acc0_glo;
+	uintptr_t dsp_ctrl;
+#endif
+
+#ifdef CONFIG_ARC_AGU_SHARING
+	uintptr_t agu_ap0;
+	uintptr_t agu_ap1;
+	uintptr_t agu_ap2;
+	uintptr_t agu_ap3;
+	uintptr_t agu_os0;
+	uintptr_t agu_os1;
+	uintptr_t agu_mod0;
+	uintptr_t agu_mod1;
+	uintptr_t agu_mod2;
+	uintptr_t agu_mod3;
+#ifdef CONFIG_ARC_AGU_MEDIUM
+	uintptr_t agu_ap4;
+	uintptr_t agu_ap5;
+	uintptr_t agu_ap6;
+	uintptr_t agu_ap7;
+	uintptr_t agu_os2;
+	uintptr_t agu_os3;
+	uintptr_t agu_mod4;
+	uintptr_t agu_mod5;
+	uintptr_t agu_mod6;
+	uintptr_t agu_mod7;
+	uintptr_t agu_mod8;
+	uintptr_t agu_mod9;
+	uintptr_t agu_mod10;
+	uintptr_t agu_mod11;
+#endif
+#ifdef CONFIG_ARC_AGU_LARGE
+	uintptr_t agu_ap8;
+	uintptr_t agu_ap9;
+	uintptr_t agu_ap10;
+	uintptr_t agu_ap11;
+	uintptr_t agu_os4;
+	uintptr_t agu_os5;
+	uintptr_t agu_os6;
+	uintptr_t agu_os7;
+	uintptr_t agu_mod12;
+	uintptr_t agu_mod13;
+	uintptr_t agu_mod14;
+	uintptr_t agu_mod15;
+	uintptr_t agu_mod16;
+	uintptr_t agu_mod17;
+	uintptr_t agu_mod18;
+	uintptr_t agu_mod19;
+	uintptr_t agu_mod20;
+	uintptr_t agu_mod21;
+	uintptr_t agu_mod22;
+	uintptr_t agu_mod23;
+#endif
 #endif
 	/*
-	 * No need to save r31 (blink), it's either alread pushed as the pc or
+	 * No need to save r31 (blink), it's either already pushed as the pc or
 	 * blink on an irq stack frame.
 	 */
 };
@@ -169,13 +233,5 @@ typedef struct _callee_saved_stack _callee_saved_stack_t;
 #endif
 
 #endif /* _ASMLANGUAGE */
-
-/* stacks */
-
-#define STACK_ALIGN_SIZE 4
-
-#define STACK_ROUND_UP(x) ROUND_UP(x, STACK_ALIGN_SIZE)
-#define STACK_ROUND_DOWN(x) ROUND_DOWN(x, STACK_ALIGN_SIZE)
-
 
 #endif /* ZEPHYR_ARCH_ARC_INCLUDE_KERNEL_ARCH_DATA_H_ */

@@ -4,15 +4,20 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <ztest.h>
-#include <arch/cpu.h>
-#include <arch/arm/cortex_m/cmsis.h>
-#include <kernel_structs.h>
+#include <zephyr/ztest.h>
+#include <zephyr/arch/cpu.h>
+#include <zephyr/arch/arm/aarch32/cortex_m/cmsis.h>
+#include <zephyr/kernel_structs.h>
 #include <offsets_short_arch.h>
-
+#include <ksched.h>
 
 #if !defined(__GNUC__)
 #error __FILE__ goes only with Cortex-M GCC
+#endif
+
+#if !defined(CONFIG_ARMV6_M_ARMV8_M_BASELINE) && \
+	!defined(CONFIG_ARMV7_M_ARMV8_M_MAINLINE)
+#error "Unsupported architecture"
 #endif
 
 #define PRIORITY 0
@@ -20,7 +25,21 @@
 #define BASEPRI_MODIFIED_2 0x40
 #define SWAP_RETVAL        0x1234
 
-extern int __swap(unsigned int key);
+#ifndef EXC_RETURN_FTYPE
+/* bit [4] allocate stack for floating-point context: 0=done 1=skipped  */
+#define EXC_RETURN_FTYPE           (0x00000010UL)
+#endif
+
+#if defined(CONFIG_ARMV8_1_M_MAINLINE)
+/*
+ * For ARMv8.1-M, the FPSCR[18:16] LTPSIZE field may always read 0b010 if MVE
+ * is not implemented, so mask it when validating the value of the FPSCR.
+ */
+#define FPSCR_MASK		(~FPU_FPDSCR_LTPSIZE_Msk)
+#else
+#define FPSCR_MASK		(0xffffffffU)
+#endif
+
 extern void z_move_thread_to_end_of_prio_q(struct k_thread *thread);
 
 static struct k_thread alt_thread;
@@ -45,14 +64,33 @@ const _callee_saved_t ztest_thread_callee_saved_regs_init = {
 static void load_callee_saved_regs(const _callee_saved_t *regs)
 {
 	/* Load the callee-saved registers with given values */
+#if defined(CONFIG_ARMV6_M_ARMV8_M_BASELINE)
+	__asm__ volatile (
+		"mov r1, r7;\n\t"
+		"mov r0, %0;\n\t"
+		"add r0, #16;\n\t"
+		"ldmia r0!, {r4-r7};\n\t"
+		"mov r8, r4;\n\t"
+		"mov r9, r5;\n\t"
+		"mov r10, r6;\n\t"
+		"mov r11, r7;\n\t"
+		"sub r0, #32;\n\t"
+		"ldmia r0!, {r4-r7};\n\t"
+		"mov r7, r1;\n\t"
+		: /* no output */
+		: "r" (regs)
+		: "memory", "r1", "r0"
+	);
+#elif defined(CONFIG_ARMV7_M_ARMV8_M_MAINLINE)
 	__asm__ volatile (
 		"mov r1, r7;\n\t"
 		"ldmia %0, {v1-v8};\n\t"
 		"mov r7, r1;\n\t"
-		:
+		: /* no output */
 		: "r" (regs)
-		: "memory"
+		: "memory", "r1"
 	);
+#endif
 	__DSB();
 }
 
@@ -89,7 +127,11 @@ static void verify_callee_saved(const _callee_saved_t *src,
 	);
 }
 
-#if defined(CONFIG_FLOAT) && defined(CONFIG_FP_SHARING)
+#if defined(CONFIG_FPU) && defined(CONFIG_FPU_SHARING)
+
+/* Create the alternative thread with K_FP_REGS options */
+#define ALT_THREAD_OPTIONS K_FP_REGS
+
 /* Arbitrary values for the floating-point callee-saved registers */
 struct _preempt_float ztest_thread_fp_callee_saved_regs = {
 	.s16 = 0x11111111, .s17 = 0x22222222,
@@ -138,42 +180,45 @@ static void verify_fp_callee_saved(const struct _preempt_float *src,
 		" 0x%0x 0x%0x 0x%0x 0x%0x 0x%0x 0x%0x 0x%0x 0x%0x\n"
 		" expected:  0x%0x 0x%0x 0x%0x 0x%0x 0x%0x 0x%0x 0x%0x 0x%0x"
 		" 0x%0x 0x%0x 0x%0x 0x%0x 0x%0x 0x%0x 0x%0x 0x%0x\n",
-		src->s16,
-		src->s17,
-		src->s18,
-		src->s19,
-		src->s20,
-		src->s21,
-		src->s22,
-		src->s23,
-		src->s24,
-		src->s25,
-		src->s26,
-		src->s27,
-		src->s28,
-		src->s29,
-		src->s30,
-		src->s31,
-		dst->s16,
-		dst->s17,
-		dst->s18,
-		dst->s19,
-		dst->s20,
-		dst->s21,
-		dst->s22,
-		dst->s23,
-		dst->s24,
-		dst->s25,
-		dst->s26,
-		dst->s27,
-		dst->s28,
-		dst->s29,
-		dst->s30,
-		dst->s31
+		(double)src->s16,
+		(double)src->s17,
+		(double)src->s18,
+		(double)src->s19,
+		(double)src->s20,
+		(double)src->s21,
+		(double)src->s22,
+		(double)src->s23,
+		(double)src->s24,
+		(double)src->s25,
+		(double)src->s26,
+		(double)src->s27,
+		(double)src->s28,
+		(double)src->s29,
+		(double)src->s30,
+		(double)src->s31,
+		(double)dst->s16,
+		(double)dst->s17,
+		(double)dst->s18,
+		(double)dst->s19,
+		(double)dst->s20,
+		(double)dst->s21,
+		(double)dst->s22,
+		(double)dst->s23,
+		(double)dst->s24,
+		(double)dst->s25,
+		(double)dst->s26,
+		(double)dst->s27,
+		(double)dst->s28,
+		(double)dst->s29,
+		(double)dst->s30,
+		(double)dst->s31
 	);
 }
 
-#endif /* CONFIG_FLOAT && CONFIG_FP_SHARING */
+#else
+/* No options passed */
+#define ALT_THREAD_OPTIONS 0
+#endif /* CONFIG_FPU && CONFIG_FPU_SHARING */
 
 static void alt_thread_entry(void)
 {
@@ -194,13 +239,13 @@ static void alt_thread_entry(void)
 	zassert_true(p_ztest_thread->arch.basepri == 0,
 		"ztest thread basepri not preserved in swap-out\n");
 #else
-	/* Verify that the main test thread has an initial value of zero
-	 * for state variable thread.arch.basepri.
+	/* Verify that the main test thread has the correct value
+	 * for state variable thread.arch.basepri (set before swap).
 	 */
 	zassert_true(p_ztest_thread->arch.basepri == BASEPRI_MODIFIED_1,
 		"ztest thread basepri not preserved in swap-out\n");
 
-	/* Verify original swap return value (set by __swap() */
+	/* Verify original swap return value (set by arch_swap() */
 	zassert_true(p_ztest_thread->arch.swap_return_value == -EAGAIN,
 		"ztest thread swap-return-value not preserved in swap-out\n");
 #endif
@@ -218,9 +263,38 @@ static void alt_thread_entry(void)
 	memset(&ztest_thread_callee_saved_regs_container,
 		0, sizeof(_callee_saved_t));
 
-#if defined(CONFIG_FLOAT) && defined(CONFIG_FP_SHARING)
-	zassert_true((p_ztest_thread->arch.mode & CONTROL_FPCA_Msk) != 0,
-		"ztest thread mode FPCA flag not updated at swap-out: 0x%0x\n",
+#if defined(CONFIG_FPU) && defined(CONFIG_FPU_SHARING)
+
+	/*  Verify that the _current_ (alt) thread is initialized with FPCA cleared. */
+	zassert_true((__get_CONTROL() & CONTROL_FPCA_Msk) == 0,
+		"CONTROL.FPCA is not cleared at initialization: 0x%x\n",
+		__get_CONTROL());
+
+	/* Verify that the _current_ (alt) thread is
+	 * initialized with EXC_RETURN.Ftype set
+	 */
+	zassert_true((_current->arch.mode_exc_return & EXC_RETURN_FTYPE) != 0,
+		"Alt thread FPCA flag not clear at initialization\n");
+#if defined(CONFIG_MPU_STACK_GUARD)
+	/* Alt thread is created with K_FP_REGS set, so we
+	 * expect lazy stacking and long guard to be enabled.
+	 */
+	zassert_true((_current->arch.mode &
+		Z_ARM_MODE_MPU_GUARD_FLOAT_Msk) != 0,
+		"Alt thread MPU GUAR DFLOAT flag not set at initialization\n");
+	zassert_true((_current->base.user_options & K_FP_REGS) != 0,
+		"Alt thread K_FP_REGS not set at initialization\n");
+	zassert_true((FPU->FPCCR & FPU_FPCCR_LSPEN_Msk) != 0,
+		"Lazy FP Stacking not set at initialization\n");
+#endif
+
+
+	/* Verify that the _current_ (alt) thread is initialized with FPSCR cleared. */
+	zassert_true((__get_FPSCR() & FPSCR_MASK) == 0,
+		"(Alt thread) FPSCR is not cleared at initialization: 0x%x\n", __get_FPSCR());
+
+	zassert_true((p_ztest_thread->arch.mode_exc_return & EXC_RETURN_FTYPE) == 0,
+		"ztest thread mode Ftype flag not updated at swap-out: 0x%0x\n",
 		p_ztest_thread->arch.mode);
 
 	/* Verify that the main test thread (ztest) has stored the FP
@@ -237,7 +311,7 @@ static void alt_thread_entry(void)
 	memset(&ztest_thread_fp_callee_saved_regs,
 		0, sizeof(ztest_thread_fp_callee_saved_regs));
 
-#endif /* CONFIG_FLOAT && CONFIG_FP_SHARING */
+#endif /* CONFIG_FPU && CONFIG_FPU_SHARING */
 
 	/* Modify the arch.basepri flag of the main test thread, to verify,
 	 * later, that this is passed properly to the BASEPRI.
@@ -260,13 +334,60 @@ static void alt_thread_entry(void)
 	 *
 	 * Note: preserve r7 register (frame pointer).
 	 */
+#if defined(CONFIG_ARMV6_M_ARMV8_M_BASELINE)
 	__asm__ volatile (
+		/* Stash r4-r11 in stack, they will be restored much later in
+		 * another inline asm -- that should be reworked since stack
+		 * must be balanced when we leave any inline asm. We could
+		 * use simply an alternative stack for storing them instead
+		 * of the function's stack.
+		 */
+		"push {r4-r7};\n\t"
+		"mov r2, r8;\n\t"
+		"mov r3, r9;\n\t"
+		"push {r2, r3};\n\t"
+		"mov r2, r10;\n\t"
+		"mov r3, r11;\n\t"
+		"push {r2, r3};\n\t"
+
+		/* Save r0 and r7 since we want to preserve them but they
+		 * are used below: r0 is used as a copy of struct pointer
+		 * we don't want to mess and r7 is the frame pointer which
+		 * we must not clobber it.
+		 */
+		"push {r0, r7};\n\t"
+
+		/* Load struct into r4-r11 */
+		"mov r0, %0;\n\t"
+		"add r0, #16;\n\t"
+		"ldmia r0!, {r4-r7};\n\t"
+		"mov r8, r4;\n\t"
+		"mov r9, r5;\n\t"
+		"mov r10, r6;\n\t"
+		"mov r11, r7;\n\t"
+		"sub r0, #32;\n\t"
+		"ldmia r0!, {r4-r7};\n\t"
+
+		/* Restore r0 and r7 */
+		"pop {r0, r7};\n\t"
+
+		: /* no output */
+		: "r" (&ztest_thread_callee_saved_regs_container)
+		: "memory", "r0", "r2", "r3"
+	);
+#elif defined(CONFIG_ARMV7_M_ARMV8_M_MAINLINE)
+	__asm__ volatile (
+		"push {v1-v8};\n\t"
+		"push {r0, r1};\n\t"
 		"mov r0, r7;\n\t"
 		"ldmia %0, {v1-v8};\n\t"
 		"mov r7, r0;\n\t"
-		: : "r" (&ztest_thread_callee_saved_regs_container)
-		: "memory"
+		"pop {r0, r1};\n\t"
+		: /* no output */
+		: "r" (&ztest_thread_callee_saved_regs_container)
+		: "memory", "r0"
 	);
+#endif
 
 	/* Manually trigger a context-switch, to swap-out
 	 * the alternative test thread.
@@ -274,6 +395,24 @@ static void alt_thread_entry(void)
 	__DMB();
 	SCB->ICSR |= SCB_ICSR_PENDSVSET_Msk;
 	irq_unlock(0);
+
+	/* Restore stacked callee-saved registers */
+#if defined(CONFIG_ARMV6_M_ARMV8_M_BASELINE)
+	__asm__ volatile (
+		"pop {r4, r5, r6, r7};\n\t"
+		"mov r8, r4;\n\t"
+		"mov r9, r5;\n\t"
+		"mov r10, r6;\n\t"
+		"mov r11, r7;\n\t"
+		"pop {r4, r5, r6, r7};\n\t"
+		: : :
+	);
+#elif defined(CONFIG_ARMV7_M_ARMV8_M_MAINLINE)
+	__asm__ volatile (
+		"pop {v1-v8};\n\t"
+		: : :
+	);
+#endif
 
 	/* Verify that the main test thread has managed to resume, before
 	 * we return to the alternative thread (we verify this by checking
@@ -285,7 +424,7 @@ static void alt_thread_entry(void)
 		"Alternative thread: switch flag not false on thread exit\n");
 }
 
-void test_arm_thread_swap(void)
+ZTEST(arm_thread_swap, test_arm_thread_swap)
 {
 	int test_flag;
 
@@ -294,7 +433,7 @@ void test_arm_thread_swap(void)
 	 * Simulating initial conditions:
 	 * - set arbitrary values at the callee-saved registers
 	 * - set arbitrary values at the FP callee-saved registers,
-	 *   if building with CONFIG_FLOAT/CONFIG_FP_SHARING
+	 *   if building with CONFIG_FPU/CONFIG_FPU_SHARING
 	 * - zero the thread's callee-saved data structure
 	 * - set thread's priority same as the alternative test thread
 	 */
@@ -320,12 +459,20 @@ void test_arm_thread_swap(void)
 	zassert_true(_current->arch.basepri == 0,
 		"Thread BASEPRI flag not clear at thread start\n");
 	/* Verify, also, that the interrupts are unlocked. */
+#if defined(CONFIG_CPU_CORTEX_M_HAS_BASEPRI)
 	zassert_true(__get_BASEPRI() == 0,
-		"initial BASEPRI not in zero\n");
+		"initial BASEPRI not zero\n");
+#else
+	/* For Cortex-M Baseline architecture, we verify that
+	 * the interrupt lock is disabled.
+	 */
+	 zassert_true(__get_PRIMASK() == 0,
+	 "initial PRIMASK not zero\n");
+#endif /* CONFIG_CPU_CORTEX_M_HAS_BASEPRI */
 
 #if defined(CONFIG_USERSPACE)
 	/* The main test thread is set to run in privilege mode */
-	zassert_false((z_arch_is_user_context()),
+	zassert_false((arch_is_user_context()),
 		"Main test thread does not start in privilege mode\n");
 
 	/* Assert that the mode status variable indicates privilege mode */
@@ -334,27 +481,49 @@ void test_arm_thread_swap(void)
 		_current->arch.mode);
 #endif /* CONFIG_USERSPACE */
 
-#if defined(CONFIG_FLOAT) && defined(CONFIG_FP_SHARING)
+#if defined(CONFIG_FPU) && defined(CONFIG_FPU_SHARING)
 	/* The main test thread is not (yet) actively using the FP registers */
-	zassert_true((_current->arch.mode & CONTROL_FPCA_Msk) == 0,
-		"Thread FPCA flag not clear at initialization 0x%0x\n",
+	zassert_true((_current->arch.mode_exc_return & EXC_RETURN_FTYPE) != 0,
+		"Thread Ftype flag not set at initialization 0x%0x\n",
 		_current->arch.mode);
+
+	/* Verify that the main test thread is initialized with FPCA cleared. */
+	zassert_true((__get_CONTROL() & CONTROL_FPCA_Msk) == 0,
+		"CONTROL.FPCA is not cleared at initialization: 0x%x\n",
+		__get_CONTROL());
+	/* Verify that the main test thread is initialized with FPSCR cleared. */
+	zassert_true((__get_FPSCR() & FPSCR_MASK) == 0,
+		"FPSCR is not cleared at initialization: 0x%x\n", __get_FPSCR());
 
 	/* Clear the thread's floating-point callee-saved registers' container.
 	 * The container will, later, be populated by the swap mechanism.
 	 */
-	memcpy(&_current->arch.preempt_float, 0,
+	memset(&_current->arch.preempt_float, 0,
 		sizeof(struct _preempt_float));
 
 	/* Randomize the FP callee-saved registers at test initialization */
 	load_fp_callee_saved_regs(&ztest_thread_fp_callee_saved_regs);
 
+	/* Modify bit-0 of the FPSCR - will be checked again upon swap-in. */
+	zassert_true((__get_FPSCR() & 0x1) == 0,
+		"FPSCR bit-0 has been set before testing it\n");
+	__set_FPSCR(__get_FPSCR() | 0x1);
+
 	/* The main test thread is using the FP registers, but the .mode
 	 * flag is not updated until the next context switch.
 	 */
-	zassert_true((_current->arch.mode & CONTROL_FPCA_Msk) == 0,
-		"Thread FPCA flag not clear at initialization\n");
-#endif /* CONFIG_FLOAT && CONFIG_FP_SHARING */
+	zassert_true((_current->arch.mode_exc_return & EXC_RETURN_FTYPE) != 0,
+		"Thread Ftype flag not set at initialization\n");
+#if defined(CONFIG_MPU_STACK_GUARD)
+	zassert_true((_current->arch.mode &
+		Z_ARM_MODE_MPU_GUARD_FLOAT_Msk) == 0,
+		"Thread MPU GUAR DFLOAT flag not clear at initialization\n");
+	zassert_true((_current->base.user_options & K_FP_REGS) == 0,
+		"Thread K_FP_REGS not clear at initialization\n");
+	zassert_true((FPU->FPCCR & FPU_FPCCR_LSPEN_Msk) == 0,
+		"Lazy FP Stacking not clear at initialization\n");
+#endif
+#endif /* CONFIG_FPU && CONFIG_FPU_SHARING */
 
 	/* Create an alternative (supervisor) testing thread */
 	k_thread_create(&alt_thread,
@@ -362,7 +531,7 @@ void test_arm_thread_swap(void)
 		K_THREAD_STACK_SIZEOF(alt_thread_stack),
 		(k_thread_entry_t)alt_thread_entry,
 		NULL, NULL, NULL,
-		K_PRIO_COOP(PRIORITY), 0,
+		K_PRIO_COOP(PRIORITY), ALT_THREAD_OPTIONS,
 		K_NO_WAIT);
 
 	/* Verify context-switch has not occurred. */
@@ -384,7 +553,7 @@ void test_arm_thread_swap(void)
 	 * The container will, later, be populated by the swap
 	 * mechanism.
 	 */
-	memcpy(&_current->callee_saved, 0, sizeof(_callee_saved_t));
+	memset(&_current->callee_saved, 0, sizeof(_callee_saved_t));
 
 	/* Verify context-switch has not occurred yet. */
 	test_flag = switch_flag;
@@ -397,12 +566,29 @@ void test_arm_thread_swap(void)
 	 * are successfully loaded into the thread's callee-saved
 	 * registers' container.
 	 */
+#if defined(CONFIG_ARMV6_M_ARMV8_M_BASELINE)
+	__asm__ volatile (
+		"push {r0, r1, r2, r3};\n\t"
+		"mov r1, %0;\n\t"
+		"stmia r1!, {r4-r7};\n\t"
+		"mov r2, r8;\n\t"
+		"mov r3, r9;\n\t"
+		"stmia r1!, {r2-r3};\n\t"
+		"mov r2, r10;\n\t"
+		"mov r3, r11;\n\t"
+		"stmia r1!, {r2-r3};\n\t"
+		"pop {r0, r1, r2, r3};\n\t"
+		:	: "r" (&ztest_thread_callee_saved_regs_container)
+		: "memory"
+	);
+ #elif defined(CONFIG_ARMV7_M_ARMV8_M_MAINLINE)
 	__asm__ volatile (
 		"stmia %0, {v1-v8};\n\t"
 		:
 		: "r" (&ztest_thread_callee_saved_regs_container)
 		: "memory"
 	);
+#endif
 
 	/* Manually trigger a context-switch to swap-out the current thread.
 	 * Request a return to a different interrupt lock state.
@@ -420,25 +606,58 @@ void test_arm_thread_swap(void)
 	 * This will be verified by the alternative test thread.
 	 */
 	register int swap_return_val __asm__("r0") =
-		__swap(BASEPRI_MODIFIED_1);
+		arch_swap(BASEPRI_MODIFIED_1);
 
 #endif /* CONFIG_NO_OPTIMIZATIONS */
 
 	/* Dump callee-saved registers to memory. */
+#if defined(CONFIG_ARMV6_M_ARMV8_M_BASELINE)
+	__asm__ volatile (
+		"push {r0, r1, r2, r3};\n\t"
+		"mov r1, %0;\n\t"
+		"stmia r1!, {r4-r7};\n\t"
+		"mov r2, r8;\n\t"
+		"mov r3, r9;\n\t"
+		"stmia r1!, {r2-r3};\n\t"
+		"mov r2, r10;\n\t"
+		"mov r3, r11;\n\t"
+		"stmia r1!, {r2-r3};\n\t"
+		"pop {r0, r1, r2, r3};\n\t"
+		:	: "r" (&ztest_thread_callee_saved_regs_container)
+		: "memory"
+	);
+ #elif defined(CONFIG_ARMV7_M_ARMV8_M_MAINLINE)
 	__asm__ volatile (
 		"stmia %0, {v1-v8};\n\t"
 		:
 		: "r" (&ztest_thread_callee_saved_regs_container)
 		: "memory"
 	);
+#endif
 
 #if !defined(CONFIG_NO_OPTIMIZATIONS)
+#if defined(CONFIG_ARMV6_M_ARMV8_M_BASELINE)
+	/* Note: ARMv6-M will always write back the base register,
+	 * so we make sure we preserve the state of the register
+	 * used, as base register in the Store Multiple instruction.
+	 * We also enforce write-back to suppress assembler warning.
+	 */
+	__asm__ volatile (
+		"push {r0, r1, r2, r3, r4, r5, r6, r7};\n\t"
+		"stm %0!, {%1};\n\t"
+		"pop {r0, r1, r2, r3, r4, r5, r6, r7};\n\t"
+		:
+		: "r" (&ztest_swap_return_val), "r" (swap_return_val)
+		: "memory"
+	);
+#elif defined(CONFIG_ARMV7_M_ARMV8_M_MAINLINE)
 	__asm__ volatile (
 		"stm %0, {%1};\n\t"
 		:
 		: "r" (&ztest_swap_return_val), "r" (swap_return_val)
 		: "memory"
 	);
+#endif /* CONFIG_ARMV6_M_ARMV8_M_BASELINE */
 #endif
 
 
@@ -467,12 +686,21 @@ void test_arm_thread_swap(void)
 	zassert_true(_current->arch.basepri == 0,
 		"arch.basepri value not in accordance with the update\n");
 
+#if defined(CONFIG_CPU_CORTEX_M_HAS_BASEPRI)
 	/* Verify that the BASEPRI register is updated during the last
 	 * swap-in of the thread.
 	 */
 	zassert_true(__get_BASEPRI() == BASEPRI_MODIFIED_2,
 		"BASEPRI not in accordance with the update: 0x%0x\n",
 		__get_BASEPRI());
+#else
+	/* For Cortex-M Baseline architecture, we verify that
+	 * the interrupt lock is enabled.
+	 */
+	 zassert_true(__get_PRIMASK() != 0,
+	 "PRIMASK not in accordance with the update: 0x%0x\n",
+	 __get_PRIMASK());
+#endif /* CONFIG_CPU_CORTEX_M_HAS_BASEPRI */
 
 #if !defined(CONFIG_NO_OPTIMIZATIONS)
 	/* The thread is now swapped-back in. */
@@ -484,7 +712,7 @@ void test_arm_thread_swap(void)
 		_current->arch.swap_return_value, ztest_swap_return_val);
 #endif
 
-#if defined(CONFIG_FLOAT) && defined(CONFIG_FP_SHARING)
+#if defined(CONFIG_FPU) && defined(CONFIG_FPU_SHARING)
 	/* Dump callee-saved registers to memory. */
 	__asm__ volatile (
 		"vstmia %0, {s16-s31};\n\t"
@@ -500,7 +728,26 @@ void test_arm_thread_swap(void)
 	verify_fp_callee_saved(
 		&ztest_thread_fp_callee_saved_regs,
 		&_current->arch.preempt_float);
-#endif /* CONFIG_FLOAT && CONFIG_FP_SHARING */
+
+	/* Verify that the main test thread restored the FPSCR bit-0. */
+	zassert_true((__get_FPSCR() & 0x1) == 0x1,
+		"FPSCR bit-0 not restored at swap: 0x%x\n", __get_FPSCR());
+
+	/* The main test thread is using the FP registers, and the .mode
+	 * flag and MPU GUARD flag are now updated.
+	 */
+	zassert_true((_current->arch.mode_exc_return & EXC_RETURN_FTYPE) == 0,
+		"Thread Ftype flag not cleared after main returned back\n");
+#if defined(CONFIG_MPU_STACK_GUARD)
+	zassert_true((_current->arch.mode &
+		Z_ARM_MODE_MPU_GUARD_FLOAT_Msk) != 0,
+		"Thread MPU GUARD FLOAT flag not set\n");
+	zassert_true((_current->base.user_options & K_FP_REGS) != 0,
+		"Thread K_FPREGS not set after main returned back\n");
+	zassert_true((FPU->FPCCR & FPU_FPCCR_LSPEN_Msk) != 0,
+		"Lazy FP Stacking not set after main returned back\n");
+#endif
+#endif /* CONFIG_FPU && CONFIG_FPU_SHARING */
 
 }
 /**

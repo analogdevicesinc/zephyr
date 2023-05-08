@@ -12,8 +12,7 @@ bundled with Atmel's AT86RF233, a 2.4GHz IEEE802.15.4 compatible radio.
 The kit includes Atmel’s Embedded Debugger (EDBG), which provides a full
 debug interface without the need for additional hardware.
 
-.. image:: img/atsamr21_xpro.png
-     :width: 500px
+.. image:: img/atsamr21_xpro.jpg
      :align: center
      :alt: ATSAMR21-XPRO
 
@@ -45,6 +44,8 @@ features:
 +-----------+------------+--------------------------------------+
 | GPIO      | on-chip    | I/O ports                            |
 +-----------+------------+--------------------------------------+
+| PWM       | on-chip    | Pulse Width Modulation               |
++-----------+------------+--------------------------------------+
 | USART     | on-chip    | Serial ports                         |
 +-----------+------------+--------------------------------------+
 | SPI       | on-chip    | Serial Peripheral Interface ports    |
@@ -66,8 +67,7 @@ controllers are responsible for pin muxing, input/output, pull-up, etc.
 For mode details please refer to `SAM R21 Family Datasheet`_ and the `SAM R21
 Xplained Pro Schematic`_.
 
-.. image:: img/ATSAMR21-XPRO-pinout.png
-     :width: 500px
+.. image:: img/ATSAMR21-XPRO-pinout.jpg
      :align: center
      :alt: ATSAMR21-XPRO-pinout
 
@@ -81,7 +81,7 @@ Default Zephyr Peripheral Mapping:
 - SERCOM5 SPI MOSI : PB22
 - SERCOM5 SPI SCK  : PB23
 - GPIO SPI CS      : PB03
-- GPIO LED0        : PB17
+- GPIO/PWM LED0    : PA19
 
 System Clock
 ============
@@ -96,6 +96,13 @@ The SAMR21 MCU has six SERCOM based USARTs with two configured as USARTs in
 this BSP. SERCOM0 is the default Zephyr console.
 
 - SERCOM0 115200 8n1 connected to the onboard Atmel Embedded Debugger (EDBG)
+
+PWM
+===
+
+The SAMR21 MCU has 3 TCC based PWM units with up to 4 outputs each and a
+period of 24 bits or 16 bits.  If :code:`CONFIG_PWM_SAM0_TCC` is enabled then
+LED0 is driven by TCC0 instead of by GPIO.
 
 SPI Port
 ========
@@ -151,6 +158,12 @@ externally connected SPI devices.
 | SLP_TR      | PA20 (OUT, GPIO output)                                                                  |
 +-------------+------------------------------------------------------------------------------------------+
 
+Zephyr provide several samples that can use this technology. You can check
+:ref:`wpanusb-sample` and :ref:`wpan_serial-sample` examples as starting
+points. Another good test can be done with IPv6 by using the server/client
+echo demo. More information at :ref:`sockets-echo-server-sample` and
+:ref:`sockets-echo-client-sample`.
+
 Programming and Debugging
 *************************
 
@@ -195,7 +208,7 @@ Flashing
       :goals: flash
       :compact:
 
-   You should see "Hello World! arm" in your terminal.
+   You should see "Hello World! atsamr21_xpro" in your terminal.
 
 References
 **********

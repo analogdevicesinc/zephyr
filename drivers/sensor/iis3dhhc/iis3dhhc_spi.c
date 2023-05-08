@@ -8,30 +8,22 @@
  * https://www.st.com/resource/en/datasheet/iis3dhhc.pdf
  */
 
+#define DT_DRV_COMPAT st_iis3dhhc
+
 #include <string.h>
 #include "iis3dhhc.h"
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 
-#ifdef DT_ST_IIS3DHHC_BUS_SPI
+#if DT_ANY_INST_ON_BUS_STATUS_OKAY(spi)
 
 #define IIS3DHHC_SPI_READ		(1 << 7)
 
-#define LOG_LEVEL CONFIG_SENSOR_LOG_LEVEL
-LOG_MODULE_DECLARE(IIS3DHHC);
+LOG_MODULE_DECLARE(IIS3DHHC, CONFIG_SENSOR_LOG_LEVEL);
 
-static struct spi_config iis3dhhc_spi_conf = {
-	.frequency = DT_INST_0_ST_IIS3DHHC_SPI_MAX_FREQUENCY,
-	.operation = (SPI_OP_MODE_MASTER | SPI_MODE_CPOL |
-		      SPI_MODE_CPHA | SPI_WORD_SET(8) | SPI_LINES_SINGLE),
-	.slave     = DT_INST_0_ST_IIS3DHHC_BASE_ADDRESS,
-	.cs        = NULL,
-};
-
-static int iis3dhhc_spi_read(struct iis3dhhc_data *ctx, u8_t reg,
-			    u8_t *data, u16_t len)
+static int iis3dhhc_spi_read(const struct device *dev, uint8_t reg, uint8_t *data, uint16_t len)
 {
-	struct spi_config *spi_cfg = &iis3dhhc_spi_conf;
-	u8_t buffer_tx[2] = { reg | IIS3DHHC_SPI_READ, 0 };
+	const struct iis3dhhc_config *config = dev->config;
+	uint8_t buffer_tx[2] = { reg | IIS3DHHC_SPI_READ, 0 };
 	const struct spi_buf tx_buf = {
 			.buf = buffer_tx,
 			.len = 2,
@@ -55,18 +47,17 @@ static int iis3dhhc_spi_read(struct iis3dhhc_data *ctx, u8_t reg,
 		.count = 2
 	};
 
-	if (spi_transceive(ctx->bus, spi_cfg, &tx, &rx)) {
+	if (spi_transceive_dt(&config->spi, &tx, &rx)) {
 		return -EIO;
 	}
 
 	return 0;
 }
 
-static int iis3dhhc_spi_write(struct iis3dhhc_data *ctx, u8_t reg,
-			     u8_t *data, u16_t len)
+static int iis3dhhc_spi_write(const struct device *dev, uint8_t reg, uint8_t *data, uint16_t len)
 {
-	struct spi_config *spi_cfg = &iis3dhhc_spi_conf;
-	u8_t buffer_tx[1] = { reg & ~IIS3DHHC_SPI_READ };
+	const struct iis3dhhc_config *config = dev->config;
+	uint8_t buffer_tx[1] = { reg & ~IIS3DHHC_SPI_READ };
 	const struct spi_buf tx_buf[2] = {
 		{
 			.buf = buffer_tx,
@@ -83,44 +74,32 @@ static int iis3dhhc_spi_write(struct iis3dhhc_data *ctx, u8_t reg,
 	};
 
 
-	if (spi_write(ctx->bus, spi_cfg, &tx)) {
+	if (spi_write_dt(&config->spi, &tx)) {
 		return -EIO;
 	}
 
 	return 0;
 }
 
-iis3dhhc_ctx_t iis3dhhc_spi_ctx = {
-	.read_reg = (iis3dhhc_read_ptr) iis3dhhc_spi_read,
-	.write_reg = (iis3dhhc_write_ptr) iis3dhhc_spi_write,
+stmdev_ctx_t iis3dhhc_spi_ctx = {
+	.read_reg = (stmdev_read_ptr) iis3dhhc_spi_read,
+	.write_reg = (stmdev_write_ptr) iis3dhhc_spi_write,
+	.mdelay = (stmdev_mdelay_ptr) stmemsc_mdelay,
 };
 
-int iis3dhhc_spi_init(struct device *dev)
+int iis3dhhc_spi_init(const struct device *dev)
 {
-	struct iis3dhhc_data *data = dev->driver_data;
+	struct iis3dhhc_data *data = dev->data;
+	const struct iis3dhhc_config *config = dev->config;
+
+	if (!spi_is_ready_dt(&config->spi)) {
+		LOG_ERR("SPI bus is not ready");
+		return -ENODEV;
+	};
 
 	data->ctx = &iis3dhhc_spi_ctx;
-	data->ctx->handle = data;
-
-#if defined(DT_INST_0_ST_IIS3DHHC_CS_GPIOS_CONTROLLER)
-	/* handle SPI CS thru GPIO if it is the case */
-	data->cs_ctrl.gpio_dev = device_get_binding(
-		DT_INST_0_ST_IIS3DHHC_CS_GPIOS_CONTROLLER);
-	if (!data->cs_ctrl.gpio_dev) {
-		LOG_ERR("Unable to get GPIO SPI CS device");
-		return -ENODEV;
-	}
-
-	data->cs_ctrl.gpio_pin = DT_INST_0_ST_IIS3DHHC_CS_GPIOS_PIN;
-	data->cs_ctrl.delay = 0U;
-
-	iis3dhhc_spi_conf.cs = &data->cs_ctrl;
-
-	LOG_DBG("SPI GPIO CS configured on %s:%u",
-		    DT_INST_0_ST_IIS3DHHC_CS_GPIOS_CONTROLLER,
-		    DT_INST_0_ST_IIS3DHHC_CS_GPIOS_PIN);
-#endif
+	data->ctx->handle = (void *)dev;
 
 	return 0;
 }
-#endif /* DT_ST_IIS3DHHC_BUS_SPI */
+#endif /* DT_ANY_INST_ON_BUS_STATUS_OKAY(spi) */

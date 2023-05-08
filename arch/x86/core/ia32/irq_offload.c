@@ -8,24 +8,29 @@
  * @file IRQ offload - x86 implementation
  */
 
-#include <kernel.h>
-#include <irq_offload.h>
+#include <zephyr/kernel.h>
+#include <zephyr/irq_offload.h>
 
 extern void (*_irq_sw_handler)(void);
 NANO_CPU_INT_REGISTER(_irq_sw_handler, NANO_SOFT_IRQ,
 		      CONFIG_IRQ_OFFLOAD_VECTOR / 16,
 		      CONFIG_IRQ_OFFLOAD_VECTOR, 0);
 
+__pinned_bss
 static irq_offload_routine_t offload_routine;
-static void *offload_param;
+
+__pinned_bss
+static const void *offload_param;
 
 /* Called by asm stub */
+__pinned_func
 void z_irq_do_offload(void)
 {
 	offload_routine(offload_param);
 }
 
-void irq_offload(irq_offload_routine_t routine, void *parameter)
+__pinned_func
+void arch_irq_offload(irq_offload_routine_t routine, const void *parameter)
 {
 	unsigned int key;
 

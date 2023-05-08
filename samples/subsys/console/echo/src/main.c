@@ -3,12 +3,12 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-#include <zephyr.h>
-#include <console/console.h>
+#include <zephyr/kernel.h>
+#include <zephyr/console/console.h>
 
 static const char prompt[] = "Start typing characters to see them echoed back\r\n";
 
-void main(void)
+int main(void)
 {
 	console_init();
 
@@ -17,11 +17,12 @@ void main(void)
 	console_write(NULL, prompt, sizeof(prompt) - 1);
 
 	while (1) {
-		u8_t c = console_getchar();
+		uint8_t c = console_getchar();
 
 		console_putchar(c);
 		if (c == '\r') {
 			console_putchar('\n');
 		}
 	}
+	return 0;
 }

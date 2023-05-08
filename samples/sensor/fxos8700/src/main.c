@@ -5,14 +5,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <drivers/sensor.h>
+#include <zephyr/kernel.h>
+#include <zephyr/drivers/sensor.h>
 #include <stdio.h>
 
 K_SEM_DEFINE(sem, 0, 1);	/* starts off "not available" */
 
 #if !defined(CONFIG_FXOS8700_TRIGGER_NONE)
-static void trigger_handler(struct device *dev, struct sensor_trigger *trigger)
+static void trigger_handler(const struct device *dev,
+			    const struct sensor_trigger *trigger)
 {
 	ARG_UNUSED(trigger);
 
@@ -28,14 +29,14 @@ static void trigger_handler(struct device *dev, struct sensor_trigger *trigger)
 }
 #endif /* !CONFIG_FXOS8700_TRIGGER_NONE */
 
-void main(void)
+int main(void)
 {
 	struct sensor_value accel[3];
-	struct device *dev = device_get_binding(DT_INST_0_NXP_FXOS8700_LABEL);
+	const struct device *const dev = DEVICE_DT_GET_ONE(nxp_fxos8700);
 
-	if (dev == NULL) {
-		printf("Could not get fxos8700 device\n");
-		return;
+	if (!device_is_ready(dev)) {
+		printf("Device %s is not ready\n", dev->name);
+		return 0;
 	}
 
 	struct sensor_value attr = {
@@ -46,7 +47,7 @@ void main(void)
 	if (sensor_attr_set(dev, SENSOR_CHAN_ALL,
 			    SENSOR_ATTR_SAMPLING_FREQUENCY, &attr)) {
 		printk("Could not set sampling frequency\n");
-		return;
+		return 0;
 	}
 
 #ifdef CONFIG_FXOS8700_MOTION
@@ -55,7 +56,7 @@ void main(void)
 	if (sensor_attr_set(dev, SENSOR_CHAN_ALL,
 			    SENSOR_ATTR_SLOPE_TH, &attr)) {
 		printk("Could not set slope threshold\n");
-		return;
+		return 0;
 	}
 #endif
 
@@ -71,12 +72,13 @@ void main(void)
 
 	if (sensor_trigger_set(dev, &trig, trigger_handler)) {
 		printf("Could not set trigger\n");
-		return;
+		return 0;
 	}
 #endif /* !CONFIG_FXOS8700_TRIGGER_NONE */
 
 	while (1) {
 #ifdef CONFIG_FXOS8700_TRIGGER_NONE
+		k_sleep(K_MSEC(160));
 		sensor_sample_fetch(dev);
 #else
 		k_sem_take(&sem, K_FOREVER);

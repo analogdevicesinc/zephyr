@@ -4,10 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <device.h>
-#include <init.h>
-#include <arch/cpu.h>
-#include <cortex_m/exc.h>
+#include <zephyr/device.h>
+#include <zephyr/init.h>
+#include <zephyr/arch/cpu.h>
+#include <zephyr/arch/arm/aarch32/cortex_m/cmsis.h>
+#include <zephyr/irq.h>
 
 #include "cy_syslib.h"
 #include "cy_gpio.h"
@@ -36,6 +37,14 @@
 #define CY_CFG_PWR_LDO_VOLTAGE CY_SYSPM_LDO_VOLTAGE_1_1V
 #define CY_CFG_PWR_VDDA_MV 3300
 #define CY_CFG_PWR_USING_ULP 0
+
+/* Dummy symbols, requres for cy_sysint.c module.
+ * NOTE: in this PSoC 6 integration, PSoC 6 Zephyr drivers (uart, spi, gpio)
+ * do not use cy_sysint.c implementation to handle interrupt routine.
+ * Instead this they use IRQ_CONNECT to define ISR.
+ */
+uint32_t __ramVectors;
+uint32_t __Vectors;
 
 static const cy_stc_fll_manual_config_t srss_0__clock_0__fll_0__fllConfig = {
 	.fllMult = 500u,
@@ -368,11 +377,14 @@ void Cy_SystemInit(void)
 	/* Configure peripheral clocks */
 	Cy_SysClk_PeriphSetDivider(CY_SYSCLK_DIV_8_BIT, 0u, 0u);
 	Cy_SysClk_PeriphEnableDivider(CY_SYSCLK_DIV_8_BIT, 0u);
+
+#if defined(CONFIG_SOC_PSOC6_M0_ENABLES_M4)
+	Cy_SysEnableCM4(DT_REG_ADDR(DT_NODELABEL(flash1)));
+#endif
 }
 
-static int init_cycfg_platform_wraper(struct device *arg)
+static int init_cycfg_platform_wraper(void)
 {
-	ARG_UNUSED(arg);
 	SystemInit();
 	return 0;
 }

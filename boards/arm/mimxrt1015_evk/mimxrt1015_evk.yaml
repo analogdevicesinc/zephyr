@@ -15,6 +15,12 @@ toolchain:
 ram: 32
 flash: 16384
 supported:
-  - i2c
-  - hwinfo
+  - arduino_gpio
+  - arduino_serial
   - counter
+  - dma
+  - gpio
+  - i2c
+  - usb_device
+  - spi
+  - adc

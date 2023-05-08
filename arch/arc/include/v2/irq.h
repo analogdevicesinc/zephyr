@@ -15,7 +15,7 @@
 #ifndef ZEPHYR_ARCH_ARC_INCLUDE_V2_IRQ_H_
 #define ZEPHYR_ARCH_ARC_INCLUDE_V2_IRQ_H_
 
-#include <arch/cpu.h>
+#include <zephyr/arch/cpu.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -46,9 +46,6 @@ extern "C" {
 #define _ARC_V2_INIT_IRQ_LOCK_KEY (0x10 | _ARC_V2_DEF_IRQ_LEVEL)
 
 #ifndef _ASMLANGUAGE
-
-extern K_THREAD_STACK_DEFINE(_interrupt_stack, CONFIG_ISR_STACK_SIZE);
-
 /*
  * z_irq_setup
  *
@@ -56,8 +53,10 @@ extern K_THREAD_STACK_DEFINE(_interrupt_stack, CONFIG_ISR_STACK_SIZE);
  */
 static ALWAYS_INLINE void z_irq_setup(void)
 {
-	u32_t aux_irq_ctrl_value = (
+	uint32_t aux_irq_ctrl_value = (
+#ifdef CONFIG_ARC_HAS_ZOL
 		_ARC_V2_AUX_IRQ_CTRL_LOOP_REGS | /* save lp_xxx registers */
+#endif /* CONFIG_ARC_HAS_ZOL */
 #ifdef CONFIG_CODE_DENSITY
 		_ARC_V2_AUX_IRQ_CTRL_LP | /* save code density registers */
 #endif
@@ -65,7 +64,7 @@ static ALWAYS_INLINE void z_irq_setup(void)
 		_ARC_V2_AUX_IRQ_CTRL_14_REGS     /* save r0 -> r13 (caller-saved) */
 	);
 
-	k_cpu_sleep_mode = _ARC_V2_WAKE_IRQ_LEVEL;
+	z_arc_cpu_sleep_mode = _ARC_V2_WAKE_IRQ_LEVEL;
 
 #ifdef CONFIG_ARC_NORMAL_FIRMWARE
 	/* normal mode cannot write irq_ctrl, ignore it */

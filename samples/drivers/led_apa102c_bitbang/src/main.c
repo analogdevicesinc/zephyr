@@ -16,20 +16,18 @@
  * Protect your eyes and do not look directly into those LEDs.
  */
 
-#include <zephyr.h>
+#include <zephyr/kernel.h>
 
-#include <sys/printk.h>
+#include <zephyr/sys/printk.h>
 
-#include <device.h>
-#include <drivers/gpio.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/gpio.h>
 /* in millisecond */
-#define SLEEPTIME	250
+#define SLEEPTIME	K_MSEC(250)
 
 #define GPIO_DATA_PIN	16
 #define GPIO_CLK_PIN	19
 #define GPIO_NAME	"GPIO_"
-
-#define GPIO_DRV_NAME	DT_ALIAS_GPIO_0_LABEL
 
 #define APA102C_START_FRAME	0x00000000
 #define APA102C_END_FRAME	0xFFFFFFFF
@@ -38,7 +36,7 @@
  * brightness is set very low, and RGB values are
  * set low too.
  */
-u32_t rgb[] = {
+uint32_t rgb[] = {
 	0xE1000010,
 	0xE1001000,
 	0xE1100000,
@@ -49,42 +47,42 @@ u32_t rgb[] = {
 /* Number of LEDS linked together */
 #define NUM_LEDS	1
 
-void send_rgb(struct device *gpio_dev, u32_t rgb)
+void send_rgb(const struct device *gpio_dev, uint32_t rgb)
 {
 	int i;
 
 	for (i = 0; i < 32; i++) {
 		/* MSB goes in first */
-		gpio_pin_write(gpio_dev, GPIO_DATA_PIN, !!(rgb & 0x80000000));
+		gpio_pin_set_raw(gpio_dev, GPIO_DATA_PIN, (rgb & BIT(31)) != 0);
 
 		/* Latch data into LED */
-		gpio_pin_write(gpio_dev, GPIO_CLK_PIN, 1);
-		gpio_pin_write(gpio_dev, GPIO_CLK_PIN, 0);
+		gpio_pin_set_raw(gpio_dev, GPIO_CLK_PIN, 1);
+		gpio_pin_set_raw(gpio_dev, GPIO_CLK_PIN, 0);
 
 		rgb <<= 1;
 	}
 }
 
-void main(void)
+int main(void)
 {
-	struct device *gpio_dev;
+	const struct device *gpio_dev;
 	int ret;
 	int idx = 0;
 	int leds = 0;
 
-	gpio_dev = device_get_binding(GPIO_DRV_NAME);
-	if (!gpio_dev) {
-		printk("Cannot find %s!\n", GPIO_DRV_NAME);
-		return;
+	gpio_dev = DEVICE_DT_GET(DT_ALIAS(gpio_0));
+	if (!device_is_ready(gpio_dev)) {
+		printk("GPIO device %s is not ready!\n", gpio_dev->name);
+		return 0;
 	}
 
 	/* Setup GPIO output */
-	ret = gpio_pin_configure(gpio_dev, GPIO_DATA_PIN, (GPIO_DIR_OUT));
+	ret = gpio_pin_configure(gpio_dev, GPIO_DATA_PIN, GPIO_OUTPUT);
 	if (ret) {
 		printk("Error configuring " GPIO_NAME "%d!\n", GPIO_DATA_PIN);
 	}
 
-	ret = gpio_pin_configure(gpio_dev, GPIO_CLK_PIN, (GPIO_DIR_OUT));
+	ret = gpio_pin_configure(gpio_dev, GPIO_CLK_PIN, GPIO_OUTPUT);
 	if (ret) {
 		printk("Error configuring " GPIO_NAME "%d!\n", GPIO_CLK_PIN);
 	}
@@ -109,4 +107,5 @@ void main(void)
 
 		k_sleep(SLEEPTIME);
 	}
+	return 0;
 }

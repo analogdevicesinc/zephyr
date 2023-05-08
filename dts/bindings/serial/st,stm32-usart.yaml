@@ -1,15 +1,5 @@
-title: STM32 USART
-
-description: >
-    This binding gives a base representation of the STM32 USART
+description: STM32 USART
 
 compatible: "st,stm32-usart"
 
-include: uart-controller.yaml
-
-properties:
-    reg:
-      required: true
-
-    interrupts:
-      required: true
+include: st,stm32-uart-base.yaml

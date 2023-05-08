@@ -11,32 +11,20 @@
 #ifndef ZEPHYR_DRIVERS_SENSOR_LIS2DW12_LIS2DW12_H_
 #define ZEPHYR_DRIVERS_SENSOR_LIS2DW12_LIS2DW12_H_
 
-#include <drivers/spi.h>
-#include <drivers/gpio.h>
-#include <sys/util.h>
-#include <drivers/sensor.h>
+#include <zephyr/drivers/spi.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/drivers/sensor.h>
+#include <stmemsc.h>
 #include "lis2dw12_reg.h"
 
-#if defined(CONFIG_LIS2DW12_ODR_1_6)
-	#define LIS2DW12_DEFAULT_ODR	LIS2DW12_XL_ODR_1Hz6_LP_ONLY
-#elif defined(CONFIG_LIS2DW12_ODR_12_5)
-	#define LIS2DW12_DEFAULT_ODR	LIS2DW12_XL_ODR_12Hz5
-#elif defined(CONFIG_LIS2DW12_ODR_25)
-	#define LIS2DW12_DEFAULT_ODR	LIS2DW12_XL_ODR_25Hz
-#elif defined(CONFIG_LIS2DW12_ODR_50)
-	#define LIS2DW12_DEFAULT_ODR	LIS2DW12_XL_ODR_50Hz
-#elif defined(CONFIG_LIS2DW12_ODR_100) || \
-	defined(CONFIG_LIS2DW12_ODR_RUNTIME)
-	#define LIS2DW12_DEFAULT_ODR	LIS2DW12_XL_ODR_100Hz
-#elif defined(CONFIG_LIS2DW12_ODR_200)
-	#define LIS2DW12_DEFAULT_ODR	LIS2DW12_XL_ODR_200Hz
-#elif defined(CONFIG_LIS2DW12_ODR_400)
-	#define LIS2DW12_DEFAULT_ODR	LIS2DW12_XL_ODR_400Hz
-#elif defined(CONFIG_LIS2DW12_ODR_800)
-	#define LIS2DW12_DEFAULT_ODR	LIS2DW12_XL_ODR_800Hz
-#elif defined(CONFIG_LIS2DW12_ODR_1600)
-	#define LIS2DW12_DEFAULT_ODR	LIS2DW12_XL_ODR_1k6Hz
-#endif
+#if DT_ANY_INST_ON_BUS_STATUS_OKAY(spi)
+#include <zephyr/drivers/spi.h>
+#endif /* DT_ANY_INST_ON_BUS_STATUS_OKAY(spi) */
+
+#if DT_ANY_INST_ON_BUS_STATUS_OKAY(i2c)
+#include <zephyr/drivers/i2c.h>
+#endif /* DT_ANY_INST_ON_BUS_STATUS_OKAY(i2c) */
 
 /* Return ODR reg value based on data rate set */
 #define LIS2DW12_ODR_TO_REG(_odr) \
@@ -44,19 +32,16 @@
 	 (_odr <= 12) ? LIS2DW12_XL_ODR_12Hz5 : \
 	 ((31 - __builtin_clz(_odr / 25))) + 3)
 
+/* Return data rate in Hz for given register value */
+#define LIS2DW12_REG_TO_ODR(_reg) \
+	((_reg == 0) ? 0 : \
+	(_reg == 1) ? 1 : \
+	(_reg == 2) ? 12 : \
+	(_reg > 9) ? 1600 : \
+	(1 << (_reg - 3)) * 25)
+
 /* FS reg value from Full Scale */
 #define LIS2DW12_FS_TO_REG(_fs)	(30 - __builtin_clz(_fs))
-
-#if defined(CONFIG_LIS2DW12_ACCEL_RANGE_RUNTIME) || \
-	defined(CONFIG_LIS2DW12_ACCEL_RANGE_2G)
-	#define LIS2DW12_ACC_FS		LIS2DW12_2g
-#elif defined(CONFIG_LIS2DW12_ACCEL_RANGE_4G)
-	#define LIS2DW12_ACC_FS		LIS2DW12_4g
-#elif defined(CONFIG_LIS2DW12_ACCEL_RANGE_8G)
-	#define LIS2DW12_ACC_FS		LIS2DW12_8g
-#elif defined(CONFIG_LIS2DW12_ACCEL_RANGE_16G)
-	#define LIS2DW12_ACC_FS		LIS2DW12_16g
-#endif
 
 /* Acc Gain value in ug/LSB in High Perf mode */
 #define LIS2DW12_FS_2G_GAIN		244
@@ -77,68 +62,85 @@
  * struct lis2dw12_device_config - lis2dw12 hw configuration
  * @bus_name: Pointer to bus master identifier.
  * @pm: Power mode (lis2dh_powermode).
- * @int_gpio_port: Pointer to GPIO PORT identifier.
- * @int_gpio_pin: GPIO pin number connecter to sensor int pin.
  * @int_pin: Sensor int pin (int1/int2).
  */
 struct lis2dw12_device_config {
-	const char *bus_name;
+	stmdev_ctx_t ctx;
+	union {
+#if DT_ANY_INST_ON_BUS_STATUS_OKAY(i2c)
+		const struct i2c_dt_spec i2c;
+#endif
+#if DT_ANY_INST_ON_BUS_STATUS_OKAY(spi)
+		const struct spi_dt_spec spi;
+#endif
+	} stmemsc_cfg;
 	lis2dw12_mode_t pm;
+	uint16_t odr;
+	uint8_t range;
+	uint8_t bw_filt;
+	bool low_noise;
+	bool hp_filter_path;
+	bool hp_ref_mode;
+	bool drdy_pulsed;
 #ifdef CONFIG_LIS2DW12_TRIGGER
-	const char *int_gpio_port;
-	u8_t int_gpio_pin;
-	u8_t int_pin;
-#ifdef CONFIG_LIS2DW12_PULSE
-	u8_t pulse_trigger;
-	u8_t pulse_ths[3];
-	u8_t pulse_shock;
-	u8_t pulse_ltncy;
-	u8_t pulse_quiet;
-#endif /* CONFIG_LIS2DW12_PULSE */
+	struct gpio_dt_spec gpio_int;
+	uint8_t int_pin;
+#ifdef CONFIG_LIS2DW12_TAP
+	uint8_t tap_mode;
+	uint8_t tap_threshold[3];
+	uint8_t tap_shock;
+	uint8_t tap_latency;
+	uint8_t tap_quiet;
+#endif /* CONFIG_LIS2DW12_TAP */
+#ifdef CONFIG_LIS2DW12_FREEFALL
+	uint8_t freefall_duration;
+	uint8_t freefall_threshold;
+#endif /* CONFIG_LIS2DW12_FREEFALL */
 #endif /* CONFIG_LIS2DW12_TRIGGER */
 };
 
-/* sensor data forward declaration (member definition is below) */
-struct lis2dw12_data;
-
 /* sensor data */
 struct lis2dw12_data {
-	struct device *bus;
-	s16_t acc[3];
+	int16_t acc[3];
 
 	 /* save sensitivity */
-	u16_t gain;
+	uint16_t gain;
+	 /* output data rate */
+	uint16_t odr;
 
-	lis2dw12_ctx_t *ctx;
 #ifdef CONFIG_LIS2DW12_TRIGGER
-	struct device *gpio;
-	u8_t gpio_pin;
+	const struct device *dev;
+
 	struct gpio_callback gpio_cb;
 	sensor_trigger_handler_t drdy_handler;
-#ifdef CONFIG_LIS2DW12_PULSE
+	const struct sensor_trigger *drdy_trig;
+#ifdef CONFIG_LIS2DW12_TAP
 	sensor_trigger_handler_t tap_handler;
+	const struct sensor_trigger *tap_trig;
 	sensor_trigger_handler_t double_tap_handler;
-#endif /* CONFIG_LIS2DW12_PULSE */
+	const struct sensor_trigger *double_tap_trig;
+#endif /* CONFIG_LIS2DW12_TAP */
+#ifdef CONFIG_LIS2DW12_THRESHOLD
+	sensor_trigger_handler_t threshold_handler;
+	const struct sensor_trigger *threshold_trig;
+#endif /* CONFIG_LIS2DW12_THRESHOLD */
+#ifdef CONFIG_LIS2DW12_FREEFALL
+	sensor_trigger_handler_t freefall_handler;
+	const struct sensor_trigger *freefall_trig;
+#endif /* CONFIG_LIS2DW12_FREEFALL */
 #if defined(CONFIG_LIS2DW12_TRIGGER_OWN_THREAD)
-	K_THREAD_STACK_MEMBER(thread_stack, CONFIG_LIS2DW12_THREAD_STACK_SIZE);
+	K_KERNEL_STACK_MEMBER(thread_stack, CONFIG_LIS2DW12_THREAD_STACK_SIZE);
 	struct k_thread thread;
 	struct k_sem gpio_sem;
 #elif defined(CONFIG_LIS2DW12_TRIGGER_GLOBAL_THREAD)
 	struct k_work work;
-	struct device *dev;
 #endif /* CONFIG_LIS2DW12_TRIGGER_GLOBAL_THREAD */
 #endif /* CONFIG_LIS2DW12_TRIGGER */
-#if defined(DT_INST_0_ST_LIS2DW12_CS_GPIOS_CONTROLLER)
-	struct spi_cs_control cs_ctrl;
-#endif
 };
 
-int lis2dw12_i2c_init(struct device *dev);
-int lis2dw12_spi_init(struct device *dev);
-
 #ifdef CONFIG_LIS2DW12_TRIGGER
-int lis2dw12_init_interrupt(struct device *dev);
-int lis2dw12_trigger_set(struct device *dev,
+int lis2dw12_init_interrupt(const struct device *dev);
+int lis2dw12_trigger_set(const struct device *dev,
 			  const struct sensor_trigger *trig,
 			  sensor_trigger_handler_t handler);
 #endif /* CONFIG_LIS2DW12_TRIGGER */

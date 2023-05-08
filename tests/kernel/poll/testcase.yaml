@@ -1,6 +1,6 @@
 tests:
   kernel.poll:
+    ignore_faults: true
     tags: kernel userspace
-    min_ram: 16
-    min_flash: 34
-    platform_exclude: nrf52810_pca10040
+    # FIXME: qemu_arc_hs6x is excluded due to a run-time failure, see #49492
+    platform_exclude: nrf52dk_nrf52810 qemu_arc_hs6x

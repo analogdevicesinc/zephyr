@@ -1,12 +1,11 @@
-# Kconfig - MCUXpresso SDK PCC
-#
-# Copyright (c) 2019 Vestas Wind Systems A/S
-#
-# SPDX-License-Identifier: Apache-2.0
-#
+# MCUXpresso SDK PCC
 
-menuconfig CLOCK_CONTROL_MCUX_PCC
+# Copyright (c) 2019 Vestas Wind Systems A/S
+# SPDX-License-Identifier: Apache-2.0
+
+config CLOCK_CONTROL_MCUX_PCC
 	bool "MCUX PCC driver"
-	depends on HAS_MCUX_PCC
+	default y
+	depends on DT_HAS_NXP_KINETIS_PCC_ENABLED
 	help
 	  Enable support for MCUX PCC driver.

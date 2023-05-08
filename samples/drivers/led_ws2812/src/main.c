@@ -9,81 +9,64 @@
 #include <string.h>
 
 #define LOG_LEVEL 4
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(main);
 
-#include <zephyr.h>
-#include <drivers/led_strip.h>
-#include <device.h>
-#include <drivers/spi.h>
-#include <sys/util.h>
+#include <zephyr/kernel.h>
+#include <zephyr/drivers/led_strip.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/spi.h>
+#include <zephyr/sys/util.h>
 
-/*
- * Number of RGB LEDs in the LED strip, adjust as needed.
- */
-#if defined(CONFIG_WS2812_STRIP)
-#define STRIP_NUM_LEDS 12
-#define STRIP_DEV_NAME DT_INST_0_WORLDSEMI_WS2812_LABEL
-#else
-#define STRIP_NUM_LEDS 24
-#define STRIP_DEV_NAME CONFIG_WS2812B_SW_NAME
-#endif
+#define STRIP_NODE		DT_ALIAS(led_strip)
+#define STRIP_NUM_PIXELS	DT_PROP(DT_ALIAS(led_strip), chain_length)
 
-#define DELAY_TIME K_MSEC(40)
+#define DELAY_TIME K_MSEC(50)
+
+#define RGB(_r, _g, _b) { .r = (_r), .g = (_g), .b = (_b) }
 
 static const struct led_rgb colors[] = {
-	{ .r = 0xff, .g = 0x00, .b = 0x00, }, /* red */
-	{ .r = 0x00, .g = 0xff, .b = 0x00, }, /* green */
-	{ .r = 0x00, .g = 0x00, .b = 0xff, }, /* blue */
+	RGB(0x0f, 0x00, 0x00), /* red */
+	RGB(0x00, 0x0f, 0x00), /* green */
+	RGB(0x00, 0x00, 0x0f), /* blue */
 };
 
-static const struct led_rgb black = {
-	.r = 0x00,
-	.g = 0x00,
-	.b = 0x00,
-};
+struct led_rgb pixels[STRIP_NUM_PIXELS];
 
-struct led_rgb strip_colors[STRIP_NUM_LEDS];
+static const struct device *const strip = DEVICE_DT_GET(STRIP_NODE);
 
-const struct led_rgb *color_at(size_t time, size_t i)
+int main(void)
 {
-	size_t rgb_start = time % STRIP_NUM_LEDS;
+	size_t cursor = 0, color = 0;
+	int rc;
 
-	if (rgb_start <= i && i < rgb_start + ARRAY_SIZE(colors)) {
-		return &colors[i - rgb_start];
+	if (device_is_ready(strip)) {
+		LOG_INF("Found LED strip device %s", strip->name);
 	} else {
-		return &black;
-	}
-}
-
-void main(void)
-{
-	struct device *strip;
-	size_t i, time;
-
-	strip = device_get_binding(STRIP_DEV_NAME);
-	if (strip) {
-		LOG_INF("Found LED strip device %s", STRIP_DEV_NAME);
-	} else {
-		LOG_ERR("LED strip device %s not found", STRIP_DEV_NAME);
-		return;
+		LOG_ERR("LED strip device %s is not ready", strip->name);
+		return 0;
 	}
 
-	/*
-	 * Display a pattern that "walks" the three primary colors
-	 * down the strip until it reaches the end, then starts at the
-	 * beginning. This has the effect of moving it around in a
-	 * circle in the case of rings of pixels.
-	 */
 	LOG_INF("Displaying pattern on strip");
-	time = 0;
 	while (1) {
-		for (i = 0; i < STRIP_NUM_LEDS; i++) {
-			memcpy(&strip_colors[i], color_at(time, i),
-			       sizeof(strip_colors[i]));
+		memset(&pixels, 0x00, sizeof(pixels));
+		memcpy(&pixels[cursor], &colors[color], sizeof(struct led_rgb));
+		rc = led_strip_update_rgb(strip, pixels, STRIP_NUM_PIXELS);
+
+		if (rc) {
+			LOG_ERR("couldn't update strip: %d", rc);
 		}
-		led_strip_update_rgb(strip, strip_colors, STRIP_NUM_LEDS);
+
+		cursor++;
+		if (cursor >= STRIP_NUM_PIXELS) {
+			cursor = 0;
+			color++;
+			if (color == ARRAY_SIZE(colors)) {
+				color = 0;
+			}
+		}
+
 		k_sleep(DELAY_TIME);
-		time++;
 	}
+	return 0;
 }

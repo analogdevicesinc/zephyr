@@ -4,11 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <ztest.h>
-#include <irq_offload.h>
-#include <ksched.h>
-#include <sys/__assert.h>
-#include <sys/util.h>
+#include <zephyr/ztest.h>
+#include <zephyr/irq_offload.h>
+#include <zephyr/sys/__assert.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/logging/log.h>
+LOG_MODULE_REGISTER(test);
 
 /*
  * @file
@@ -35,15 +36,15 @@ struct scratch_fifo_packet {
 
 struct reply_packet {
 	void *link_in_fifo;
-	s32_t reply;
+	int32_t reply;
 };
 
 struct timeout_order_data {
 	void *link_in_fifo;
 	struct k_fifo *fifo;
-	u32_t timeout;
-	s32_t timeout_order;
-	s32_t q_order;
+	uint32_t timeout;
+	int32_t timeout_order;
+	int32_t q_order;
 };
 
 
@@ -76,7 +77,7 @@ struct timeout_order_data timeout_order_data_mult_fifo[] = {
 };
 
 #define TIMEOUT_ORDER_NUM_THREADS	ARRAY_SIZE(timeout_order_data_mult_fifo)
-#define TSTACK_SIZE			(1024 + CONFIG_TEST_EXTRA_STACKSIZE)
+#define TSTACK_SIZE			(512 + CONFIG_TEST_EXTRA_STACK_SIZE)
 #define FIFO_THREAD_PRIO		-5
 
 static K_THREAD_STACK_ARRAY_DEFINE(ttstack,
@@ -88,7 +89,7 @@ static void *get_scratch_packet(void)
 {
 	void *packet = k_fifo_get(&scratch_fifo_packets_fifo, K_NO_WAIT);
 
-	zassert_true(packet != NULL, NULL);
+	zassert_true(packet != NULL);
 	return packet;
 }
 
@@ -97,12 +98,12 @@ static void put_scratch_packet(void *packet)
 	k_fifo_put(&scratch_fifo_packets_fifo, packet);
 }
 
-static bool is_timeout_in_range(u32_t start_time, u32_t timeout)
+static bool is_timeout_in_range(uint32_t start_time, uint32_t timeout)
 {
-	u32_t stop_time, diff;
+	uint32_t stop_time, diff;
 
 	stop_time = k_cycle_get_32();
-	diff = SYS_CLOCK_HW_CYCLES_TO_NS(stop_time -
+	diff = (uint32_t)k_cyc_to_ns_floor64(stop_time -
 			start_time) / NSEC_PER_USEC;
 	diff = diff / USEC_PER_MSEC;
 	return timeout <= diff;
@@ -111,9 +112,9 @@ static bool is_timeout_in_range(u32_t start_time, u32_t timeout)
 /* a thread sleeps then puts data on the fifo */
 static void test_thread_put_timeout(void *p1, void *p2, void *p3)
 {
-	u32_t timeout = *((u32_t *)p2);
+	uint32_t timeout = *((uint32_t *)p2);
 
-	k_sleep(timeout);
+	k_msleep(timeout);
 	k_fifo_put((struct k_fifo *)p1, get_scratch_packet());
 }
 
@@ -121,15 +122,15 @@ static void test_thread_put_timeout(void *p1, void *p2, void *p3)
 static void test_thread_pend_and_timeout(void *p1, void *p2, void *p3)
 {
 	struct timeout_order_data *d = (struct timeout_order_data *)p1;
-	u32_t start_time;
+	uint32_t start_time;
 	void *packet;
 
-	k_sleep(1); /* Align to ticks */
+	k_msleep(1); /* Align to ticks */
 
 	start_time = k_cycle_get_32();
-	packet = k_fifo_get(d->fifo, d->timeout);
-	zassert_true(packet == NULL, NULL);
-	zassert_true(is_timeout_in_range(start_time, d->timeout), NULL);
+	packet = k_fifo_get(d->fifo, K_MSEC(d->timeout));
+	zassert_true(packet == NULL);
+	zassert_true(is_timeout_in_range(start_time, d->timeout));
 
 	k_fifo_put(&timeout_order_fifo, d);
 }
@@ -138,13 +139,13 @@ static int test_multiple_threads_pending(struct timeout_order_data *test_data,
 					 int test_data_size)
 {
 	int ii, j;
-	u32_t diff_ms;
+	uint32_t diff_ms;
 
 	for (ii = 0; ii < test_data_size; ii++) {
 		tid[ii] = k_thread_create(&ttdata[ii], ttstack[ii], TSTACK_SIZE,
 				test_thread_pend_and_timeout,
 				&test_data[ii], NULL, NULL,
-				FIFO_THREAD_PRIO, K_INHERIT_PERMS, 0);
+				FIFO_THREAD_PRIO, K_INHERIT_PERMS, K_NO_WAIT);
 	}
 
 	/* In general, there is no guarantee of wakeup order when multiple
@@ -159,8 +160,9 @@ static int test_multiple_threads_pending(struct timeout_order_data *test_data,
 		struct timeout_order_data *data =
 			k_fifo_get(&timeout_order_fifo, K_FOREVER);
 
+		zassert_not_null(data, NULL);
 		if (data->timeout_order == ii) {
-			TC_PRINT(" thread (q order: %d, t/o: %d, fifo %p)\n",
+			LOG_DBG(" thread (q order: %d, t/o: %d, fifo %p)",
 				data->q_order, data->timeout, data->fifo);
 		} else {
 			/* Get the index of the thread which should have
@@ -178,14 +180,14 @@ static int test_multiple_threads_pending(struct timeout_order_data *test_data,
 				diff_ms = test_data[j].timeout - data->timeout;
 			}
 
-			if (z_ms_to_ticks(diff_ms) == 1) {
-				TC_PRINT(
-				" thread (q order: %d, t/o: %d, fifo %p)\n",
+			if (k_ms_to_ticks_ceil32(diff_ms) == 1) {
+				LOG_DBG(
+				" thread (q order: %d, t/o: %d, fifo %p)",
 				data->q_order, data->timeout, data->fifo);
 			} else {
 				TC_ERROR(
 				" *** thread %d woke up, expected %d\n",
-				data->timeout_order, ii);
+				data->q_order, j);
 				return TC_FAIL;
 			}
 		}
@@ -200,8 +202,8 @@ static void test_thread_pend_and_get_data(void *p1, void *p2, void *p3)
 	struct timeout_order_data *d = (struct timeout_order_data *)p1;
 	void *packet;
 
-	packet = k_fifo_get(d->fifo, d->timeout);
-	zassert_true(packet != NULL, NULL);
+	packet = k_fifo_get(d->fifo, K_MSEC(d->timeout));
+	zassert_true(packet != NULL);
 
 	put_scratch_packet(packet);
 	k_fifo_put(&timeout_order_fifo, d);
@@ -218,13 +220,13 @@ static int test_multiple_threads_get_data(struct timeout_order_data *test_data,
 		tid[ii] = k_thread_create(&ttdata[ii], ttstack[ii], TSTACK_SIZE,
 				test_thread_pend_and_get_data,
 				&test_data[ii], NULL, NULL,
-				K_PRIO_PREEMPT(0), K_INHERIT_PERMS, 0);
+				K_PRIO_PREEMPT(0), K_INHERIT_PERMS, K_NO_WAIT);
 	}
 
 	tid[ii] = k_thread_create(&ttdata[ii], ttstack[ii], TSTACK_SIZE,
 				test_thread_pend_and_timeout,
 				&test_data[ii], NULL, NULL,
-				K_PRIO_PREEMPT(0), K_INHERIT_PERMS, 0);
+				K_PRIO_PREEMPT(0), K_INHERIT_PERMS, K_NO_WAIT);
 
 	for (ii = 0; ii < test_data_size-1; ii++) {
 		k_fifo_put(test_data[ii].fifo, get_scratch_packet());
@@ -242,7 +244,7 @@ static int test_multiple_threads_get_data(struct timeout_order_data *test_data,
 		}
 
 		if (data->q_order == ii) {
-			TC_PRINT(" thread (q order: %d, t/o: %d, fifo %p)\n",
+			LOG_DBG(" thread (q order: %d, t/o: %d, fifo %p)",
 				data->q_order, data->timeout, data->fifo);
 		}
 	}
@@ -259,8 +261,8 @@ static int test_multiple_threads_get_data(struct timeout_order_data *test_data,
 		return TC_FAIL;
 	}
 
-	TC_PRINT(" thread (q order: %d, t/o: %d, fifo %p)\n",
-		 data->q_order, data->timeout, data->fifo);
+	LOG_DBG(" thread (q order: %d, t/o: %d, fifo %p)",
+		data->q_order, data->timeout, data->fifo);
 
 	return TC_PASS;
 }
@@ -295,30 +297,30 @@ static void test_thread_timeout_reply_values_wfe(void *p1, void *p2, void *p3)
  * @brief Test empty fifo with timeout and K_NO_WAIT
  * @see k_fifo_get()
  */
-static void test_timeout_empty_fifo(void)
+ZTEST(fifo_timeout_1cpu, test_timeout_empty_fifo)
 {
 	void *packet;
-	u32_t start_time, timeout;
+	uint32_t start_time, timeout;
 
-	k_sleep(1); /* Align to ticks */
+	k_msleep(1); /* Align to ticks */
 
 	/* Test empty fifo with timeout */
 	timeout = 10U;
 	start_time = k_cycle_get_32();
-	packet = k_fifo_get(&fifo_timeout[0], timeout);
-	zassert_true(packet == NULL, NULL);
-	zassert_true(is_timeout_in_range(start_time, timeout), NULL);
+	packet = k_fifo_get(&fifo_timeout[0], K_MSEC(timeout));
+	zassert_true(packet == NULL);
+	zassert_true(is_timeout_in_range(start_time, timeout));
 
 	/* Test empty fifo with timeout of K_NO_WAIT */
 	packet = k_fifo_get(&fifo_timeout[0], K_NO_WAIT);
-	zassert_true(packet == NULL, NULL);
+	zassert_true(packet == NULL);
 }
 
 /**
  * @brief Test non empty fifo with timeout and K_NO_WAIT
  * @see k_fifo_get(), k_fifo_put()
  */
-static void test_timeout_non_empty_fifo(void)
+ZTEST(fifo_timeout, test_timeout_non_empty_fifo)
 {
 	void *packet, *scratch_packet;
 
@@ -326,14 +328,14 @@ static void test_timeout_non_empty_fifo(void)
 	scratch_packet = get_scratch_packet();
 	k_fifo_put(&fifo_timeout[0], scratch_packet);
 	packet = k_fifo_get(&fifo_timeout[0], K_NO_WAIT);
-	zassert_true(packet != NULL, NULL);
+	zassert_true(packet != NULL);
 	put_scratch_packet(scratch_packet);
 
 	 /* Test k_fifo_get with K_FOREVER */
 	scratch_packet = get_scratch_packet();
 	k_fifo_put(&fifo_timeout[0], scratch_packet);
 	packet = k_fifo_get(&fifo_timeout[0], K_FOREVER);
-	zassert_true(packet != NULL, NULL);
+	zassert_true(packet != NULL);
 	put_scratch_packet(scratch_packet);
 }
 
@@ -347,13 +349,13 @@ static void test_timeout_non_empty_fifo(void)
  * the child thread based on the data availability on another fifo.
  * @see k_fifo_get(), k_fifo_put()
  */
-static void test_timeout_fifo_thread(void)
+ZTEST(fifo_timeout_1cpu, test_timeout_fifo_thread)
 {
 	void *packet, *scratch_packet;
 	struct reply_packet reply_packet;
-	u32_t start_time, timeout;
+	uint32_t start_time, timeout;
 
-	k_sleep(1); /* Align to ticks */
+	k_msleep(1); /* Align to ticks */
 
 	/*
 	 * Test fifo with some timeout and child thread that puts
@@ -365,11 +367,11 @@ static void test_timeout_fifo_thread(void)
 	tid[0] = k_thread_create(&ttdata[0], ttstack[0], TSTACK_SIZE,
 				test_thread_put_timeout, &fifo_timeout[0],
 				&timeout, NULL,
-				FIFO_THREAD_PRIO, K_INHERIT_PERMS, 0);
+				FIFO_THREAD_PRIO, K_INHERIT_PERMS, K_NO_WAIT);
 
-	packet = k_fifo_get(&fifo_timeout[0], timeout + 10);
-	zassert_true(packet != NULL, NULL);
-	zassert_true(is_timeout_in_range(start_time, timeout), NULL);
+	packet = k_fifo_get(&fifo_timeout[0], K_MSEC(timeout + 10));
+	zassert_true(packet != NULL);
+	zassert_true(is_timeout_in_range(start_time, timeout));
 	put_scratch_packet(packet);
 
 	/*
@@ -381,12 +383,12 @@ static void test_timeout_fifo_thread(void)
 	tid[0] = k_thread_create(&ttdata[0], ttstack[0], TSTACK_SIZE,
 				test_thread_timeout_reply_values,
 				&reply_packet, NULL, NULL,
-				FIFO_THREAD_PRIO, K_INHERIT_PERMS, 0);
+				FIFO_THREAD_PRIO, K_INHERIT_PERMS, K_NO_WAIT);
 
 	k_yield();
 	packet = k_fifo_get(&timeout_order_fifo, K_NO_WAIT);
-	zassert_true(packet != NULL, NULL);
-	zassert_false(reply_packet.reply, NULL);
+	zassert_true(packet != NULL);
+	zassert_false(reply_packet.reply);
 
 	/*
 	 * Test k_fifo_get with timeout of K_NO_WAIT and the fifo
@@ -400,12 +402,12 @@ static void test_timeout_fifo_thread(void)
 	tid[0] = k_thread_create(&ttdata[0], ttstack[0], TSTACK_SIZE,
 				test_thread_timeout_reply_values,
 				&reply_packet, NULL, NULL,
-				FIFO_THREAD_PRIO, K_INHERIT_PERMS, 0);
+				FIFO_THREAD_PRIO, K_INHERIT_PERMS, K_NO_WAIT);
 
 	k_yield();
 	packet = k_fifo_get(&timeout_order_fifo, K_NO_WAIT);
-	zassert_true(packet != NULL, NULL);
-	zassert_true(reply_packet.reply, NULL);
+	zassert_true(packet != NULL);
+	zassert_true(reply_packet.reply);
 	put_scratch_packet(scratch_packet);
 
 	/*
@@ -420,11 +422,11 @@ static void test_timeout_fifo_thread(void)
 	tid[0] = k_thread_create(&ttdata[0], ttstack[0], TSTACK_SIZE,
 				test_thread_timeout_reply_values_wfe,
 				&reply_packet, NULL, NULL,
-				FIFO_THREAD_PRIO, K_INHERIT_PERMS, 0);
+				FIFO_THREAD_PRIO, K_INHERIT_PERMS, K_NO_WAIT);
 
 	packet = k_fifo_get(&timeout_order_fifo, K_FOREVER);
-	zassert_true(packet != NULL, NULL);
-	zassert_true(reply_packet.reply, NULL);
+	zassert_true(packet != NULL);
+	zassert_true(reply_packet.reply);
 	put_scratch_packet(scratch_packet);
 }
 
@@ -434,9 +436,9 @@ static void test_timeout_fifo_thread(void)
  * different timeouts
  * @see k_fifo_get(), k_fifo_put()
  */
-static void test_timeout_threads_pend_on_fifo(void)
+ZTEST(fifo_timeout_1cpu, test_timeout_threads_pend_on_fifo)
 {
-	s32_t rv, test_data_size;
+	int32_t rv, test_data_size;
 
 	/*
 	 * Test multiple threads pending on the same
@@ -444,7 +446,7 @@ static void test_timeout_threads_pend_on_fifo(void)
 	 */
 	test_data_size = ARRAY_SIZE(timeout_order_data);
 	rv = test_multiple_threads_pending(timeout_order_data, test_data_size);
-	zassert_equal(rv, TC_PASS, NULL);
+	zassert_equal(rv, TC_PASS);
 }
 
 /**
@@ -453,9 +455,9 @@ static void test_timeout_threads_pend_on_fifo(void)
  * with different timeouts
  * @see k_fifo_get(), k_fifo_put()
  */
-static void test_timeout_threads_pend_on_dual_fifos(void)
+ZTEST(fifo_timeout_1cpu, test_timeout_threads_pend_on_dual_fifos)
 {
-	s32_t rv, test_data_size;
+	int32_t rv, test_data_size;
 
 	/*
 	 * Test multiple threads pending on different
@@ -464,7 +466,7 @@ static void test_timeout_threads_pend_on_dual_fifos(void)
 	test_data_size = ARRAY_SIZE(timeout_order_data_mult_fifo);
 	rv = test_multiple_threads_pending(timeout_order_data_mult_fifo,
 							test_data_size);
-	zassert_equal(rv, TC_PASS, NULL);
+	zassert_equal(rv, TC_PASS);
 
 }
 
@@ -474,9 +476,9 @@ static void test_timeout_threads_pend_on_dual_fifos(void)
  * different timeouts but getting the data in time
  * @see k_fifo_get(), k_fifo_put()
  */
-static void test_timeout_threads_pend_fail_on_fifo(void)
+ZTEST(fifo_timeout_1cpu, test_timeout_threads_pend_fail_on_fifo)
 {
-	s32_t rv, test_data_size;
+	int32_t rv, test_data_size;
 
 	/*
 	 * Test multiple threads pending on same
@@ -485,14 +487,14 @@ static void test_timeout_threads_pend_fail_on_fifo(void)
 	 */
 	test_data_size = ARRAY_SIZE(timeout_order_data);
 	rv = test_multiple_threads_get_data(timeout_order_data, test_data_size);
-	zassert_equal(rv, TC_PASS, NULL);
+	zassert_equal(rv, TC_PASS);
 }
 
 /**
  * @brief Test fifo init
  * @see k_fifo_init(), k_fifo_put()
  */
-static void test_timeout_setup(void)
+static void *test_timeout_setup(void)
 {
 	intptr_t ii;
 
@@ -509,22 +511,13 @@ static void test_timeout_setup(void)
 				(void *)&scratch_fifo_packets[ii]);
 	}
 
+	return NULL;
 }
 /**
  * @}
  */
 
-/*test case main entry*/
-void test_main(void)
-{
-	test_timeout_setup();
+ZTEST_SUITE(fifo_timeout, NULL, test_timeout_setup, NULL, NULL, NULL);
 
-	ztest_test_suite(test_fifo_timeout,
-		ztest_unit_test(test_timeout_empty_fifo),
-		ztest_unit_test(test_timeout_non_empty_fifo),
-		ztest_unit_test(test_timeout_fifo_thread),
-		ztest_unit_test(test_timeout_threads_pend_on_fifo),
-		ztest_unit_test(test_timeout_threads_pend_on_dual_fifos),
-		ztest_unit_test(test_timeout_threads_pend_fail_on_fifo));
-	ztest_run_test_suite(test_fifo_timeout);
-}
+ZTEST_SUITE(fifo_timeout_1cpu, NULL, test_timeout_setup,
+		ztest_simple_1cpu_before, ztest_simple_1cpu_after, NULL);

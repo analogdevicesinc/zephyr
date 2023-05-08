@@ -1,89 +1,50 @@
 # SPDX-License-Identifier: Apache-2.0
 
 menuconfig IPM
-	bool "IPM drivers"
+	bool "Inter-Processor Mailbox (IPM) drivers"
 	help
 	  Include interrupt-based inter-processor mailboxes
 	  drivers in system configuration
 
-config IPM_MCUX
-	bool "MCUX IPM driver"
-	depends on IPM && HAS_MCUX
-	help
-	  Driver for MCUX mailbox
-
-config IPM_IMX
-	bool "IMX IPM driver"
-	depends on IPM && HAS_IMX_HAL
-	help
-	  Driver for NXP i.MX messaging unit
-
-choice
-	prompt "IMX IPM max data size"
-	default IPM_IMX_MAX_DATA_SIZE_16
-	depends on IPM_IMX
-	help
-	  Select maximum message size for NXP i.MX messaging unit.
-
-config IPM_IMX_MAX_DATA_SIZE_4
-	bool "4 bytes"
-	help
-	  There will be four message types with ids 0, 1, 2 or 3
-	  and a maximum size of 4 bytes each.
-
-config IPM_IMX_MAX_DATA_SIZE_8
-	bool "8 bytes"
-	help
-	  There will be two message types with ids 0 or 1
-	  and a maximum size of 8 bytes each.
-
-config IPM_IMX_MAX_DATA_SIZE_16
-	bool "16 bytes"
-	help
-	  There will be a single message type with id 0
-	  and a maximum size of 16 bytes.
-
-endchoice
-
-config IPM_IMX_MAX_DATA_SIZE
-	int
-	range 4 16
-	# omit prompt to signify a "hidden" option
-	default 4 if IPM_IMX_MAX_DATA_SIZE_4
-	default 8 if IPM_IMX_MAX_DATA_SIZE_8
-	default 16 if IPM_IMX_MAX_DATA_SIZE_16
-	depends on IPM_IMX
-
-config IPM_IMX_MAX_ID_VAL
-	int
-	range 0 3
-	# omit prompt to signify a "hidden" option
-	default 3 if IPM_IMX_MAX_DATA_SIZE_4
-	default 1 if IPM_IMX_MAX_DATA_SIZE_8
-	default 0 if IPM_IMX_MAX_DATA_SIZE_16
-	depends on IPM_IMX
+if IPM
 
 config IPM_MHU
 	bool "IPM MHU driver"
-	depends on IPM
+	default y
+	depends on DT_HAS_ARM_MHU_ENABLED
 	help
 	  Driver for SSE 200 MHU (Message Handling Unit)
 
-config IPM_STM32_IPCC
-	bool "STM32 IPCC controller"
-	depends on IPM
-	select USE_STM32_LL_IPCC
+config IPM_NRFX
+	bool "IPM NRF driver"
+	default y
+	depends on DT_HAS_NORDIC_NRF_IPC_ENABLED
+	select NRFX_IPC
 	help
-	  Driver for stm32 IPCC mailboxes
+	  Driver for Nordic nRF messaging unit, based
+	  on nRF IPC peripheral HW.
 
-config IPM_STM32_IPCC_PROCID
-	int "STM32 IPCC Processor ID"
-	default 2
-	range 1 2
-	depends on IPM_STM32_IPCC
+config IPM_NRF_SINGLE_INSTANCE
+	bool "Single instance of IPM device"
 	help
-	  use to define the Processor ID for IPCC access
+	  Enable this option if the IPM device should have
+	  a single instance, instead of one per IPC
+	  message channel.
+
+config ESP32_SOFT_IPM
+	bool "ESP32 Software IPM driver"
+	default y
+	depends on DT_HAS_ESPRESSIF_ESP32_IPM_ENABLED
+	help
+	  Interprocessor driver for ESP32 when using AMP.
+
+source "drivers/ipm/Kconfig.nrfx"
+source "drivers/ipm/Kconfig.imx"
+source "drivers/ipm/Kconfig.stm32"
+source "drivers/ipm/Kconfig.intel_adsp"
 
 module = IPM
 module-str = ipm
 source "subsys/logging/Kconfig.template.log_config"
+
+endif #IPM

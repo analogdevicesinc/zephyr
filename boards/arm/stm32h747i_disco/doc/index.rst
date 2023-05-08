@@ -34,9 +34,7 @@ Additionally, the board features:
 - Arduino Uno V3 connectors
 
 .. image:: img/stm32h747i_disco.jpg
-     :width: 472px
      :align: center
-     :height: 352px
      :alt: STM32H747I-DISCO
 
 More information about the board can be found at the `STM32H747I-DISCO website`_.
@@ -63,6 +61,28 @@ The current Zephyr stm32h747i_disco board configuration supports the following h
 +-----------+------------+-------------------------------------+
 | GPIO      | on-chip    | gpio                                |
 +-----------+------------+-------------------------------------+
+| FLASH     | on-chip    | flash memory                        |
++-----------+------------+-------------------------------------+
+| ETHERNET  | on-chip    | ethernet  (*)                       |
++-----------+------------+-------------------------------------+
+| RNG       | on-chip    | True Random number generator        |
++-----------+------------+-------------------------------------+
+| FMC       | on-chip    | memc (SDRAM)                        |
++-----------+------------+-------------------------------------+
+| SPI       | on-chip    | spi                                 |
++-----------+------------+-------------------------------------+
+| SDMMC     | on-chip    | disk access                         |
++-----------+------------+-------------------------------------+
+| IPM       | on-chip    | virtual mailbox based on HSEM       |
++-----------+------------+-------------------------------------+
+| DISPLAY   | on-chip    | MIPI DSI Host with shield (MP1166)  |
+|           |            | st_b_lcd40_dsi1_mb1166              |
++-----------+------------+-------------------------------------+
+
+(*) From UM2411 Rev 4:
+   With the default setting, the Ethernet feature is not working because of
+   a conflict between ETH_MDC and SAI4_D1 of the MEMs digital microphone.
+   Make sure you have SB8 closed and SB21 open to get Ethernet working.
 
 Other hardware features are not yet supported on Zephyr porting.
 
@@ -83,6 +103,8 @@ Default Zephyr Peripheral Mapping:
 
 - UART_1 TX/RX : PA9/PA10 (ST-Link Virtual Port Com)
 - UART_8 TX/RX : PJ8/PJ9 (Arduino Serial)
+- SPI_5 NSS/SCK/MISO/MOSI : PK1/PK0/PJ11/PJ10 (Arduino SPI)
+- SDMMC_1 D0/D1/D2/D3/CK/CMD: PC8/PC9/PC10/PC11/PC12/PD2
 - LD1 : PI12
 - LD2 : PI13
 - LD3 : PI14
@@ -110,6 +132,43 @@ Default configuration assigns USART1 and UART8 to the CPU1. The Zephyr console
 output is assigned to UART1 which connected to the onboard ST-LINK/V3.0. Virtual
 COM port interface. Default communication settings are 115200 8N1.
 
+Ethernet
+========
+
+**Disclaimer:** This section is mostly copy-paste of corresponding
+`DISCO_H747I modifications for Ethernet`_ mbed blog post. The author of this
+article sincerely allowed to use the images and his knowledge about necessary
+HW modifications to get Ethernet working with this board.
+
+To get Ethernet working following HW modifications are required:
+
+- **SB21**, **SB45** and **R87** should be opened
+- **SB22**, **SB44**, **SB17** and **SB8** should be closed
+
+Following two images shows necessary changes on the board marked:
+
+.. image:: img/disco_h747i_ethernet_modification_1.jpg
+     :align: center
+     :alt: STM32H747I-DISCO - Ethernet modification 1 (**SB44**, **SB45**)
+
+.. image:: img/disco_h747i_ethernet_modification_2.jpg
+     :align: center
+     :alt: STM32H747I-DISCO - Ethernet modification 2 (**SB21**, **R87**, **SB22**, **SB17** and **SB8**)
+
+Display
+=======
+
+The STM32H747I Discovery kit has a dedicated DSI LCD connector **CN15**, where
+the MB1166 (B-LCD40-DSI1) display extension board can be mounted. Enable display
+support in Zephyr by adding the shield ``st_b_lcd40_dsi1_mb1166`` to your build
+command, for example:
+
+.. zephyr-app-commands::
+   :zephyr-app: samples/drivers/display
+   :board: stm32h747i_disco_m7
+   :shield: st_b_lcd40_dsi1_mb1166
+   :goals: build flash
+
 Resources sharing
 =================
 
@@ -119,7 +178,7 @@ two cores. This is done in 3 ways:
 - **Compilation**: Clock configuration is only accessible to M7 core. M4 core only
   has access to bus clock activation and deactivation.
 - **Static pre-compilation assignment**: Peripherals such as a UART are assigned in
-  device tree before compilation. The user must ensure peripherals are not assigned
+  devicetree before compilation. The user must ensure peripherals are not assigned
   to both cores at the same time.
 - **Run time protection**: Interrupt-controller and GPIO configurations could be
   accessed by both cores at run time. Accesses are protected by a hardware semaphore
@@ -131,6 +190,16 @@ Programming and Debugging
 Applications for the ``stm32h747i_disco`` board should be built per core target,
 using either ``stm32h747i_disco_m7`` or ```stm32h747i_disco_m4`` as the target.
 See :ref:`build_an_application` for more information about application builds.
+
+.. note::
+
+   If using OpenOCD you will need a recent development version as the last
+   official release does not support H7 dualcore yet.
+   Also, with OpenOCD, sometimes, flashing is not working. It is necessary to
+   erase the flash (with STM32CubeProgrammer for example) to make it work again.
+   Debugging with OpenOCD is currently working for this board only with Cortex M7,
+   not Cortex M4.
+
 
 Flashing
 ========
@@ -147,7 +216,11 @@ By default:
 
 Also, default out of the box board configuration enables CM7 and CM4 boot when
 board is powered (Option bytes BCM7 and BCM4 are checked).
-In that configuration, Kconfig boot option ``STM32H7_BOOT_CM4_CM7`` should be selected.
+It is possible to change Option Bytes so that CM7 boots first in stand alone,
+and CM7 will wakeup CM4 after clock initialization.
+Drivers are able to take into account both Option Bytes configurations
+automatically.
+
 Zephyr flash configuration has been set to meet these default settings.
 
 Flashing an application to STM32H747I M7 Core
@@ -161,14 +234,7 @@ Here is an example for the :ref:`hello_world` application.
 .. zephyr-app-commands::
    :zephyr-app: samples/hello_world
    :board: stm32h747i_disco_m7
-   :goals: build
-
-Use the following commands to flash either m7 or m4 target:
-
-.. code-block:: console
-
-   $ ./STM32_Programmer_CLI -c port=SWD mode=UR -w <path_to_m7_binary>  0x8000000
-   $ ./STM32_Programmer_CLI -c port=SWD mode=UR -w <path_to_m4_binary>  0x8100000
+   :goals: build flash
 
 Run a serial host program to connect with your board:
 
@@ -180,7 +246,21 @@ You should see the following message on the console:
 
 .. code-block:: console
 
-   Hello World! arm
+   Hello World! stm32h747i_disco_m7
+
+.. note::
+  Sometimes, flashing is not working. It is necessary to erase the flash
+  (with STM32CubeProgrammer for example) to make it work again.
+
+Similarly, you can build and flash samples on the M4 target. For this, please
+take care of the resource sharing (UART port used for console for instance).
+
+Here is an example for the :ref:`blinky-sample` application on M4 core.
+
+.. zephyr-app-commands::
+   :zephyr-app: samples/basic/blinky
+   :board: stm32h747i_disco_m4
+   :goals: build flash
 
 Debugging
 =========
@@ -190,9 +270,12 @@ You can debug an application in the usual way.  Here is an example for the
 
 .. zephyr-app-commands::
    :zephyr-app: samples/hello_world
-   :board: stm32h747i_disco
+   :board: stm32h747i_disco_m7
    :goals: debug
 
+Debugging with west is currently not available on Cortex M4 side.
+In order to debug a Zephyr application on Cortex M4 side, you can use
+`STM32CubeIDE`_.
 
 .. _STM32H747I-DISCO website:
    http://www.st.com/en/evaluation-tools/stm32h747i-disco.html
@@ -208,3 +291,9 @@ You can debug an application in the usual way.  Here is an example for the
 
 .. _STM32CubeProgrammer:
    https://www.st.com/en/development-tools/stm32cubeprog.html
+
+.. _DISCO_H747I modifications for Ethernet:
+   https://os.mbed.com/teams/ST/wiki/DISCO_H747I-modifications-for-Ethernet
+
+.. _STM32CubeIDE:
+   https://www.st.com/en/development-tools/stm32cubeide.html

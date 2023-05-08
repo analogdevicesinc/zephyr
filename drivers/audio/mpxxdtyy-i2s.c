@@ -4,30 +4,33 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#define DT_DRV_COMPAT st_mpxxdtyy
+
 #include "mpxxdtyy.h"
-#include <drivers/i2s.h>
+#include <zephyr/drivers/i2s.h>
 
 #define LOG_LEVEL CONFIG_AUDIO_DMIC_LOG_LEVEL
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_DECLARE(mpxxdtyy);
 
-#ifdef DT_ST_MPXXDTYY_BUS_I2S
+#if DT_ANY_INST_ON_BUS_STATUS_OKAY(i2s)
 
 #define NUM_RX_BLOCKS			4
 #define PDM_BLOCK_MAX_SIZE_BYTES	512
 
 K_MEM_SLAB_DEFINE(rx_pdm_i2s_mslab, PDM_BLOCK_MAX_SIZE_BYTES, NUM_RX_BLOCKS, 1);
 
-int mpxxdtyy_i2s_read(struct device *dev, u8_t stream, void **buffer,
-		      size_t *size, s32_t timeout)
+int mpxxdtyy_i2s_read(const struct device *dev, uint8_t stream, void **buffer,
+		      size_t *size, int32_t timeout)
 {
 	int ret;
-	struct mpxxdtyy_data *const data = DEV_DATA(dev);
+	const struct mpxxdtyy_config *config = dev->config;
+	struct mpxxdtyy_data *const data = dev->data;
 	void *pdm_block, *pcm_block;
 	size_t pdm_size;
 	TPDMFilter_InitStruct *pdm_filter = &data->pdm_filter[0];
 
-	ret = i2s_read(data->comm_master, &pdm_block, &pdm_size);
+	ret = i2s_read(config->comm_master, &pdm_block, &pdm_size);
 	if (ret != 0) {
 		LOG_ERR("read failed (%d)", ret);
 		return ret;
@@ -49,10 +52,11 @@ int mpxxdtyy_i2s_read(struct device *dev, u8_t stream, void **buffer,
 	return 0;
 }
 
-int mpxxdtyy_i2s_trigger(struct device *dev, enum dmic_trigger cmd)
+int mpxxdtyy_i2s_trigger(const struct device *dev, enum dmic_trigger cmd)
 {
 	int ret;
-	struct mpxxdtyy_data *const data = DEV_DATA(dev);
+	const struct mpxxdtyy_config *config = dev->config;
+	struct mpxxdtyy_data *const data = dev->data;
 	enum i2s_trigger_cmd i2s_cmd;
 	enum dmic_state tmp_state;
 
@@ -77,7 +81,7 @@ int mpxxdtyy_i2s_trigger(struct device *dev, enum dmic_trigger cmd)
 		return -EINVAL;
 	}
 
-	ret = i2s_trigger(data->comm_master, I2S_DIR_RX, i2s_cmd);
+	ret = i2s_trigger(config->comm_master, I2S_DIR_RX, i2s_cmd);
 	if (ret != 0) {
 		LOG_ERR("trigger failed with %d error", ret);
 		return ret;
@@ -87,13 +91,14 @@ int mpxxdtyy_i2s_trigger(struct device *dev, enum dmic_trigger cmd)
 	return 0;
 }
 
-int mpxxdtyy_i2s_configure(struct device *dev, struct dmic_cfg *cfg)
+int mpxxdtyy_i2s_configure(const struct device *dev, struct dmic_cfg *cfg)
 {
 	int ret;
-	struct mpxxdtyy_data *const data = DEV_DATA(dev);
-	u8_t chan_size = cfg->streams->pcm_width;
-	u32_t audio_freq = cfg->streams->pcm_rate;
-	u16_t factor;
+	const struct mpxxdtyy_config *config = dev->config;
+	struct mpxxdtyy_data *const data = dev->data;
+	uint8_t chan_size = cfg->streams->pcm_width;
+	uint32_t audio_freq = cfg->streams->pcm_rate;
+	uint16_t factor;
 
 	/* PCM buffer size */
 	data->pcm_mem_slab = cfg->streams->mem_slab;
@@ -129,7 +134,7 @@ int mpxxdtyy_i2s_configure(struct device *dev, struct dmic_cfg *cfg)
 	i2s_cfg.mem_slab = &rx_pdm_i2s_mslab;
 	i2s_cfg.timeout = 2000;
 
-	ret = i2s_configure(data->comm_master, I2S_DIR_RX, &i2s_cfg);
+	ret = i2s_configure(config->comm_master, I2S_DIR_RX, &i2s_cfg);
 	if (ret != 0) {
 		LOG_ERR("I2S device configuration error");
 		return ret;
@@ -138,4 +143,4 @@ int mpxxdtyy_i2s_configure(struct device *dev, struct dmic_cfg *cfg)
 	data->state = DMIC_STATE_CONFIGURED;
 	return 0;
 }
-#endif /* DT_ST_MPXXDTYY_BUS_I2S */
+#endif /* DT_ANY_INST_ON_BUS_STATUS_OKAY(i2s) */

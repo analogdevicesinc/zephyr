@@ -6,14 +6,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_socks, CONFIG_SOCKS_LOG_LEVEL);
 
-#include <zephyr.h>
-#include <net/socket.h>
-#include <net/socks.h>
-#include <net/net_pkt.h>
+#include <zephyr/kernel.h>
+#include <zephyr/net/socket.h>
+#include <zephyr/net/net_pkt.h>
 
+#include "socks.h"
 #include "socks_internal.h"
 
 static void socks5_method_rsp_cb(struct net_context *ctx,
@@ -31,7 +31,7 @@ static void socks5_method_rsp_cb(struct net_context *ctx,
 		goto end;
 	}
 
-	if (net_pkt_read(pkt, (u8_t *)method_rsp,
+	if (net_pkt_read(pkt, (uint8_t *)method_rsp,
 			 sizeof(struct socks5_method_response))) {
 		memset(method_rsp, 0, sizeof(struct socks5_method_response));
 	}
@@ -59,7 +59,7 @@ static void socks5_cmd_rsp_cb(struct net_context *ctx,
 
 	size = sizeof(struct socks5_command_request_common);
 
-	if (net_pkt_read(pkt, (u8_t *)cmd_rsp, size)) {
+	if (net_pkt_read(pkt, (uint8_t *)cmd_rsp, size)) {
 		memset(cmd_rsp, 0,
 		       sizeof(struct socks5_command_request_common));
 	}
@@ -91,7 +91,7 @@ static int socks5_tcp_connect(struct net_context *ctx,
 	/* size + 1 because just one method is supported */
 	size = sizeof(struct socks5_method_request_common) + 1;
 
-	ret = net_context_sendto(ctx, (u8_t *)&method_req, size,
+	ret = net_context_sendto(ctx, (uint8_t *)&method_req, size,
 				 proxy, proxy_len, NULL, K_NO_WAIT,
 				 ctx->user_data);
 	if (ret < 0) {
@@ -129,7 +129,7 @@ static int socks5_tcp_connect(struct net_context *ctx,
 		cmd_req.r.atyp = SOCKS5_ATYP_IPV4;
 
 		memcpy(&cmd_req.ipv4_addr.addr,
-		       (u8_t *)&d4->sin_addr,
+		       (uint8_t *)&d4->sin_addr,
 		       sizeof(cmd_req.ipv4_addr.addr));
 
 		cmd_req.ipv4_addr.port = d4->sin_port;
@@ -143,7 +143,7 @@ static int socks5_tcp_connect(struct net_context *ctx,
 		cmd_req.r.atyp = SOCKS5_ATYP_IPV6;
 
 		memcpy(&cmd_req.ipv6_addr.addr,
-		       (u8_t *)&d6->sin6_addr,
+		       (uint8_t *)&d6->sin6_addr,
 		       sizeof(cmd_req.ipv6_addr.addr));
 
 		cmd_req.ipv6_addr.port = d6->sin6_port;
@@ -152,7 +152,7 @@ static int socks5_tcp_connect(struct net_context *ctx,
 			+ sizeof(struct socks5_ipv6_addr);
 	}
 
-	ret = net_context_sendto(ctx, (u8_t *)&cmd_req, size,
+	ret = net_context_sendto(ctx, (uint8_t *)&cmd_req, size,
 				 proxy, proxy_len, NULL, K_NO_WAIT,
 				 ctx->user_data);
 	if (ret < 0) {

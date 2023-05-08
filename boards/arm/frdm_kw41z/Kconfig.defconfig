@@ -1,9 +1,7 @@
-# Kconfig - FRDM-KW41Z board
-#
+# FRDM-KW41Z board
+
 # Copyright (c) 2017, NXP
-#
 # SPDX-License-Identifier: Apache-2.0
-#
 
 if BOARD_FRDM_KW41Z
 
@@ -19,65 +17,12 @@ config MCG_FRDIV
 config MCG_FCRDIV
 	default 0
 
-if PINMUX_MCUX
-
-config PINMUX_MCUX_PORTA
-	default y
-
-config PINMUX_MCUX_PORTB
-	default y if ADC_0
-
-config PINMUX_MCUX_PORTC
-	default y
-
-endif # PINMUX_MCUX
-
-if GPIO_MCUX
-
-config GPIO_MCUX_PORTA
-	default y
-
-config GPIO_MCUX_PORTB
-	default n
-
-config GPIO_MCUX_PORTC
-	default y
-
-endif # GPIO_MCUX
-
-if UART_MCUX_LPUART
-
-config UART_MCUX_LPUART_0
-	default y if UART_CONSOLE
-
-endif # UART_MCUX
-
-if I2C
-
-config I2C_1
-	default y
-
-endif # I2C
-
-if ADC
-
-config ADC_0
-	default y
-
-endif # ADC
-
-if FXOS8700
-
 config FXOS8700_DRDY_INT1
 	default y
+	depends on FXOS8700_TRIGGER
 
-endif # FXOS8700
-
-if SPI
-
-config SPI_0
-	default y
-
-endif # SPI
+choice ADC_MCUX_ADC16_VREF
+	default ADC_MCUX_ADC16_VREF_ALTERNATE
+endchoice
 
 endif # BOARD_FRDM_KW41Z

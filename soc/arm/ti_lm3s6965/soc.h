@@ -15,7 +15,7 @@
 #ifndef _BOARD__H_
 #define _BOARD__H_
 
-#include <sys/util.h>
+#include <zephyr/sys/util.h>
 
 /* default system clock */
 
@@ -66,10 +66,6 @@
 #define IRQ_HIBERNATION 43
 
 #ifndef _ASMLANGUAGE
-
-#include <device.h>
-#include <sys/util.h>
-#include <random/rand32.h>
 
 #endif /* !_ASMLANGUAGE */
 

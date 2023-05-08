@@ -6,16 +6,15 @@ NXP MIMXRT1064-EVK
 Overview
 ********
 
-The i.MX RT1064 is the latest addition to the industry's first crossover
+The i.MX RT1064 adds to the industry's first crossover
 processor series and expands the i.MX RT series to three scalable families.
 The i.MX RT1064 doubles the On-Chip SRAM to 1MB while keeping pin-to-pin
-compatibility with i.MX RT1050. This new series introduces additional features
+compatibility with i.MX RT1050. This series introduces additional features
 ideal for real-time applications such as High-Speed GPIO, CAN-FD, and
 synchronous parallel NAND/NOR/PSRAM controller. The i.MX RT1064 runs on the
-Arm® Cortex-M7® core at 600 MHz.
+Arm® Cortex-M7® core up to 600 MHz.
 
-.. image:: ./mimxrt1064_evk.jpg
-   :width: 600px
+.. image:: mimxrt1064_evk.jpg
    :align: center
    :alt: MIMXRT1064-EVK
 
@@ -79,13 +78,17 @@ these references:
 - `i.MX RT1064 Reference Manual`_
 - `MIMXRT1064-EVK Website`_
 - `MIMXRT1064-EVK Quick Reference Guide`_
+- `MIMXRT1064-EVK User Guide`_
 - `MIMXRT1064-EVK Schematics`_
 
 Supported Features
 ==================
 
-The mimxrt1064_evk board configuration supports the following hardware
-features:
+NXP considers the MIMXRT1064-EVK as the superset board for the i.MX RT10xx
+family of MCUs.  This board is a focus for NXP's Full Platform Support for
+Zephyr, to better enable the entire RT10xx family.  NXP prioritizes enabling
+this board with new support for Zephyr features.  The mimxrt1064_evk board
+configuration supports the following hardware features:
 
 +-----------+------------+-------------------------------------+
 | Interface | Controller | Driver/Component                    |
@@ -96,14 +99,42 @@ features:
 +-----------+------------+-------------------------------------+
 | DISPLAY   | on-chip    | display                             |
 +-----------+------------+-------------------------------------+
+| VIDEO     | on-chip    | video, using CSI                    |
++-----------+------------+-------------------------------------+
+| FLASH     | on-chip    | QSPI flash                          |
++-----------+------------+-------------------------------------+
 | GPIO      | on-chip    | gpio                                |
++-----------+------------+-------------------------------------+
+| I2C       | on-chip    | i2c                                 |
++-----------+------------+-------------------------------------+
+| WATCHDOG  | on-chip    | watchdog                            |
++-----------+------------+-------------------------------------+
+| PWM       | on-chip    | pwm                                 |
++-----------+------------+-------------------------------------+
+| SDHC      | on-chip    | disk access                         |
 +-----------+------------+-------------------------------------+
 | UART      | on-chip    | serial port-polling;                |
 |           |            | serial port-interrupt               |
 +-----------+------------+-------------------------------------+
+| ADC       | on-chip    | adc                                 |
++-----------+------------+-------------------------------------+
 | ENET      | on-chip    | ethernet                            |
 +-----------+------------+-------------------------------------+
-| USB       | on-chip    | USB device controller               |
+| USB       | on-chip    | USB device                          |
++-----------+------------+-------------------------------------+
+| CAN       | on-chip    | can                                 |
++-----------+------------+-------------------------------------+
+| SPI       | on-chip    | spi                                 |
++-----------+------------+-------------------------------------+
+| GPT       | on-chip    | gpt                                 |
++-----------+------------+-------------------------------------+
+| DMA       | on-chip    | dma                                 |
++-----------+------------+-------------------------------------+
+| HWINFO    | on-chip    | Unique device serial number         |
++-----------+------------+-------------------------------------+
+| TRNG      | on-chip    | entropy                             |
++-----------+------------+-------------------------------------+
+| FLEXSPI   | on-chip    | flash programming                   |
 +-----------+------------+-------------------------------------+
 
 The default configuration can be found in the defconfig file:
@@ -119,15 +150,29 @@ The MIMXRT1064 SoC has four pairs of pinmux/gpio controllers.
 +---------------+-----------------+---------------------------+
 | Name          | Function        | Usage                     |
 +===============+=================+===========================+
-| GPIO_AD_B0_02 | LCD_RST         | LCD Display               |
+| GPIO_AD_B0_00 | LPSPI1_SCK      | SPI                       |
++---------------+-----------------+---------------------------+
+| GPIO_AD_B0_01 | LPSPI1_SDO      | SPI                       |
++---------------+-----------------+---------------------------+
+| GPIO_AD_B0_02 | LPSPI3_SDI/LCD_RST| SPI/LCD Display         |
++---------------+-----------------+---------------------------+
+| GPIO_AD_B0_03 | LPSPI3_PCS0     | SPI                       |
++---------------+-----------------+---------------------------+
+| GPIO_AD_B0_05 | GPIO            | SD Card                   |
 +---------------+-----------------+---------------------------+
 | GPIO_AD_B0_09 | GPIO/ENET_RST   | LED/Ethernet              |
 +---------------+-----------------+---------------------------+
 | GPIO_AD_B0_10 | GPIO/ENET_INT   | GPIO/Ethernet             |
 +---------------+-----------------+---------------------------+
+| GPIO_AD_B0_11 | GPIO            | Touch Interrupt           |
++---------------+-----------------+---------------------------+
 | GPIO_AD_B0_12 | LPUART1_TX      | UART Console              |
 +---------------+-----------------+---------------------------+
 | GPIO_AD_B0_13 | LPUART1_RX      | UART Console              |
++---------------+-----------------+---------------------------+
+| GPIO_AD_B1_06 | LPUART3_TX      | UART Arduino              |
++---------------+-----------------+---------------------------+
+| GPIO_AD_B1_07 | LPUART3_RX      | UART Arduino              |
 +---------------+-----------------+---------------------------+
 | WAKEUP        | GPIO            | SW0                       |
 +---------------+-----------------+---------------------------+
@@ -187,6 +232,10 @@ The MIMXRT1064 SoC has four pairs of pinmux/gpio controllers.
 +---------------+-----------------+---------------------------+
 | GPIO_B1_11    | ENET_RX_ER      | Ethernet                  |
 +---------------+-----------------+---------------------------+
+| GPIO_B1_12    | GPIO            | SD Card                   |
++---------------+-----------------+---------------------------+
+| GPIO_B1_14    | USDHC1_VSELECT  | SD Card                   |
++---------------+-----------------+---------------------------+
 | GPIO_B1_15    | BACKLIGHT_CTL   | LCD Display               |
 +---------------+-----------------+---------------------------+
 | GPIO_EMC_40   | ENET_MDC        | Ethernet                  |
@@ -197,18 +246,57 @@ The MIMXRT1064 SoC has four pairs of pinmux/gpio controllers.
 +---------------+-----------------+---------------------------+
 | GPIO_AD_B0_10 | ENET_INT        | Ethernet                  |
 +---------------+-----------------+---------------------------+
+| GPIO_SD_B0_00 | USDHC1_CMD/LPSPI1_SCK | SD Card/SPI         |
++---------------+-----------------+---------------------------+
+| GPIO_SD_B0_01 | USDHC1_CLK/LPSPI1_PCS0 | SD Card/SPI        |
++---------------+-----------------+---------------------------+
+| GPIO_SD_B0_02 | USDHC1_DATA0/LPSPI1_SDO | SD Card/SPI       |
++---------------+-----------------+---------------------------+
+| GPIO_SD_B0_03 | USDHC1_DATA1/LPSPI1_SDI | SD Card/SPI       |
++---------------+-----------------+---------------------------+
+| GPIO_SD_B0_04 | USDHC1_DATA2    | SD Card                   |
++---------------+-----------------+---------------------------+
+| GPIO_SD_B0_05 | USDHC1_DATA3    | SD Card                   |
++---------------+-----------------+---------------------------+
+| GPIO_SD_B1_05 | FLEXSPIA_DQS    | QSPI Flash                |
++---------------+-----------------+---------------------------+
+| GPIO_SD_B1_06 | FLEXSPIA_SS0_B  | QSPI Flash                |
++---------------+-----------------+---------------------------+
+| GPIO_SD_B1_07 | FLEXSPIA_SCLK   | QSPI Flash                |
++---------------+-----------------+---------------------------+
+| GPIO_SD_B1_08 | FLEXSPIA_DATA00 | QSPI Flash                |
++---------------+-----------------+---------------------------+
+| GPIO_SD_B1_09 | FLEXSPIA_DATA01 | QSPI Flash                |
++---------------+-----------------+---------------------------+
+| GPIO_SD_B1_10 | FLEXSPIA_DATA02 | QSPI Flash                |
++---------------+-----------------+---------------------------+
+| GPIO_SD_B1_11 | FLEXSPIA_DATA03 | QSPI Flash                |
++---------------+-----------------+---------------------------+
+| GPIO_AD_B1_11 | ADC             | ADC1 Channel 0            |
++---------------+-----------------+---------------------------+
+| GPIO_AD_B1_10 | ADC             | ADC1 Channel 1            |
++---------------+-----------------+---------------------------+
+
+.. note::
+        In order to use the SPI peripheral on this board, resistors R278, R279,
+        R280 and R281 must be populated with zero ohm resistors
 
 System Clock
 ============
 
-The MIMXRT1064 SoC is configured to use the 24 MHz external oscillator on the
-board with the on-chip PLL to generate a 600 MHz core clock.
+The MIMXRT1064 SoC is configured to use SysTick as the system clock source,
+running at 600MHz.
+
+When power management is enabled, the 32 KHz low frequency
+oscillator on the board will be used as a source for the GPT timer to
+generate a system clock. This clock enables lower power states, at the
+cost of reduced resolution
 
 Serial Port
 ===========
 
-The MIMXRT1064 SoC has eight UARTs. One is configured for the console and the
-remaining are not used.
+The MIMXRT1064 SoC has eight UARTs. ``LPUART1`` is configured for the console
+and the remaining are not used.
 
 Programming and Debugging
 *************************
@@ -219,21 +307,29 @@ Build and flash applications as usual (see :ref:`build_an_application` and
 Configuring a Debug Probe
 =========================
 
+.. note::
+	When the device transitions into low power states, the debugger may be
+	unable to access the chip. Use caution when enabling ``CONFIG_PM``, and
+	if the debugger cannot flash the part, see :ref:`Troubleshooting RT1064`
+
 A debug probe is used for both flashing and debugging the board. This board is
 configured by default to use the :ref:`opensda-daplink-onboard-debug-probe`,
 however the :ref:`pyocd-debug-host-tools` do not yet support programming the
 external flashes on this board so you must reconfigure the board for one of the
 following debug probes instead.
 
-:ref:`jlink-external-debug-probe`
+.. _Using J-Link RT1064:
+
+Using J-Link
 ---------------------------------
 
 Install the :ref:`jlink-debug-host-tools` and make sure they are in your search
 path.
 
-Attach a J-Link 20-pin connector to J21. Check that jumpers J47 and J48 are
-**off** (they are on by default when boards ship from the factory) to ensure
-SWD signals are disconnected from the OpenSDA microcontroller.
+There are two options: the onboard debug circuit can be updated with Segger
+J-Link firmware, or :ref:`jlink-external-debug-probe` can be attached to the
+EVK. See `Using J-Link with MIMXRT1060-EVK or MIMXRT1064-EVK`_ for more
+details.
 
 Configuring a Console
 =====================
@@ -252,6 +348,12 @@ etc.):
 - Data: 8 bits
 - Parity: None
 - Stop bits: 1
+
+Using SWO
+---------
+SWO can be used as a logging backend, by setting ``CONFIG_LOG_BACKEND_SWO=y``.
+Your SWO viewer should be configured with a CPU frequency of 132MHz, and
+SWO frequency of 7500KHz.
 
 Flashing
 ========
@@ -289,11 +391,53 @@ should see the following message in the terminal:
    ***** Booting Zephyr OS v1.14.0-rc1 *****
    Hello World! mimxrt1064_evk
 
+
+.. _Troubleshooting RT1064:
+
+Troubleshooting
+===============
+
+If the debug probe fails to connect with the following error, it's possible
+that the boot header in QSPI flash is invalid or corrupted. The boot header is
+configured by :kconfig:option:`CONFIG_NXP_IMX_RT_BOOT_HEADER`.
+
+.. code-block:: console
+
+   Remote debugging using :2331
+   Remote communication error.  Target disconnected.: Connection reset by peer.
+   "monitor" command not supported by this target.
+   "monitor" command not supported by this target.
+   You can't do that when your target is `exec'
+   (gdb) Could not connect to target.
+   Please check power, connection and settings.
+
+You can fix it by erasing and reprogramming the QSPI flash with the following
+steps:
+
+#. Set the SW7 DIP switches to ON-OFF-ON-OFF to prevent booting from QSPI flash.
+
+#. Reset by pressing SW9
+
+#. Run ``west debug`` or ``west flash`` again with a known working Zephyr
+   application.
+
+#. Set the SW7 DIP switches to OFF-OFF-ON-OFF to boot from QSPI flash.
+
+#. Reset by pressing SW9
+
+If the west flash or debug commands fail, and the command hangs while executing
+runners.jlink, confirm the J-Link debug probe is configured, powered, and
+connected to the EVK properly.  See :ref:`Using J-Link RT1064` for more
+details.
+
 .. _MIMXRT1064-EVK Website:
    https://www.nxp.com/support/developer-resources/run-time-software/i.mx-developer-resources/mimxrt1064-evk-i.mx-rt1064-evaluation-kit:MIMXRT1064-EVK
 
 .. _MIMXRT1064-EVK Quick Reference Guide:
-   https://www.nxp.com/docs/en/quick-reference-guide/IMXRT1064QSG.pdf
+   https://www.nxp.com/webapp/Download?colCode=IMXRT1064QSG
+
+.. _MIMXRT1064-EVK User Guide:
+   https://www.nxp.com/docs/en/data-sheet/MIMXRT10601064EKBHUG.pdf
 
 .. _MIMXRT1064-EVK Schematics:
    https://www.nxp.com/webapp/Download?colCode=i.MXRT160EVKDS&Parent_nodeId=1537930933174731284155&Parent_pageType=product
@@ -305,4 +449,7 @@ should see the following message in the terminal:
    https://www.nxp.com/docs/en/data-sheet/IMXRT1064CEC.pdf
 
 .. _i.MX RT1064 Reference Manual:
-   https://www.nxp.com/docs/en/reference-manual/IMXRT1064RM.pdf
+   https://www.nxp.com/webapp/Download?colCode=IMXRT1064RM
+
+.. _Using J-Link with MIMXRT1060-EVK or MIMXRT1064-EVK:
+   https://community.nxp.com/t5/i-MX-RT-Knowledge-Base/Using-J-Link-with-MIMXRT1060-EVK-or-MIMXRT1064-EVK/ta-p/1281149

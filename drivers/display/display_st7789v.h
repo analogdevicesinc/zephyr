@@ -6,8 +6,9 @@
 #ifndef ST7789V_DISPLAY_DRIVER_H__
 #define ST7789V_DISPLAY_DRIVER_H__
 
-#include <zephyr.h>
+#include <zephyr/kernel.h>
 
+#define ST7789V_CMD_NOP				0x00
 #define ST7789V_CMD_SW_RESET			0x01
 
 #define ST7789V_CMD_SLEEP_IN			0x10
@@ -67,14 +68,6 @@
 #define ST7789V_CMD_PVGAMCTRL			0xe0
 #define ST7789V_CMD_NVGAMCTRL			0xe1
 
-struct st7789v_data;
-
-void st7789v_set_lcd_margins(struct st7789v_data *data,
-			     u16_t x_offset, u16_t y_offset);
-
-void st7789v_lcd_init(struct st7789v_data *data);
-
-void st7789v_transmit(struct st7789v_data *data, u8_t cmd,
-		      u8_t *tx_data, size_t tx_count);
+#define ST7789V_CMD_NONE			0xff
 
 #endif

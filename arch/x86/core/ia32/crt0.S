@@ -9,71 +9,99 @@
  *
  * This module contains the initial code executed by the Zephyr Kernel ELF image
  * after having been loaded into RAM.
+ *
+ * Note that most addresses (functions and variables) must be in physical
+ * address space. Depending on page table setup, they may or may not be
+ * available in virtual address space after loading of page table.
  */
 
-#include <arch/x86/ia32/asm.h>
-#include <arch/x86/msr.h>
+#include <zephyr/arch/x86/ia32/asm.h>
+#include <zephyr/arch/x86/msr.h>
 #include <kernel_arch_data.h>
-#include <arch/cpu.h>
-#include <arch/x86/multiboot.h>
+#include <zephyr/arch/cpu.h>
+#include <zephyr/arch/x86/multiboot.h>
+#include <x86_mmu.h>
+#include <zephyr/sys/mem_manage.h>
 
 	/* exports (private APIs) */
 
 	GTEXT(__start)
-	GTEXT(z_x86_enable_paging)
 
 	/* externs */
 	GTEXT(z_x86_prep_c)
+	GTEXT(z_bss_zero)
+	GTEXT(z_data_copy)
 
 	GDATA(_idt_base_address)
-	GDATA(_interrupt_stack)
+	GDATA(z_interrupt_stacks)
 	GDATA(z_x86_idt)
 #ifndef CONFIG_GDT_DYNAMIC
 	GDATA(_gdt)
 #endif
 
 
-#if defined(CONFIG_SSE)
+#if defined(CONFIG_X86_SSE)
 	GDATA(_sse_mxcsr_default_value)
 #endif
 
-#ifdef CONFIG_SYS_POWER_DEEP_SLEEP_STATES
-	GTEXT(_sys_resume_from_deep_sleep)
-#endif
+	GDATA(x86_cpu_boot_arg)
 
-SECTION_FUNC(TEXT_START, __start)
-
-#ifdef CONFIG_X86_MULTIBOOT_INFO
-	/*
-	 * If we were loaded by a multiboot-compliant loader, then EAX
-	 * contains X86_MULTIBOOT_EAX_MAGIC and EBX points to a 'struct
-	 * x86_multiboot_info' somewhere in memory that the kernel load
-	 * image doesn't claim. Since the kernel will consider such memory
-	 * "free", we must copy the contents of the struct before the kernel
-	 * decides to use that RAM for something else. However, we can't
-	 * effect the copy until after the BSS is initialized.
+.macro install_page_tables
+#ifdef CONFIG_X86_MMU
+	/* Enable paging. If virtual memory is enabled, the instruction pointer
+	 * is currently at a physical address. There is an identity mapping
+	 * for all RAM, plus a virtual mapping of RAM starting at
+	 * CONFIG_KERNEL_VM_BASE using the same paging structures.
 	 *
-	 * EBX isn't touched until the copy is made; even function calls will
-	 * preserve it (it's callee-save in the SysV ABI). But EAX will be
-	 * clobbered, so we check for the magic now and leave a sentinel in
-	 * EBX (0) if the multiboot data isn't valid.
+	 * Until we enable these page tables, only physical memory addresses
+	 * work.
 	 */
+	movl	$Z_MEM_PHYS_ADDR(z_x86_kernel_ptables), %eax
+	movl	%eax, %cr3
 
-	cmpl $X86_MULTIBOOT_EAX_MAGIC, %eax
-	je 1f
-	xorl %ebx, %ebx
-1:
-#endif
+#ifdef CONFIG_X86_PAE
+	/* Enable PAE */
+	movl	%cr4, %eax
+	orl	$CR4_PAE, %eax
+	movl	%eax, %cr4
 
-#ifdef CONFIG_BOOT_TIME_MEASUREMENT
-	/*
-	 * Reset the TSC to 0, since that's the datum for boot metrics.
-	 */
-	xorl	%eax, %eax
-	xorl	%edx, %edx
-	movl	$X86_TIME_STAMP_COUNTER_MSR, %ecx
+	/* IA32_EFER NXE bit set */
+	movl	$0xC0000080, %ecx
+	rdmsr
+	orl	$0x800, %eax
 	wrmsr
-#endif
+#else
+	/* Enable Page Size Extensions (allowing 4MB pages).
+	 * This is ignored if PAE is enabled so no need to do
+	 * this above in PAE code.
+	 */
+	movl	%cr4, %eax
+	orl	$CR4_PSE, %eax
+	movl	%eax, %cr4
+#endif /* CONFIG_X86_PAE */
+
+	/* Enable paging (CR0.PG, bit 31) / write protect (CR0.WP, bit 16) */
+	movl	%cr0, %eax
+	orl	$(CR0_PG | CR0_WP), %eax
+	movl	%eax, %cr0
+
+#ifdef Z_VM_KERNEL
+	/* Jump to a virtual address, which works because the identity and
+	 * virtual mappings both are to the same physical address.
+	 */
+	ljmp    $CODE_SEG, $vm_enter
+vm_enter:
+	/* We are now executing in virtual memory. We'll un-map the identity
+	 * mappings later once we are in the C domain
+	 */
+#endif /* Z_VM_KERNEL */
+
+#endif /* CONFIG_X86_MMU */
+.endm
+
+SECTION_FUNC(BOOT_TEXT, __start)
+
+#include "../common.S"
 
 	/* Enable write-back caching by clearing the NW and CD bits */
 	movl	%cr0, %eax
@@ -93,12 +121,9 @@ SECTION_FUNC(TEXT_START, __start)
 	 * booted operating systems to setup their own IDT and GDT.
 	 */
 #if CONFIG_SET_GDT
-	lgdt	_gdt_rom		/* load 32-bit operand size GDT */
-#endif
+	/* load 32-bit operand size GDT */
+	lgdt	Z_MEM_PHYS_ADDR(_gdt_rom)
 
-
-
-#ifdef CONFIG_SET_GDT
 	/* If we set our own GDT, update the segment registers as well.
 	 */
 	movw	$DATA_SEG, %ax	/* data segment selector (entry = 3) */
@@ -109,13 +134,12 @@ SECTION_FUNC(TEXT_START, __start)
 	movw	%ax, %fs	/* Zero FS */
 	movw	%ax, %gs	/* Zero GS */
 
-	ljmp	$CODE_SEG, $__csSet	/* set CS = 0x08 */
+	ljmp	$CODE_SEG, $Z_MEM_PHYS_ADDR(__csSet)	/* set CS = 0x08 */
 
 __csSet:
 #endif /* CONFIG_SET_GDT */
 
-
-#if !defined(CONFIG_FLOAT)
+#if !defined(CONFIG_FPU)
 	/*
 	 * Force an #NM exception for floating point instructions
 	 * since FP support hasn't been configured
@@ -139,7 +163,7 @@ __csSet:
 
 	fninit				/* set x87 FPU to its default state */
 
-  #if defined(CONFIG_SSE)
+  #if defined(CONFIG_X86_SSE)
 	/*
 	 * Permit use of SSE instructions
 	 *
@@ -154,9 +178,9 @@ __csSet:
 
 	ldmxcsr _sse_mxcsr_default_value   /* initialize SSE control/status reg */
 
-  #endif /* CONFIG_SSE */
+  #endif /* CONFIG_X86_SSE */
 
-#endif /* !CONFIG_FLOAT */
+#endif /* !CONFIG_FPU */
 
 	/*
 	 * Set the stack pointer to the area used for the interrupt stack.
@@ -165,22 +189,13 @@ __csSet:
 	 * dual-purposing of this area of memory is safe since
 	 * interrupts are disabled until the first context switch.
 	 *
-	 * kernel/init.c enforces that the _interrupt_stack pointer and
-	 * the ISR stack size are some multiple of STACK_ALIGN, which
+	 * kernel/init.c enforces that the z_interrupt_stacks pointer and
+	 * the ISR stack size are some multiple of ARCH_STACK_PTR_ALIGN, which
 	 * is at least 4.
-	 *
-	 * This is also used to call the _sys_resume_from_deep_sleep()
-	 * routine to avoid memory corruption if the system is resuming from
-	 * deep sleep. It is important that _sys_resume_from_deep_sleep()
-	 * restores the stack pointer to what it was at deep sleep before
-         * enabling interrupts.  This is necessary to avoid
-	 * interfering with interrupt handler use of this stack.
-	 * If it is a cold boot then _sys_resume_from_deep_sleep() should
-	 * not do anything and must return immediately.
 	 */
 #ifdef CONFIG_INIT_STACKS
 	movl $0xAAAAAAAA, %eax
-	leal _interrupt_stack, %edi
+	leal Z_MEM_PHYS_ADDR(z_interrupt_stacks), %edi
 #ifdef CONFIG_X86_STACK_PROTECTION
 	addl $4096, %edi
 #endif
@@ -189,7 +204,7 @@ __csSet:
 	rep  stosl
 #endif
 
-	movl	$_interrupt_stack, %esp
+	movl	$Z_MEM_PHYS_ADDR(z_interrupt_stacks), %esp
 #ifdef CONFIG_X86_STACK_PROTECTION
 	/* In this configuration, all stacks, including IRQ stack, are declared
 	 * with a 4K non-present guard page preceding the stack buffer
@@ -198,61 +213,21 @@ __csSet:
 #else
 	addl	$CONFIG_ISR_STACK_SIZE, %esp
 #endif
-#if defined(CONFIG_SYS_POWER_DEEP_SLEEP_STATES) && \
-             !defined(CONFIG_BOOTLOADER_CONTEXT_RESTORE)
-	/*
-	 * Invoke _sys_resume_from_deep_sleep() hook to handle resume from
-	 * deep sleep. It should first check whether system is recovering from
-	 * deep sleep state. If it is, then this function should restore
-	 * states and resume at the point system went to deep sleep.
-	 * In this case this function will never return.
-	 *
-	 * If system is not recovering from deep sleep then it is a
-	 * cold boot.  In this case, this function would immediately
-	 * return and execution falls through to cold boot path.
-	 */
-
-	call _sys_resume_from_deep_sleep
-
-#endif
 
 #ifdef CONFIG_XIP
-	/*
-	 * copy DATA section from ROM to RAM region
-	 *	 DATA is followed by BSS section.
-	 */
-
-	movl	$__data_ram_start, %edi /* DATA in RAM (dest) */
-	movl	$__data_rom_start, %esi /* DATA in ROM (src) */
-	movl	$__data_num_words, %ecx /* Size of DATA in quad bytes */
-
-	call	_x86_data_copy
-
-#ifdef CONFIG_USERSPACE
-	movl	$_app_smem_start, %edi /* DATA in RAM (dest) */
-	movl	$_app_smem_rom_start, %esi /* DATA in ROM (src) */
-	movl	$_app_smem_num_words, %ecx /* Size of DATA in quad bytes */
-
-	call	_x86_data_copy
-#endif /* CONFIG_USERSPACE */
-
-#endif /* CONFIG_XIP */
-
-	/*
-	 * Clear BSS: bzero (__bss_start, __bss_num_words*4)
+	/* Copy data from flash to RAM.
 	 *
-	 * It's assumed that BSS size will be a multiple of a long (4 bytes),
-	 * and aligned on a double word (32-bit) boundary
+	 * This is a must is CONFIG_GDT_DYNAMIC is enabled,
+	 * as _gdt needs to be in RAM.
 	 */
-	movl	$__bss_start, %edi	/* load BSS start address */
-	movl	$__bss_num_words, %ecx	/* number of quad bytes in .bss */
-	call	_x86_bss_zero
+	call	z_data_copy
+#endif
 
-#ifdef CONFIG_COVERAGE_GCOV
-	movl	$__gcov_bss_start, %edi	/* load gcov BSS start address */
-	movl	$__gcov_bss_num_words, %ecx	/* number of quad bytes */
-	call	_x86_bss_zero
-#endif /* CONFIG_COVERAGE_GCOV */
+	/* Note that installing page tables must be done after
+	 * z_data_copy() as the page tables are being copied into
+	 * RAM there.
+	 */
+	install_page_tables
 
 #ifdef CONFIG_GDT_DYNAMIC
 	/* activate RAM-based Global Descriptor Table (GDT) */
@@ -263,135 +238,56 @@ __csSet:
 	mov $MAIN_TSS, %ax
 	ltr %ax
 #endif
-	lidt	z_x86_idt		/* load 32-bit operand size IDT */
 
-#if defined(CONFIG_X86_MULTIBOOT_INFO)
-	/*
-	 * If EBX isn't 0, then it points to a valid boot information
-	 * struct. Copy it to x86_multiboot_info before it's overwritten.
+#ifdef Z_VM_KERNEL
+	/* Need to reset the stack to virtual address after
+	 * page table is loaded.
 	 */
 
-	testl	%ebx, %ebx
-	jz	1f
-	movl	$__X86_MULTIBOOT_INFO_SIZEOF, %ecx
-	movl	%ebx, %esi
-	movl	$x86_multiboot_info, %edi
-	cld	/* to be safe. should still be 0 from BSS clear, though */
-	rep
-	movsb
-1:
+	movl	$z_interrupt_stacks, %esp
+#ifdef CONFIG_X86_STACK_PROTECTION
+	addl	$(CONFIG_ISR_STACK_SIZE + 4096), %esp
+#else
+	addl	$CONFIG_ISR_STACK_SIZE, %esp
 #endif
+#endif /* Z_VM_KERNEL */
 
-#if defined(CONFIG_PIC_DISABLE)
-	/*
-	 * "Disable" legacy i8259 interrupt controllers. Note that we
-	 * can't actually disable them, but we mask all their interrupt
-	 * sources which is effectively the same thing (almost).
+	/* Clear BSS */
+#ifdef CONFIG_LINKER_USE_BOOT_SECTION
+	call	z_bss_zero_boot
+#endif
+#ifdef CONFIG_LINKER_USE_PINNED_SECTION
+	call	z_bss_zero_pinned
+#endif
+#ifdef CONFIG_LINKER_GENERIC_SECTIONS_PRESENT_AT_BOOT
+	/* Don't clear BSS if the section is not present
+	 * in memory at boot. Or else it would cause page
+	 * faults. Zeroing BSS will be done later once the
+	 * the paging mechanism has been initialized.
 	 */
-	movb $0xff, %al		/* all bits set = mask all interrupts */
-	outb %al, $0x21		/* set i8259 master mask (IRQs 0-7) */
-	outb %al, $0xA1		/* set i8259 slave mask (IRQs 8-15) */
+	call	z_bss_zero
 #endif
 
-	/* call C portion of kernel initialization and never return */
-	call	z_x86_prep_c
+	/* load 32-bit operand size IDT */
+	lidt	z_x86_idt
 
-_x86_bss_zero:
-	/* ECX = size, EDI = starting address */
-#ifdef CONFIG_SSE
-	/* use XMM register to clear 16 bytes at a time */
-	pxor	%xmm0, %xmm0		/* zero out xmm0 register */
+	movl	$x86_cpu_boot_arg, %ebp
+	/* Boot type to multiboot, ebx content will help to mitigate */
+	movl	$MULTIBOOT_BOOT_TYPE, \
+			__x86_boot_arg_t_boot_type_OFFSET(%ebp)
+	/* pointer to multiboot info, or NULL */
+	movl	%ebx, __x86_boot_arg_t_arg_OFFSET(%ebp)
+	pushl	$x86_cpu_boot_arg
+	call	z_x86_prep_c	/* enter kernel; never returns */
 
-	movl	%ecx, %edx		/* make a copy of # quad bytes */
-	shrl	$2, %ecx		/* How many multiples of 16 byte ? */
-	je	bssWords
-bssDQ:
-	movdqu	%xmm0, (%edi)		/* zero 16 bytes... */
-	addl	$16, %edi
-	loop	bssDQ
-
-	/* fall through to handle the remaining double words (32-bit chunks) */
-
-bssWords:
-	xorl	%eax, %eax		/* fill memory with 0 */
-	movl	%edx, %ecx		/* move # quad bytes into ECX (for rep) */
-	andl	$0x3, %ecx		/* only need to zero at most 3 quad bytes */
-	cld
-	rep
-	stosl				/* zero memory per 4 bytes */
-
-#else /* !CONFIG_SSE */
-
-	/* clear out BSS double words (32-bits at a time) */
-
-	xorl	%eax, %eax		/* fill memory with 0 */
-	cld
-	rep
-	stosl				/* zero memory per 4 bytes */
-
-#endif /* CONFIG_SSE */
-	ret
-
-#ifdef CONFIG_XIP
-_x86_data_copy:
-	/* EDI = dest, ESI = source, ECX = size in 32-bit chunks */
-  #ifdef CONFIG_SSE
-	/* copy 16 bytes at a time using XMM until < 16 bytes remain */
-
-	movl	%ecx ,%edx		/* save number of quad bytes */
-	shrl	$2, %ecx		/* How many 16 bytes? */
-	je	dataWords
-
-dataDQ:
-	movdqu	(%esi), %xmm0
-	movdqu	%xmm0, (%edi)
-	addl	$16, %esi
-	addl	$16, %edi
-	loop	dataDQ
-
-dataWords:
-	movl	%edx, %ecx	/* restore # quad bytes */
-	andl	$0x3, %ecx	/* only need to copy at most 3 quad bytes */
-  #endif /* CONFIG_SSE */
-
-	rep
-	movsl				/* copy data 4 bytes at a time */
-	ret
-#endif /* CONFIG_XIP */
-
-#ifdef CONFIG_X86_MMU
-z_x86_enable_paging:
-	/* load the page directory address into the registers*/
-	movl $z_x86_kernel_pdpt, %eax
-	movl %eax, %cr3
-
-	/* Enable PAE */
-	movl %cr4, %eax
-	orl $CR4_PAE, %eax
-	movl %eax, %cr4
-
-	/* IA32_EFER NXE bit set */
-	movl $0xC0000080, %ecx
-	rdmsr
-	orl $0x800, %eax
-	wrmsr
-
-	/* Enable paging (CR0.PG, bit 31) / write protect (CR0.WP, bit 16) */
-	movl %cr0, %eax
-	orl $(CR0_PG | CR0_WP), %eax
-	movl %eax, %cr0
-
-	ret
-#endif /* CONFIG_X86_MMU */
-
-#if defined(CONFIG_SSE)
+#if defined(CONFIG_X86_SSE)
 
 	/* SSE control & status register initial value */
 
 _sse_mxcsr_default_value:
 	.long	0x1f80			/* all SSE exceptions clear & masked */
 
-#endif /* CONFIG_SSE */
+#endif /* CONFIG_X86_SSE */
 
 	 /* Interrupt Descriptor Table (IDT) definition */
 
@@ -404,41 +300,11 @@ z_x86_idt:
 	 * setup by the BIOS (or GRUB?).
 	 */
 
-	.long	_idt_base_address		/* physical start address */
+	/* IDT table start address */
+	.long	_idt_base_address
 
-
-#ifdef CONFIG_X86_MULTIBOOT
-	/*
-	 * The multiboot header must be in the first 8 Kb of the kernel image
-	 * (not including the ELF section header(s)) and be aligned on a
-	 * 4 byte boundary. See include/arch/x86/multiboot.h for more info.
-	 */
-
-	.balign 4,0x90
-
-	.long	X86_MULTIBOOT_HEADER_MAGIC
-	.long	X86_MULTIBOOT_HEADER_FLAGS
-	.long	-(X86_MULTIBOOT_HEADER_MAGIC + X86_MULTIBOOT_HEADER_FLAGS)
-
-#ifdef CONFIG_X86_MULTIBOOT_FRAMEBUF
-	.fill	5,4,0				/* (unused exec layout) */
-	.long	0				/* linear graphics mode */
-	.long	CONFIG_X86_MULTIBOOT_FRAMEBUF_X	/* width */
-	.long	CONFIG_X86_MULTIBOOT_FRAMEBUF_Y	/* height */
-	.long	32				/* depth */
-#endif /* CONFIG_X86_MULTIBOOT_FRAMEBUF */
-
-#endif /* CONFIG_X86_MULTIBOOT */
 
 #ifdef CONFIG_SET_GDT
-
-	/* GDT should be aligned on 8-byte boundary for best processor
-	 * performance, see Section 3.5.1 of IA architecture SW developer
-	 * manual, Vol 3.
-	 */
-
-	.balign 8
-
 	/*
 	 * The following 3 GDT entries implement the so-called "basic
 	 * flat model", i.e. a single code segment descriptor and a single
@@ -455,16 +321,26 @@ z_x86_idt:
 	 * and fails to set it.
 	 */
 
+SECTION_VAR(PINNED_RODATA, _gdt_rom)
 #ifndef CONFIG_GDT_DYNAMIC
 _gdt:
 #endif
-_gdt_rom:
+
+	/* GDT should be aligned on 8-byte boundary for best processor
+	 * performance, see Section 3.5.1 of IA architecture SW developer
+	 * manual, Vol 3.
+	 */
+
+	.balign 8
 
 	/* Entry 0 (selector=0x0000): The "NULL descriptor". The CPU never
 	 * actually looks at this entry, so we stuff 6-byte the pseudo
 	 * descriptor here */
-	.word _gdt_rom_end - _gdt_rom - 1	/* Limit on GDT */
-	.long _gdt_rom				/* table address: _gdt_rom */
+
+	/* Limit on GDT */
+	.word Z_MEM_PHYS_ADDR(_gdt_rom_end) - Z_MEM_PHYS_ADDR(_gdt_rom) - 1
+	/* table address: _gdt_rom */
+	.long Z_MEM_PHYS_ADDR(_gdt_rom)
 	.word   0x0000
 
 	/* Entry 1 (selector=0x0008): Code descriptor: DPL0 */

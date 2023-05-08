@@ -10,8 +10,8 @@
  * @details Implements the required 'arch' sub-APIs.
  */
 
-#include <kernel.h>
-#include <power/reboot.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/reboot.h>
 
 /* reboot through Reset Control Register (I/O port 0xcf9) */
 
@@ -22,7 +22,7 @@
 
 static inline void cold_reboot(void)
 {
-	u8_t reset_value = X86_RST_CNT_CPU_RST | X86_RST_CNT_SYS_RST |
+	uint8_t reset_value = X86_RST_CNT_CPU_RST | X86_RST_CNT_SYS_RST |
 				X86_RST_CNT_FULL_RST;
 	sys_out8(reset_value, X86_RST_CNT_REG);
 }

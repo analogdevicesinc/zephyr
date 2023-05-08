@@ -10,24 +10,23 @@
 
 #include <stdio.h>
 #include <string.h>
-#include <ztest.h>
+#include <zephyr/ztest.h>
 
-#include "settings/settings.h"
-#include <storage/flash_map.h>
+#include <zephyr/settings/settings.h>
+#include <zephyr/storage/flash_map.h>
 
 #ifdef __cplusplus
-#extern "C" {
+extern "C" {
 #endif
 
 #define SETTINGS_TEST_FCB_VAL_STR_CNT   64
 #define SETTINGS_TEST_FCB_FLASH_CNT   4
 
-#define VAL8_DELETED 255U
 
-extern u8_t val8;
-extern u8_t val8_un;
-extern u32_t val32;
-extern u64_t val64;
+extern uint8_t val8;
+extern uint8_t val8_un;
+extern uint32_t val32;
+extern uint64_t val64;
 
 extern int test_get_called;
 extern int test_set_called;
@@ -53,6 +52,11 @@ void test_config_fill_area(
 	char test_value[SETTINGS_TEST_FCB_VAL_STR_CNT][SETTINGS_MAX_VAL_LEN],
 		int iteration);
 
+void *settings_config_setup(void);
+void settings_config_teardown(void *fixture);
+void test_config_insert2(void);
+void test_config_insert3(void);
+int settings_unregister(struct settings_handler *handler);
 #ifdef __cplusplus
 }
 #endif

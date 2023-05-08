@@ -20,7 +20,6 @@ MCUs.
   flash programming, and run-control debugging
 
 .. image:: frdm_k22f.jpg
-   :width: 720px
    :align: center
    :alt: FRDM-K22F
 
@@ -58,7 +57,12 @@ For more information about the K22F SoC and FRDM-K22F board:
 Supported Features
 ==================
 
-The frdm_k22f board configuration supports the following hardware features:
+The frdm_k22f board configuration supports the hardware features listed
+below.  For additional features not yet supported, please also refer to the
+:ref:`frdm_k64f`, which is the superset board in NXP's Kinetis K series.
+NXP prioritizes enabling the superset board with NXP's Full Platform Support for
+Zephyr.  Therefore, the frdm_k64f board may have additional features
+already supported, which can also be re-used on this frdm_k22f board:
 
 +-----------+------------+-------------------------------------+
 | Interface | Controller | Driver/Component                    |
@@ -90,6 +94,11 @@ The frdm_k22f board configuration supports the following hardware features:
 +-----------+------------+-------------------------------------+
 | SENSOR    | off-chip   | fxos8700 polling;                   |
 |           |            | fxos8700 trigger                    |
++-----------+------------+-------------------------------------+
+| RNGA      | on-chip    | entropy;                            |
+|           |            | random                              |
++-----------+------------+-------------------------------------+
+| FTFE      | on-chip    | flash programming                   |
 +-----------+------------+-------------------------------------+
 
 The default configuration can be found in the defconfig file:
@@ -128,7 +137,7 @@ The K22F SoC has five pairs of pinmux/gpio controllers.
 +-------+-----------------+---------------------------+
 | PTD3  | UART2_TX        | UART BT HCI               |
 +-------+-----------------+---------------------------+
-| PTD4  | SPI0_PCS1       | SPI                       |
+| PTC4  | SPI0_PCS0       | SPI                       |
 +-------+-----------------+---------------------------+
 | PTD1  | SPI0_SCK        | SPI                       |
 +-------+-----------------+---------------------------+
@@ -199,8 +208,15 @@ the `Segger J-Link OpenSDA V2.1 Firmware`_. Note that Segger
 does provide an OpenSDA J-Link Board-Specific Firmware for this board, however
 it is not compatible with the DAPLink bootloader.
 
-Add the argument ``-DOPENSDA_FW=jlink`` when you invoke ``west build`` to
-override the default runner from pyOCD to J-Link:
+Add the arguments ``-DBOARD_FLASH_RUNNER=jlink`` and
+``-DBOARD_DEBUG_RUNNER=jlink`` when you invoke ``west build`` to override the
+default runner from pyOCD to J-Link:
+
+.. zephyr-app-commands::
+   :zephyr-app: samples/hello_world
+   :board: frdm_k22f
+   :gen-args: -DBOARD_FLASH_RUNNER=jlink -DBOARD_DEBUG_RUNNER=jlink
+   :goals: build
 
 Configuring a Console
 =====================
@@ -273,7 +289,7 @@ should see the following message in the terminal:
    https://www.nxp.com/docs/en/reference-manual/K22P121M120SF7RM.pdf
 
 .. _OpenSDA DAPLink FRDM-K22F Firmware:
-   http://www.nxp.com/assets/downloads/data/en/ide-debug-compile-build-tools/OpenSDAv2.2_DAPLink_frdmk22f_rev0242.zip
+   https://www.nxp.com/downloads/en/snippets-boot-code-headers-monitors/k20dx_frdmk22f_if_crc_legacy_0x8000.bin
 
 .. _DAPLink Bootloader Update:
    https://os.mbed.com/blog/entry/DAPLink-bootloader-update/

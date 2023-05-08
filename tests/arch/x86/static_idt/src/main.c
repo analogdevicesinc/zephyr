@@ -1,4 +1,3 @@
-
 /*
  * Copyright (c) 2012-2014 Wind River Systems, Inc.
  *
@@ -11,12 +10,12 @@
  *  Ensures interrupt and exception stubs are installed correctly.
  */
 
-#include <zephyr.h>
-#include <ztest.h>
-#include <tc_util.h>
-#include <arch/x86/ia32/segmentation.h>
+#include <zephyr/kernel.h>
+#include <zephyr/ztest.h>
+#include <zephyr/tc_util.h>
+#include <zephyr/arch/x86/ia32/segmentation.h>
 
-#include <kernel_structs.h>
+#include <kernel_internal.h>
 #if defined(__GNUC__)
 #include "test_asm_inline_gcc.h"
 #else
@@ -64,8 +63,6 @@ void k_sys_fatal_error_handler(unsigned int reason, const z_arch_esf_t *esf)
  * Handler to perform various actions from within an ISR context
  *
  * This routine is the ISR handler for _trigger_isr_handler().
- *
- * @return N/A
  */
 
 void isr_handler(void)
@@ -90,7 +87,6 @@ void isr_handler(void)
  * done, then control goes back to the offending instruction and an infinite
  * loop of divide-by-zero errors would be created.)
  *
- * @return N/A
  */
 
 void exc_divide_error_handler(z_arch_esf_t *p_esf)
@@ -99,7 +95,7 @@ void exc_divide_error_handler(z_arch_esf_t *p_esf)
 	/* provide evidence that the handler executed */
 	exc_handler_executed = 1;
 }
-_EXCEPTION_CONNECT_NOCODE(exc_divide_error_handler, IV_DIVIDE_ERROR);
+_EXCEPTION_CONNECT_NOCODE(exc_divide_error_handler, IV_DIVIDE_ERROR, 0);
 extern void *_EXCEPTION_STUB_NAME(exc_divide_error_handler, IV_DIVIDE_ERROR);
 
 /**
@@ -110,16 +106,16 @@ extern void *_EXCEPTION_STUB_NAME(exc_divide_error_handler, IV_DIVIDE_ERROR);
  * and exception stubs are installed at the correct place.
  *
  */
-void test_idt_stub(void)
+ZTEST(static_idt, test_idt_stub)
 {
 	struct segment_descriptor *p_idt_entry;
-	u32_t offset;
+	uint32_t offset;
 
 	TC_PRINT("Testing to see if IDT has address of test stubs()\n");
 	/* Check for the interrupt stub */
 	p_idt_entry = (struct segment_descriptor *)
 		      (_idt_base_address + (TEST_SOFT_INT << 3));
-	offset = (u32_t)(&int_stub);
+	offset = (uint32_t)(&int_stub);
 	zassert_equal(DTE_OFFSET(p_idt_entry), offset,
 		      "Failed to find offset of int_stub (0x%x)"
 		      " at vector %d\n", offset, TEST_SOFT_INT);
@@ -127,7 +123,7 @@ void test_idt_stub(void)
 	/* Check for the exception stub */
 	p_idt_entry = (struct segment_descriptor *)
 		      (_idt_base_address + (IV_DIVIDE_ERROR << 3));
-	offset = (u32_t)(&_EXCEPTION_STUB_NAME(exc_divide_error_handler, 0));
+	offset = (uint32_t)(&_EXCEPTION_STUB_NAME(exc_divide_error_handler, 0));
 	zassert_equal(DTE_OFFSET(p_idt_entry), offset,
 		      "Failed to find offset of exc stub (0x%x)"
 		      " at vector %d\n", offset, IV_DIVIDE_ERROR);
@@ -157,7 +153,8 @@ void idt_spur_task(void *arg1, void *arg2, void *arg3)
  * and spurious interrupt using various method, the registered handler
  * should get called
  */
-void test_static_idt(void)
+
+ZTEST(static_idt, test_static_idt)
 {
 	volatile int error;     /* used to create a divide by zero error */
 
@@ -178,7 +175,12 @@ void test_static_idt(void)
 	 * issuing a 'divide by zero' warning.
 	 */
 	error = 32;     /* avoid static checker uninitialized warnings */
-	error = error / exc_handler_executed;
+
+	__asm__ volatile ("movl $0x0, %%edx\n\t"
+			  "movl %0, %%eax\n\t"
+			  "movl %1, %%ebx\n\t"
+			  "idivl %%ebx;" : : "g" (error), "g" (exc_handler_executed) :
+			  "eax", "edx");
 
 	zassert_not_equal(exc_handler_executed, 0,
 			  "Exception handler did not execute");
@@ -201,11 +203,4 @@ void test_static_idt(void)
 			  "Spurious handler did not execute as expected");
 }
 
-void test_main(void)
-{
-	ztest_test_suite(static_idt,
-			 ztest_unit_test(test_idt_stub),
-			 ztest_unit_test(test_static_idt)
-			 );
-	ztest_run_test_suite(static_idt);
-}
+ZTEST_SUITE(static_idt, NULL, NULL, NULL, NULL, NULL);

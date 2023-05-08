@@ -8,23 +8,21 @@
 #ifndef ETH_STELLARIS_PRIV_H_
 #define ETH_STELLARIS_PRIV_H_
 
-#define DEV_DATA(dev) \
-	((struct eth_stellaris_runtime *)(dev)->driver_data)
-#define DEV_CFG(dev) \
-	((struct eth_stellaris_config *const)(dev)->config->config_info)
+#define REG_BASE(dev) \
+	((const struct eth_stellaris_config *const)(dev)->config)->mac_base
 /*
  *  Register mapping
  */
 /* Registers for ethernet system, mac_base + offset */
-#define REG_MACRIS		((DEV_CFG(dev)->mac_base) + 0x000)
-#define REG_MACIM		((DEV_CFG(dev)->mac_base) + 0x004)
-#define REG_MACRCTL		((DEV_CFG(dev)->mac_base) + 0x008)
-#define REG_MACTCTL		((DEV_CFG(dev)->mac_base) + 0x00C)
-#define REG_MACDATA		((DEV_CFG(dev)->mac_base) + 0x010)
-#define REG_MACIA0		((DEV_CFG(dev)->mac_base) + 0x014)
-#define REG_MACIA1		((DEV_CFG(dev)->mac_base) + 0x018)
-#define REG_MACNP		((DEV_CFG(dev)->mac_base) + 0x034)
-#define REG_MACTR		((DEV_CFG(dev)->mac_base) + 0x038)
+#define REG_MACRIS		(REG_BASE(dev) + 0x000)
+#define REG_MACIM		(REG_BASE(dev) + 0x004)
+#define REG_MACRCTL		(REG_BASE(dev) + 0x008)
+#define REG_MACTCTL		(REG_BASE(dev) + 0x00C)
+#define REG_MACDATA		(REG_BASE(dev) + 0x010)
+#define REG_MACIA0		(REG_BASE(dev) + 0x014)
+#define REG_MACIA1		(REG_BASE(dev) + 0x018)
+#define REG_MACNP		(REG_BASE(dev) + 0x034)
+#define REG_MACTR		(REG_BASE(dev) + 0x038)
 
 /* ETH MAC Receive Control bit fields set value */
 #define BIT_MACRCTL_RSTFIFO	0x10
@@ -50,22 +48,22 @@
 
 struct eth_stellaris_runtime {
 	struct net_if *iface;
-	u8_t mac_addr[6];
+	uint8_t mac_addr[6];
 	struct k_sem tx_sem;
 	bool tx_err;
-	u32_t tx_word;
+	uint32_t tx_word;
 	int tx_pos;
 #if defined(CONFIG_NET_STATISTICS_ETHERNET)
 	struct net_stats_eth stats;
 #endif
 };
 
-typedef void (*eth_stellaris_config_irq_t)(struct device *dev);
+typedef void (*eth_stellaris_config_irq_t)(const struct device *dev);
 
 struct eth_stellaris_config {
-	u32_t mac_base;
-	u32_t sys_ctrl_base;
-	u32_t irq_num;
+	uint32_t mac_base;
+	uint32_t sys_ctrl_base;
+	uint32_t irq_num;
 	eth_stellaris_config_irq_t config_func;
 };
 

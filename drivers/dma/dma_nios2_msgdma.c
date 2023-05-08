@@ -4,53 +4,51 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <device.h>
+#define DT_DRV_COMPAT altr_msgdma
+
+#include <zephyr/device.h>
 #include <errno.h>
-#include <init.h>
+#include <zephyr/init.h>
 #include <string.h>
 #include <soc.h>
-#include <drivers/dma.h>
+#include <zephyr/drivers/dma.h>
 #include <altera_common.h>
 #include "altera_msgdma_csr_regs.h"
 #include "altera_msgdma_descriptor_regs.h"
 #include "altera_msgdma.h"
 
-#define LOG_LEVEL CONFIG_DMA_LOG_LEVEL
-#include <logging/log.h>
-LOG_MODULE_REGISTER(dma_nios2);
+#include <zephyr/logging/log.h>
+#include <zephyr/irq.h>
+LOG_MODULE_REGISTER(dma_nios2, CONFIG_DMA_LOG_LEVEL);
 
 /* Device configuration parameters */
-struct nios2_msgdma_dev_cfg {
+struct nios2_msgdma_dev_data {
+	const struct device *dev;
 	alt_msgdma_dev *msgdma_dev;
 	alt_msgdma_standard_descriptor desc;
-	u32_t direction;
+	uint32_t direction;
 	struct k_sem sem_lock;
-	void *callback_arg;
-	void (*dma_callback)(void *arg, u32_t id,
-			     int error_code);
+	void *user_data;
+	dma_callback_t dma_callback;
 };
-
-#define DEV_NAME(dev) ((dev)->config->name)
-#define DEV_CFG(dev) \
-	((struct nios2_msgdma_dev_cfg *)(dev)->config->config_info)
 
 static void nios2_msgdma_isr(void *arg)
 {
-	struct device *dev = (struct device *)arg;
-	struct nios2_msgdma_dev_cfg *cfg = DEV_CFG(dev);
+	const struct device *dev = (const struct device *)arg;
+	struct nios2_msgdma_dev_data *dev_data = (struct nios2_msgdma_dev_data *)dev->data;
 
 	/* Call Altera HAL driver ISR */
-	alt_handle_irq(cfg->msgdma_dev, MSGDMA_0_CSR_IRQ);
+	alt_handle_irq(dev_data->msgdma_dev, DT_INST_IRQN(0));
 }
 
 static void nios2_msgdma_callback(void *context)
 {
-	struct nios2_msgdma_dev_cfg *dev_cfg =
-				DEV_CFG((struct device *)context);
+	struct nios2_msgdma_dev_data *dev_data =
+		(struct nios2_msgdma_dev_data *)context;
 	int err_code;
-	u32_t status;
+	uint32_t status;
 
-	status = IORD_ALTERA_MSGDMA_CSR_STATUS(dev_cfg->msgdma_dev->csr_base);
+	status = IORD_ALTERA_MSGDMA_CSR_STATUS(dev_data->msgdma_dev->csr_base);
 
 	if (status & ALTERA_MSGDMA_CSR_STOPPED_ON_ERROR_MASK) {
 		err_code = -EIO;
@@ -62,16 +60,16 @@ static void nios2_msgdma_callback(void *context)
 
 	LOG_DBG("msgdma csr status Reg: 0x%x", status);
 
-	dev_cfg->dma_callback(dev_cfg->callback_arg, 0, err_code);
+	dev_data->dma_callback(dev_data->dev, dev_data->user_data, 0, err_code);
 }
 
-static int nios2_msgdma_config(struct device *dev, u32_t channel,
+static int nios2_msgdma_config(const struct device *dev, uint32_t channel,
 			       struct dma_config *cfg)
 {
-	struct nios2_msgdma_dev_cfg *dev_cfg = DEV_CFG(dev);
+	struct nios2_msgdma_dev_data *dev_data = (struct nios2_msgdma_dev_data *)dev->data;
 	struct dma_block_config *dma_block;
 	int status;
-	u32_t control;
+	uint32_t control;
 
 	/* Nios-II MSGDMA supports only one channel per DMA core */
 	if (channel != 0U) {
@@ -102,30 +100,30 @@ static int nios2_msgdma_config(struct device *dev, u32_t channel,
 		return -EINVAL;
 	}
 
-	k_sem_take(&dev_cfg->sem_lock, K_FOREVER);
-	dev_cfg->dma_callback = cfg->dma_callback;
-	dev_cfg->callback_arg = cfg->callback_arg;
-	dev_cfg->direction = cfg->channel_direction;
+	k_sem_take(&dev_data->sem_lock, K_FOREVER);
+	dev_data->dma_callback = cfg->dma_callback;
+	dev_data->user_data = cfg->user_data;
+	dev_data->direction = cfg->channel_direction;
 	dma_block = cfg->head_block;
 	control =  ALTERA_MSGDMA_DESCRIPTOR_CONTROL_TRANSFER_COMPLETE_IRQ_MASK |
 		  ALTERA_MSGDMA_DESCRIPTOR_CONTROL_EARLY_TERMINATION_IRQ_MASK;
 
-	if (dev_cfg->direction == MEMORY_TO_MEMORY) {
+	if (dev_data->direction == MEMORY_TO_MEMORY) {
 		status = alt_msgdma_construct_standard_mm_to_mm_descriptor(
-			dev_cfg->msgdma_dev, &dev_cfg->desc,
+			dev_data->msgdma_dev, &dev_data->desc,
 			(alt_u32 *)dma_block->source_address,
 			(alt_u32 *)dma_block->dest_address,
 			dma_block->block_size,
 			control);
-	} else if (dev_cfg->direction == MEMORY_TO_PERIPHERAL) {
+	} else if (dev_data->direction == MEMORY_TO_PERIPHERAL) {
 		status = alt_msgdma_construct_standard_mm_to_st_descriptor(
-			dev_cfg->msgdma_dev, &dev_cfg->desc,
+			dev_data->msgdma_dev, &dev_data->desc,
 			(alt_u32 *)dma_block->source_address,
 			dma_block->block_size,
 			control);
-	} else if (dev_cfg->direction == PERIPHERAL_TO_MEMORY) {
+	} else if (dev_data->direction == PERIPHERAL_TO_MEMORY) {
 		status = alt_msgdma_construct_standard_st_to_mm_descriptor(
-			dev_cfg->msgdma_dev, &dev_cfg->desc,
+			dev_data->msgdma_dev, &dev_data->desc,
 			(alt_u32 *)dma_block->dest_address,
 			dma_block->block_size,
 			control);
@@ -135,27 +133,28 @@ static int nios2_msgdma_config(struct device *dev, u32_t channel,
 	}
 
 	/* Register msgdma callback */
-	alt_msgdma_register_callback(dev_cfg->msgdma_dev,
+	alt_msgdma_register_callback(dev_data->msgdma_dev,
 			nios2_msgdma_callback,
 			ALTERA_MSGDMA_CSR_GLOBAL_INTERRUPT_MASK |
 			ALTERA_MSGDMA_CSR_STOP_ON_ERROR_MASK |
 			ALTERA_MSGDMA_CSR_STOP_ON_EARLY_TERMINATION_MASK,
-			dev);
+			dev_data);
 
 	/* Clear the IRQ status */
-	IOWR_ALTERA_MSGDMA_CSR_STATUS(dev_cfg->msgdma_dev->csr_base,
+	IOWR_ALTERA_MSGDMA_CSR_STATUS(dev_data->msgdma_dev->csr_base,
 				      ALTERA_MSGDMA_CSR_IRQ_SET_MASK);
-	k_sem_give(&dev_cfg->sem_lock);
+	k_sem_give(&dev_data->sem_lock);
 
 	return status;
 }
 
-static int nios2_msgdma_transfer_start(struct device *dev, u32_t channel)
+static int nios2_msgdma_transfer_start(const struct device *dev,
+				       uint32_t channel)
 {
-	struct nios2_msgdma_dev_cfg *cfg = DEV_CFG(dev);
+	struct nios2_msgdma_dev_data *cfg = (struct nios2_msgdma_dev_data *)dev->data;
 	int status;
 
-	/* Nios-II mSGDMA supports only one channel per DMA core */
+	/* Nios-II MSGDMA supports only one channel per DMA core */
 	if (channel != 0U) {
 		LOG_ERR("Invalid channel number");
 		return -EINVAL;
@@ -173,11 +172,12 @@ static int nios2_msgdma_transfer_start(struct device *dev, u32_t channel)
 	return status;
 }
 
-static int nios2_msgdma_transfer_stop(struct device *dev, u32_t channel)
+static int nios2_msgdma_transfer_stop(const struct device *dev,
+				      uint32_t channel)
 {
-	struct nios2_msgdma_dev_cfg *cfg = DEV_CFG(dev);
+	struct nios2_msgdma_dev_data *cfg = (struct nios2_msgdma_dev_data *)dev->data;
 	int ret = -EIO;
-	u32_t status;
+	uint32_t status;
 
 	k_sem_take(&cfg->sem_lock, K_FOREVER);
 	/* Stop the DMA Dispatcher */
@@ -203,22 +203,21 @@ static const struct dma_driver_api nios2_msgdma_driver_api = {
 	.stop = nios2_msgdma_transfer_stop,
 };
 
-/* DMA0 */
-static struct device DEVICE_NAME_GET(dma0_nios2);
-
-static int nios2_msgdma0_initialize(struct device *dev)
+static int nios2_msgdma0_initialize(const struct device *dev)
 {
-	struct nios2_msgdma_dev_cfg *dev_cfg = DEV_CFG(dev);
+	struct nios2_msgdma_dev_data *dev_data = (struct nios2_msgdma_dev_data *)dev->data;
+
+	dev_data->dev = dev;
 
 	/* Initialize semaphore */
-	k_sem_init(&dev_cfg->sem_lock, 1, 1);
+	k_sem_init(&dev_data->sem_lock, 1, 1);
 
-	alt_msgdma_init(dev_cfg->msgdma_dev, 0, MSGDMA_0_CSR_IRQ);
+	alt_msgdma_init(dev_data->msgdma_dev, 0, DT_INST_IRQN(0));
 
-	IRQ_CONNECT(MSGDMA_0_CSR_IRQ, CONFIG_DMA_0_IRQ_PRI,
-		    nios2_msgdma_isr, DEVICE_GET(dma0_nios2), 0);
+	IRQ_CONNECT(DT_INST_IRQN(0), DT_INST_IRQ(0, priority),
+		    nios2_msgdma_isr, DEVICE_DT_INST_GET(0), 0);
 
-	irq_enable(MSGDMA_0_CSR_IRQ);
+	irq_enable(DT_INST_IRQN(0));
 
 	return 0;
 }
@@ -226,11 +225,10 @@ static int nios2_msgdma0_initialize(struct device *dev)
 ALTERA_MSGDMA_CSR_DESCRIPTOR_SLAVE_INSTANCE(MSGDMA_0, MSGDMA_0_CSR,
 				MSGDMA_0_DESCRIPTOR_SLAVE, msgdma_dev0)
 
-static struct nios2_msgdma_dev_cfg dma0_nios2_config = {
+static struct nios2_msgdma_dev_data dma0_nios2_data = {
 	.msgdma_dev = &msgdma_dev0,
 };
 
-DEVICE_AND_API_INIT(dma0_nios2, CONFIG_DMA_0_NAME, &nios2_msgdma0_initialize,
-		    NULL, &dma0_nios2_config, POST_KERNEL,
-		    CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
-		    &nios2_msgdma_driver_api);
+DEVICE_DT_INST_DEFINE(0, &nios2_msgdma0_initialize,
+		NULL, &dma0_nios2_data, NULL, POST_KERNEL,
+		CONFIG_DMA_INIT_PRIORITY, &nios2_msgdma_driver_api);

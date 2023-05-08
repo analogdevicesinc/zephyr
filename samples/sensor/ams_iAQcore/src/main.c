@@ -4,23 +4,23 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <device.h>
-#include <drivers/sensor.h>
-#include <sys/printk.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/sys/printk.h>
 
-void main(void)
+int main(void)
 {
-	struct device *dev;
+	const struct device *dev;
 	struct sensor_value co2, voc;
 
-	dev = device_get_binding(DT_INST_0_AMS_IAQCORE_LABEL);
-	if (!dev) {
-		printk("Failed to get device binding");
-		return;
+	dev = DEVICE_DT_GET_ONE(ams_iaqcore);
+	if (!device_is_ready(dev)) {
+		printk("sensor: device not ready.\n");
+		return 0;
 	}
 
-	printk("device is %p, name is %s\n", dev, dev->config->name);
+	printk("device is %p, name is %s\n", dev, dev->name);
 
 	while (1) {
 		sensor_sample_fetch(dev);
@@ -30,6 +30,7 @@ void main(void)
 			co2.val1, co2.val2,
 			voc.val1, voc.val2);
 
-		k_sleep(1000);
+		k_sleep(K_MSEC(1000));
 	}
+	return 0;
 }

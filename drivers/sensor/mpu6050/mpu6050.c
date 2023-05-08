@@ -4,35 +4,36 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <drivers/i2c.h>
-#include <init.h>
-#include <sys/byteorder.h>
-#include <drivers/sensor.h>
-#include <logging/log.h>
+#define DT_DRV_COMPAT invensense_mpu6050
+
+#include <zephyr/drivers/i2c.h>
+#include <zephyr/init.h>
+#include <zephyr/sys/byteorder.h>
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/logging/log.h>
 
 #include "mpu6050.h"
 
-#define LOG_LEVEL CONFIG_SENSOR_LOG_LEVEL
-LOG_MODULE_REGISTER(MPU6050);
+LOG_MODULE_REGISTER(MPU6050, CONFIG_SENSOR_LOG_LEVEL);
 
 /* see "Accelerometer Measurements" section from register map description */
-static void mpu6050_convert_accel(struct sensor_value *val, s16_t raw_val,
-				  u16_t sensitivity_shift)
+static void mpu6050_convert_accel(struct sensor_value *val, int16_t raw_val,
+				  uint16_t sensitivity_shift)
 {
-	s64_t conv_val;
+	int64_t conv_val;
 
-	conv_val = ((s64_t)raw_val * SENSOR_G) >> sensitivity_shift;
+	conv_val = ((int64_t)raw_val * SENSOR_G) >> sensitivity_shift;
 	val->val1 = conv_val / 1000000;
 	val->val2 = conv_val % 1000000;
 }
 
 /* see "Gyroscope Measurements" section from register map description */
-static void mpu6050_convert_gyro(struct sensor_value *val, s16_t raw_val,
-				 u16_t sensitivity_x10)
+static void mpu6050_convert_gyro(struct sensor_value *val, int16_t raw_val,
+				 uint16_t sensitivity_x10)
 {
-	s64_t conv_val;
+	int64_t conv_val;
 
-	conv_val = ((s64_t)raw_val * SENSOR_PI * 10) /
+	conv_val = ((int64_t)raw_val * SENSOR_PI * 10) /
 		   (sensitivity_x10 * 180U);
 	val->val1 = conv_val / 1000000;
 	val->val2 = conv_val % 1000000;
@@ -40,10 +41,10 @@ static void mpu6050_convert_gyro(struct sensor_value *val, s16_t raw_val,
 
 /* see "Temperature Measurement" section from register map description */
 static inline void mpu6050_convert_temp(struct sensor_value *val,
-					s16_t raw_val)
+					int16_t raw_val)
 {
 	val->val1 = raw_val / 340 + 36;
-	val->val2 = ((s64_t)(raw_val % 340) * 1000000) / 340 + 530000;
+	val->val2 = ((int64_t)(raw_val % 340) * 1000000) / 340 + 530000;
 
 	if (val->val2 < 0) {
 		val->val1--;
@@ -54,11 +55,11 @@ static inline void mpu6050_convert_temp(struct sensor_value *val,
 	}
 }
 
-static int mpu6050_channel_get(struct device *dev,
+static int mpu6050_channel_get(const struct device *dev,
 			       enum sensor_channel chan,
 			       struct sensor_value *val)
 {
-	struct mpu6050_data *drv_data = dev->driver_data;
+	struct mpu6050_data *drv_data = dev->data;
 
 	switch (chan) {
 	case SENSOR_CHAN_ACCEL_XYZ:
@@ -108,13 +109,15 @@ static int mpu6050_channel_get(struct device *dev,
 	return 0;
 }
 
-static int mpu6050_sample_fetch(struct device *dev, enum sensor_channel chan)
+static int mpu6050_sample_fetch(const struct device *dev,
+				enum sensor_channel chan)
 {
-	struct mpu6050_data *drv_data = dev->driver_data;
-	s16_t buf[7];
+	struct mpu6050_data *drv_data = dev->data;
+	const struct mpu6050_config *cfg = dev->config;
+	int16_t buf[7];
 
-	if (i2c_burst_read(drv_data->i2c, CONFIG_MPU6050_I2C_ADDR,
-			   MPU6050_REG_DATA_START, (u8_t *)buf, 14) < 0) {
+	if (i2c_burst_read_dt(&cfg->i2c, MPU6050_REG_DATA_START, (uint8_t *)buf,
+			      14) < 0) {
 		LOG_ERR("Failed to read data sample.");
 		return -EIO;
 	}
@@ -138,34 +141,31 @@ static const struct sensor_driver_api mpu6050_driver_api = {
 	.channel_get = mpu6050_channel_get,
 };
 
-int mpu6050_init(struct device *dev)
+int mpu6050_init(const struct device *dev)
 {
-	struct mpu6050_data *drv_data = dev->driver_data;
-	u8_t id, i;
+	struct mpu6050_data *drv_data = dev->data;
+	const struct mpu6050_config *cfg = dev->config;
+	uint8_t id, i;
 
-	drv_data->i2c = device_get_binding(CONFIG_MPU6050_I2C_MASTER_DEV_NAME);
-	if (drv_data->i2c == NULL) {
-		LOG_ERR("Failed to get pointer to %s device",
-			    CONFIG_MPU6050_I2C_MASTER_DEV_NAME);
-		return -EINVAL;
+	if (!device_is_ready(cfg->i2c.bus)) {
+		LOG_ERR("Bus device is not ready");
+		return -ENODEV;
 	}
 
 	/* check chip ID */
-	if (i2c_reg_read_byte(drv_data->i2c, CONFIG_MPU6050_I2C_ADDR,
-			      MPU6050_REG_CHIP_ID, &id) < 0) {
+	if (i2c_reg_read_byte_dt(&cfg->i2c, MPU6050_REG_CHIP_ID, &id) < 0) {
 		LOG_ERR("Failed to read chip ID.");
 		return -EIO;
 	}
 
-	if (id != MPU6050_CHIP_ID) {
+	if (id != MPU6050_CHIP_ID && id != MPU9250_CHIP_ID) {
 		LOG_ERR("Invalid chip ID.");
 		return -EINVAL;
 	}
 
 	/* wake up chip */
-	if (i2c_reg_update_byte(drv_data->i2c, CONFIG_MPU6050_I2C_ADDR,
-				MPU6050_REG_PWR_MGMT1, MPU6050_SLEEP_EN,
-				0) < 0) {
+	if (i2c_reg_update_byte_dt(&cfg->i2c, MPU6050_REG_PWR_MGMT1,
+				   MPU6050_SLEEP_EN, 0) < 0) {
 		LOG_ERR("Failed to wake up chip.");
 		return -EIO;
 	}
@@ -182,9 +182,8 @@ int mpu6050_init(struct device *dev)
 		return -EINVAL;
 	}
 
-	if (i2c_reg_write_byte(drv_data->i2c, CONFIG_MPU6050_I2C_ADDR,
-			       MPU6050_REG_ACCEL_CFG,
-			       i << MPU6050_ACCEL_FS_SHIFT) < 0) {
+	if (i2c_reg_write_byte_dt(&cfg->i2c, MPU6050_REG_ACCEL_CFG,
+				  i << MPU6050_ACCEL_FS_SHIFT) < 0) {
 		LOG_ERR("Failed to write accel full-scale range.");
 		return -EIO;
 	}
@@ -203,9 +202,8 @@ int mpu6050_init(struct device *dev)
 		return -EINVAL;
 	}
 
-	if (i2c_reg_write_byte(drv_data->i2c, CONFIG_MPU6050_I2C_ADDR,
-			       MPU6050_REG_GYRO_CFG,
-			       i << MPU6050_GYRO_FS_SHIFT) < 0) {
+	if (i2c_reg_write_byte_dt(&cfg->i2c, MPU6050_REG_GYRO_CFG,
+				  i << MPU6050_GYRO_FS_SHIFT) < 0) {
 		LOG_ERR("Failed to write gyro full-scale range.");
 		return -EIO;
 	}
@@ -213,17 +211,29 @@ int mpu6050_init(struct device *dev)
 	drv_data->gyro_sensitivity_x10 = mpu6050_gyro_sensitivity_x10[i];
 
 #ifdef CONFIG_MPU6050_TRIGGER
-	if (mpu6050_init_interrupt(dev) < 0) {
-		LOG_DBG("Failed to initialize interrupts.");
-		return -EIO;
+	if (cfg->int_gpio.port) {
+		if (mpu6050_init_interrupt(dev) < 0) {
+			LOG_DBG("Failed to initialize interrupts.");
+			return -EIO;
+		}
 	}
 #endif
 
 	return 0;
 }
 
-struct mpu6050_data mpu6050_driver;
+#define MPU6050_DEFINE(inst)									\
+	static struct mpu6050_data mpu6050_data_##inst;						\
+												\
+	static const struct mpu6050_config mpu6050_config_##inst = {				\
+		.i2c = I2C_DT_SPEC_INST_GET(inst),						\
+		IF_ENABLED(CONFIG_MPU6050_TRIGGER,						\
+			   (.int_gpio = GPIO_DT_SPEC_INST_GET_OR(inst, int_gpios, { 0 }),))	\
+	};											\
+												\
+	SENSOR_DEVICE_DT_INST_DEFINE(inst, mpu6050_init, NULL,					\
+			      &mpu6050_data_##inst, &mpu6050_config_##inst,			\
+			      POST_KERNEL, CONFIG_SENSOR_INIT_PRIORITY,				\
+			      &mpu6050_driver_api);						\
 
-DEVICE_AND_API_INIT(mpu6050, CONFIG_MPU6050_NAME, mpu6050_init, &mpu6050_driver,
-		    NULL, POST_KERNEL, CONFIG_SENSOR_INIT_PRIORITY,
-		    &mpu6050_driver_api);
+DT_INST_FOREACH_STATUS_OKAY(MPU6050_DEFINE)

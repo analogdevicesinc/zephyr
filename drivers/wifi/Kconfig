@@ -1,13 +1,10 @@
-# Kconfig - WiFi drivers configuration options
+# WiFi drivers configuration options
 
-#
 # Copyright (c) 2017 Intel Corporation
-#
 # SPDX-License-Identifier: Apache-2.0
-#
 
 menuconfig WIFI
-	bool "add support for Wi-Fi Drivers"
+	bool "Wi-Fi drivers"
 
 if WIFI
 
@@ -32,8 +29,16 @@ config WIFI_OFFLOAD
 	help
 	  Enable support for Full-MAC Wi-Fi devices.
 
+config WIFI_USE_NATIVE_NETWORKING
+	bool
+	help
+	  When selected, this hidden configuration enables Wi-Fi driver
+	  to use native ethernet stack interface.
+
 source "drivers/wifi/winc1500/Kconfig.winc1500"
 source "drivers/wifi/simplelink/Kconfig.simplelink"
 source "drivers/wifi/eswifi/Kconfig.eswifi"
+source "drivers/wifi/esp_at/Kconfig.esp_at"
+source "drivers/wifi/esp32/Kconfig.esp32"
 
 endif # WIFI

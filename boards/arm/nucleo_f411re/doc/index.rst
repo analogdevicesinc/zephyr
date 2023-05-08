@@ -25,10 +25,8 @@ some highlights of the Nucleo F411RE board:
 - Three LEDs: USB communication (LD1), user LED (LD2), power LED (LD3)
 - Two push-buttons: USER and RESET
 
-.. image:: img/nucleo_f411re.png
-   :width: 720px
+.. image:: img/nucleo_f411re.jpg
    :align: center
-   :height: 720px
    :alt: Nucleo F411RE
 
 More information about the board can be found at the `Nucleo F411RE website`_.
@@ -52,7 +50,7 @@ Nucleo F411RE provides the following hardware components:
 - SysTick timer
 - USART/UART (3)
 - I2C (3)
-- SPI (5)
+- SPI/I2S (5)
 - SDIO
 - USB 2.0 OTG FS
 - DMA Controller
@@ -83,6 +81,8 @@ The Zephyr nucleo_f411re board configuration supports the following hardware fea
 +-----------+------------+-------------------------------------+
 | I2C       | on-chip    | i2c                                 |
 +-----------+------------+-------------------------------------+
+| I2S       | on-chip    | i2s                                 |
++-----------+------------+-------------------------------------+
 | SPI       | on-chip    | spi                                 |
 +-----------+------------+-------------------------------------+
 
@@ -100,15 +100,11 @@ input/output, pull-up, etc.
 
 Available pins:
 ---------------
-.. image:: img/nucleo_f411re_arduino.png
-   :width: 720px
+.. image:: img/nucleo_f411re_arduino.jpg
    :align: center
-   :height: 540px
    :alt: Nucleo F411RE Arduino connectors
-.. image:: img/nucleo_f411re_morpho.png
-   :width: 720px
+.. image:: img/nucleo_f411re_morpho.jpg
    :align: center
-   :height: 540px
    :alt: Nucleo F411RE Morpho connectors
 
 For mode details please refer to `STM32 Nucleo-64 board User Manual`_.
@@ -122,9 +118,11 @@ Default Zephyr Peripheral Mapping:
 - I2C2 SCL/SDA : PB10/PB3
 - I2C1 SCL/SDA : PA8/B4
 - SPI1 CS/SCK/MISO/MOSI : PA4/PA5/PA6/PA7 (Arduino SPI)
+- I2S1 SCK/SD : PA5/PA7 (Arduino I2S)
 - USER_PB   : PC13
 - LD2       : PA5
 
+.. note:: Please note that SPI1 and I2S1 are connected to the same mcu pins, as the h/w controller is the same one.
 
 System Clock
 ------------

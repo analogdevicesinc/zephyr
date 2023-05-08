@@ -13,8 +13,7 @@ core running up to 227 MHz for high CPU performance and real-time response.
 Zephyr was ported to run on the Cortex-M4 core only. In a future release, it
 will also communicate with the Cortex-A9 core (running Linux) via OpenAMP.
 
-.. figure:: ./udoo_neo_full_m4.jpg
-   :width: 1715px
+.. figure:: udoo_neo_full_m4.jpg
    :align: center
    :alt: UDOO-Neo-Full
 
@@ -209,9 +208,9 @@ DT_FLASH_SIZE macro to determine the region size and DT_FLASH_ADDR to determine
 the address where the region begins.
 
 If you want to have the data placed in the subregion of a memory, which will
-likely be the case when using DDR, select "zephyr,sram=&sram" and set the
-DT_SRAM_SIZE macro to determine the region size and DT_SRAM_ADDR to determine
-the address where the region begins.
+likely be the case when using DDR, select "zephyr,sram = &sram", which sets the
+CONFIG_SRAM_SIZE macro to determine the region size and
+CONFIG_SRAM_BASE_ADDRESS to determine the address where the region begins.
 
 Otherwise set "zephyr,flash" and/or "zephyr,sram" to one of the predefined
 regions:

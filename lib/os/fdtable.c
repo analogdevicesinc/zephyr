@@ -14,21 +14,19 @@
  */
 
 #include <errno.h>
-#include <fcntl.h>
-#include <kernel.h>
-#include <sys/fdtable.h>
-#include <sys/speculation.h>
+#include <zephyr/posix/fcntl.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/fdtable.h>
+#include <zephyr/sys/speculation.h>
+#include <zephyr/syscall_handler.h>
+#include <zephyr/sys/atomic.h>
 
 struct fd_entry {
 	void *obj;
 	const struct fd_op_vtable *vtable;
+	atomic_t refcount;
+	struct k_mutex lock;
 };
-
-/* A few magic values for fd_entry::obj used in the code. */
-#define FD_OBJ_RESERVED (void *)1
-#define FD_OBJ_STDIN  (void *)0x10
-#define FD_OBJ_STDOUT (void *)0x11
-#define FD_OBJ_STDERR (void *)0x12
 
 #ifdef CONFIG_POSIX_API
 static const struct fd_op_vtable stdinout_fd_op_vtable;
@@ -37,24 +35,69 @@ static const struct fd_op_vtable stdinout_fd_op_vtable;
 static struct fd_entry fdtable[CONFIG_POSIX_MAX_FDS] = {
 #ifdef CONFIG_POSIX_API
 	/*
-	 * Predefine entries for stdin/stdout/stderr. Object pointer
-	 * is unused and just should be !0 (random different values
-	 * are used to posisbly help with debugging).
+	 * Predefine entries for stdin/stdout/stderr.
 	 */
-	{FD_OBJ_STDIN,  &stdinout_fd_op_vtable},
-	{FD_OBJ_STDOUT, &stdinout_fd_op_vtable},
-	{FD_OBJ_STDERR, &stdinout_fd_op_vtable},
+	{
+		/* STDIN */
+		.vtable = &stdinout_fd_op_vtable,
+		.refcount = ATOMIC_INIT(1)
+	},
+	{
+		/* STDOUT */
+		.vtable = &stdinout_fd_op_vtable,
+		.refcount = ATOMIC_INIT(1)
+	},
+	{
+		/* STDERR */
+		.vtable = &stdinout_fd_op_vtable,
+		.refcount = ATOMIC_INIT(1)
+	},
+#else
+	{
+	0
+	},
 #endif
 };
 
 static K_MUTEX_DEFINE(fdtable_lock);
+
+static int z_fd_ref(int fd)
+{
+	return atomic_inc(&fdtable[fd].refcount) + 1;
+}
+
+static int z_fd_unref(int fd)
+{
+	atomic_val_t old_rc;
+
+	/* Reference counter must be checked to avoid decrement refcount below
+	 * zero causing file descriptor leak. Loop statement below executes
+	 * atomic decrement if refcount value is grater than zero. Otherwise,
+	 * refcount is not going to be written.
+	 */
+	do {
+		old_rc = atomic_get(&fdtable[fd].refcount);
+		if (!old_rc) {
+			return 0;
+		}
+	} while (!atomic_cas(&fdtable[fd].refcount, old_rc, old_rc - 1));
+
+	if (old_rc != 1) {
+		return old_rc - 1;
+	}
+
+	fdtable[fd].obj = NULL;
+	fdtable[fd].vtable = NULL;
+
+	return 0;
+}
 
 static int _find_fd_entry(void)
 {
 	int fd;
 
 	for (fd = 0; fd < ARRAY_SIZE(fdtable); fd++) {
-		if (fdtable[fd].obj == NULL) {
+		if (!atomic_get(&fdtable[fd].refcount)) {
 			return fd;
 		}
 	}
@@ -72,7 +115,7 @@ static int _check_fd(int fd)
 
 	fd = k_array_index_sanitize(fd, ARRAY_SIZE(fdtable));
 
-	if (fdtable[fd].obj == NULL) {
+	if (!atomic_get(&fdtable[fd].refcount)) {
 		errno = EBADF;
 		return -1;
 	}
@@ -82,34 +125,39 @@ static int _check_fd(int fd)
 
 void *z_get_fd_obj(int fd, const struct fd_op_vtable *vtable, int err)
 {
-	struct fd_entry *fd_entry;
+	struct fd_entry *entry;
 
 	if (_check_fd(fd) < 0) {
 		return NULL;
 	}
 
-	fd_entry = &fdtable[fd];
+	entry = &fdtable[fd];
 
-	if (vtable != NULL && fd_entry->vtable != vtable) {
+	if (vtable != NULL && entry->vtable != vtable) {
 		errno = err;
 		return NULL;
 	}
 
-	return fd_entry->obj;
+	return entry->obj;
 }
 
-void *z_get_fd_obj_and_vtable(int fd, const struct fd_op_vtable **vtable)
+void *z_get_fd_obj_and_vtable(int fd, const struct fd_op_vtable **vtable,
+			      struct k_mutex **lock)
 {
-	struct fd_entry *fd_entry;
+	struct fd_entry *entry;
 
 	if (_check_fd(fd) < 0) {
 		return NULL;
 	}
 
-	fd_entry = &fdtable[fd];
-	*vtable = fd_entry->vtable;
+	entry = &fdtable[fd];
+	*vtable = entry->vtable;
 
-	return fd_entry->obj;
+	if (lock) {
+		*lock = &entry->lock;
+	}
+
+	return entry->obj;
 }
 
 int z_reserve_fd(void)
@@ -121,7 +169,10 @@ int z_reserve_fd(void)
 	fd = _find_fd_entry();
 	if (fd >= 0) {
 		/* Mark entry as used, z_finalize_fd() will fill it in. */
-		fdtable[fd].obj = FD_OBJ_RESERVED;
+		(void)z_fd_ref(fd);
+		fdtable[fd].obj = NULL;
+		fdtable[fd].vtable = NULL;
+		k_mutex_init(&fdtable[fd].lock);
 	}
 
 	k_mutex_unlock(&fdtable_lock);
@@ -132,14 +183,33 @@ int z_reserve_fd(void)
 void z_finalize_fd(int fd, void *obj, const struct fd_op_vtable *vtable)
 {
 	/* Assumes fd was already bounds-checked. */
+#ifdef CONFIG_USERSPACE
+	/* descriptor context objects are inserted into the table when they
+	 * are ready for use. Mark the object as initialized and grant the
+	 * caller (and only the caller) access.
+	 *
+	 * This call is a no-op if obj is invalid or points to something
+	 * not a kernel object.
+	 */
+	z_object_recycle(obj);
+#endif
 	fdtable[fd].obj = obj;
 	fdtable[fd].vtable = vtable;
+
+	/* Let the object know about the lock just in case it needs it
+	 * for something. For BSD sockets, the lock is used with condition
+	 * variables to avoid keeping the lock for a long period of time.
+	 */
+	if (vtable && vtable->ioctl) {
+		(void)z_fdtable_call_ioctl(vtable, obj, ZFD_IOCTL_SET_LOCK,
+					   &fdtable[fd].lock);
+	}
 }
 
 void z_free_fd(int fd)
 {
 	/* Assumes fd was already bounds-checked. */
-	fdtable[fd].obj = NULL;
+	(void)z_fd_unref(fd);
 }
 
 int z_alloc_fd(void *obj, const struct fd_op_vtable *vtable)
@@ -158,21 +228,37 @@ int z_alloc_fd(void *obj, const struct fd_op_vtable *vtable)
 
 ssize_t read(int fd, void *buf, size_t sz)
 {
+	ssize_t res;
+
 	if (_check_fd(fd) < 0) {
 		return -1;
 	}
 
-	return fdtable[fd].vtable->read(fdtable[fd].obj, buf, sz);
+	(void)k_mutex_lock(&fdtable[fd].lock, K_FOREVER);
+
+	res = fdtable[fd].vtable->read(fdtable[fd].obj, buf, sz);
+
+	k_mutex_unlock(&fdtable[fd].lock);
+
+	return res;
 }
 FUNC_ALIAS(read, _read, ssize_t);
 
 ssize_t write(int fd, const void *buf, size_t sz)
 {
+	ssize_t res;
+
 	if (_check_fd(fd) < 0) {
 		return -1;
 	}
 
-	return fdtable[fd].vtable->write(fdtable[fd].obj, buf, sz);
+	(void)k_mutex_lock(&fdtable[fd].lock, K_FOREVER);
+
+	res = fdtable[fd].vtable->write(fdtable[fd].obj, buf, sz);
+
+	k_mutex_unlock(&fdtable[fd].lock);
+
+	return res;
 }
 FUNC_ALIAS(write, _write, ssize_t);
 
@@ -184,7 +270,12 @@ int close(int fd)
 		return -1;
 	}
 
-	res = z_fdtable_call_ioctl(fdtable[fd].vtable, fdtable[fd].obj, ZFD_IOCTL_CLOSE);
+	(void)k_mutex_lock(&fdtable[fd].lock, K_FOREVER);
+
+	res = fdtable[fd].vtable->close(fdtable[fd].obj);
+
+	k_mutex_unlock(&fdtable[fd].lock);
+
 	z_free_fd(fd);
 
 	return res;
@@ -227,12 +318,6 @@ int ioctl(int fd, unsigned long request, ...)
 	return res;
 }
 
-/*
- * In the SimpleLink case, we have yet to add support for the fdtable
- * feature. The socket offload subsys has already defined fcntl, hence we
- * avoid redefining fcntl here.
- */
-#ifndef CONFIG_SOC_FAMILY_TISIMPLELINK
 int fcntl(int fd, int cmd, ...)
 {
 	va_list args;
@@ -243,8 +328,7 @@ int fcntl(int fd, int cmd, ...)
 	}
 
 	/* Handle fdtable commands. */
-	switch (cmd) {
-	case F_DUPFD:
+	if (cmd == F_DUPFD) {
 		/* Not implemented so far. */
 		errno = EINVAL;
 		return -1;
@@ -257,7 +341,6 @@ int fcntl(int fd, int cmd, ...)
 
 	return res;
 }
-#endif
 
 /*
  * fd operations for stdio/stdout/stderr
@@ -274,7 +357,7 @@ static ssize_t stdinout_write_vmeth(void *obj, const void *buffer, size_t count)
 {
 #if defined(CONFIG_BOARD_NATIVE_POSIX)
 	return write(1, buffer, count);
-#elif defined(CONFIG_NEWLIB_LIBC)
+#elif defined(CONFIG_NEWLIB_LIBC) || defined(CONFIG_ARCMWDT_LIBC)
 	return z_impl_zephyr_write_stdout(buffer, count);
 #else
 	return 0;

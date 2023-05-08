@@ -4,13 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <device.h>
-#include <drivers/sensor.h>
-#include <sys/printk.h>
-#include <sys/__assert.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/sys/__assert.h>
 
-static void do_main(struct device *dev)
+static void do_main(const struct device *dev)
 {
 	int ret;
 	struct sensor_value temp_value;
@@ -50,17 +50,18 @@ static void do_main(struct device *dev)
 		printk("temp is %d (%d micro)\n", temp_value.val1,
 		       temp_value.val2);
 
-		k_sleep(1000);
+		k_sleep(K_MSEC(1000));
 	}
 }
 
-void main(void)
+int main(void)
 {
-	struct device *dev;
+	const struct device *const dev = DEVICE_DT_GET_ANY(ti_tmp112);
 
-	dev = device_get_binding("TMP112");
 	__ASSERT(dev != NULL, "Failed to get device binding");
-	printk("device is %p, name is %s\n", dev, dev->config->name);
+	__ASSERT(device_is_ready(dev), "Device %s is not ready", dev->name);
+	printk("device is %p, name is %s\n", dev, dev->name);
 
 	do_main(dev);
+	return 0;
 }

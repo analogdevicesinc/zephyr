@@ -6,6 +6,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+/** Key size used in Bluetooth's ECC domain. */
+#define BT_ECC_KEY_SIZE            32
+/** Length of a Bluetooth ECC public key coordinate. */
+#define BT_PUB_KEY_COORD_LEN       (BT_ECC_KEY_SIZE)
+/** Length of a Bluetooth ECC public key. */
+#define BT_PUB_KEY_LEN             (2 * (BT_PUB_KEY_COORD_LEN))
+/** Length of a Bluetooth ECC private key. */
+#define BT_PRIV_KEY_LEN            (BT_ECC_KEY_SIZE)
+/** Length of a Bluetooth Diffie-Hellman key. */
+#define BT_DH_KEY_LEN              (BT_ECC_KEY_SIZE)
+
 /*  @brief Container for public key callback */
 struct bt_pub_key_cb {
 	/** @brief Callback type for Public Key generation.
@@ -16,23 +27,43 @@ struct bt_pub_key_cb {
 	 *
 	 *  @param key The local public key, or NULL in case of no key.
 	 */
-	void (*func)(const u8_t key[64]);
+	void (*func)(const uint8_t key[BT_PUB_KEY_LEN]);
 
-	struct bt_pub_key_cb *_next;
+	/* Internal */
+	sys_snode_t node;
 };
+
+/*  @brief Check if public key is equal to the debug public key.
+ *
+ *  Compare the Public key to the Bluetooth specification defined debug public
+ *  key.
+ *
+ *  @param pub_key The public key to compare.
+ *
+ *  @return True if the public key is the debug public key.
+ */
+bool bt_pub_key_is_debug(uint8_t *pub_key);
 
 /*  @brief Generate a new Public Key.
  *
- *  Generate a new ECC Public Key. The callback will persist even after the
- *  key has been generated, and will be used to notify of new generation
- *  processes (NULL as key).
+ *  Generate a new ECC Public Key. Provided cb must persists until callback
+ *  is called. Callee adds the callback structure to a linked list. Registering
+ *  multiple callbacks requires multiple calls to bt_pub_key_gen() and separate
+ *  callback structures. This method cannot be called directly from result
+ *  callback. After calling all the registered callbacks the linked list
+ *  is cleared.
  *
- *  @param cb Callback to notify the new key, or NULL to request an update
- *            without registering any new callback.
+ *  @param cb Callback to notify the new key.
  *
  *  @return Zero on success or negative error code otherwise
  */
 int bt_pub_key_gen(struct bt_pub_key_cb *cb);
+
+/*  @brief Cleanup public key callbacks when HCI is disrupted.
+ *
+ *  Clear the pub_key_cb_slist and clear the BT_DEV_PUB_KEY_BUSY flag.
+ */
+void bt_pub_key_hci_disrupted(void);
 
 /*  @brief Get the current Public Key.
  *
@@ -40,7 +71,7 @@ int bt_pub_key_gen(struct bt_pub_key_cb *cb);
  *
  *  @return Current key, or NULL if not available.
  */
-const u8_t *bt_pub_key_get(void);
+const uint8_t *bt_pub_key_get(void);
 
 /*  @typedef bt_dh_key_cb_t
  *  @brief Callback type for DH Key calculation.
@@ -49,7 +80,7 @@ const u8_t *bt_pub_key_get(void);
  *
  *  @param key The DH Key, or NULL in case of failure.
  */
-typedef void (*bt_dh_key_cb_t)(const u8_t key[32]);
+typedef void (*bt_dh_key_cb_t)(const uint8_t key[BT_DH_KEY_LEN]);
 
 /*  @brief Calculate a DH Key from a remote Public Key.
  *
@@ -60,4 +91,4 @@ typedef void (*bt_dh_key_cb_t)(const u8_t key[32]);
  *
  *  @return Zero on success or negative error code otherwise
  */
-int bt_dh_key_gen(const u8_t remote_pk[64], bt_dh_key_cb_t cb);
+int bt_dh_key_gen(const uint8_t remote_pk[BT_PUB_KEY_LEN], bt_dh_key_cb_t cb);

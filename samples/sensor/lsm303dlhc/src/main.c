@@ -4,16 +4,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <device.h>
-#include <drivers/sensor.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/sensor.h>
 #include <stdio.h>
-#include <sys/util.h>
+#include <zephyr/sys/util.h>
 
-static s32_t read_sensor(struct device *sensor, enum sensor_channel channel)
+static int32_t read_sensor(const struct device *sensor,
+			   enum sensor_channel channel)
 {
 	struct sensor_value val[3];
-	s32_t ret = 0;
+	int32_t ret = 0;
 
 	ret = sensor_sample_fetch(sensor);
 	if (ret < 0 && ret != -EBADMSG) {
@@ -35,23 +36,19 @@ end:
 	return ret;
 }
 
-void main(void)
+int main(void)
 {
-	struct device *accelerometer = device_get_binding(
-						DT_INST_0_ST_LIS2DH_LABEL);
-	struct device *magnetometer = device_get_binding(
-						DT_INST_0_ST_LSM303DLHC_MAGN_LABEL);
+	const struct device *const accelerometer = DEVICE_DT_GET_ONE(st_lis2dh);
+	const struct device *const magnetometer = DEVICE_DT_GET_ONE(st_lsm303dlhc_magn);
 
-	if (accelerometer == NULL) {
-		printf("Could not get %s device\n",
-				DT_INST_0_ST_LIS2DH_LABEL);
-		return;
+	if (!device_is_ready(accelerometer)) {
+		printf("Device %s is not ready\n", accelerometer->name);
+		return 0;
 	}
 
-	if (magnetometer == NULL) {
-		printf("Could not get %s device\n",
-				DT_INST_0_ST_LSM303DLHC_MAGN_LABEL);
-		return;
+	if (!device_is_ready(magnetometer)) {
+		printf("Device %s is not ready\n", magnetometer->name);
+		return 0;
 	}
 
 	while (1) {
@@ -65,6 +62,7 @@ void main(void)
 			printf("Failed to read accelerometer data\n");
 		}
 
-		k_sleep(2000);
+		k_sleep(K_MSEC(2000));
 	}
+	return 0;
 }

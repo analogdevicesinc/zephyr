@@ -16,15 +16,19 @@
 #ifndef __SOC_H_
 #define __SOC_H_
 
-#include <sys/util.h>
+#include <zephyr/sys/util.h>
 
 #ifndef _ASMLANGUAGE
-#include <device.h>
-#include <random/rand32.h>
+#include <zephyr/device.h>
+#include <zephyr/random/rand32.h>
 #endif
 
-#ifdef CONFIG_GPIO_INTEL_APL
+#ifdef CONFIG_GPIO_INTEL
 #include "soc_gpio.h"
 #endif
+
+#include <zephyr/drivers/pcie/pcie.h>
+
+#define X86_SOC_EARLY_SERIAL_PCIDEV PCIE_BDF(0, 0x18, 0) /* uart0 */
 
 #endif /* __SOC_H_ */

@@ -14,11 +14,12 @@
  * for the Atmel SAM4S series processor.
  */
 
-#include <device.h>
-#include <init.h>
+#include <zephyr/device.h>
+#include <zephyr/init.h>
 #include <soc.h>
-#include <arch/cpu.h>
-#include <cortex_m/exc.h>
+#include <zephyr/arch/cpu.h>
+#include <zephyr/arch/arm/aarch32/cortex_m/cmsis.h>
+#include <zephyr/irq.h>
 
 /**
  * @brief Setup various clock on SoC at boot time.
@@ -30,7 +31,7 @@
  */
 static ALWAYS_INLINE void clock_init(void)
 {
-	u32_t reg_val;
+	uint32_t reg_val;
 
 #ifdef CONFIG_SOC_ATMEL_SAM4S_EXT_SLCK
 	/* Switch slow clock to the external 32 KHz crystal oscillator. */
@@ -188,11 +189,10 @@ static ALWAYS_INLINE void clock_init(void)
  *
  * @return 0
  */
-static int atmel_sam4s_init(struct device *arg)
+static int atmel_sam4s_init(void)
 {
-	u32_t key;
+	uint32_t key;
 
-	ARG_UNUSED(arg);
 
 	key = irq_lock();
 

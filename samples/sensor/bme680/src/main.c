@@ -4,20 +4,25 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <device.h>
-#include <drivers/sensor.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/sensor.h>
 #include <stdio.h>
 
-void main(void)
+int main(void)
 {
-	struct device *dev = device_get_binding(DT_INST_0_BOSCH_BME680_LABEL);
+	const struct device *const dev = DEVICE_DT_GET_ONE(bosch_bme680);
 	struct sensor_value temp, press, humidity, gas_res;
 
-	printf("Device %p name is %s\n", dev, dev->config->name);
+	if (!device_is_ready(dev)) {
+		printk("sensor: device not ready.\n");
+		return 0;
+	}
+
+	printf("Device %p name is %s\n", dev, dev->name);
 
 	while (1) {
-		k_sleep(3000);
+		k_sleep(K_MSEC(3000));
 
 		sensor_sample_fetch(dev);
 		sensor_channel_get(dev, SENSOR_CHAN_AMBIENT_TEMP, &temp);
@@ -30,4 +35,5 @@ void main(void)
 				humidity.val1, humidity.val2, gas_res.val1,
 				gas_res.val2);
 	}
+	return 0;
 }

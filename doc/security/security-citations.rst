@@ -6,7 +6,7 @@ Security Document Citations
 ###########################
 
 .. [SALT75] J. H. Saltzer and M. D. Schroeder, "The protection of
-   information in computer systems," Proceedings ofthe IEEE, vol. 63, no.
+   information in computer systems," Proceedings of the IEEE, vol. 63, no.
    9, pp. 1278-1308, Sep 1975. [Online].
    Available: http://web.mit.edu/Saltzer/www/publications/protection/.
 
@@ -47,4 +47,3 @@ Security Document Citations
 
 .. [CIIBPB] Core Infrastructure Initiative Best Practices Badge. [Online].
    Available: https://github.com/linuxfoundation/cii-best-practices-badge
-

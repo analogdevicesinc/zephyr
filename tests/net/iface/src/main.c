@@ -8,7 +8,7 @@
 
 #define NET_LOG_LEVEL CONFIG_NET_IF_LOG_LEVEL
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_test, NET_LOG_LEVEL);
 
 #include <zephyr/types.h>
@@ -16,16 +16,17 @@ LOG_MODULE_REGISTER(net_test, NET_LOG_LEVEL);
 #include <stddef.h>
 #include <string.h>
 #include <errno.h>
-#include <sys/printk.h>
-#include <linker/sections.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/linker/sections.h>
+#include <zephyr/random/rand32.h>
 
-#include <ztest.h>
+#include <zephyr/ztest.h>
 
-#include <net/ethernet.h>
-#include <net/dummy.h>
-#include <net/buf.h>
-#include <net/net_ip.h>
-#include <net/net_if.h>
+#include <zephyr/net/ethernet.h>
+#include <zephyr/net/dummy.h>
+#include <zephyr/net/buf.h>
+#include <zephyr/net/net_ip.h>
+#include <zephyr/net/net_if.h>
 
 #define NET_LOG_ENABLED 1
 #include "net_private.h"
@@ -69,19 +70,14 @@ static struct k_sem wait_data;
 #define WAIT_TIME 250
 
 struct net_if_test {
-	u8_t idx;
-	u8_t mac_addr[sizeof(struct net_eth_addr)];
+	uint8_t idx;
+	uint8_t mac_addr[sizeof(struct net_eth_addr)];
 	struct net_linkaddr ll_addr;
 };
 
-static int net_iface_dev_init(struct device *dev)
+static uint8_t *net_iface_get_mac(const struct device *dev)
 {
-	return 0;
-}
-
-static u8_t *net_iface_get_mac(struct device *dev)
-{
-	struct net_if_test *data = dev->driver_data;
+	struct net_if_test *data = dev->data;
 
 	if (data->mac_addr[2] == 0x00) {
 		/* 00-00-5E-00-53-xx Documentation RFC 7042 */
@@ -101,13 +97,13 @@ static u8_t *net_iface_get_mac(struct device *dev)
 
 static void net_iface_init(struct net_if *iface)
 {
-	u8_t *mac = net_iface_get_mac(net_if_get_device(iface));
+	uint8_t *mac = net_iface_get_mac(net_if_get_device(iface));
 
 	net_if_set_link_addr(iface, mac, sizeof(struct net_eth_addr),
 			     NET_LINK_ETHERNET);
 }
 
-static int sender_iface(struct device *dev, struct net_pkt *pkt)
+static int sender_iface(const struct device *dev, struct net_pkt *pkt)
 {
 	if (!pkt->buffer) {
 		DBG("No data to send!\n");
@@ -115,7 +111,7 @@ static int sender_iface(struct device *dev, struct net_pkt *pkt)
 	}
 
 	if (test_started) {
-		struct net_if_test *data = dev->driver_data;
+		struct net_if_test *data = dev->data;
 
 		DBG("Sending at iface %d %p\n",
 		    net_if_get_by_iface(net_pkt_iface(pkt)),
@@ -148,7 +144,8 @@ static struct dummy_api net_iface_api = {
 NET_DEVICE_INIT_INSTANCE(net_iface1_test,
 			 "iface1",
 			 iface1,
-			 net_iface_dev_init,
+			 NULL,
+			 NULL,
 			 &net_iface1_data,
 			 NULL,
 			 CONFIG_KERNEL_INIT_PRIORITY_DEFAULT,
@@ -160,7 +157,8 @@ NET_DEVICE_INIT_INSTANCE(net_iface1_test,
 NET_DEVICE_INIT_INSTANCE(net_iface2_test,
 			 "iface2",
 			 iface2,
-			 net_iface_dev_init,
+			 NULL,
+			 NULL,
 			 &net_iface2_data,
 			 NULL,
 			 CONFIG_KERNEL_INIT_PRIORITY_DEFAULT,
@@ -172,7 +170,8 @@ NET_DEVICE_INIT_INSTANCE(net_iface2_test,
 NET_DEVICE_INIT_INSTANCE(net_iface3_test,
 			 "iface3",
 			 iface3,
-			 net_iface_dev_init,
+			 NULL,
+			 NULL,
 			 &net_iface3_data,
 			 NULL,
 			 CONFIG_KERNEL_INIT_PRIORITY_DEFAULT,
@@ -183,7 +182,7 @@ NET_DEVICE_INIT_INSTANCE(net_iface3_test,
 
 struct eth_fake_context {
 	struct net_if *iface;
-	u8_t mac_address[6];
+	uint8_t mac_address[6];
 	bool promisc_mode;
 };
 
@@ -191,8 +190,8 @@ static struct eth_fake_context eth_fake_data;
 
 static void eth_fake_iface_init(struct net_if *iface)
 {
-	struct device *dev = net_if_get_device(iface);
-	struct eth_fake_context *ctx = dev->driver_data;
+	const struct device *dev = net_if_get_device(iface);
+	struct eth_fake_context *ctx = dev->data;
 
 	ctx->iface = iface;
 
@@ -203,7 +202,7 @@ static void eth_fake_iface_init(struct net_if *iface)
 	ethernet_init(iface);
 }
 
-static int eth_fake_send(struct device *dev,
+static int eth_fake_send(const struct device *dev,
 			 struct net_pkt *pkt)
 {
 	ARG_UNUSED(dev);
@@ -212,16 +211,16 @@ static int eth_fake_send(struct device *dev,
 	return 0;
 }
 
-static enum ethernet_hw_caps eth_fake_get_capabilities(struct device *dev)
+static enum ethernet_hw_caps eth_fake_get_capabilities(const struct device *dev)
 {
 	return ETHERNET_PROMISC_MODE;
 }
 
-static int eth_fake_set_config(struct device *dev,
+static int eth_fake_set_config(const struct device *dev,
 			       enum ethernet_config_type type,
 			       const struct ethernet_config *config)
 {
-	struct eth_fake_context *ctx = dev->driver_data;
+	struct eth_fake_context *ctx = dev->data;
 
 	switch (type) {
 	case ETHERNET_CONFIG_TYPE_PROMISC_MODE:
@@ -248,18 +247,18 @@ static struct ethernet_api eth_fake_api_funcs = {
 	.send = eth_fake_send,
 };
 
-static int eth_fake_init(struct device *dev)
+static int eth_fake_init(const struct device *dev)
 {
-	struct eth_fake_context *ctx = dev->driver_data;
+	struct eth_fake_context *ctx = dev->data;
 
 	ctx->promisc_mode = false;
 
 	return 0;
 }
 
-ETH_NET_DEVICE_INIT(eth_fake, "eth_fake", eth_fake_init, &eth_fake_data,
-		    NULL, CONFIG_ETH_INIT_PRIORITY, &eth_fake_api_funcs,
-		    NET_ETH_MTU);
+ETH_NET_DEVICE_INIT(eth_fake, "eth_fake", eth_fake_init, NULL,
+		    &eth_fake_data, NULL, CONFIG_ETH_INIT_PRIORITY,
+		    &eth_fake_api_funcs, NET_ETH_MTU);
 
 #if NET_LOG_LEVEL >= LOG_LEVEL_DBG
 static const char *iface2str(struct net_if *iface)
@@ -285,7 +284,7 @@ static void iface_cb(struct net_if *iface, void *user_data)
 
 	if (net_if_l2(iface) == &NET_L2_GET_NAME(ETHERNET)) {
 		const struct ethernet_api *api =
-			net_if_get_device(iface)->driver_api;
+			net_if_get_device(iface)->api;
 
 		/* As native_posix board will introduce another ethernet
 		 * interface, make sure that we only use our own in this test.
@@ -311,7 +310,7 @@ static void iface_cb(struct net_if *iface, void *user_data)
 	}
 }
 
-static void iface_setup(void)
+static void *iface_setup(void)
 {
 	struct net_if_mcast_addr *maddr;
 	struct net_if_addr *ifaddr;
@@ -324,15 +323,15 @@ static void iface_setup(void)
 
 	idx = net_if_get_by_iface(iface1);
 	((struct net_if_test *)
-	 net_if_get_device(iface1)->driver_data)->idx = idx;
+	 net_if_get_device(iface1)->data)->idx = idx;
 
 	idx = net_if_get_by_iface(iface2);
 	((struct net_if_test *)
-	 net_if_get_device(iface2)->driver_data)->idx = idx;
+	 net_if_get_device(iface2)->data)->idx = idx;
 
 	idx = net_if_get_by_iface(iface3);
 	((struct net_if_test *)
-	 net_if_get_device(iface3)->driver_data)->idx = idx;
+	 net_if_get_device(iface3)->data)->idx = idx;
 
 	DBG("Interfaces: [%d] iface1 %p, [%d] iface2 %p, [%d] iface3 %p\n",
 	    net_if_get_by_iface(iface1), iface1,
@@ -359,7 +358,7 @@ static void iface_setup(void)
 		zassert_not_null(ifaddr, "ipv4 addr1");
 	}
 
-	/* For testing purposes we need to set the adddresses preferred */
+	/* For testing purposes we need to set the addresses preferred */
 	ifaddr->addr_state = NET_ADDR_PREFERRED;
 
 	ifaddr = net_if_ipv6_addr_add(iface1, &ll_addr,
@@ -413,11 +412,113 @@ static void iface_setup(void)
 	test_failed = false;
 
 	test_started = true;
+
+	return NULL;
+}
+
+static void iface_teardown(void *dummy)
+{
+	ARG_UNUSED(dummy);
+	net_if_ipv6_addr_rm(iface1, &my_addr1);
+	net_if_ipv6_addr_rm(iface1, &ll_addr);
+	net_if_ipv6_addr_rm(iface2, &my_addr2);
+	net_if_ipv6_addr_rm(iface2, &my_addr3);
+	net_if_ipv6_maddr_rm(iface1, &in6addr_mcast);
+	net_if_down(iface1);
+	net_if_down(iface2);
+	net_if_down(iface3);
+	net_if_down(iface4);
+}
+
+static void test_iface_init(struct net_if *iface, bool carrier, bool dormant)
+{
+	net_if_down(iface);
+
+	if (carrier) {
+		net_if_carrier_on(iface);
+	} else {
+		net_if_carrier_off(iface);
+	}
+
+	if (dormant) {
+		net_if_dormant_on(iface);
+	} else {
+		net_if_dormant_off(iface);
+	}
+
+	net_if_up(iface);
+}
+
+ZTEST(net_iface, test_oper_state)
+{
+	/* Carrier OFF, Dormant OFF - interface should remain down */
+	test_iface_init(iface1, false, false);
+	zassert_false(net_if_is_up(iface1), "Interface should be down");
+	zassert_equal(net_if_oper_state(iface1), NET_IF_OPER_DOWN,
+		      "Wrong operational state");
+
+	/* Carrier ON transition - interface should go up */
+	net_if_carrier_on(iface1);
+	zassert_true(net_if_is_up(iface1), "Interface should be up");
+	zassert_equal(net_if_oper_state(iface1), NET_IF_OPER_UP,
+		      "Wrong operational state");
+
+	/* Carrier ON, Dormant ON - interface should remain down */
+	test_iface_init(iface1, true, true);
+	zassert_false(net_if_is_up(iface1), "Interface should be down");
+	zassert_equal(net_if_oper_state(iface1), NET_IF_OPER_DORMANT,
+		      "Wrong operational state");
+
+	/* Dormant OFF transition - interface should go up */
+	net_if_dormant_off(iface1);
+	zassert_true(net_if_is_up(iface1), "Interface should be up");
+	zassert_equal(net_if_oper_state(iface1), NET_IF_OPER_UP,
+		      "Wrong operational state");
+
+	/* Carrier ON, Dormant OFF - interface should go up right away */
+	test_iface_init(iface1, true, false);
+	zassert_true(net_if_is_up(iface1), "Interface should be up");
+	zassert_equal(net_if_oper_state(iface1), NET_IF_OPER_UP,
+		      "Wrong operational state");
+
+	/* Carrier OFF transition - interface should go down */
+	net_if_carrier_off(iface1);
+	zassert_false(net_if_is_up(iface1), "Interface should be down");
+	zassert_equal(net_if_oper_state(iface1), NET_IF_OPER_DOWN,
+		      "Wrong operational state");
+
+	/* Carrier ON, Dormant OFF - interface should go up right away */
+	test_iface_init(iface1, true, false);
+	zassert_true(net_if_is_up(iface1), "Interface should be up");
+	zassert_equal(net_if_oper_state(iface1), NET_IF_OPER_UP,
+		      "Wrong operational state");
+
+	/* Dormant ON transition - interface should go down */
+	net_if_dormant_on(iface1);
+	zassert_false(net_if_is_up(iface1), "Interface should be down");
+	zassert_equal(net_if_oper_state(iface1), NET_IF_OPER_DORMANT,
+		      "Wrong operational state");
+
+	/* Carrier ON, Dormant OFF - interface should go up right away */
+	test_iface_init(iface1, true, false);
+	zassert_true(net_if_is_up(iface1), "Interface should be up");
+	zassert_equal(net_if_oper_state(iface1), NET_IF_OPER_UP,
+		      "Wrong operational state");
+
+	/* Admin down transition - interface should go down */
+	net_if_down(iface1);
+	zassert_false(net_if_is_up(iface1), "Interface should be down");
+	zassert_equal(net_if_oper_state(iface1), NET_IF_OPER_DOWN,
+		      "Wrong operational state");
+
+	/* Bring the interface back up */
+	net_if_up(iface1);
+	zassert_true(net_if_is_up(iface1), "Interface should be up");
 }
 
 static bool send_iface(struct net_if *iface, int val, bool expect_fail)
 {
-	static u8_t data[] = { 't', 'e', 's', 't', '\0' };
+	static uint8_t data[] = { 't', 'e', 's', 't', '\0' };
 	struct net_pkt *pkt;
 	int ret;
 
@@ -437,7 +538,7 @@ static bool send_iface(struct net_if *iface, int val, bool expect_fail)
 		return false;
 	}
 
-	if (!expect_fail && k_sem_take(&wait_data, WAIT_TIME)) {
+	if (!expect_fail && k_sem_take(&wait_data, K_MSEC(WAIT_TIME))) {
 		DBG("Timeout while waiting interface %d data\n", val);
 		return false;
 	}
@@ -445,7 +546,7 @@ static bool send_iface(struct net_if *iface, int val, bool expect_fail)
 	return true;
 }
 
-static void send_iface1(void)
+ZTEST(net_iface, test_send_iface1)
 {
 	bool ret;
 
@@ -456,7 +557,7 @@ static void send_iface1(void)
 	zassert_true(ret, "iface 1");
 }
 
-static void send_iface2(void)
+ZTEST(net_iface, test_send_iface2)
 {
 	bool ret;
 
@@ -467,7 +568,7 @@ static void send_iface2(void)
 	zassert_true(ret, "iface 2");
 }
 
-static void send_iface3(void)
+ZTEST(net_iface, test_send_iface3)
 {
 	bool ret;
 
@@ -504,7 +605,13 @@ static void send_iface1_up(void)
 	zassert_true(ret, "iface 1 up again");
 }
 
-static void select_src_iface(void)
+ZTEST(net_iface, test_send_iface1_down_up)
+{
+	send_iface1_down();
+	send_iface1_up();
+}
+
+ZTEST(net_iface, test_select_src_iface)
 {
 	struct in6_addr dst_addr1 = { { { 0x20, 0x01, 0x0d, 0xb8, 1, 0, 0, 0,
 					  0, 0, 0, 0, 0, 0, 0, 0x2 } } };
@@ -618,6 +725,16 @@ static void set_promisc_mode_off(void)
 	net_if_unset_promisc(iface4);
 }
 
+ZTEST(net_iface, test_promisc_mode)
+{
+	check_promisc_mode_off();
+	set_promisc_mode_on();
+	check_promisc_mode_on();
+	set_promisc_mode_on_again();
+	set_promisc_mode_off();
+	check_promisc_mode_off();
+}
+
 static struct in_addr my_ipv4_addr_test = { { { 10, 0, 0, 1 } } };
 static struct in_addr my_ipv4_addr_not_found = { { { 1, 2, 3, 4 } } };
 
@@ -649,6 +766,13 @@ static void v4_addr_rm(void)
 	zassert_true(ret, "Cannot remove IPv4 address");
 }
 
+ZTEST(net_iface, test_v4_addr_add_rm)
+{
+	v4_addr_add();
+	v4_addr_lookup();
+	v4_addr_rm();
+}
+
 #define MY_ADDR_V4_USER      { { { 10, 0, 0, 2 } } }
 #define UNKNOWN_ADDR_V4_USER { { { 5, 6, 7, 8 } } }
 
@@ -658,13 +782,14 @@ static void v4_addr_add_user(void)
 	bool ret;
 
 	ret = net_if_ipv4_addr_add_by_index(1, &my_addr, NET_ADDR_MANUAL, 0);
-	if (IS_ENABLED(CONFIG_NET_IF_USERSPACE_ACCESS)) {
-		zassert_true(ret, "Cannot add IPv4 address");
-	} else if (IS_ENABLED(CONFIG_USERSPACE)) {
-		zassert_false(ret, "Could add IPv4 address");
-	} else {
-		zassert_true(ret, "Cannot add IPv4 address");
-	}
+	zassert_true(ret, "Could not add IPv4 address");
+}
+
+static void v4_addr_add_user_from_userspace(void)
+{
+	k_thread_access_grant(k_current_get(), net_if_get_by_index(1));
+	k_thread_user_mode_enter((k_thread_entry_t)v4_addr_add_user, NULL,
+				 NULL, NULL);
 }
 
 static void v4_addr_lookup_user(void)
@@ -673,10 +798,8 @@ static void v4_addr_lookup_user(void)
 	struct in_addr unknown_addr = UNKNOWN_ADDR_V4_USER;
 	int ret;
 
-	if (IS_ENABLED(CONFIG_NET_IF_USERSPACE_ACCESS)) {
-		ret = net_if_ipv4_addr_lookup_by_index(&my_addr);
-		zassert_equal(ret, 1, "IPv4 address not found (%d)", ret);
-	}
+	ret = net_if_ipv4_addr_lookup_by_index(&my_addr);
+	zassert_equal(ret, 1, "IPv4 address not found (%d)", ret);
 
 	ret = net_if_ipv4_addr_lookup_by_index(&unknown_addr);
 	zassert_equal(ret, 0, "IPv4 address found");
@@ -687,10 +810,22 @@ static void v4_addr_rm_user(void)
 	struct in_addr my_addr = MY_ADDR_V4_USER;
 	bool ret;
 
-	if (IS_ENABLED(CONFIG_NET_IF_USERSPACE_ACCESS)) {
-		ret = net_if_ipv4_addr_rm_by_index(1, &my_addr);
-		zassert_true(ret, "Cannot remove IPv4 address");
-	}
+	ret = net_if_ipv4_addr_rm_by_index(1, &my_addr);
+	zassert_true(ret, "Cannot remove IPv4 address");
+}
+
+static void v4_addr_rm_user_from_userspace(void)
+{
+	k_thread_access_grant(k_current_get(), net_if_get_by_index(1));
+	k_thread_user_mode_enter((k_thread_entry_t)v4_addr_rm_user, NULL,
+				 NULL, NULL);
+}
+
+ZTEST(net_iface, test_v4_addr_add_rm_user_from_userspace)
+{
+	v4_addr_add_user_from_userspace();
+	v4_addr_lookup_user();
+	v4_addr_rm_user_from_userspace();
 }
 
 static
@@ -708,6 +843,14 @@ static void v6_addr_add(void)
 	ret = net_if_ipv6_addr_add_by_index(1, &my_ipv6_addr_test,
 					    NET_ADDR_MANUAL, 0);
 	zassert_true(ret, "Cannot add IPv6 address");
+}
+
+static void v6_addr_add_mcast_twice(void)
+{
+	struct net_if_mcast_addr *maddr;
+
+	maddr = net_if_ipv6_maddr_add(iface1, &in6addr_mcast);
+	zassert_equal(maddr, NULL, "Address was added twice");
 }
 
 static void v6_addr_lookup(void)
@@ -729,6 +872,14 @@ static void v6_addr_rm(void)
 	zassert_true(ret, "Cannot remove IPv6 address");
 }
 
+ZTEST(net_iface, test_v6_addr_add_rm)
+{
+	v6_addr_add();
+	v6_addr_add_mcast_twice();
+	v6_addr_lookup();
+	v6_addr_rm();
+}
+
 #define MY_ADDR_V6_USER { { { 0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, \
 			      0, 0, 0, 0, 0, 0, 0, 0x65 } } }
 
@@ -741,13 +892,14 @@ static void v6_addr_add_user(void)
 	bool ret;
 
 	ret = net_if_ipv6_addr_add_by_index(1, &my_addr, NET_ADDR_MANUAL, 0);
-	if (IS_ENABLED(CONFIG_NET_IF_USERSPACE_ACCESS)) {
-		zassert_true(ret, "Cannot add IPv6 address");
-	} else if (IS_ENABLED(CONFIG_USERSPACE)) {
-		zassert_false(ret, "Could add IPv6 address");
-	} else {
-		zassert_true(ret, "Cannot add IPv6 address");
-	}
+	zassert_true(ret, "Could not add IPv6 address");
+}
+
+static void v6_addr_add_user_from_userspace(void)
+{
+	k_thread_access_grant(k_current_get(), net_if_get_by_index(1));
+	k_thread_user_mode_enter((k_thread_entry_t)v6_addr_add_user, NULL,
+				 NULL, NULL);
 }
 
 static void v6_addr_lookup_user(void)
@@ -756,13 +908,11 @@ static void v6_addr_lookup_user(void)
 	struct in6_addr unknown_addr = UNKNOWN_ADDR_V6_USER;
 	int ret;
 
-	if (IS_ENABLED(CONFIG_NET_IF_USERSPACE_ACCESS)) {
-		ret = net_if_ipv6_addr_lookup_by_index(&my_addr);
-		zassert_equal(ret, 1, "IPv6 address not found (%d)", ret);
+	ret = net_if_ipv6_addr_lookup_by_index(&my_addr);
+	zassert_equal(ret, 1, "IPv6 address not found (%d)", ret);
 
-		ret = net_if_ipv6_addr_lookup_by_index(&unknown_addr);
-		zassert_equal(ret, 0, "IPv6 address found");
-	}
+	ret = net_if_ipv6_addr_lookup_by_index(&unknown_addr);
+	zassert_equal(ret, 0, "IPv6 address found");
 }
 
 static void v6_addr_rm_user(void)
@@ -773,10 +923,22 @@ static void v6_addr_rm_user(void)
 	/* Check also that add is enabled so that we can remove something
 	 * that was already added.
 	 */
-	if (IS_ENABLED(CONFIG_NET_IF_USERSPACE_ACCESS)) {
-		ret = net_if_ipv6_addr_rm_by_index(1, &my_addr);
-		zassert_true(ret, "Cannot remove IPv6 address");
-	}
+	ret = net_if_ipv6_addr_rm_by_index(1, &my_addr);
+	zassert_true(ret, "Cannot remove IPv6 address");
+}
+
+static void v6_addr_rm_user_from_userspace(void)
+{
+	k_thread_access_grant(k_current_get(), net_if_get_by_index(1));
+	k_thread_user_mode_enter((k_thread_entry_t)v6_addr_rm_user, NULL,
+				 NULL, NULL);
+}
+
+ZTEST(net_iface, test_v6_addr_add_rm_user_from_userspace)
+{
+	v6_addr_add_user_from_userspace();
+	v6_addr_lookup_user();
+	v6_addr_rm_user_from_userspace();
 }
 
 static void netmask_addr_add(void)
@@ -784,10 +946,25 @@ static void netmask_addr_add(void)
 	struct in_addr my_netmask = { { { 255, 255, 255, 0 } } };
 	bool ret;
 
-	if (IS_ENABLED(CONFIG_NET_IF_USERSPACE_ACCESS)) {
-		ret = net_if_ipv4_set_netmask_by_index(1, &my_netmask);
-		zassert_true(ret, "Cannot add IPv4 netmask");
-	}
+	ret = net_if_ipv4_set_netmask_by_index(1, &my_netmask);
+	zassert_true(ret, "Cannot add IPv4 netmask");
+}
+
+ZTEST(net_iface, test_netmask_addr_add)
+{
+	netmask_addr_add();
+}
+
+static void netmask_addr_add_from_userspace(void)
+{
+	k_thread_access_grant(k_current_get(), net_if_get_by_index(1));
+	k_thread_user_mode_enter((k_thread_entry_t)netmask_addr_add, NULL,
+				 NULL, NULL);
+}
+
+ZTEST(net_iface, test_netmask_addr_add_from_userspace)
+{
+	netmask_addr_add_from_userspace();
 }
 
 static void gw_addr_add(void)
@@ -795,45 +972,48 @@ static void gw_addr_add(void)
 	struct in_addr my_gw = { { { 192, 0, 2, 254 } } };
 	bool ret;
 
-	if (IS_ENABLED(CONFIG_NET_IF_USERSPACE_ACCESS)) {
-		ret = net_if_ipv4_set_gw_by_index(1, &my_gw);
-		zassert_true(ret, "Cannot add IPv4 gateway");
-	}
+	ret = net_if_ipv4_set_gw_by_index(1, &my_gw);
+	zassert_true(ret, "Cannot add IPv4 gateway");
 }
 
-void test_main(void)
+ZTEST(net_iface, test_gw_addr_add)
 {
-	ztest_test_suite(net_iface_test,
-			 ztest_unit_test(iface_setup),
-			 ztest_unit_test(send_iface1),
-			 ztest_unit_test(send_iface2),
-			 ztest_unit_test(send_iface3),
-			 ztest_unit_test(send_iface1_down),
-			 ztest_unit_test(send_iface1_up),
-			 ztest_unit_test(select_src_iface),
-			 ztest_unit_test(check_promisc_mode_off),
-			 ztest_unit_test(set_promisc_mode_on),
-			 ztest_unit_test(check_promisc_mode_on),
-			 ztest_unit_test(set_promisc_mode_on_again),
-			 ztest_unit_test(set_promisc_mode_off),
-			 ztest_unit_test(check_promisc_mode_off),
-			 ztest_unit_test(v4_addr_add),
-			 ztest_unit_test(v4_addr_lookup),
-			 ztest_unit_test(v4_addr_rm),
-			 ztest_user_unit_test(v4_addr_add_user),
-			 ztest_user_unit_test(v4_addr_lookup_user),
-			 ztest_user_unit_test(v4_addr_rm_user),
-			 ztest_unit_test(v6_addr_add),
-			 ztest_unit_test(v6_addr_lookup),
-			 ztest_unit_test(v6_addr_rm),
-			 ztest_user_unit_test(v6_addr_add_user),
-			 ztest_user_unit_test(v6_addr_lookup_user),
-			 ztest_user_unit_test(v6_addr_rm_user),
-			 ztest_unit_test(netmask_addr_add),
-			 ztest_user_unit_test(netmask_addr_add),
-			 ztest_unit_test(gw_addr_add),
-			 ztest_user_unit_test(gw_addr_add)
-		);
-
-	ztest_run_test_suite(net_iface_test);
+	gw_addr_add();
 }
+
+static void gw_addr_add_from_userspace(void)
+{
+	k_thread_access_grant(k_current_get(), net_if_get_by_index(1));
+	k_thread_user_mode_enter((k_thread_entry_t)gw_addr_add, NULL,
+				 NULL, NULL);
+}
+
+ZTEST(net_iface, test_gw_addr_add_from_userspace)
+{
+	gw_addr_add_from_userspace();
+}
+
+static void get_by_index(void)
+{
+	zassert_not_null(net_if_get_by_index(1),
+			 "Cannot get interface at index 1");
+}
+
+ZTEST(net_iface, test_get_by_index)
+{
+	get_by_index();
+}
+
+static void get_by_index_from_userspace(void)
+{
+	k_thread_access_grant(k_current_get(), net_if_get_by_index(1));
+	k_thread_user_mode_enter((k_thread_entry_t)get_by_index, NULL,
+				 NULL, NULL);
+}
+
+ZTEST(net_iface, test_get_by_index_from_userspace)
+{
+	get_by_index_from_userspace();
+}
+
+ZTEST_SUITE(net_iface, NULL, iface_setup, NULL, NULL, iface_teardown);

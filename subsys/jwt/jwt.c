@@ -8,13 +8,14 @@
 #include <zephyr/types.h>
 #include <errno.h>
 
-#include <data/jwt.h>
-#include <data/json.h>
+#include <zephyr/data/jwt.h>
+#include <zephyr/data/json.h>
 
 #ifdef CONFIG_JWT_SIGN_RSA
 #include <mbedtls/pk.h>
 #include <mbedtls/rsa.h>
 #include <mbedtls/sha256.h>
+#include <zephyr/random/rand32.h>
 #endif
 
 #ifdef CONFIG_JWT_SIGN_ECDSA
@@ -23,7 +24,7 @@
 #include <tinycrypt/ecc_dsa.h>
 #include <tinycrypt/constants.h>
 
-#include <random/rand32.h>
+#include <zephyr/random/rand32.h>
 #endif
 
 /*
@@ -127,19 +128,9 @@ static int base64_append_bytes(const char *bytes, size_t len,
 	return 0;
 }
 
-struct jwt_header {
-	char *typ;
-	char *alg;
-};
-
-static struct json_obj_descr jwt_header_desc[] = {
-	JSON_OBJ_DESCR_PRIM(struct jwt_header, alg, JSON_TOK_STRING),
-	JSON_OBJ_DESCR_PRIM(struct jwt_header, typ, JSON_TOK_STRING),
-};
-
 struct jwt_payload {
-	s32_t exp;
-	s32_t iat;
+	int32_t exp;
+	int32_t iat;
 	const char *aud;
 };
 
@@ -152,30 +143,36 @@ static struct json_obj_descr jwt_payload_desc[] = {
 /*
  * Add the JWT header to the buffer.
  */
-static void jwt_add_header(struct jwt_builder *builder)
+static int jwt_add_header(struct jwt_builder *builder)
 {
-	static const struct jwt_header head = {
-		.typ = "JWT",
+	/*
+	 * Pre-computed JWT header
+	 * Use https://www.base64encode.org/ for update
+	 */
+	const char jwt_header[] =
 #ifdef CONFIG_JWT_SIGN_RSA
-		.alg = "RS256",
+		/* {"alg":"RS256","typ":"JWT"} */
+		"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9";
 #endif
 #ifdef CONFIG_JWT_SIGN_ECDSA
-		.alg = "ES256",
+		/* {"alg":"ES256","typ":"JWT"} */
+		"eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9";
 #endif
-	};
+	int jwt_header_len = ARRAY_SIZE(jwt_header);
 
-	int res = json_obj_encode(jwt_header_desc, ARRAY_SIZE(jwt_header_desc),
-				  &head, base64_append_bytes, builder);
-	if (res != 0) {
-		/* Log an error here. */
-		return;
+	if (jwt_header_len > builder->len) {
+		builder->overflowed = true;
+		return -ENOSPC;
 	}
-	base64_flush(builder);
+	strcpy(builder->buf, jwt_header);
+	builder->buf += jwt_header_len - 1;
+	builder->len -= jwt_header_len - 1;
+	return 0;
 }
 
 int jwt_add_payload(struct jwt_builder *builder,
-		     s32_t exp,
-		     s32_t iat,
+		     int32_t exp,
+		     int32_t iat,
 		     const char *aud)
 {
 	struct jwt_payload payload = {
@@ -194,6 +191,14 @@ int jwt_add_payload(struct jwt_builder *builder,
 }
 
 #ifdef CONFIG_JWT_SIGN_RSA
+
+static int csprng_wrapper(void *ctx, unsigned char *dest, size_t size)
+{
+	ARG_UNUSED(ctx);
+
+	return sys_csrand_get((void *)dest, size);
+}
+
 int jwt_sign(struct jwt_builder *builder,
 	     const char *der_key,
 	     size_t der_key_len)
@@ -204,12 +209,12 @@ int jwt_sign(struct jwt_builder *builder,
 	mbedtls_pk_init(&ctx);
 
 	res = mbedtls_pk_parse_key(&ctx, der_key, der_key_len,
-				       NULL, 0);
+			       NULL, 0, csprng_wrapper, NULL);
 	if (res != 0) {
 		return res;
 	}
 
-	u8_t hash[32], sig[256];
+	uint8_t hash[32], sig[256];
 	size_t sig_len = sizeof(sig);
 
 	/*
@@ -221,8 +226,8 @@ int jwt_sign(struct jwt_builder *builder,
 
 	res = mbedtls_pk_sign(&ctx, MBEDTLS_MD_SHA256,
 			      hash, sizeof(hash),
-			      sig, &sig_len,
-			      NULL, NULL);
+			      sig, sig_len, &sig_len,
+			      csprng_wrapper, NULL);
 	if (res != 0) {
 		return res;
 	}
@@ -248,10 +253,10 @@ static int setup_prng(void)
 	}
 	prng_init = true;
 
-	u8_t entropy[TC_AES_KEY_SIZE + TC_AES_BLOCK_SIZE];
+	uint8_t entropy[TC_AES_KEY_SIZE + TC_AES_BLOCK_SIZE];
 
-	for (int i = 0; i < sizeof(entropy); i += sizeof(u32_t)) {
-		u32_t rv = sys_rand32_get();
+	for (int i = 0; i < sizeof(entropy); i += sizeof(uint32_t)) {
+		uint32_t rv = sys_rand32_get();
 
 		memcpy(entropy + i, &rv, sizeof(uint32_t));
 	}
@@ -264,7 +269,7 @@ static int setup_prng(void)
 	return res == TC_CRYPTO_SUCCESS ? 0 : -EINVAL;
 }
 
-int default_CSPRNG(u8_t *dest, unsigned int size)
+int default_CSPRNG(uint8_t *dest, unsigned int size)
 {
 	int res = tc_ctr_prng_generate(&prng_state, NULL, 0, dest, size);
 	return res;
@@ -275,7 +280,7 @@ int jwt_sign(struct jwt_builder *builder,
 	     size_t der_key_len)
 {
 	struct tc_sha256_state_struct ctx;
-	u8_t hash[32], sig[64];
+	uint8_t hash[32], sig[64];
 	int res;
 
 	tc_sha256_init(&ctx);
@@ -314,7 +319,5 @@ int jwt_init_builder(struct jwt_builder *builder,
 	builder->overflowed = false;
 	builder->pending = 0;
 
-	jwt_add_header(builder);
-
-	return 0;
+	return jwt_add_header(builder);
 }

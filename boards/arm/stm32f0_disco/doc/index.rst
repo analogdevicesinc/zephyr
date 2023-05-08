@@ -1,6 +1,6 @@
 .. _stm32f0_disco_board:
 
-ST STM32F0 DISCOVERY
+ST STM32F0 Discovery
 ####################
 
 Overview
@@ -12,8 +12,6 @@ comprehensive STM32 software HAL library and various packaged software
 examples.
 
 .. image:: img/stm32f0_disco.jpg
-     :width: 350px
-     :height: 404px
      :align: center
      :alt: STM32F0DISCOVERY
 

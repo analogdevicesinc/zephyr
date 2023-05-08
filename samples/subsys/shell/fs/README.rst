@@ -6,12 +6,12 @@ File system shell example
 Overview
 ********
 
-This example provides shell access to a NFFS file system partition in flash.
+This example provides shell access to a LittleFS file system partition in flash.
 
 Requirements
 ************
 
-A board with NFFS file system support and UART console
+A board with LittleFS file system support and UART console
 
 Building
 ********
@@ -56,17 +56,58 @@ the :ref:`littlefs-sample`.
    :goals: build
    :compact:
 
+Flash load
+==========
+
+If you want to use the 'flash load' command then build the sample with the
+'prj_flash_load.conf' configuration file. It has defined a larger RX buffer.
+If the buffer is too small then some data may be lost during transfer of large
+files.
+
 Running
 *******
 
 Once the board has booted, you will be presented with a shell prompt.
 All file system related commands are available as sub-commands of fs.
 
-Begin by mounting the NFSS file system.
+Begin by mounting the LittleFS file system.
 
 .. code-block:: console
 
-  fs mount nffs /nffs
+  fs mount littlefs /lfs
+
+Loading filesystem from host PC to flash memory
+===============================================
+
+Use command:
+
+.. code-block:: console
+
+  flash load <address> <size>
+
+It allows loading the data via UART, directly into flash memory at a given
+address. Data must be aligned to a value dependent on the target flash memory,
+otherwise it will cause an error and nothing will be loaded.
+
+From the host side file system must be loaded with 'dd' tool with 'bs=64'
+(if the file is loaded in chunks greater than 64B the data is lost and isn't
+received by the Zephyr shell).
+
+Example in Zephyr console:
+
+.. code-block:: console
+
+  flash load 0x7a000 0x5000
+
+Example in the host PC:
+
+.. code-block:: console
+
+  dd if=filesystem of=/dev/ttyACM0 bs=64
+
+During the transfer there are printed messages indicating how many chunks are
+already written. After the successful transfer the 'Read all' message is
+printed.
 
 Files System Shell Commands
 ===========================
@@ -78,7 +119,7 @@ Mount a file system partition to a given mount point
 
 .. code-block:: console
 
-  fs mount (nffs|fat) <path>
+  fs mount (littlefs|fat) <path>
 
 Ls
 --
@@ -161,5 +202,3 @@ Linux system.
 
 By default the flash partitions are accessible through the directory *flash*
 relative to the directory where the build is started.
-
-

@@ -1,38 +1,5 @@
-title: Nordic UARTE
-
-description: >
-    This binding gives a base representation of the Nordic UARTE
+description: Nordic nRF family UARTE (UART with EasyDMA)
 
 compatible: "nordic,nrf-uarte"
 
-include: uart-controller.yaml
-
-properties:
-    reg:
-      required: true
-
-    interrupts:
-      required: true
-
-    hw-flow-control:
-      type: boolean
-
-    tx-pin:
-      type: int
-      description: TX pin
-      required: true
-
-    rx-pin:
-      type: int
-      description: RX pin
-      required: true
-
-    rts-pin:
-      type: int
-      description: RTS pin
-      required: false
-
-    cts-pin:
-      type: int
-      description: CTS pin
-      required: false
+include: ["nordic,nrf-uart-common.yaml", "memory-region.yaml"]

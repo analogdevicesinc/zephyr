@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_mqtt_rx, CONFIG_MQTT_LOG_LEVEL);
 
 #include "mqtt_internal.h"
@@ -17,8 +17,8 @@ LOG_MODULE_REGISTER(net_mqtt_rx, CONFIG_MQTT_LOG_LEVEL);
  */
 
 static int mqtt_handle_packet(struct mqtt_client *client,
-			      u8_t type_and_flags,
-			      u32_t var_length,
+			      uint8_t type_and_flags,
+			      uint32_t var_length,
 			      struct buf_ctx *buf)
 {
 	int err_code = 0;
@@ -30,18 +30,20 @@ static int mqtt_handle_packet(struct mqtt_client *client,
 
 	switch (type_and_flags & 0xF0) {
 	case MQTT_PKT_TYPE_CONNACK:
-		MQTT_TRC("[CID %p]: Received MQTT_PKT_TYPE_CONNACK!", client);
+		NET_DBG("[CID %p]: Received MQTT_PKT_TYPE_CONNACK!", client);
 
 		evt.type = MQTT_EVT_CONNACK;
 		err_code = connect_ack_decode(client, buf, &evt.param.connack);
 		if (err_code == 0) {
-			MQTT_TRC("[CID %p]: return_code: %d", client,
+			NET_DBG("[CID %p]: return_code: %d", client,
 				 evt.param.connack.return_code);
 
 			if (evt.param.connack.return_code ==
 						MQTT_CONNECTION_ACCEPTED) {
 				/* Set state. */
 				MQTT_SET_STATE(client, MQTT_STATE_CONNECTED);
+			} else {
+				err_code = -ECONNREFUSED;
 			}
 
 			evt.result = evt.param.connack.return_code;
@@ -52,7 +54,7 @@ static int mqtt_handle_packet(struct mqtt_client *client,
 		break;
 
 	case MQTT_PKT_TYPE_PUBLISH:
-		MQTT_TRC("[CID %p]: Received MQTT_PKT_TYPE_PUBLISH", client);
+		NET_DBG("[CID %p]: Received MQTT_PKT_TYPE_PUBLISH", client);
 
 		evt.type = MQTT_EVT_PUBLISH;
 		err_code = publish_decode(type_and_flags, var_length, buf,
@@ -62,7 +64,7 @@ static int mqtt_handle_packet(struct mqtt_client *client,
 		client->internal.remaining_payload =
 					evt.param.publish.message.payload.len;
 
-		MQTT_TRC("PUB QoS:%02x, message len %08x, topic len %08x",
+		NET_DBG("PUB QoS:%02x, message len %08x, topic len %08x",
 			 evt.param.publish.message.topic.qos,
 			 evt.param.publish.message.payload.len,
 			 evt.param.publish.message.topic.topic.size);
@@ -70,7 +72,7 @@ static int mqtt_handle_packet(struct mqtt_client *client,
 		break;
 
 	case MQTT_PKT_TYPE_PUBACK:
-		MQTT_TRC("[CID %p]: Received MQTT_PKT_TYPE_PUBACK!", client);
+		NET_DBG("[CID %p]: Received MQTT_PKT_TYPE_PUBACK!", client);
 
 		evt.type = MQTT_EVT_PUBACK;
 		err_code = publish_ack_decode(buf, &evt.param.puback);
@@ -78,7 +80,7 @@ static int mqtt_handle_packet(struct mqtt_client *client,
 		break;
 
 	case MQTT_PKT_TYPE_PUBREC:
-		MQTT_TRC("[CID %p]: Received MQTT_PKT_TYPE_PUBREC!", client);
+		NET_DBG("[CID %p]: Received MQTT_PKT_TYPE_PUBREC!", client);
 
 		evt.type = MQTT_EVT_PUBREC;
 		err_code = publish_receive_decode(buf, &evt.param.pubrec);
@@ -86,7 +88,7 @@ static int mqtt_handle_packet(struct mqtt_client *client,
 		break;
 
 	case MQTT_PKT_TYPE_PUBREL:
-		MQTT_TRC("[CID %p]: Received MQTT_PKT_TYPE_PUBREL!", client);
+		NET_DBG("[CID %p]: Received MQTT_PKT_TYPE_PUBREL!", client);
 
 		evt.type = MQTT_EVT_PUBREL;
 		err_code = publish_release_decode(buf, &evt.param.pubrel);
@@ -94,7 +96,7 @@ static int mqtt_handle_packet(struct mqtt_client *client,
 		break;
 
 	case MQTT_PKT_TYPE_PUBCOMP:
-		MQTT_TRC("[CID %p]: Received MQTT_PKT_TYPE_PUBCOMP!", client);
+		NET_DBG("[CID %p]: Received MQTT_PKT_TYPE_PUBCOMP!", client);
 
 		evt.type = MQTT_EVT_PUBCOMP;
 		err_code = publish_complete_decode(buf, &evt.param.pubcomp);
@@ -102,7 +104,7 @@ static int mqtt_handle_packet(struct mqtt_client *client,
 		break;
 
 	case MQTT_PKT_TYPE_SUBACK:
-		MQTT_TRC("[CID %p]: Received MQTT_PKT_TYPE_SUBACK!", client);
+		NET_DBG("[CID %p]: Received MQTT_PKT_TYPE_SUBACK!", client);
 
 		evt.type = MQTT_EVT_SUBACK;
 		err_code = subscribe_ack_decode(buf, &evt.param.suback);
@@ -110,7 +112,7 @@ static int mqtt_handle_packet(struct mqtt_client *client,
 		break;
 
 	case MQTT_PKT_TYPE_UNSUBACK:
-		MQTT_TRC("[CID %p]: Received MQTT_PKT_TYPE_UNSUBACK!", client);
+		NET_DBG("[CID %p]: Received MQTT_PKT_TYPE_UNSUBACK!", client);
 
 		evt.type = MQTT_EVT_UNSUBACK;
 		err_code = unsubscribe_ack_decode(buf, &evt.param.unsuback);
@@ -118,10 +120,16 @@ static int mqtt_handle_packet(struct mqtt_client *client,
 		break;
 
 	case MQTT_PKT_TYPE_PINGRSP:
-		MQTT_TRC("[CID %p]: Received MQTT_PKT_TYPE_PINGRSP!", client);
+		NET_DBG("[CID %p]: Received MQTT_PKT_TYPE_PINGRSP!", client);
 
-		/* No notification of Ping response to application. */
-		notify_event = false;
+		if (client->unacked_ping <= 0) {
+			NET_WARN("Unexpected PINGRSP");
+			client->unacked_ping = 0;
+		} else {
+			client->unacked_ping--;
+		}
+
+		evt.type = MQTT_EVT_PINGRESP;
 		break;
 
 	default:
@@ -138,34 +146,39 @@ static int mqtt_handle_packet(struct mqtt_client *client,
 }
 
 static int mqtt_read_message_chunk(struct mqtt_client *client,
-				   struct buf_ctx *buf, u32_t length)
+				   struct buf_ctx *buf, uint32_t length)
 {
-	int remaining;
+	uint32_t remaining;
 	int len;
+
+	/* In case all data requested has already been buffered, return. */
+	if (length <= (buf->end - buf->cur)) {
+		return 0;
+	}
 
 	/* Calculate how much data we need to read from the transport,
 	 * given the already buffered data.
 	 */
 	remaining = length - (buf->end - buf->cur);
-	if (remaining <= 0) {
-		return 0;
-	}
 
 	/* Check if read does not exceed the buffer. */
-	if (buf->end + remaining > client->rx_buf + client->rx_buf_size) {
-		MQTT_ERR("[CID %p]: Buffer too small to receive the message",
+	if ((buf->end + remaining > client->rx_buf + client->rx_buf_size) ||
+	    (buf->end + remaining < client->rx_buf)) {
+		NET_ERR("[CID %p]: Read would exceed RX buffer bounds.",
 			 client);
 		return -ENOMEM;
 	}
 
 	len = mqtt_transport_read(client, buf->end, remaining, false);
 	if (len < 0) {
-		MQTT_TRC("[CID %p]: Transport read error: %d", client, len);
+		if (len != -EAGAIN) {
+			NET_ERR("[CID %p]: Transport read error: %d", client, len);
+		}
 		return len;
 	}
 
 	if (len == 0) {
-		MQTT_TRC("[CID %p]: Connection closed.", client);
+		NET_ERR("[CID %p]: Connection closed.", client);
 		return -ENOTCONN;
 	}
 
@@ -173,7 +186,7 @@ static int mqtt_read_message_chunk(struct mqtt_client *client,
 	buf->end += len;
 
 	if (len < remaining) {
-		MQTT_TRC("[CID %p]: Message partially received.", client);
+		NET_ERR("[CID %p]: Message partially received.", client);
 		return -EAGAIN;
 	}
 
@@ -181,15 +194,15 @@ static int mqtt_read_message_chunk(struct mqtt_client *client,
 }
 
 static int mqtt_read_publish_var_header(struct mqtt_client *client,
-					u8_t type_and_flags,
+					uint8_t type_and_flags,
 					struct buf_ctx *buf)
 {
-	u8_t qos = (type_and_flags & MQTT_HEADER_QOS_MASK) >> 1;
+	uint8_t qos = (type_and_flags & MQTT_HEADER_QOS_MASK) >> 1;
 	int err_code;
-	u32_t variable_header_length;
+	uint32_t variable_header_length;
 
 	/* Read topic length field. */
-	err_code = mqtt_read_message_chunk(client, buf, sizeof(u16_t));
+	err_code = mqtt_read_message_chunk(client, buf, sizeof(uint16_t));
 	if (err_code < 0) {
 		return err_code;
 	}
@@ -198,11 +211,11 @@ static int mqtt_read_publish_var_header(struct mqtt_client *client,
 	variable_header_length |= *(buf->cur + 1); /* LSB */
 
 	/* Add two bytes for topic length field. */
-	variable_header_length += sizeof(u16_t);
+	variable_header_length += sizeof(uint16_t);
 
 	/* Add two bytes for message_id, if needed. */
 	if (qos > MQTT_QOS_0_AT_MOST_ONCE) {
-		variable_header_length += sizeof(u16_t);
+		variable_header_length += sizeof(uint16_t);
 	}
 
 	/* Now we can read the whole header. */
@@ -216,12 +229,12 @@ static int mqtt_read_publish_var_header(struct mqtt_client *client,
 }
 
 static int mqtt_read_and_parse_fixed_header(struct mqtt_client *client,
-					    u8_t *type_and_flags,
-					    u32_t *var_length,
+					    uint8_t *type_and_flags,
+					    uint32_t *var_length,
 					    struct buf_ctx *buf)
 {
 	/* Read the mandatory part of the fixed header in first iteration. */
-	u8_t chunk_size = MQTT_FIXED_HEADER_MIN_SIZE;
+	uint8_t chunk_size = MQTT_FIXED_HEADER_MIN_SIZE;
 	int err_code;
 
 	do {
@@ -243,8 +256,8 @@ static int mqtt_read_and_parse_fixed_header(struct mqtt_client *client,
 int mqtt_handle_rx(struct mqtt_client *client)
 {
 	int err_code;
-	u8_t type_and_flags;
-	u32_t var_length;
+	uint8_t type_and_flags;
+	uint32_t var_length;
 	struct buf_ctx buf;
 
 	buf.cur = client->rx_buf;

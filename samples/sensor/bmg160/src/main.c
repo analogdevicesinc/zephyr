@@ -4,20 +4,24 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
+#include <zephyr/kernel.h>
 
-#include <sys/printk.h>
-#include <sys_clock.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/sys_clock.h>
 #include <stdio.h>
 
-#include <device.h>
-#include <drivers/sensor.h>
-#include <drivers/i2c.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/drivers/i2c.h>
 
 #define MAX_TEST_TIME	15000
 #define SLEEPTIME	300
 
-static void print_gyro_data(struct device *bmg160)
+#if !DT_HAS_COMPAT_STATUS_OKAY(bosch_bmg160)
+#error "No bosch,bmg160 compatible node found in the device tree"
+#endif
+
+static void print_gyro_data(const struct device *bmg160)
 {
 	struct sensor_value val[3];
 
@@ -32,7 +36,7 @@ static void print_gyro_data(struct device *bmg160)
 	       val[2].val1 + val[2].val2 / 1000000.0);
 }
 
-static void print_temp_data(struct device *bmg160)
+static void print_temp_data(const struct device *bmg160)
 {
 	struct sensor_value val;
 
@@ -45,9 +49,9 @@ static void print_temp_data(struct device *bmg160)
 	       val.val1 + val.val2 / 1000000.0);
 }
 
-static void test_polling_mode(struct device *bmg160)
+static void test_polling_mode(const struct device *bmg160)
 {
-	s32_t remaining_test_time = MAX_TEST_TIME;
+	int32_t remaining_test_time = MAX_TEST_TIME;
 
 	do {
 		if (sensor_sample_fetch(bmg160) < 0) {
@@ -59,13 +63,14 @@ static void test_polling_mode(struct device *bmg160)
 		print_temp_data(bmg160);
 
 		/* wait a while */
-		k_sleep(SLEEPTIME);
+		k_msleep(SLEEPTIME);
 
 		remaining_test_time -= SLEEPTIME;
 	} while (remaining_test_time > 0);
 }
 
-static void trigger_handler(struct device *bmg160, struct sensor_trigger *trigger)
+static void trigger_handler(const struct device *bmg160,
+			    const struct sensor_trigger *trigger)
 {
 	if (trigger->type != SENSOR_TRIG_DATA_READY &&
 	    trigger->type != SENSOR_TRIG_DELTA) {
@@ -80,9 +85,9 @@ static void trigger_handler(struct device *bmg160, struct sensor_trigger *trigge
 	print_gyro_data(bmg160);
 }
 
-static void test_trigger_mode(struct device *bmg160)
+static void test_trigger_mode(const struct device *bmg160)
 {
-	s32_t remaining_test_time = MAX_TEST_TIME;
+	int32_t remaining_test_time = MAX_TEST_TIME;
 	struct sensor_trigger trig;
 	struct sensor_value attr;
 
@@ -120,7 +125,7 @@ static void test_trigger_mode(struct device *bmg160)
 
 	printf("Gyro: rotate the device and wait for events.\n");
 	do {
-		k_sleep(SLEEPTIME);
+		k_msleep(SLEEPTIME);
 		remaining_test_time -= SLEEPTIME;
 	} while (remaining_test_time > 0);
 
@@ -153,7 +158,7 @@ static void test_trigger_mode(struct device *bmg160)
 	remaining_test_time = MAX_TEST_TIME;
 
 	do {
-		k_sleep(SLEEPTIME);
+		k_msleep(SLEEPTIME);
 		remaining_test_time -= SLEEPTIME;
 	} while (remaining_test_time > 0);
 
@@ -165,17 +170,16 @@ static void test_trigger_mode(struct device *bmg160)
 	printf("Gyro: Data ready trigger test finished.\n");
 }
 
-void main(void)
+int main(void)
 {
-	struct device *bmg160;
+	const struct device *const bmg160 = DEVICE_DT_GET_ANY(bosch_bmg160);
 #if defined(CONFIG_BMG160_RANGE_RUNTIME)
 	struct sensor_value attr;
 #endif
 
-	bmg160 = device_get_binding("bmg160");
-	if (!bmg160) {
-		printf("Device not found.\n");
-		return;
+	if (!device_is_ready(bmg160)) {
+		printf("Device %s is not ready.\n", bmg160->name);
+		return 0;
 	}
 
 #if defined(CONFIG_BMG160_RANGE_RUNTIME)
@@ -188,7 +192,7 @@ void main(void)
 	if (sensor_attr_set(bmg160, SENSOR_CHAN_GYRO_XYZ,
 			    SENSOR_ATTR_FULL_SCALE, &attr) < 0) {
 		printf("Cannot set gyro range.\n");
-		return;
+		return 0;
 	}
 #endif
 
@@ -199,4 +203,5 @@ void main(void)
 	printf("Testing the trigger mode.\n");
 	test_trigger_mode(bmg160);
 	printf("Trigger mode test finished.\n");
+	return 0;
 }

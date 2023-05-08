@@ -10,75 +10,52 @@
  * This module provides:
  *
  * An implementation of the architecture-specific
- * k_cpu_idle() primitive required by the kernel idle loop component.
- * It can be called within an implementation of _sys_power_save_idle(),
+ * arch_cpu_idle() primitive required by the kernel idle loop component.
+ * It can be called within an implementation of _pm_save_idle(),
  * which is provided for the kernel by the platform.
  *
- * An implementation of k_cpu_atomic_idle(), which
+ * An implementation of arch_cpu_atomic_idle(), which
  * atomically re-enables interrupts and enters low power mode.
  *
  * A weak stub for sys_arch_reboot(), which does nothing
  */
 
 #include "posix_core.h"
-#include "posix_soc_if.h"
-#include <debug/tracing.h>
+#include "posix_board_if.h"
+#include <zephyr/arch/posix/posix_soc_if.h>
+#include <zephyr/tracing/tracing.h>
 
-/**
- *
- * @brief Power save idle routine for IA-32
- *
- * This function will be called by the kernel idle loop or possibly within
- * an implementation of _sys_power_save_idle in the kernel when the
- * '_sys_power_save_flag' variable is non-zero.
- *
- * This function is just a pass thru to the SOC one
- *
- * @return N/A
+#if !defined(CONFIG_ARCH_HAS_CUSTOM_BUSY_WAIT)
+#error "The POSIX architecture needs a custom busy_wait implementation. \
+CONFIG_ARCH_HAS_CUSTOM_BUSY_WAIT must be selected"
+/* Each POSIX arch board (or SOC) must provide an implementation of
+ * arch_busy_wait()
  */
-void k_cpu_idle(void)
+#endif
+
+void arch_cpu_idle(void)
 {
-	z_sys_trace_idle();
+	sys_trace_idle();
 	posix_irq_full_unlock();
 	posix_halt_cpu();
 }
 
-/**
- *
- * @brief Atomically re-enable interrupts and enter low power mode
- *
- * INTERNAL
- * The requirements for k_cpu_atomic_idle() are as follows:
- * 1) The enablement of interrupts and entering a low-power mode needs to be
- *    atomic, i.e. there should be no period of time where interrupts are
- *    enabled before the processor enters a low-power mode.  See the comments
- *    in k_lifo_get(), for example, of the race condition that
- *    occurs if this requirement is not met.
- *
- * 2) After waking up from the low-power mode, the interrupt lockout state
- *    must be restored as indicated in the 'key' input parameter.
- *
- * This function is just a pass thru to the SOC one
- *
- * @return N/A
- */
-void k_cpu_atomic_idle(unsigned int key)
+void arch_cpu_atomic_idle(unsigned int key)
 {
-	z_sys_trace_idle();
+	sys_trace_idle();
 	posix_atomic_halt_cpu(key);
 }
 
 #if defined(CONFIG_REBOOT)
 /**
- *
  * @brief Stub for sys_arch_reboot
  *
  * Does nothing
- *
- * @return N/A
  */
 void __weak sys_arch_reboot(int type)
 {
-	ARG_UNUSED(type);
+	posix_print_warning("%s called with type %d. Exiting\n",
+						__func__, type);
+	posix_exit(1);
 }
 #endif /* CONFIG_REBOOT */

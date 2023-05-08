@@ -1,98 +1,37 @@
-# Kconfig - Atmel SAM SPI
-#
+# Atmel SAM SPI
+
+# Copyright (c) 2019 Gerson Fernando Budke
 # Copyright (c) 2018 qianfan Zhao
 # SPDX-License-Identifier: Apache-2.0
 
-menuconfig SPI_SAM
+config SPI_SAM
 	bool "Atmel SAM series SPI driver"
 	default y
-	depends on SOC_FAMILY_SAM
+	depends on DT_HAS_ATMEL_SAM_SPI_ENABLED
+	select GPIO
 	help
 	  Enable support for the SAM SPI driver.
 
-config SPI_SAM_PORT_0
-	bool "Enable SPI0"
-	depends on SPI_SAM
+if SPI_SAM
+config SPI_SAM_DMA
+	bool "SPI SAM DMA Support"
+	select DMA
 	help
-	  Enable SPI0 at boot
+	  Enable using DMA with SPI for SPI instances that enable dma channels in
+	  their device tree node.
 
-if SPI_SAM_PORT_0
-
-config SPI_SAME70_PORT_0_PIN_CS0
-	bool "CS0 pin"
-	depends on SOC_SERIES_SAME70
-
-choice SPI_SAME70_PORT_0_PIN_CS1
-	bool "CS1 pin"
-	optional
-	depends on SOC_SERIES_SAME70
-
-	config SPI_SAME70_PORT_0_PIN_CS1_PA31
-		bool "PA31"
-
-	config SPI_SAME70_PORT_0_PIN_CS1_PD25
-		bool "PD25"
-
-endchoice
-
-config SPI_SAME70_PORT_0_PIN_CS2
-	bool "CS2 pin"
-	depends on SOC_SERIES_SAME70
-
-config SPI_SAME70_PORT_0_PIN_CS3
-	bool "CS3 pin"
-	depends on SOC_SERIES_SAME70
-
-endif # SPI_SAM_PORT_0
-
-config SPI_SAM_PORT_1
-	bool "Enable SPI1"
-	depends on SPI_SAM
+if SPI_RTIO
+config SPI_SAM_RTIO_SQ_SIZE
+	int "Number of avialable submission queue entries"
+	default 8 # Sensible default that covers most common spi transactions
 	help
-	  Enable SPI1 at boot
+	  When RTIO is use with SPI each driver holds a context with which blocking
+	  API calls use to perform SPI transactions. This queue needs to be as deep
+	  as the longest set of spi_buf_sets used, where normal SPI operations are
+	  used (equal length buffers). It may need to be slightly deeper where the
+	  spi buffer sets for transmit/receive are not always matched equally in
+	  length as these are transformed into normal transceives.
 
-if SPI_SAM_PORT_1
+endif # SPI_RTIO
 
-config SPI_SAME70_PORT_1_PIN_CS0
-	bool "CS0 pin"
-	depends on SOC_SERIES_SAME70
-
-choice SPI_SAME70_PORT_1_PIN_CS1
-	prompt "CS1 pin"
-	optional
-	depends on SOC_SERIES_SAME70
-
-	config SPI_SAME70_PORT_1_PIN_CS1_PC28
-		bool "PC28"
-
-	config SPI_SAME70_PORT_1_PIN_CS1_PD0
-		bool "PD0"
-
-endchoice
-
-choice SPI_SAME70_PORT_1_PIN_CS2
-	prompt "CS2 pin"
-	optional
-	depends on SOC_SERIES_SAME70
-
-	config SPI_SAME70_PORT_1_PIN_CS2_PC29
-		bool "PC29"
-
-	config SPI_SAME70_PORT_1_PIN_CS2_PD1
-		bool "PD1"
-
-endchoice
-
-choice SPI_SAME70_PORT_1_PIN_CS3
-	prompt "CS3 pin"
-	optional
-	depends on SOC_SERIES_SAME70
-
-	config SPI_SAME70_PORT_1_PIN_CS3_PC30
-		bool "PC30"
-
-	config SPI_SAME70_PORT_1_PIN_CS3_PD2
-		bool "PD2"
-
-endchoice
-endif # SPI_SAM_PORT_1
+endif # SPI_SAM

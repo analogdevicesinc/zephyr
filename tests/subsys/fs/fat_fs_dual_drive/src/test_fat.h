@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <ztest.h>
-#include <fs/fs.h>
+#include <zephyr/kernel.h>
+#include <zephyr/ztest.h>
+#include <zephyr/fs/fs.h>
 
 /* Make sure to match the drive name to ELM FAT Lib volume strings */
 #define FATFS_MNTP	"/RAM:"
@@ -29,4 +29,3 @@ void test_fat_mount(void);
 void test_fat_file(void);
 void test_fat_dir(void);
 void test_fat_fs(void);
-

@@ -72,16 +72,16 @@
 	     puttime[0],                                             \
 	     puttime[1],                                             \
 	     puttime[2],                                             \
-	     (u32_t)(((u64_t)putsize * 1000000U) / SAFE_DIVISOR(puttime[0])), \
-	     (u32_t)(((u64_t)putsize * 1000000U) / SAFE_DIVISOR(puttime[1])), \
-	     (u32_t)(((u64_t)putsize * 1000000U) / SAFE_DIVISOR(puttime[2])))
+	     (uint32_t)(((uint64_t)putsize * 1000000U) / SAFE_DIVISOR(puttime[0])), \
+	     (uint32_t)(((uint64_t)putsize * 1000000U) / SAFE_DIVISOR(puttime[1])), \
+	     (uint32_t)(((uint64_t)putsize * 1000000U) / SAFE_DIVISOR(puttime[2])))
 #endif /* FLOAT */
 
 /*
  * Function prototypes.
  */
 int pipeput(struct k_pipe *pipe, enum pipe_options
-		 option, int size, int count, u32_t *time);
+		 option, int size, int count, uint32_t *time);
 
 /*
  * Function declarations.
@@ -91,16 +91,15 @@ int pipeput(struct k_pipe *pipe, enum pipe_options
  *
  * @brief Test the pipes transfer speed
  *
- * @return N/A
  */
 void pipe_test(void)
 {
-	u32_t	putsize;
+	uint32_t	putsize;
 	int         getsize;
-	u32_t	puttime[3];
+	uint32_t	puttime[3];
 	int		putcount;
 	int		pipe;
-	u32_t	TaskPrio = UINT32_MAX;
+	uint32_t	TaskPrio = UINT32_MAX;
 	int		prio;
 	struct getinfo	getinfo;
 
@@ -197,7 +196,7 @@ int pipeput(struct k_pipe *pipe,
 	    enum pipe_options option,
 	    int size,
 	    int count,
-	    u32_t *time)
+	    uint32_t *time)
 {
 	int i;
 	unsigned int t;

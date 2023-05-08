@@ -1,9 +1,7 @@
-# Kconfig - LPCXpresso54114 board
-#
+# LPCXpresso54114 board
+
 # Copyright (c) 2017, NXP
-#
 # SPDX-License-Identifier: Apache-2.0
-#
 
 if BOARD_LPCXPRESSO54114_M4 || BOARD_LPCXPRESSO54114_M0
 
@@ -11,31 +9,15 @@ config BOARD
 	default "lpcxpresso54114_m4" if BOARD_LPCXPRESSO54114_M4
 	default "lpcxpresso54114_m0" if BOARD_LPCXPRESSO54114_M0
 
-if USART_MCUX_LPC
+# Place size restrictions on first image if dual core is enabled
+if SECOND_CORE_MCUX && BOARD_LPCXPRESSO54114_M4
 
-config USART_MCUX_LPC_0
-	default y if UART_CONSOLE
+# Workaround for not being able to have commas in macro arguments
+DT_CHOSEN_Z_CODE_PARTITION := zephyr,code-partition
 
-endif # USART_MCUX_LPC
+config FLASH_LOAD_SIZE
+	default $(dt_chosen_reg_size_hex,$(DT_CHOSEN_Z_CODE_PARTITION))
 
-if PINMUX_MCUX_LPC
-
-config PINMUX_MCUX_LPC_PORT0
-	default y
-
-config PINMUX_MCUX_LPC_PORT1
-	default y
-
-endif # PINMUX_MCUX_LPC
-
-if GPIO_MCUX_LPC
-
-config GPIO_MCUX_LPC_PORT0
-	default y
-
-config GPIO_MCUX_LPC_PORT1
-	default y
-
-endif # GPIO_MCUX_LPC
+endif # SECOND_CORE_MCUX && BOARD_LPCXPRESSO54114_M4
 
 endif # BOARD_LPCXPRESSO54114_M4 || BOARD_LPCXPRESSO54114_M0

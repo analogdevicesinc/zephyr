@@ -11,19 +11,21 @@
  * crossing clock domains (no pun intended). Use accordingly.
  */
 
-#include <drivers/counter.h>
-#include <device.h>
+#define DT_DRV_COMPAT motorola_mc146818
+
+#include <zephyr/drivers/counter.h>
+#include <zephyr/device.h>
 #include <soc.h>
 
 /* The "CMOS" device is accessed via an address latch and data port. */
 
-#define X86_CMOS_ADDR 0x70
-#define X86_CMOS_DATA 0x71
+#define X86_CMOS_ADDR (DT_INST_REG_ADDR_BY_IDX(0, 0))
+#define X86_CMOS_DATA (DT_INST_REG_ADDR_BY_IDX(0, 1))
 
 /*
  * A snapshot of the RTC state, or at least the state we're
  * interested in. This struct should not be modified without
- * serious consideraton, for two reasons:
+ * serious consideration, for two reasons:
  *
  *	1. Order of the element is important, and must correlate
  *	   with addrs[] and NR_BCD_VALS (see below), and
@@ -32,7 +34,7 @@
  */
 
 struct state {
-	u8_t second,
+	uint8_t second,
 	     minute,
 	     hour,
 	     day,
@@ -44,7 +46,7 @@ struct state {
 
 /*
  * If the clock is in BCD mode, the first NR_BCD_VALS
- * valies in 'struct state' are BCD-encoded.
+ * values in 'struct state' are BCD-encoded.
  */
 
 #define NR_BCD_VALS 6
@@ -54,7 +56,7 @@ struct state {
  * the members of 'struct state'.
  */
 
-const u8_t addrs[] = { 0, 2, 4, 7, 8, 9, 10, 11 };
+const uint8_t addrs[] = { 0, 2, 4, 7, 8, 9, 10, 11 };
 
 /*
  * Interesting bits in 'struct state'.
@@ -69,11 +71,11 @@ const u8_t addrs[] = { 0, 2, 4, 7, 8, 9, 10, 11 };
  * we have to spinlock to make the access atomic.
  */
 
-static u8_t read_register(u8_t addr)
+static uint8_t read_register(uint8_t addr)
 {
 	static struct k_spinlock lock;
 	k_spinlock_key_t k;
-	u8_t val;
+	uint8_t val;
 
 	k = k_spin_lock(&lock);
 	sys_out8(addr, X86_CMOS_ADDR);
@@ -88,9 +90,9 @@ static u8_t read_register(u8_t addr)
 void read_state(struct state *state)
 {
 	int i;
-	u8_t *p;
+	uint8_t *p;
 
-	p = (u8_t *) state;
+	p = (uint8_t *) state;
 	for (i = 0; i < sizeof(*state); ++i) {
 		*p++ = read_register(addrs[i]);
 	}
@@ -98,7 +100,7 @@ void read_state(struct state *state)
 
 /* Convert 8-bit (2-digit) BCD to binary equivalent. */
 
-static inline u8_t decode_bcd(u8_t val)
+static inline uint8_t decode_bcd(uint8_t val)
 {
 	return (((val >> 4) & 0x0F) * 10) + (val & 0x0F);
 }
@@ -107,7 +109,7 @@ static inline u8_t decode_bcd(u8_t val)
  * Hinnant's algorithm to calculate the number of days offset from the epoch.
  */
 
-static u32_t hinnant(int y, int m, int d)
+static uint32_t hinnant(int y, int m, int d)
 {
 	unsigned yoe;
 	unsigned doy;
@@ -124,17 +126,17 @@ static u32_t hinnant(int y, int m, int d)
 }
 
 /*
- * Returns the Unix epoch time (assuming UTC) read from the CMOS RTC.
+ * Get the Unix epoch time (assuming UTC) read from the CMOS RTC.
  * This function is long, but linear and easy to follow.
  */
 
-u32_t read(struct device *dev)
+int get_value(const struct device *dev, uint32_t *ticks)
 {
 	struct state state, state2;
-	u64_t *pun = (u64_t *) &state;
-	u64_t *pun2 = (u64_t *) &state2;
+	uint64_t *pun = (uint64_t *) &state;
+	uint64_t *pun2 = (uint64_t *) &state2;
 	bool pm;
-	u32_t epoch;
+	uint32_t epoch;
 
 	ARG_UNUSED(dev);
 
@@ -154,15 +156,15 @@ u32_t read(struct device *dev)
 	 * the HOUR_PM flag before we adjust for BCD.
 	 */
 
-	if (state.status_b & STATUS_B_24HR) {
+	if ((state.status_b & STATUS_B_24HR) != 0U) {
 		pm = false;
 	} else {
 		pm = ((state.hour & HOUR_PM) == HOUR_PM);
 		state.hour &= ~HOUR_PM;
 	}
 
-	if (!(state.status_b & STATUS_B_BIN)) {
-		u8_t *cp = (u8_t *) &state;
+	if ((state.status_b & STATUS_B_BIN) == 0U) {
+		uint8_t *cp = (uint8_t *) &state;
 		int i;
 
 		for (i = 0; i < NR_BCD_VALS; ++i) {
@@ -188,13 +190,7 @@ u32_t read(struct device *dev)
 	epoch += state.minute * 60; /* seconds per minute */
 	epoch += state.second;
 
-	return epoch;
-}
-
-static int init(struct device *dev)
-{
-	ARG_UNUSED(dev);
-
+	*ticks = epoch;
 	return 0;
 }
 
@@ -204,8 +200,8 @@ static const struct counter_config_info info = {
 };
 
 static const struct counter_driver_api api = {
-	.read = read
+	.get_value = get_value
 };
 
-DEVICE_AND_API_INIT(counter_cmos, "CMOS", init, NULL, &info,
-		    POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE, &api);
+DEVICE_DT_INST_DEFINE(0, NULL, NULL, NULL, &info, POST_KERNEL,
+		      CONFIG_COUNTER_INIT_PRIORITY, &api);

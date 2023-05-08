@@ -10,7 +10,7 @@
  */
 
 struct bt_smp_hdr {
-	u8_t  code;
+	uint8_t  code;
 } __packed;
 
 #define BT_SMP_ERR_PASSKEY_ENTRY_FAILED		0x01
@@ -27,6 +27,7 @@ struct bt_smp_hdr {
 #define BT_SMP_ERR_NUMERIC_COMP_FAILED		0x0c
 #define BT_SMP_ERR_BREDR_PAIRING_IN_PROGRESS	0x0d
 #define BT_SMP_ERR_CROSS_TRANSP_NOT_ALLOWED	0x0e
+#define BT_SMP_ERR_KEY_REJECTED			0x0f
 
 #define BT_SMP_IO_DISPLAY_ONLY			0x00
 #define BT_SMP_IO_DISPLAY_YESNO			0x01
@@ -38,7 +39,7 @@ struct bt_smp_hdr {
 #define BT_SMP_OOB_NOT_PRESENT			0x00
 #define BT_SMP_OOB_PRESENT			0x01
 
-#define BT_SMP_MIN_ENC_KEY_SIZE			7
+#define BT_SMP_MIN_ENC_KEY_SIZE			CONFIG_BT_SMP_MIN_ENC_KEY_SIZE
 #define BT_SMP_MAX_ENC_KEY_SIZE			16
 
 #define BT_SMP_DIST_ENC_KEY			0x01
@@ -58,43 +59,43 @@ struct bt_smp_hdr {
 #define BT_SMP_CMD_PAIRING_REQ			0x01
 #define BT_SMP_CMD_PAIRING_RSP			0x02
 struct bt_smp_pairing {
-	u8_t  io_capability;
-	u8_t  oob_flag;
-	u8_t  auth_req;
-	u8_t  max_key_size;
-	u8_t  init_key_dist;
-	u8_t  resp_key_dist;
+	uint8_t  io_capability;
+	uint8_t  oob_flag;
+	uint8_t  auth_req;
+	uint8_t  max_key_size;
+	uint8_t  init_key_dist;
+	uint8_t  resp_key_dist;
 } __packed;
 
 #define BT_SMP_CMD_PAIRING_CONFIRM		0x03
 struct bt_smp_pairing_confirm {
-	u8_t  val[16];
+	uint8_t  val[16];
 } __packed;
 
 #define BT_SMP_CMD_PAIRING_RANDOM		0x04
 struct bt_smp_pairing_random {
-	u8_t  val[16];
+	uint8_t  val[16];
 } __packed;
 
 #define BT_SMP_CMD_PAIRING_FAIL			0x05
 struct bt_smp_pairing_fail {
-	u8_t  reason;
+	uint8_t  reason;
 } __packed;
 
 #define BT_SMP_CMD_ENCRYPT_INFO			0x06
 struct bt_smp_encrypt_info {
-	u8_t  ltk[16];
+	uint8_t  ltk[16];
 } __packed;
 
-#define BT_SMP_CMD_MASTER_IDENT			0x07
-struct bt_smp_master_ident {
-	u8_t ediv[2];
-	u8_t rand[8];
+#define BT_SMP_CMD_CENTRAL_IDENT		0x07
+struct bt_smp_central_ident {
+	uint8_t ediv[2];
+	uint8_t rand[8];
 } __packed;
 
 #define BT_SMP_CMD_IDENT_INFO			0x08
 struct bt_smp_ident_info {
-	u8_t  irk[16];
+	uint8_t  irk[16];
 } __packed;
 
 #define BT_SMP_CMD_IDENT_ADDR_INFO		0x09
@@ -104,41 +105,51 @@ struct bt_smp_ident_addr_info {
 
 #define BT_SMP_CMD_SIGNING_INFO			0x0a
 struct bt_smp_signing_info {
-	u8_t csrk[16];
+	uint8_t csrk[16];
 } __packed;
 
 #define BT_SMP_CMD_SECURITY_REQUEST		0x0b
 struct bt_smp_security_request {
-	u8_t  auth_req;
+	uint8_t  auth_req;
 } __packed;
 
 #define BT_SMP_CMD_PUBLIC_KEY			0x0c
 struct bt_smp_public_key {
-	u8_t x[32];
-	u8_t y[32];
+	uint8_t x[32];
+	uint8_t y[32];
 } __packed;
 
 #define BT_SMP_DHKEY_CHECK			0x0d
 struct bt_smp_dhkey_check {
-	u8_t e[16];
+	uint8_t e[16];
 } __packed;
 
-int bt_smp_send_pairing_req(struct bt_conn *conn);
-int bt_smp_send_security_req(struct bt_conn *conn);
+#define BT_SMP_KEYPRESS_NOTIFICATION		0x0e
+struct bt_smp_keypress_notif {
+	uint8_t type;
+} __packed;
+
+#define BT_SMP_NUM_CMDS                         0x0f
+
+int bt_smp_start_security(struct bt_conn *conn);
+bool bt_smp_request_ltk(struct bt_conn *conn, uint64_t rand, uint16_t ediv,
+			uint8_t *ltk);
+
 void bt_smp_update_keys(struct bt_conn *conn);
-bool bt_smp_get_tk(struct bt_conn *conn, u8_t *tk);
-bool bt_smp_keys_check(struct bt_conn *conn);
-void bt_smp_keys_reject(struct bt_conn *conn);
 
 int bt_smp_br_send_pairing_req(struct bt_conn *conn);
 
 int bt_smp_init(void);
 
+int bt_smp_auth_cb_overlay(struct bt_conn *conn, const struct bt_conn_auth_cb *cb);
+int bt_smp_auth_keypress_notify(struct bt_conn *conn,
+				enum bt_conn_auth_keypress type);
 int bt_smp_auth_passkey_entry(struct bt_conn *conn, unsigned int passkey);
 int bt_smp_auth_passkey_confirm(struct bt_conn *conn);
 int bt_smp_auth_pairing_confirm(struct bt_conn *conn);
 int bt_smp_auth_cancel(struct bt_conn *conn);
 
+int bt_smp_le_oob_set_tk(struct bt_conn *conn, const uint8_t *tk);
 int bt_smp_le_oob_generate_sc_data(struct bt_le_oob_sc_data *le_sc_oob);
 int bt_smp_le_oob_set_sc_data(struct bt_conn *conn,
 			      const struct bt_le_oob_sc_data *oobd_local,
@@ -146,11 +157,6 @@ int bt_smp_le_oob_set_sc_data(struct bt_conn *conn,
 int bt_smp_le_oob_get_sc_data(struct bt_conn *conn,
 			      const struct bt_le_oob_sc_data **oobd_local,
 			      const struct bt_le_oob_sc_data **oobd_remote);
-
-
-void smp_ident_sent(struct bt_conn *conn, void *user_data);
-void smp_id_sent(struct bt_conn *conn, void *user_data);
-void smp_sign_info_sent(struct bt_conn *conn, void *user_data);
 
 /** brief Verify signed message
  *
@@ -169,3 +175,6 @@ int bt_smp_sign_verify(struct bt_conn *conn, struct net_buf *buf);
  *  @return 0 in success, error code otherwise
  */
 int bt_smp_sign(struct bt_conn *conn, struct net_buf *buf);
+
+/** Generate IRK from Identity Root (IR) */
+int bt_smp_irk_get(uint8_t *ir, uint8_t *irk);

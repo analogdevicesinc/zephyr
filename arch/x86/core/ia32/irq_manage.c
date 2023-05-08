@@ -14,15 +14,14 @@
  * global variable.)
  */
 
-#include <kernel.h>
-#include <arch/cpu.h>
-#include <kernel_structs.h>
-#include <sys/__assert.h>
-#include <sys/printk.h>
-#include <irq.h>
-#include <debug/tracing.h>
+#include <zephyr/kernel.h>
+#include <zephyr/arch/cpu.h>
+#include <zephyr/kernel_structs.h>
+#include <zephyr/sys/__assert.h>
+#include <zephyr/irq.h>
+#include <zephyr/tracing/tracing.h>
 #include <kswap.h>
-#include <arch/x86/ia32/segmentation.h>
+#include <zephyr/arch/x86/ia32/segmentation.h>
 
 extern void z_SpuriousIntHandler(void *handler);
 extern void z_SpuriousIntNoErrCodeHandler(void *handler);
@@ -38,63 +37,10 @@ void *__attribute__((section(".spurNoErrIsr")))
 	MK_ISR_NAME(z_SpuriousIntNoErrCodeHandler) =
 		&z_SpuriousIntNoErrCodeHandler;
 
-/* FIXME: IRQ direct inline functions have to be placed here and not in
- * arch/cpu.h as inline functions due to nasty circular dependency between
- * arch/cpu.h and kernel_structs.h; the inline functions typically need to
- * perform operations on _kernel.  For now, leave as regular functions, a
- * future iteration will resolve this.
- *
- * See https://github.com/zephyrproject-rtos/zephyr/issues/3056
- */
-
-#ifdef CONFIG_SYS_POWER_MANAGEMENT
-void z_arch_irq_direct_pm(void)
+__pinned_func
+void arch_isr_direct_footer_swap(unsigned int key)
 {
-	if (_kernel.idle) {
-		s32_t idle_val = _kernel.idle;
-
-		_kernel.idle = 0;
-		z_sys_power_save_idle_exit(idle_val);
-	}
-}
-#endif
-
-void z_arch_isr_direct_header(void)
-{
-	z_sys_trace_isr_enter();
-
-	/* We're not going to unlock IRQs, but we still need to increment this
-	 * so that z_is_in_isr() works
-	 */
-	++_kernel.nested;
-}
-
-void z_arch_isr_direct_footer(int swap)
-{
-	z_irq_controller_eoi();
-	sys_trace_isr_exit();
-	--_kernel.nested;
-
-	/* Call swap if all the following is true:
-	 *
-	 * 1) swap argument was enabled to this function
-	 * 2) We are not in a nested interrupt
-	 * 3) Next thread to run in the ready queue is not this thread
-	 */
-	if (swap != 0 && _kernel.nested == 0 &&
-	    _kernel.ready_q.cache != _current) {
-		unsigned int flags;
-
-		/* Fetch EFLAGS argument to z_swap() */
-		__asm__ volatile (
-			"pushfl\n\t"
-			"popl %0\n\t"
-			: "=g" (flags)
-			:
-			: "memory"
-			);
-		(void)z_swap_irqlock(flags);
-	}
+	(void)z_swap_irqlock(key);
 }
 
 #if CONFIG_X86_DYNAMIC_IRQ_STUBS > 0
@@ -110,9 +56,9 @@ extern unsigned int z_interrupt_vectors_allocated[];
 
 struct dyn_irq_info {
 	/** IRQ handler */
-	void (*handler)(void *param);
+	void (*handler)(const void *param);
 	/** Parameter to pass to the handler */
-	void *param;
+	const void *param;
 };
 
 /*
@@ -121,7 +67,10 @@ struct dyn_irq_info {
  * which is used by common_dynamic_handler() to fetch the appropriate
  * information out of this much smaller table
  */
+__pinned_bss
 static struct dyn_irq_info dyn_irq_list[CONFIG_X86_DYNAMIC_IRQ_STUBS];
+
+__pinned_bss
 static unsigned int next_irq_stub;
 
 /* Memory address pointing to where in ROM the code for the dynamic stubs are.
@@ -221,9 +170,10 @@ static unsigned int priority_to_free_vector(unsigned int requested_priority)
  * @param stub_idx Stub number to fetch the corresponding stub function
  * @return Pointer to the stub code to install into the IDT
  */
+__pinned_func
 static void *get_dynamic_stub(int stub_idx)
 {
-	u32_t offset;
+	uint32_t offset;
 
 	/*
 	 * Because we want the sizes of the stubs to be consistent and minimized,
@@ -235,67 +185,24 @@ static void *get_dynamic_stub(int stub_idx)
 		((stub_idx / Z_DYN_STUB_PER_BLOCK) *
 		 Z_DYN_STUB_LONG_JMP_EXTRA_SIZE);
 
-	return (void *)((u32_t)&z_dynamic_stubs_begin + offset);
+	return (void *)((uint32_t)&z_dynamic_stubs_begin + offset);
 }
 
 extern const struct pseudo_descriptor z_x86_idt;
 
 static void idt_vector_install(int vector, void *irq_handler)
 {
-	int key;
+	unsigned int key;
 
 	key = irq_lock();
 	z_init_irq_gate(&z_x86_idt.entries[vector], CODE_SEG,
-		       (u32_t)irq_handler, 0);
+		       (uint32_t)irq_handler, 0);
 	irq_unlock(key);
 }
 
-/**
- *
- * @brief Connect a C routine to a hardware interrupt
- *
- * @param irq virtualized IRQ to connect to
- * @param priority requested priority of interrupt
- * @param routine the C interrupt handler
- * @param parameter parameter passed to C routine
- * @param flags IRQ flags
- *
- * This routine connects an interrupt service routine (ISR) coded in C to
- * the specified hardware <irq>.  An interrupt vector will be allocated to
- * satisfy the specified <priority>.
- *
- * The specified <irq> represents a virtualized IRQ, i.e. it does not
- * necessarily represent a specific IRQ line on a given interrupt controller
- * device.  The platform presents a virtualized set of IRQs from 0 to N, where
- * N is the total number of IRQs supported by all the interrupt controller
- * devices on the board.  See the platform's documentation for the mapping of
- * virtualized IRQ to physical IRQ.
- *
- * When the device asserts an interrupt on the specified <irq>, a switch to
- * the interrupt stack is performed (if not already executing on the interrupt
- * stack), followed by saving the integer (i.e. non-floating point) thread of
- * the currently executing thread or ISR.  The ISR specified by <routine>
- * will then be invoked with the single <parameter>.  When the ISR returns, a
- * context switch may occur.
- *
- * On some platforms <flags> parameter needs to be specified to indicate if
- * the irq is triggered by low or high level or by rising or falling edge.
- *
- * The routine searches for the first available element in the dynamic_stubs
- * array and uses it for the stub.
- *
- * @return the allocated interrupt vector
- *
- * WARNINGS
- * This routine does not perform range checking on the requested <priority>
- * and thus, depending on the underlying interrupt controller, may result
- * in the assignment of an interrupt vector located in the reserved range of
- * the processor.
- */
-
-int z_arch_irq_connect_dynamic(unsigned int irq, unsigned int priority,
-		void (*routine)(void *parameter), void *parameter,
-		u32_t flags)
+int arch_irq_connect_dynamic(unsigned int irq, unsigned int priority,
+			     void (*routine)(const void *parameter),
+			     const void *parameter, uint32_t flags)
 {
 	int vector, stub_idx, key;
 
@@ -330,7 +237,8 @@ int z_arch_irq_connect_dynamic(unsigned int irq, unsigned int priority,
  *
  * @param stub_idx Index into the dyn_irq_list array
  */
-void z_x86_dynamic_irq_handler(u8_t stub_idx)
+__pinned_func
+void z_x86_dynamic_irq_handler(uint8_t stub_idx)
 {
 	dyn_irq_list[stub_idx].handler(dyn_irq_list[stub_idx].param);
 }

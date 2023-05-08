@@ -14,7 +14,7 @@
  *		_R : Is a file that contains the receiver task
  *			 of a benchmark function
  */
-#include <tc_util.h>
+#include <zephyr/tc_util.h>
 #include "master.h"
 
 char msg[MAX_MSG];
@@ -32,12 +32,12 @@ FILE *output_file;
  * Time in timer cycles necessary to read time.
  * Used for correction in time measurements.
  */
-u32_t tm_off;
+uint32_t tm_off;
 
 
 /********************************************************************/
 /* static allocation  */
-K_THREAD_DEFINE(RECVTASK, 1024, recvtask, NULL, NULL, NULL, 5, 0, K_NO_WAIT);
+K_THREAD_DEFINE(RECVTASK, 1024, recvtask, NULL, NULL, NULL, 5, 0, 0);
 
 K_MSGQ_DEFINE(DEMOQX1, 1, 500, 4);
 K_MSGQ_DEFINE(DEMOQX4, 4, 500, 4);
@@ -61,9 +61,6 @@ K_PIPE_DEFINE(PIPE_NOBUFF, 0, 4);
 K_PIPE_DEFINE(PIPE_SMALLBUFF, 256, 4);
 K_PIPE_DEFINE(PIPE_BIGBUFF, 4096, 4);
 
-K_MEM_POOL_DEFINE(DEMOPOOL, 16, 16, 1, 4);
-
-
 /**
  *
  * @brief Check for keypress
@@ -80,10 +77,9 @@ int kbhit(void)
  *
  * @brief Prepares the test output
  *
- * @return N/A
- *
  * @param continuously   Run test till the user presses the key.
  * @param autorun        Expect user input.
+ *
  */
 void init_output(int *continuously, int *autorun)
 {
@@ -100,7 +96,6 @@ void init_output(int *continuously, int *autorun)
  *
  * @brief Close output for the test
  *
- * @return N/A
  */
 void output_close(void)
 {
@@ -115,9 +110,8 @@ void output_close(void)
  * @brief Perform all selected benchmarks
  * see config.h to select or to unselect
  *
- * @return N/A
  */
-void main(void)
+int main(void)
 {
 	int autorun = 0, continuously = 0;
 
@@ -135,7 +129,6 @@ void main(void)
 		sema_test();
 		mutex_test();
 		memorymap_test();
-		mempool_test();
 		mailbox_test();
 		pipe_test();
 		PRINT_STRING("|         END OF TESTS                     "
@@ -151,6 +144,7 @@ void main(void)
 	k_thread_abort(RECVTASK);
 
 	output_close();
+	return 0;
 }
 
 
@@ -158,7 +152,6 @@ void main(void)
  *
  * @brief Dummy test
  *
- * @return N/A
  */
 void dummy_test(void)
 {

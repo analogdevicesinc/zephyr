@@ -4,48 +4,24 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <ztest.h>
+#include <zephyr/ztest.h>
 #include "test_queue.h"
 
-#ifndef CONFIG_USERSPACE
-static void test_queue_supv_to_user(void)
-{
-	ztest_test_skip();
-}
-
-static void test_auto_free(void)
-{
-	ztest_test_skip();
-}
-
-static void test_queue_alloc_prepend_user(void)
-{
-	ztest_test_skip();
-}
-
-static void test_queue_alloc_append_user(void)
-{
-	ztest_test_skip();
-}
+#ifdef CONFIG_64BIT
+#define MAX_SZ	128
+#else
+#define MAX_SZ	96
 #endif
-K_MEM_POOL_DEFINE(test_pool, 16, 96, 4, 4);
+K_HEAP_DEFINE(test_pool, MAX_SZ * 4 + 128);
 
 /*test case main entry*/
-void test_main(void)
+void *queue_test_setup(void)
 {
-	k_thread_resource_pool_assign(k_current_get(), &test_pool);
+	k_thread_heap_assign(k_current_get(), &test_pool);
 
-	ztest_test_suite(queue_api,
-			 ztest_unit_test(test_queue_supv_to_user),
-			 ztest_user_unit_test(test_queue_alloc_prepend_user),
-			 ztest_user_unit_test(test_queue_alloc_append_user),
-			 ztest_unit_test(test_auto_free),
-			 ztest_unit_test(test_queue_thread2thread),
-			 ztest_unit_test(test_queue_thread2isr),
-			 ztest_unit_test(test_queue_isr2thread),
-			 ztest_unit_test(test_queue_get_2threads),
-			 ztest_unit_test(test_queue_get_fail),
-			 ztest_unit_test(test_queue_loop),
-			 ztest_unit_test(test_queue_alloc));
-	ztest_run_test_suite(queue_api);
+	return NULL;
 }
+
+ZTEST_SUITE(queue_api, NULL, queue_test_setup, NULL, NULL, NULL);
+ZTEST_SUITE(queue_api_1cpu, NULL, queue_test_setup,
+		ztest_simple_1cpu_before, ztest_simple_1cpu_after, NULL);

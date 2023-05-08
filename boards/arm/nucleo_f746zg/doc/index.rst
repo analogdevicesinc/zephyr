@@ -45,9 +45,7 @@ Key Features
 - Arm* Mbed Enabled* compliant (only for some Nucleo part numbers)
 
 .. image:: img/nucleo_f746zg.jpg
-   :width: 720px
    :align: center
-   :height: 720px
    :alt: Nucleo F746ZG
 
 More information about the board can be found at the `Nucleo F746ZG website`_.
@@ -93,33 +91,37 @@ Supported Features
 The Zephyr nucleo_f746zg board configuration supports the following hardware
 features:
 
-+-----------+------------+-------------------------------------+
-| Interface | Controller | Driver/Component                    |
-+===========+============+=====================================+
-| NVIC      | on-chip    | nested vector interrupt controller  |
-+-----------+------------+-------------------------------------+
-| UART      | on-chip    | serial port                         |
-+-----------+------------+-------------------------------------+
-| PINMUX    | on-chip    | pinmux                              |
-+-----------+------------+-------------------------------------+
-| GPIO      | on-chip    | gpio                                |
-+-----------+------------+-------------------------------------+
-| ETHERNET  | on-chip    | ethernet                            |
-+-----------+------------+-------------------------------------+
-| USB       | on-chip    | usb_device                          |
-+-----------+------------+-------------------------------------+
-| COUNTER   | on-chip    | rtc                                 |
-+-----------+------------+-------------------------------------+
-| I2C       | on-chip    | i2c                                 |
-+-----------+------------+-------------------------------------+
-| PWM       | on-chip    | pwm                                 |
-+-----------+------------+-------------------------------------+
-| SPI       | on-chip    | spi                                 |
-+-----------+------------+-------------------------------------+
-| WATCHDOG  | on-chip    | independent watchdog                |
-+-----------+------------+-------------------------------------+
-| ADC       | on-chip    | ADC Controller                      |
-+-----------+------------+-------------------------------------+
++-------------+------------+-------------------------------------+
+| Interface   | Controller | Driver/Component                    |
++=============+============+=====================================+
+| NVIC        | on-chip    | nested vector interrupt controller  |
++-------------+------------+-------------------------------------+
+| UART        | on-chip    | serial port                         |
++-------------+------------+-------------------------------------+
+| PINMUX      | on-chip    | pinmux                              |
++-------------+------------+-------------------------------------+
+| GPIO        | on-chip    | gpio                                |
++-------------+------------+-------------------------------------+
+| ETHERNET    | on-chip    | ethernet                            |
++-------------+------------+-------------------------------------+
+| USB         | on-chip    | usb_device                          |
++-------------+------------+-------------------------------------+
+| COUNTER     | on-chip    | rtc                                 |
++-------------+------------+-------------------------------------+
+| I2C         | on-chip    | i2c                                 |
++-------------+------------+-------------------------------------+
+| PWM         | on-chip    | pwm                                 |
++-------------+------------+-------------------------------------+
+| SPI         | on-chip    | spi                                 |
++-------------+------------+-------------------------------------+
+| WATCHDOG    | on-chip    | independent watchdog                |
++-------------+------------+-------------------------------------+
+| ADC         | on-chip    | ADC Controller                      |
++-------------+------------+-------------------------------------+
+| DAC         | on-chip    | DAC Controller                      |
++-------------+------------+-------------------------------------+
+| Backup SRAM | on-chip    | Backup SRAM                         |
++-------------+------------+-------------------------------------+
 
 Other hardware features are not yet supported on this Zephyr port.
 
@@ -146,7 +148,9 @@ and a ST morpho connector. Board is configured as follows:
 - USB DP : PA12
 - I2C : PB8, PB9
 - PWM : PE13
-- SPI : PA4, PA5, PA6, PA7
+- SPI : PD14, PA5, PA6, PA7
+- ADC1_IN0 : PA0
+- DAC1_OUT1 : PA4
 
 Note. The Arduino Uno v3 specified SPI device conflicts with the on-board ETH
 device on pin PA7.
@@ -164,6 +168,11 @@ Serial Port
 Nucleo F746ZG board has 4 UARTs and 4 USARTs. The Zephyr console output is
 assigned to UART3. Default settings are 115200 8N1.
 
+Backup SRAM
+-----------
+
+In order to test backup SRAM you may want to disconnect VBAT from VDD. You can
+do it by removing ``SB156`` jumper on the back side of the board.
 
 Programming and Debugging
 *************************
@@ -217,7 +226,7 @@ You can debug an application in the usual way.  Here is an example for the
    https://www.st.com/en/evaluation-tools/nucleo-f746zg.html
 
 .. _STM32 Nucleo-144 board User Manual:
-   http://www.st.com/resource/en/user_manual/dm00105823.pdf
+   http://www.st.com/resource/en/user_manual/dm00244518.pdf
 
 .. _STM32F746ZG on www.st.com:
    https://www.st.com/content/st_com/en/products/microcontrollers/stm32-32-bit-arm-cortex-mcus/stm32-high-performance-mcus/stm32f7-series/stm32f7x6/stm32f746zg.html

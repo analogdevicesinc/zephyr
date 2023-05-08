@@ -12,8 +12,7 @@ architecture. The board includes a high performance onboard debug probe, audio
 subsystem, and accelerometer, with several options for adding off-the-shelf
 add-on boards for networking, sensors, displays, and other interfaces.
 
-.. image:: ./lpcxpresso55s69.jpg
-   :width: 720px
+.. image:: lpcxpresso55s69.jpg
    :align: center
    :alt: LPCXPRESSO55S69
 
@@ -48,8 +47,11 @@ For more information about the LPC55S69 SoC and LPCXPRESSO55S69 board, see:
 Supported Features
 ==================
 
-The lpcxpresso55s69 board configuration supports the following hardware
-features:
+NXP considers the LPCXpresso55S69 as the superset board for the LPC55xx
+series of MCUs.  This board is a focus for NXP's Full Platform Support for
+Zephyr, to better enable the entire LPC55xx series.  NXP prioritizes enabling
+this board with new support for Zephyr features.  The lpcxpresso55s69 board
+configuration supports the following hardware features:
 
 +-----------+------------+-------------------------------------+
 | Interface | Controller | Driver/Component                    |
@@ -62,14 +64,63 @@ features:
 +-----------+------------+-------------------------------------+
 | GPIO      | on-chip    | gpio                                |
 +-----------+------------+-------------------------------------+
-| USART     | on-chip    | serial port-polling                 |
+| I2C       | on-chip    | i2c                                 |
 +-----------+------------+-------------------------------------+
+| SPI       | on-chip    | spi                                 |
++-----------+------------+-------------------------------------+
+| USART     | on-chip    | serial port-polling;                |
+|           |            | serial port-interrupt               |
++-----------+------------+-------------------------------------+
+| WWDT      | on-chip    | windowed watchdog timer             |
++-----------+------------+-------------------------------------+
+| TrustZone | on-chip    | Trusted Firmware-M                  |
++-----------+------------+-------------------------------------+
+| ADC       | on-chip    | adc                                 |
++-----------+------------+-------------------------------------+
+| CLOCK     | on-chip    | clock_control                       |
++-----------+------------+-------------------------------------+
+| MAILBOX   | on-chip    | ipm                                 |
++-----------+------------+-------------------------------------+
+| HWINFO    | on-chip    | Unique device serial number         |
++-----------+------------+-------------------------------------+
+| USB       | on-chip    | USB device                          |
++-----------+------------+-------------------------------------+
+| COUNTER   | on-chip    | counter                             |
++-----------+------------+-------------------------------------+
+| I2S       | on-chip    | i2s                                 |
++-----------+------------+-------------------------------------+
+| PWM       | on-chip    | pwm                                 |
++-----------+------------+-------------------------------------+
+| RNG       | on-chip    | entropy;                            |
+|           |            | random                              |
++-----------+------------+-------------------------------------+
+| IAP       | on-chip    | flash programming                   |
++-----------+------------+-------------------------------------+
+| SDIF      | on-chip    | sdhc                                |
++-----------+------------+-------------------------------------+
+
+Targets available
+==================
 
 The default configuration file
 ``boards/arm/lpcxpresso55s69/lpcxpresso55s69_cpu0_defconfig``
 only enables the first core.
+CPU0 is the only target that can run standalone.
 
-Other hardware features are not currently supported by the port.
+- *lpcxpresso55s69_cpu0* secure (S) address space for CPU0
+- *lpcxpresso55s69_ns* non-secure (NS) address space for CPU0
+- *lpcxpresso55s69_cpu1* CPU1 target, no security extensions
+
+NS target for CPU0 does not work correctly without a secure image to configure
+the system, then hand execution over to the NS environment. To enable a secure
+image, run any of the ``tfm_integration`` samples. When using the NS target
+``CONFIG_BUILD_WITH_TFM`` is always enabled to ensure that a valid S image is
+included during the build process.
+
+CPU1 does not work without CPU0 enabling it.
+To enable it, run one of the following samples in ``subsys\ipc``:
+- ``ipm_mcux``
+- ``openamp``
 
 Connections and IOs
 ===================
@@ -80,9 +131,19 @@ functionality of a pin.
 +---------+-----------------+----------------------------+
 | Name    | Function        | Usage                      |
 +=========+=================+============================+
+| PIO0_26 | SPI             | SPI MOSI                   |
++---------+-----------------+----------------------------+
+| PIO0_27 | USART           | USART TX                   |
++---------+-----------------+----------------------------+
 | PIO0_29 | USART           | USART RX                   |
 +---------+-----------------+----------------------------+
 | PIO0_30 | USART           | USART TX                   |
++---------+-----------------+----------------------------+
+| PIO1_1  | SPI             | SPI SSEL                   |
++---------+-----------------+----------------------------+
+| PIO1_2  | SPI             | SPI SCK                    |
++---------+-----------------+----------------------------+
+| PIO1_3  | SPI             | SPI MISO                   |
 +---------+-----------------+----------------------------+
 | PIO1_4  | GPIO            | RED LED                    |
 +---------+-----------------+----------------------------+
@@ -90,6 +151,104 @@ functionality of a pin.
 +---------+-----------------+----------------------------+
 | PIO1_7  | GPIO            | GREEN LED                  |
 +---------+-----------------+----------------------------+
+| PIO1_20 | I2C             | I2C SCL                    |
++---------+-----------------+----------------------------+
+| PIO1_21 | I2C             | I2C SDA                    |
++---------+-----------------+----------------------------+
+| PIO1_24 | USART           | USART RX                   |
++---------+-----------------+----------------------------+
+| PIO0_20 | I2S             | I2S DATAOUT                |
++---------+-----------------+----------------------------+
+| PIO0_19 | I2S             | I2S TX WS                  |
++---------+-----------------+----------------------------+
+| PIO0_21 | I2S             | I2S TX SCK                 |
++---------+-----------------+----------------------------+
+| PIO1_13 | I2S             | I2S DATAIN                 |
++---------+-----------------+----------------------------+
+| PIO0_15 | SCT0_OUT2       | PWM                        |
++---------+-----------------+----------------------------+
+| PIO0_24 | SD0_D0          | SDHC                       |
++---------+-----------------+----------------------------+
+| PIO0_25 | SD0_D1          | SDHC                       |
++---------+-----------------+----------------------------+
+| PIO0_31 | SD0_D2          | SDHC                       |
++---------+-----------------+----------------------------+
+| PIO0_7  | SD0_CLK         | SDHC                       |
++---------+-----------------+----------------------------+
+| PIO0_8  | SD0_CMD         | SDHC                       |
++---------+-----------------+----------------------------+
+| PIO0_9  | SD0_POW_EN      | SDHC                       |
++---------+-----------------+----------------------------+
+| PIO1_0  | SD0_D3          | SDHC                       |
++---------+-----------------+----------------------------+
+
+Memory mappings
+===============
+
+There are multiple memory configurations, they all start from the
+MCUboot partitioning which looks like the table below
+
++---------+------------------+---------------------------------+
+| Name    | Address[Size]    | Comment                         |
++=========+==================+=================================+
+| boot    | 0x00000000[32K]  | Bootloader                      |
++---------+------------------+---------------------------------+
+| slot0   | 0x00008000[160k] | Image that runs after boot      |
++---------+------------------+---------------------------------+
+| slot1   | 0x00030000[96k]  | Second image, core 1 or NS      |
++---------+------------------+---------------------------------+
+| slot2   | 0x00048000[160k] | Updates slot0 image             |
++---------+------------------+---------------------------------+
+| slot3   | 0x00070000[96k]  | Updates slot1 image             |
++---------+------------------+---------------------------------+
+| storage | 0x00088000[50k]  | File system, persistent storage |
++---------+------------------+---------------------------------+
+
+See below examples of how this partitioning is used
+
+Trusted Execution
+*****************
+
++-----------+------------------+--------------------+
+| Memory    | Address[Size]    | Comment            |
++===========+==================+====================+
+| MCUboot   | 0x00000000[32K]  | Secure bootloader  |
++-----------+------------------+--------------------+
+| TFM_S     | 0x00008000[160k] | Secure image       |
++-----------+------------------+--------------------+
+| Zephyr_NS | 0x00030000[96k]  | Non-Secure image   |
++-----------+------------------+--------------------+
+| storage   | 0x00088000[50k]  | Persistent storage |
++-----------+------------------+--------------------+
+
++----------------+------------------+-------------------+
+| RAM            | Address[Size]    | Comment           |
++================+==================+===================+
+| secure_ram     | 0x20000000[136k] | Secure memory     |
++----------------+------------------+-------------------+
+| non_secure_ram | 0x20022000[136k] | Non-Secure memory |
++----------------+------------------+-------------------+
+
+Dual Core samples
+*****************
+
++--------+------------------+----------------------------+
+| Memory | Address[Size]    | Comment                    |
++========+==================+============================+
+| CPU0   | 0x00000000[630K] | CPU0, can access all flash |
++--------+------------------+----------------------------+
+| CPU1   | 0x00030000[96k]  | CPU1, has no MPU           |
++--------+------------------+----------------------------+
+
++-------+------------------+-----------------------+
+| RAM   | Address[Size]    | Comment               |
++=======+==================+=======================+
+| sram0 | 0x20000000[64k]  | CPU0 memory           |
++-------+------------------+-----------------------+
+| sram3 | 0x20030000[64k]  | CPU1 memory           |
++-------+------------------+-----------------------+
+| sram4 | 0x20040000[16k]  | Mailbox/shared memory |
++-------+------------------+-----------------------+
 
 System Clock
 ============
@@ -165,6 +324,38 @@ see the following message in the terminal:
    ***** Booting Zephyr OS v1.14.0 *****
    Hello World! lpcxpresso55s69_cpu0
 
+Building and flashing secure/non-secure with Arm |reg| TrustZone |reg|
+----------------------------------------------------------------------
+The TF-M integration samples can be run using the ``lpcxpresso55s69_ns`` target.
+To run we need to manually flash the resulting image (``tfm_merged.hex``) with
+a J-Link as follows (reset and erase are for recovering a locked core):
+
+   .. code-block:: console
+
+      JLinkExe -device lpc55s69 -if swd -speed 2000 -autoconnect 1
+      J-Link>r
+      J-Link>erase
+      J-Link>loadfile build/zephyr/tfm_merged.hex
+
+We need to reset the board manually after flashing the image to run this code.
+
+Building a dual-core image
+--------------------------
+The dual-core samples are run using ``lpcxpresso55s69_cpu0`` target,
+``lpcxpresso55s69_cpu1`` will be automatically built and merged in a single
+image when ``SECOND_CORE_MCUX`` is selected.
+To run we need to manually flash the resulting image (``multicore.bin``) with a
+J-Link as follows (reset and erase are for recovering a locked core):
+
+   .. code-block:: console
+
+      JLinkExe -device lpc55s69 -if swd -speed 2000 -autoconnect 1
+      J-Link>r
+      J-Link>erase
+      J-Link>loadfile build/multicore.bin
+
+We need to reset the board manually after flashing the image to run this code.
+
 Debugging
 =========
 
@@ -188,10 +379,10 @@ should see the following message in the terminal:
    https://www.nxp.com/products/processors-and-microcontrollers/arm-based-processors-and-mcus/lpc-cortex-m-mcus/lpc5500-cortex-m33/high-efficiency-arm-cortex-m33-based-microcontroller-family:LPC55S6x
 
 .. _LPC55S69 Datasheet:
-   https://www.nxp.com/docs/en/data-sheet/LPC55S6x.pdf
+   https://www.nxp.com/docs/en/nxp/data-sheets/LPC55S6x_DS.pdf
 
 .. _LPC55S69 Reference Manual:
-   https://www.nxp.com/docs/en/user-guide/UM11126.pdf
+   https://www.nxp.com/webapp/Download?colCode=UM11126
 
 .. _LPCXPRESSO55S69 Website:
    https://www.nxp.com/products/processors-and-microcontrollers/arm-based-processors-and-mcus/lpc-cortex-m-mcus/lpc5500-cortex-m33/lpcxpresso55s69-development-board:LPC55S69-EVK

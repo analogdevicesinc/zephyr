@@ -26,7 +26,7 @@ static int test_file_open(const char *path)
 	}
 
 	/* Verify fs_open() */
-	res = fs_open(&filep, path);
+	res = fs_open(&filep, path, FS_O_CREATE | FS_O_RDWR);
 	if (res) {
 		TC_PRINT("Failed opening file [%d]\n", res);
 		return res;
@@ -177,7 +177,7 @@ static int test_file_truncate(void)
 	}
 
 	orig_pos = fs_tell(&filep);
-	TC_PRINT("Original size of file = %ld\n", orig_pos);
+	TC_PRINT("Original size of file = %ld\n", (long) orig_pos);
 
 	/* Test shrinking file */
 	TC_PRINT("\nTesting shrinking\n");
@@ -196,7 +196,7 @@ static int test_file_truncate(void)
 	}
 
 	TC_PRINT("File size after shrinking by 5 bytes = %ld\n",
-						fs_tell(&filep));
+						(long) fs_tell(&filep));
 	if (fs_tell(&filep) != (orig_pos - 5)) {
 		TC_PRINT("File size after fs_truncate not as expected\n");
 		fs_close(&filep);
@@ -228,7 +228,7 @@ static int test_file_truncate(void)
 	}
 
 	TC_PRINT("File size after expanding by 10 bytes = %ld\n",
-						fs_tell(&filep));
+						(long) fs_tell(&filep));
 	if (fs_tell(&filep) != (orig_pos + 10)) {
 		TC_PRINT("File size after fs_truncate not as expected\n");
 		fs_close(&filep);
@@ -303,23 +303,23 @@ static int test_file_delete(const char *path)
 	return res;
 }
 
-void test_fat_file(void)
+ZTEST(fat_fs_dual_drive, test_fat_file)
 {
 	TC_PRINT("Testing file operations on %s\n", FATFS_MNTP);
-	zassert_true(test_file_open(TEST_FILE) == TC_PASS, NULL);
-	zassert_true(test_file_write() == TC_PASS, NULL);
-	zassert_true(test_file_sync() == TC_PASS, NULL);
-	zassert_true(test_file_read() == TC_PASS, NULL);
-	zassert_true(test_file_truncate() == TC_PASS, NULL);
-	zassert_true(test_file_close() == TC_PASS, NULL);
-	zassert_true(test_file_delete(TEST_FILE) == TC_PASS, NULL);
+	zassert_true(test_file_open(TEST_FILE) == TC_PASS);
+	zassert_true(test_file_write() == TC_PASS);
+	zassert_true(test_file_sync() == TC_PASS);
+	zassert_true(test_file_read() == TC_PASS);
+	zassert_true(test_file_truncate() == TC_PASS);
+	zassert_true(test_file_close() == TC_PASS);
+	zassert_true(test_file_delete(TEST_FILE) == TC_PASS);
 
 	TC_PRINT("Testing file operations on %s\n", FATFS_MNTP1);
-	zassert_true(test_file_open(TEST_FILE1) == TC_PASS, NULL);
-	zassert_true(test_file_write() == TC_PASS, NULL);
-	zassert_true(test_file_sync() == TC_PASS, NULL);
-	zassert_true(test_file_read() == TC_PASS, NULL);
-	zassert_true(test_file_truncate() == TC_PASS, NULL);
-	zassert_true(test_file_close() == TC_PASS, NULL);
-	zassert_true(test_file_delete(TEST_FILE1) == TC_PASS, NULL);
+	zassert_true(test_file_open(TEST_FILE1) == TC_PASS);
+	zassert_true(test_file_write() == TC_PASS);
+	zassert_true(test_file_sync() == TC_PASS);
+	zassert_true(test_file_read() == TC_PASS);
+	zassert_true(test_file_truncate() == TC_PASS);
+	zassert_true(test_file_close() == TC_PASS);
+	zassert_true(test_file_delete(TEST_FILE1) == TC_PASS);
 }

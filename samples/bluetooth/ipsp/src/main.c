@@ -6,7 +6,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 
 #define LOG_LEVEL CONFIG_LOG_DEFAULT_LEVEL
 LOG_MODULE_REGISTER(ipsp);
@@ -14,22 +14,16 @@ LOG_MODULE_REGISTER(ipsp);
 /* Preventing log module registration in net_core.h */
 #define NET_LOG_ENABLED	0
 
-#include <zephyr.h>
-#include <linker/sections.h>
+#include <zephyr/kernel.h>
+#include <zephyr/linker/sections.h>
 #include <errno.h>
 #include <stdio.h>
 
-#include <net/net_pkt.h>
-#include <net/net_if.h>
-#include <net/net_core.h>
-#include <net/net_context.h>
-#include <net/udp.h>
-
-/* admin-local, dynamically allocated multicast address */
-#define MCAST_IP6ADDR { { { 0xff, 0x02, 0, 0, 0, 0, 0, 0, \
-			    0, 0, 0, 0, 0, 0, 0, 0x1 } } }
-
-struct in6_addr in6addr_mcast = MCAST_IP6ADDR;
+#include <zephyr/net/net_pkt.h>
+#include <zephyr/net/net_if.h>
+#include <zephyr/net/net_core.h>
+#include <zephyr/net/net_context.h>
+#include <zephyr/net/udp.h>
 
 /* Define my IP address where to expect messages */
 #define MY_IP6ADDR { { { 0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, \
@@ -44,7 +38,7 @@ static struct in6_addr in6addr_my = MY_IP6ADDR;
 K_THREAD_STACK_DEFINE(thread_stack, STACKSIZE);
 static struct k_thread thread_data;
 
-static u8_t buf_tx[NET_IPV6_MTU];
+static uint8_t buf_tx[NET_IPV6_MTU];
 
 #define MAX_DBG_PRINT 64
 
@@ -72,7 +66,7 @@ static inline void init_app(void)
 {
 	LOG_INF("Run IPSP sample");
 
-	k_sem_init(&quit_lock, 0, UINT_MAX);
+	k_sem_init(&quit_lock, 0, K_SEM_MAX_LIMIT);
 
 	if (net_addr_pton(AF_INET6,
 			  CONFIG_NET_CONFIG_MY_IPV6_ADDR,
@@ -87,20 +81,13 @@ static inline void init_app(void)
 		ifaddr = net_if_ipv6_addr_add(net_if_get_default(),
 					      &in6addr_my, NET_ADDR_MANUAL, 0);
 	} while (0);
-
-	net_if_ipv6_maddr_add(net_if_get_default(), &in6addr_mcast);
 }
 
 static inline bool get_context(struct net_context **udp_recv6,
-			       struct net_context **tcp_recv6,
-			       struct net_context **mcast_recv6)
+			       struct net_context **tcp_recv6)
 {
 	int ret;
-	struct sockaddr_in6 mcast_addr6 = { 0 };
 	struct sockaddr_in6 my_addr6 = { 0 };
-
-	net_ipaddr_copy(&mcast_addr6.sin6_addr, &in6addr_mcast);
-	mcast_addr6.sin6_family = AF_INET6;
 
 	my_addr6.sin6_family = AF_INET6;
 	my_addr6.sin6_port = htons(MY_PORT);
@@ -116,20 +103,6 @@ static inline bool get_context(struct net_context **udp_recv6,
 	if (ret < 0) {
 		LOG_ERR("Cannot bind IPv6 UDP port %d (%d)",
 			ntohs(my_addr6.sin6_port), ret);
-		return false;
-	}
-
-	ret = net_context_get(AF_INET6, SOCK_DGRAM, IPPROTO_UDP, mcast_recv6);
-	if (ret < 0) {
-		LOG_ERR("Cannot get receiving IPv6 mcast network context (%d)",
-			ret);
-		return false;
-	}
-
-	ret = net_context_bind(*mcast_recv6, (struct sockaddr *)&mcast_addr6,
-			       sizeof(struct sockaddr_in6));
-	if (ret < 0) {
-		LOG_ERR("Cannot bind IPv6 mcast (%d)", ret);
 		return false;
 	}
 
@@ -160,7 +133,7 @@ static inline bool get_context(struct net_context **udp_recv6,
 
 static int build_reply(const char *name,
 		       struct net_pkt *pkt,
-		       u8_t *buf)
+		       uint8_t *buf)
 {
 	int reply_len = net_pkt_remaining_data(pkt);
 	int ret;
@@ -173,9 +146,9 @@ static int build_reply(const char *name,
 		return ret;
 	}
 
-	LOG_DBG("sending %d bytes", ret);
+	LOG_DBG("sending %d bytes", reply_len);
 
-	return ret;
+	return reply_len;
 }
 
 static inline void pkt_sent(struct net_context *context,
@@ -193,8 +166,8 @@ static inline void set_dst_addr(sa_family_t family,
 				struct net_udp_hdr *udp_hdr,
 				struct sockaddr *dst_addr)
 {
-	net_ipaddr_copy(&net_sin6(dst_addr)->sin6_addr,
-			&ipv6_hdr->src);
+	net_ipv6_addr_copy_raw((uint8_t *)&net_sin6(dst_addr)->sin6_addr,
+			       ipv6_hdr->src);
 	net_sin6(dst_addr)->sin6_family = AF_INET6;
 	net_sin6(dst_addr)->sin6_port = udp_hdr->src_port;
 }
@@ -238,7 +211,7 @@ static void setup_udp_recv(struct net_context *udp_recv6)
 {
 	int ret;
 
-	ret = net_context_recv(udp_recv6, udp_received, 0, NULL);
+	ret = net_context_recv(udp_recv6, udp_received, K_NO_WAIT, NULL);
 	if (ret < 0) {
 		LOG_ERR("Cannot receive IPv6 UDP packets");
 	}
@@ -253,7 +226,7 @@ static void tcp_received(struct net_context *context,
 {
 	static char dbg[MAX_DBG_PRINT + 1];
 	sa_family_t family;
-	int ret;
+	int ret, len;
 
 	if (!pkt) {
 		/* EOF condition */
@@ -261,6 +234,7 @@ static void tcp_received(struct net_context *context,
 	}
 
 	family = net_pkt_family(pkt);
+	len = net_pkt_remaining_data(pkt);
 
 	snprintf(dbg, MAX_DBG_PRINT, "TCP IPv%c",
 		 family == AF_INET6 ? '6' : '4');
@@ -271,6 +245,7 @@ static void tcp_received(struct net_context *context,
 		return;
 	}
 
+	(void)net_context_update_recv_wnd(context, len);
 	net_pkt_unref(pkt);
 
 	ret = net_context_send(context, buf_tx, ret, pkt_sent,
@@ -291,7 +266,9 @@ static void tcp_accepted(struct net_context *context,
 
 	NET_DBG("Accept called, context %p error %d", context, error);
 
-	ret = net_context_recv(context, tcp_received, 0, NULL);
+	net_context_set_accepting(context, false);
+
+	ret = net_context_recv(context, tcp_received, K_NO_WAIT, NULL);
 	if (ret < 0) {
 		LOG_ERR("Cannot receive TCP packet (family %d)",
 			net_context_get_family(context));
@@ -312,9 +289,8 @@ static void listen(void)
 {
 	struct net_context *udp_recv6 = { 0 };
 	struct net_context *tcp_recv6 = { 0 };
-	struct net_context *mcast_recv6 = { 0 };
 
-	if (!get_context(&udp_recv6, &tcp_recv6, &mcast_recv6)) {
+	if (!get_context(&udp_recv6, &tcp_recv6)) {
 		LOG_ERR("Cannot get network contexts");
 		return;
 	}
@@ -329,15 +305,15 @@ static void listen(void)
 	LOG_INF("Stopping...");
 
 	net_context_put(udp_recv6);
-	net_context_put(mcast_recv6);
 	net_context_put(tcp_recv6);
 }
 
-void main(void)
+int main(void)
 {
 	init_app();
 
 	k_thread_create(&thread_data, thread_stack, STACKSIZE,
 			(k_thread_entry_t)listen,
-			NULL, NULL, NULL, K_PRIO_COOP(7), 0, 0);
+			NULL, NULL, NULL, K_PRIO_COOP(7), 0, K_NO_WAIT);
+	return 0;
 }

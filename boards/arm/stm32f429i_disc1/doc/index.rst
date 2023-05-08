@@ -1,7 +1,7 @@
 .. _stm32f429i_disc1_board:
 
-ST STM32F429I-DISC1 Discovery board
-###################################
+ST STM32F429I Discovery
+#######################
 
 Overview
 ********
@@ -31,10 +31,8 @@ some highlights of the STM32F429I-DISC1 board:
 	- Two user LEDs: LD3 (green), LD4 (red)
 	- Two USB OTG LEDs: LD5 (green) VBUS and LD6 (red) OC (over-current)
 
-.. image:: img/stm32f429i_disc1.png
-     :width: 350px
+.. image:: img/stm32f429i_disc1.jpg
      :align: center
-     :height: 631px
      :alt: STM32F429I-DISC1
 
 More information about the board can be found at the `STM32F429I-DISC1 website`_.
@@ -97,6 +95,8 @@ The Zephyr stm32f429i_disc1 board configuration supports the following hardware 
 +-----------+------------+-------------------------------------+
 | SPI       | on-chip    | spi                                 |
 +-----------+------------+-------------------------------------+
+| FMC       | on-chip    | memc (SDRAM)                        |
++-----------+------------+-------------------------------------+
 
 Other hardware features are not yet supported on Zephyr porting.
 
@@ -117,8 +117,6 @@ Default Zephyr Peripheral Mapping:
 ----------------------------------
 - UART_1_TX : PA9
 - UART_1_RX : PA10
-- UART_2_TX : PA2
-- UART_2_RX : PA3
 - USER_PB : PA0
 - LD3 : PG13
 - LD4 : PG12

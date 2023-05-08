@@ -24,16 +24,20 @@
 
 /* list of headers that define whose structure offsets will be generated */
 
-#include <ia32/mmustructs.h>
+#ifndef _X86_OFFSETS_INC_
+#define _X86_OFFSETS_INC_
 
-#include <kernel_offsets.h>
+#include <zephyr/arch/x86/mmustructs.h>
 
-#if defined(CONFIG_LAZY_FP_SHARING)
+#if defined(CONFIG_LAZY_FPU_SHARING)
 GEN_OFFSET_SYM(_thread_arch_t, excNestCount);
 #endif
 
 #ifdef CONFIG_USERSPACE
-GEN_ABSOLUTE_SYM(Z_X86_PDPT_SIZE, sizeof(struct x86_mmu_pdpt));
+GEN_OFFSET_SYM(_thread_arch_t, psp);
+#ifndef CONFIG_X86_COMMON_PAGE_TABLE
+GEN_OFFSET_SYM(_thread_arch_t, ptables);
+#endif
 #endif
 
 GEN_OFFSET_SYM(_thread_arch_t, preempFloatReg);
@@ -50,19 +54,5 @@ GEN_OFFSET_SYM(_callee_saved_t, esp);
 
 /* z_arch_esf_t structure member offsets */
 
-GEN_OFFSET_SYM(z_arch_esf_t, esp);
-GEN_OFFSET_SYM(z_arch_esf_t, ebp);
-GEN_OFFSET_SYM(z_arch_esf_t, ebx);
-GEN_OFFSET_SYM(z_arch_esf_t, esi);
-GEN_OFFSET_SYM(z_arch_esf_t, edi);
-GEN_OFFSET_SYM(z_arch_esf_t, edx);
-GEN_OFFSET_SYM(z_arch_esf_t, ecx);
-GEN_OFFSET_SYM(z_arch_esf_t, eax);
-GEN_OFFSET_SYM(z_arch_esf_t, errorCode);
-GEN_OFFSET_SYM(z_arch_esf_t, eip);
-GEN_OFFSET_SYM(z_arch_esf_t, cs);
 GEN_OFFSET_SYM(z_arch_esf_t, eflags);
-
-/* size of the MMU_REGION structure. Used by linker scripts */
-
-GEN_ABSOLUTE_SYM(__MMU_REGION_SIZEOF, sizeof(struct mmu_region));
+#endif /* _X86_OFFSETS_INC_ */

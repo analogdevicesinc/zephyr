@@ -13,21 +13,25 @@
 #ifndef _SOC_PINMAP_H_
 #define _SOC_PINMAP_H_
 
+#include <zephyr/devicetree.h>
 #include <em_gpio.h>
 
-#ifdef CONFIG_GPIO_GECKO
+#define GPIO_NODE DT_INST(0, silabs_gecko_gpio)
+#if DT_NODE_HAS_PROP(GPIO_NODE, location_swo)
+#define SWO_LOCATION DT_PROP(GPIO_NODE, location_swo)
+#endif
+
 /* Serial Wire Output (SWO) */
-#if (DT_GPIO_GECKO_SWO_LOCATION == 0)
+#if (SWO_LOCATION == 0)
 #define PIN_SWO {gpioPortF, 2, gpioModePushPull, 1}
-#elif (DT_GPIO_GECKO_SWO_LOCATION == 1)
+#elif (SWO_LOCATION == 1)
 #define PIN_SWO {gpioPortB, 13, gpioModePushPull, 1}
-#elif (DT_GPIO_GECKO_SWO_LOCATION == 2)
+#elif (SWO_LOCATION == 2)
 #define PIN_SWO {gpioPortD, 15, gpioModePushPull, 1}
-#elif (DT_GPIO_GECKO_SWO_LOCATION == 3)
+#elif (SWO_LOCATION == 3)
 #define PIN_SWO {gpioPortC, 11, gpioModePushPull, 1}
-#elif (DT_GPIO_GECKO_SWO_LOCATION >= 4)
+#elif (SWO_LOCATION >= 4)
 #error ("Invalid SWO pin location")
 #endif
-#endif /* CONFIG_GPIO_GECKO */
 
 #endif /* _SOC_PINMAP_H_ */

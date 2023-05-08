@@ -4,15 +4,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#define DT_DRV_COMPAT atmel_winc1500
+
 #define LOG_LEVEL CONFIG_WIFI_LOG_LEVEL
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(winc1500);
 
 #include <stdio.h>
 #include <stdint.h>
 
-#include <device.h>
-#include <drivers/spi.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/spi.h>
 
 #include "wifi_winc1500_nm_bsp_internal.h"
 
@@ -35,18 +37,18 @@ tstrNmBusCapabilities egstrNmBusCapabilities = {
 /** Number of times to try to send packet if failed. */
 #define I2C_TIMEOUT		100
 
-static s8_t nm_i2c_write(u8_t *b, u16_t sz)
+static int8_t nm_i2c_write(uint8_t *b, uint16_t sz)
 {
 	/* Not implemented */
 }
 
-static s8_t nm_i2c_read(u8_t *rb, u16_t sz)
+static int8_t nm_i2c_read(uint8_t *rb, uint16_t sz)
 {
 	/* Not implemented */
 }
 
-static s8_t nm_i2c_write_special(u8_t *wb1, u16_t sz1,
-				 u8_t *wb2, u16_t sz2)
+static int8_t nm_i2c_write_special(uint8_t *wb1, uint16_t sz1,
+				 uint8_t *wb2, uint16_t sz2)
 {
 	/* Not implemented */
 }
@@ -54,11 +56,7 @@ static s8_t nm_i2c_write_special(u8_t *wb1, u16_t sz1,
 
 #ifdef CONF_WINC_USE_SPI
 
-#ifdef CONFIG_WIFI_WINC1500_GPIO_SPI_CS
-struct spi_cs_control cs_ctrl;
-#endif
-
-static s8_t spi_rw(u8_t *mosi, u8_t *miso, u16_t size)
+static int8_t spi_rw(uint8_t *mosi, uint8_t *miso, uint16_t size)
 {
 	const struct spi_buf buf_tx = {
 		.buf = mosi,
@@ -77,7 +75,7 @@ static s8_t spi_rw(u8_t *mosi, u8_t *miso, u16_t size)
 		.count = 1
 	};
 
-	if (spi_transceive(winc1500.spi, &winc1500.spi_cfg, &tx, &rx)) {
+	if (spi_transceive_dt(&winc1500_config.spi, &tx, &rx)) {
 		LOG_ERR("spi_transceive fail");
 		return M2M_ERR_BUS_FAIL;
 	}
@@ -87,42 +85,34 @@ static s8_t spi_rw(u8_t *mosi, u8_t *miso, u16_t size)
 
 #endif
 
-s8_t nm_bus_init(void *pvinit)
+int8_t nm_bus_init(void *pvinit)
 {
 	/* configure GPIOs */
-	winc1500.gpios = winc1500_configure_gpios();
+	if (!device_is_ready(winc1500_config.chip_en_gpio.port)) {
+		return -ENODEV;
+	}
+	gpio_pin_configure_dt(&winc1500_config.chip_en_gpio, GPIO_OUTPUT_LOW);
+
+
+	if (!device_is_ready(winc1500_config.irq_gpio.port)) {
+		return -ENODEV;
+	}
+	gpio_pin_configure_dt(&winc1500_config.irq_gpio, GPIO_INPUT);
+
+	if (!device_is_ready(winc1500_config.reset_gpio.port)) {
+		return -ENODEV;
+	}
+	gpio_pin_configure_dt(&winc1500_config.reset_gpio, GPIO_OUTPUT_LOW);
+
 
 #ifdef CONF_WINC_USE_I2C
 	/* Not implemented */
 #elif defined CONF_WINC_USE_SPI
 	/* setup SPI device */
-	winc1500.spi = device_get_binding(DT_INST_0_ATMEL_WINC1500_BUS_NAME);
-	if (!winc1500.spi) {
+	if (!spi_is_ready_dt(&winc1500_config.spi)) {
 		LOG_ERR("spi device binding");
-		return -1;
-	}
-
-	winc1500.spi_cfg.operation = SPI_WORD_SET(8) | SPI_TRANSFER_MSB;
-	winc1500.spi_cfg.frequency = DT_INST_0_ATMEL_WINC1500_SPI_MAX_FREQUENCY;
-	winc1500.spi_cfg.slave = DT_INST_0_ATMEL_WINC1500_BASE_ADDRESS;
-
-#ifdef CONFIG_WIFI_WINC1500_GPIO_SPI_CS
-	cs_ctrl.gpio_dev = device_get_binding(
-		DT_INST_0_ATMEL_WINC1500_CS_GPIOS_CONTROLLER);
-	if (!cs_ctrl.gpio_dev) {
-		LOG_ERR("Unable to get GPIO SPI CS device");
 		return -ENODEV;
 	}
-
-	cs_ctrl.gpio_pin = DT_INST_0_ATMEL_WINC1500_CS_GPIOS_PIN;
-	cs_ctrl.delay = 0U;
-
-	winc1500.spi_cfg.cs = &cs_ctrl;
-
-	LOG_DBG("SPI GPIO CS configured on %s:%u",
-		    DT_INST_0_ATMEL_WINC1500_CS_GPIOS_CONTROLLER,
-		    DT_INST_0_ATMEL_WINC1500_CS_GPIOS_PIN);
-#endif /* CONFIG_WIFI_WINC1500_GPIO_SPI_CS */
 
 	nm_bsp_reset();
 	nm_bsp_sleep(1);
@@ -134,7 +124,7 @@ s8_t nm_bus_init(void *pvinit)
 	return 0;
 }
 
-s8_t nm_bus_ioctl(u8_t cmd, void *parameter)
+int8_t nm_bus_ioctl(uint8_t cmd, void *parameter)
 {
 	sint8 ret = 0;
 
@@ -179,12 +169,12 @@ s8_t nm_bus_ioctl(u8_t cmd, void *parameter)
 	return ret;
 }
 
-s8_t nm_bus_deinit(void)
+int8_t nm_bus_deinit(void)
 {
 	return M2M_SUCCESS;
 }
 
-s8_t nm_bus_reinit(void *config)
+int8_t nm_bus_reinit(void *config)
 {
 	return 0;
 }

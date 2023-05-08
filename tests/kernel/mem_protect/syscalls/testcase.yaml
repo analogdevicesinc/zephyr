@@ -1,4 +1,7 @@
 tests:
   kernel.memory_protection.syscalls:
+    platform_exclude: qemu_arc_em
     filter: CONFIG_ARCH_HAS_USERSPACE
-    tags: kernel security userspace ignore_faults
+    tags: kernel security userspace
+    ignore_faults: true
+    timeout: 180

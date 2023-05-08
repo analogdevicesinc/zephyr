@@ -1,14 +1,13 @@
-# Kconfig - ENC424J600 Ethernet driver configuration options
+# ENC424J600 Ethernet driver configuration options
 
-#
 # Copyright (c) 2019 PHYTEC Messtechnik GmbH
-#
 # SPDX-License-Identifier: Apache-2.0
-#
 
 menuconfig ETH_ENC424J600
 	bool "ENC424J600C Ethernet Controller"
-	depends on SPI
+	default y
+	depends on DT_HAS_MICROCHIP_ENC424J600_ENABLED
+	select SPI
 	help
 	  ENC424J600C Stand-Alone Ethernet Controller
 	  with SPI Interface
@@ -36,11 +35,5 @@ config ETH_ENC424J600_TIMEOUT
 	  Given timeout in milliseconds. Maximum amount of time
 	  that the driver will wait from the IP stack to get
 	  a memory buffer before the Ethernet frame is dropped.
-
-config ETH_ENC424J600_0_GPIO_SPI_CS
-	bool "Manage SPI CS through a GPIO pin"
-	help
-	  This option is useful if one needs to manage SPI CS through a GPIO
-	  pin to by-pass the SPI controller's CS logic.
 
 endif

@@ -6,93 +6,90 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <drivers/sensor.h>
-#include <kernel.h>
-#include <device.h>
-#include <init.h>
-#include <sys/byteorder.h>
-#include <sys/__assert.h>
-#include <logging/log.h>
+#define DT_DRV_COMPAT st_lps25hb_press
+
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/init.h>
+#include <zephyr/sys/byteorder.h>
+#include <zephyr/sys/__assert.h>
+#include <zephyr/logging/log.h>
 
 #include "lps25hb.h"
 
-#define LOG_LEVEL CONFIG_SENSOR_LOG_LEVEL
-LOG_MODULE_REGISTER(LPS25HB);
+LOG_MODULE_REGISTER(LPS25HB, CONFIG_SENSOR_LOG_LEVEL);
 
-static inline int lps25hb_power_ctrl(struct device *dev, u8_t value)
+static inline int lps25hb_power_ctrl(const struct device *dev, uint8_t value)
 {
-	struct lps25hb_data *data = dev->driver_data;
-	const struct lps25hb_config *config = dev->config->config_info;
+	const struct lps25hb_config *config = dev->config;
 
-	return i2c_reg_update_byte(data->i2c_master, config->i2c_slave_addr,
-				   LPS25HB_REG_CTRL_REG1,
-				   LPS25HB_MASK_CTRL_REG1_PD,
-				   value << LPS25HB_SHIFT_CTRL_REG1_PD);
+	return i2c_reg_update_byte_dt(&config->i2c, LPS25HB_REG_CTRL_REG1,
+				      LPS25HB_MASK_CTRL_REG1_PD,
+				      value << LPS25HB_SHIFT_CTRL_REG1_PD);
 }
 
-static inline int lps25hb_set_odr_raw(struct device *dev, u8_t odr)
+static inline int lps25hb_set_odr_raw(const struct device *dev, uint8_t odr)
 {
-	struct lps25hb_data *data = dev->driver_data;
-	const struct lps25hb_config *config = dev->config->config_info;
+	const struct lps25hb_config *config = dev->config;
 
-	return i2c_reg_update_byte(data->i2c_master, config->i2c_slave_addr,
-				   LPS25HB_REG_CTRL_REG1,
-				   LPS25HB_MASK_CTRL_REG1_ODR,
-				   odr << LPS25HB_SHIFT_CTRL_REG1_ODR);
+	return i2c_reg_update_byte_dt(&config->i2c, LPS25HB_REG_CTRL_REG1,
+				      LPS25HB_MASK_CTRL_REG1_ODR,
+				      odr << LPS25HB_SHIFT_CTRL_REG1_ODR);
 }
 
-static int lps25hb_sample_fetch(struct device *dev,
+static int lps25hb_sample_fetch(const struct device *dev,
 				enum sensor_channel chan)
 {
-	struct lps25hb_data *data = dev->driver_data;
-	const struct lps25hb_config *config = dev->config->config_info;
-	u8_t out[5];
+	struct lps25hb_data *data = dev->data;
+	const struct lps25hb_config *config = dev->config;
+	uint8_t out[5];
 	int offset;
 
 	__ASSERT_NO_MSG(chan == SENSOR_CHAN_ALL);
 
 	for (offset = 0; offset < sizeof(out); ++offset) {
-		if (i2c_reg_read_byte(data->i2c_master, config->i2c_slave_addr,
-				      LPS25HB_REG_PRESS_OUT_XL + offset,
-				      out + offset) < 0) {
+		if (i2c_reg_read_byte_dt(&config->i2c,
+					 LPS25HB_REG_PRESS_OUT_XL + offset,
+					 out + offset) < 0) {
 			LOG_DBG("failed to read sample");
 			return -EIO;
 		}
 	}
 
-	data->sample_press = (s32_t)((u32_t)(out[0]) |
-					((u32_t)(out[1]) << 8) |
-					((u32_t)(out[2]) << 16));
-	data->sample_temp = (s16_t)((u16_t)(out[3]) |
-					((u16_t)(out[4]) << 8));
+	data->sample_press = (int32_t)((uint32_t)(out[0]) |
+					((uint32_t)(out[1]) << 8) |
+					((uint32_t)(out[2]) << 16));
+	data->sample_temp = (int16_t)((uint16_t)(out[3]) |
+					((uint16_t)(out[4]) << 8));
 
 	return 0;
 }
 
 static inline void lps25hb_press_convert(struct sensor_value *val,
-					 s32_t raw_val)
+					 int32_t raw_val)
 {
 	/* val = raw_val / 40960 */
 	val->val1 = raw_val / 40960;
-	val->val2 = ((s32_t)raw_val * 1000000 / 40960) % 1000000;
+	val->val2 = ((int32_t)raw_val * 1000000 / 40960) % 1000000;
 }
 
 static inline void lps25hb_temp_convert(struct sensor_value *val,
-					s16_t raw_val)
+					int16_t raw_val)
 {
-	s32_t uval;
+	int32_t uval;
 
 	/* val = raw_val / 480 + 42.5 */
-	uval = (s32_t)raw_val * 1000000 / 480 + 42500000;
+	uval = (int32_t)raw_val * 1000000 / 480 + 42500000;
 	val->val1 = (raw_val * 10 / 480 + 425) / 10;
 	val->val2 = uval % 1000000;
 }
 
-static int lps25hb_channel_get(struct device *dev,
+static int lps25hb_channel_get(const struct device *dev,
 			       enum sensor_channel chan,
 			       struct sensor_value *val)
 {
-	struct lps25hb_data *data = dev->driver_data;
+	struct lps25hb_data *data = dev->data;
 
 	if (chan == SENSOR_CHAN_PRESS) {
 		lps25hb_press_convert(val, data->sample_press);
@@ -110,11 +107,10 @@ static const struct sensor_driver_api lps25hb_api_funcs = {
 	.channel_get = lps25hb_channel_get,
 };
 
-static int lps25hb_init_chip(struct device *dev)
+static int lps25hb_init_chip(const struct device *dev)
 {
-	struct lps25hb_data *data = dev->driver_data;
-	const struct lps25hb_config *config = dev->config->config_info;
-	u8_t chip_id;
+	const struct lps25hb_config *config = dev->config;
+	uint8_t chip_id;
 
 	lps25hb_power_ctrl(dev, 0);
 	k_busy_wait(USEC_PER_MSEC * 50U);
@@ -126,8 +122,8 @@ static int lps25hb_init_chip(struct device *dev)
 
 	k_busy_wait(USEC_PER_MSEC * 20U);
 
-	if (i2c_reg_read_byte(data->i2c_master, config->i2c_slave_addr,
-			      LPS25HB_REG_WHO_AM_I, &chip_id) < 0) {
+	if (i2c_reg_read_byte_dt(&config->i2c, LPS25HB_REG_WHO_AM_I,
+				 &chip_id) < 0) {
 		LOG_DBG("failed reading chip id");
 		goto err_poweroff;
 	}
@@ -144,10 +140,9 @@ static int lps25hb_init_chip(struct device *dev)
 		goto err_poweroff;
 	}
 
-	if (i2c_reg_update_byte(data->i2c_master, config->i2c_slave_addr,
-				LPS25HB_REG_CTRL_REG1,
-				LPS25HB_MASK_CTRL_REG1_BDU,
-				(1 << LPS25HB_SHIFT_CTRL_REG1_BDU)) < 0) {
+	if (i2c_reg_update_byte_dt(&config->i2c, LPS25HB_REG_CTRL_REG1,
+				   LPS25HB_MASK_CTRL_REG1_BDU,
+				   (1 << LPS25HB_SHIFT_CTRL_REG1_BDU)) < 0) {
 		LOG_DBG("failed to set BDU");
 		goto err_poweroff;
 	}
@@ -159,16 +154,13 @@ err_poweroff:
 	return -EIO;
 }
 
-static int lps25hb_init(struct device *dev)
+static int lps25hb_init(const struct device *dev)
 {
-	const struct lps25hb_config * const config = dev->config->config_info;
-	struct lps25hb_data *data = dev->driver_data;
+	const struct lps25hb_config * const config = dev->config;
 
-	data->i2c_master = device_get_binding(config->i2c_master_dev_name);
-	if (!data->i2c_master) {
-		LOG_DBG("i2c master not found: %s",
-			    config->i2c_master_dev_name);
-		return -EINVAL;
+	if (!device_is_ready(config->i2c.bus)) {
+		LOG_ERR("I2C bus device not ready");
+		return -ENODEV;
 	}
 
 	if (lps25hb_init_chip(dev) < 0) {
@@ -179,13 +171,15 @@ static int lps25hb_init(struct device *dev)
 	return 0;
 }
 
-static const struct lps25hb_config lps25hb_config = {
-	.i2c_master_dev_name = DT_INST_0_ST_LPS25HB_PRESS_BUS_NAME,
-	.i2c_slave_addr = DT_INST_0_ST_LPS25HB_PRESS_BASE_ADDRESS,
-};
+#define LPS25HB_DEFINE(inst)									\
+	static struct lps25hb_data lps25hb_data_##inst;						\
+												\
+	static const struct lps25hb_config lps25hb_config_##inst = {				\
+		.i2c = I2C_DT_SPEC_INST_GET(inst),						\
+	};											\
+												\
+	SENSOR_DEVICE_DT_INST_DEFINE(inst, lps25hb_init, NULL,					\
+			      &lps25hb_data_##inst, &lps25hb_config_##inst, POST_KERNEL,	\
+			      CONFIG_SENSOR_INIT_PRIORITY, &lps25hb_api_funcs);			\
 
-static struct lps25hb_data lps25hb_data;
-
-DEVICE_AND_API_INIT(lps25hb, DT_INST_0_ST_LPS25HB_PRESS_LABEL, lps25hb_init,
-		    &lps25hb_data, &lps25hb_config, POST_KERNEL,
-		    CONFIG_SENSOR_INIT_PRIORITY, &lps25hb_api_funcs);
+DT_INST_FOREACH_STATUS_OKAY(LPS25HB_DEFINE)

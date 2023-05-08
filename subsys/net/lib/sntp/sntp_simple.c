@@ -5,19 +5,19 @@
  */
 #include <errno.h>
 
-#include <net/sntp.h>
-#include <net/socketutils.h>
+#include <zephyr/net/sntp.h>
+#include <zephyr/net/socketutils.h>
 
-int sntp_simple(const char *server, u32_t timeout, struct sntp_time *time)
+int sntp_simple(const char *server, uint32_t timeout, struct sntp_time *time)
 {
 	int res;
-	static struct addrinfo hints;
-	struct addrinfo *addr;
+	static struct zsock_addrinfo hints;
+	struct zsock_addrinfo *addr;
 	struct sntp_ctx sntp_ctx;
-	u32_t deadline;
-	u32_t iter_timeout;
+	uint64_t deadline;
+	uint32_t iter_timeout;
 
-	hints.ai_family = AF_INET;
+	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = SOCK_DGRAM;
 	hints.ai_protocol = 0;
 	/* 123 is the standard SNTP port per RFC4330 */
@@ -36,11 +36,16 @@ int sntp_simple(const char *server, u32_t timeout, struct sntp_time *time)
 		goto freeaddr;
 	}
 
-	deadline = k_uptime_get_32() + timeout;
-	/* Timeout for current iteration */
-	iter_timeout = K_MSEC(100);
+	if (timeout == SYS_FOREVER_MS) {
+		deadline = (uint64_t)timeout;
+	} else {
+		deadline = k_uptime_get() + (uint64_t)timeout;
+	}
 
-	while ((s32_t)(deadline - k_uptime_get_32()) > 0) {
+	/* Timeout for current iteration */
+	iter_timeout = 100;
+
+	while (k_uptime_get() < deadline) {
 		res = sntp_query(&sntp_ctx, iter_timeout, time);
 
 		if (res != -ETIMEDOUT) {
@@ -48,7 +53,7 @@ int sntp_simple(const char *server, u32_t timeout, struct sntp_time *time)
 		}
 
 		/* Exponential backoff with limit */
-		if (iter_timeout < K_MSEC(1000)) {
+		if (iter_timeout < 1000) {
 			iter_timeout *= 2;
 		}
 	}
@@ -56,7 +61,7 @@ int sntp_simple(const char *server, u32_t timeout, struct sntp_time *time)
 	sntp_close(&sntp_ctx);
 
 freeaddr:
-	freeaddrinfo(addr);
+	zsock_freeaddrinfo(addr);
 
 	return res;
 }

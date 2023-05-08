@@ -35,8 +35,7 @@ After you have flashed your nRF51, you can perform basic validation
 of this Bluetooth setup using the instructions
 :ref:`below <96b_carbon_verify_bluetooth>`.
 
-.. figure:: img/96b_carbon.png
-     :width: 487px
+.. figure:: img/96b_carbon.jpg
      :align: center
      :alt: 96Boards Carbon
 
@@ -194,6 +193,9 @@ Low Speed Header
 +--------+-------------+----------------------+
 | 30     | NC          | NC                   |
 +--------+-------------+----------------------+
+
+More detailed information about the connectors can be found in
+`96Boards IE Specification`_.
 
 External Clock Sources
 ----------------------
@@ -377,3 +379,6 @@ STM32F401RET using an SWD scan.
 
 .. _STM32F401 reference manual:
    http://www.st.com/resource/en/reference_manual/dm00096844.pdf
+
+.. _96Boards IE Specification:
+    https://linaro.co/ie-specification

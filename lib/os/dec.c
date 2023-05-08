@@ -4,14 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <kernel.h>
-#include <sys/util.h>
+#include <zephyr/sys/util.h>
 
-u8_t u8_to_dec(char *buf, u8_t buflen, u8_t value)
+uint8_t u8_to_dec(char *buf, uint8_t buflen, uint8_t value)
 {
-	u8_t divisor = 100;
-	u8_t num_digits = 0;
-	u8_t digit;
+	uint8_t divisor = 100;
+	uint8_t num_digits = 0;
+	uint8_t digit;
 
 	while (buflen > 0 && divisor > 0) {
 		digit = value / divisor;
@@ -32,4 +31,3 @@ u8_t u8_to_dec(char *buf, u8_t buflen, u8_t value)
 
 	return num_digits;
 }
-

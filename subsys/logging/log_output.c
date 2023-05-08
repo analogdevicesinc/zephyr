@@ -4,10 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log_output.h>
-#include <logging/log_ctrl.h>
-#include <logging/log.h>
-#include <assert.h>
+#include <zephyr/logging/log_output.h>
+#include <zephyr/logging/log_ctrl.h>
+#include <zephyr/logging/log_output_custom.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/sys/__assert.h>
+#include <zephyr/sys/cbprintf.h>
 #include <ctype.h>
 #include <time.h>
 #include <stdio.h>
@@ -15,9 +17,10 @@
 
 #define LOG_COLOR_CODE_DEFAULT "\x1B[0m"
 #define LOG_COLOR_CODE_RED     "\x1B[1;31m"
+#define LOG_COLOR_CODE_GREEN   "\x1B[1;32m"
 #define LOG_COLOR_CODE_YELLOW  "\x1B[1;33m"
 
-#define HEXDUMP_BYTES_IN_LINE 8
+#define HEXDUMP_BYTES_IN_LINE 16
 
 #define  DROPPED_COLOR_PREFIX \
 	Z_LOG_EVAL(CONFIG_LOG_BACKEND_SHOW_COLOR, (LOG_COLOR_CODE_RED), ())
@@ -37,18 +40,23 @@ static const char *const colors[] = {
 	NULL,
 	LOG_COLOR_CODE_RED,     /* err */
 	LOG_COLOR_CODE_YELLOW,  /* warn */
-	NULL,                   /* info */
+	IS_ENABLED(CONFIG_LOG_INFO_COLOR_GREEN) ? LOG_COLOR_CODE_GREEN : NULL,   /* info */
 	NULL                    /* dbg */
 };
 
-static u32_t freq;
-static u32_t timestamp_div;
+static uint32_t freq;
+static log_timestamp_t timestamp_div;
 
-typedef int (*out_func_t)(int c, void *ctx);
+#define SECONDS_IN_DAY			86400U
 
-extern int z_prf(int (*func)(), void *dest, char *format, va_list vargs);
-extern void z_vprintk(out_func_t out, void *log_output,
-		     const char *fmt, va_list ap);
+static uint32_t days_in_month[12] = {31, 28, 31, 30, 31, 30, 31,
+									31, 30, 31, 30, 31};
+
+struct YMD_date {
+	uint32_t year;
+	uint32_t month;
+	uint32_t day;
+};
 
 /* The RFC 5424 allows very flexible mapping and suggest the value 0 being the
  * highest severity and 7 to be the lowest (debugging level) severity.
@@ -62,9 +70,9 @@ extern void z_vprintk(out_func_t out, void *log_output,
  *    6   Informational  Informational messages
  *    7   Debug          Debug-level messages
  */
-static int level_to_rfc5424_severity(u32_t level)
+static int level_to_rfc5424_severity(uint32_t level)
 {
-	u8_t ret;
+	uint8_t ret;
 
 	switch (level) {
 	case LOG_LEVEL_NONE:
@@ -92,40 +100,54 @@ static int level_to_rfc5424_severity(u32_t level)
 
 static int out_func(int c, void *ctx)
 {
-	const struct log_output *out_ctx =
-					(const struct log_output *)ctx;
+	const struct log_output *out_ctx = (const struct log_output *)ctx;
+	int idx;
 
-	out_ctx->buf[out_ctx->control_block->offset] = (u8_t)c;
-	out_ctx->control_block->offset++;
+	if (IS_ENABLED(CONFIG_LOG_MODE_IMMEDIATE)) {
+		/* Backend must be thread safe in synchronous operation. */
+		/* Need that step for big endian */
+		char x = (char)c;
 
-	__ASSERT_NO_MSG(out_ctx->control_block->offset <= out_ctx->size);
+		out_ctx->func((uint8_t *)&x, 1, out_ctx->control_block->ctx);
+		return 0;
+	}
 
 	if (out_ctx->control_block->offset == out_ctx->size) {
 		log_output_flush(out_ctx);
 	}
 
+	idx = atomic_inc(&out_ctx->control_block->offset);
+	out_ctx->buf[idx] = (uint8_t)c;
+
+	__ASSERT_NO_MSG(out_ctx->control_block->offset <= out_ctx->size);
+
 	return 0;
 }
 
-static int print_formatted(const struct log_output *log_output,
+static int cr_out_func(int c, void *ctx)
+{
+	if (c == '\n') {
+		out_func((int)'\r', ctx);
+	}
+	out_func(c, ctx);
+
+	return 0;
+}
+
+static int print_formatted(const struct log_output *output,
 			   const char *fmt, ...)
 {
 	va_list args;
 	int length = 0;
 
 	va_start(args, fmt);
-#if !defined(CONFIG_NEWLIB_LIBC) && !defined(CONFIG_ARCH_POSIX) && \
-    defined(CONFIG_LOG_ENABLE_FANCY_OUTPUT_FORMATTING)
-	length = z_prf(out_func, (void *)log_output, (char *)fmt, args);
-#else
-	z_vprintk(out_func, (void *)log_output, fmt, args);
-#endif
+	length = cbvprintf(out_func, (void *)output, fmt, args);
 	va_end(args);
 
 	return length;
 }
 
-static void buffer_write(log_output_func_t outf, u8_t *buf, size_t len,
+static void buffer_write(log_output_func_t outf, uint8_t *buf, size_t len,
 			 void *ctx)
 {
 	int processed;
@@ -137,36 +159,89 @@ static void buffer_write(log_output_func_t outf, u8_t *buf, size_t len,
 	} while (len != 0);
 }
 
-void log_output_flush(const struct log_output *log_output)
-{
-	buffer_write(log_output->func, log_output->buf,
-		     log_output->control_block->offset,
-		     log_output->control_block->ctx);
 
-	log_output->control_block->offset = 0;
+void log_output_flush(const struct log_output *output)
+{
+	buffer_write(output->func, output->buf,
+		     output->control_block->offset,
+		     output->control_block->ctx);
+
+	output->control_block->offset = 0;
 }
 
-static int timestamp_print(const struct log_output *log_output,
-			   u32_t flags, u32_t timestamp)
+static inline bool is_leap_year(uint32_t year)
+{
+	return (((year % 4 == 0) && (year % 100 != 0)) || (year % 400 == 0));
+}
+
+static void __attribute__((unused)) get_YMD_from_seconds(uint64_t seconds,
+			struct YMD_date *output_date)
+{
+	uint64_t tmp;
+	int i;
+
+	output_date->year = 1970;
+	output_date->month = 1;
+	output_date->day = 1;
+
+	/* compute the proper year */
+	while (1) {
+		tmp = (is_leap_year(output_date->year)) ?
+					366*SECONDS_IN_DAY : 365*SECONDS_IN_DAY;
+		if (tmp > seconds) {
+			break;
+		}
+		seconds -= tmp;
+		output_date->year++;
+	}
+	/* compute the proper month */
+	for (i = 0; i < ARRAY_SIZE(days_in_month); i++) {
+		tmp = ((i == 1) && is_leap_year(output_date->year)) ?
+					(days_in_month[i] + 1) * SECONDS_IN_DAY :
+					days_in_month[i] * SECONDS_IN_DAY;
+		if (tmp > seconds) {
+			output_date->month += i;
+			break;
+		}
+		seconds -= tmp;
+	}
+
+	output_date->day += seconds / SECONDS_IN_DAY;
+}
+
+static int timestamp_print(const struct log_output *output,
+			   uint32_t flags, log_timestamp_t timestamp)
 {
 	int length;
 	bool format =
 		(flags & LOG_OUTPUT_FLAG_FORMAT_TIMESTAMP) |
-		(flags & LOG_OUTPUT_FLAG_FORMAT_SYSLOG);
+		(flags & LOG_OUTPUT_FLAG_FORMAT_SYSLOG) |
+		IS_ENABLED(CONFIG_LOG_OUTPUT_FORMAT_LINUX_TIMESTAMP) |
+		IS_ENABLED(CONFIG_LOG_OUTPUT_FORMAT_CUSTOM_TIMESTAMP);
 
 
 	if (!format) {
-		length = print_formatted(log_output, "[%08lu] ", timestamp);
+#ifndef CONFIG_LOG_TIMESTAMP_64BIT
+		length = print_formatted(output, "[%08lu] ", timestamp);
+#else
+		length = print_formatted(output, "[%016llu] ", timestamp);
+#endif
 	} else if (freq != 0U) {
-		u32_t remainder;
-		u32_t seconds;
-		u32_t hours;
-		u32_t mins;
-		u32_t ms;
-		u32_t us;
+#ifndef CONFIG_LOG_TIMESTAMP_64BIT
+		uint32_t total_seconds;
+#else
+		uint64_t total_seconds;
+#endif
+		uint32_t remainder;
+		uint32_t seconds;
+		uint32_t hours;
+		uint32_t mins;
+		uint32_t ms;
+		uint32_t us;
 
 		timestamp /= timestamp_div;
-		seconds = timestamp / freq;
+		total_seconds = timestamp / freq;
+		seconds = total_seconds;
 		hours = seconds / 3600U;
 		seconds -= hours * 3600U;
 		mins = seconds / 60U;
@@ -176,29 +251,46 @@ static int timestamp_print(const struct log_output *log_output,
 		ms = (remainder * 1000U) / freq;
 		us = (1000 * (remainder * 1000U - (ms * freq))) / freq;
 
-		if (IS_ENABLED(CONFIG_LOG_BACKEND_NET) &&
-		    flags & LOG_OUTPUT_FLAG_FORMAT_SYSLOG) {
+		if (IS_ENABLED(CONFIG_LOG_OUTPUT_FORMAT_CUSTOM_TIMESTAMP)) {
+			length = log_custom_timestamp_print(output, timestamp, print_formatted);
+		} else if (IS_ENABLED(CONFIG_LOG_BACKEND_NET) &&
+			   flags & LOG_OUTPUT_FLAG_FORMAT_SYSLOG) {
 #if defined(CONFIG_NEWLIB_LIBC)
 			char time_str[sizeof("1970-01-01T00:00:00")];
 			struct tm *tm;
 			time_t time;
 
-			time = seconds;
+			time = total_seconds;
 			tm = gmtime(&time);
 
 			strftime(time_str, sizeof(time_str), "%FT%T", tm);
 
-			length = print_formatted(log_output, "%s.%06dZ ",
+			length = print_formatted(output, "%s.%06uZ ",
 						 time_str, ms * 1000U + us);
 #else
-			length = print_formatted(log_output,
-					"1970-01-01T%02d:%02d:%02d.%06dZ ",
+			struct YMD_date date;
+
+			get_YMD_from_seconds(total_seconds, &date);
+			hours = hours % 24;
+			length = print_formatted(output,
+					"%04u-%02u-%02uT%02u:%02u:%02u.%06uZ ",
+					date.year, date.month, date.day,
 					hours, mins, seconds, ms * 1000U + us);
 #endif
 		} else {
-			length = print_formatted(log_output,
-						 "[%02d:%02d:%02d.%03d,%03d] ",
-						 hours, mins, seconds, ms, us);
+			if (IS_ENABLED(CONFIG_LOG_OUTPUT_FORMAT_LINUX_TIMESTAMP)) {
+				length = print_formatted(output,
+#if defined(CONFIG_LOG_TIMESTAMP_64BIT)
+							"[%5llu.%06d] ",
+#else
+							"[%5lu.%06d] ",
+#endif
+							total_seconds, ms * 1000U + us);
+			} else {
+				length = print_formatted(output,
+							"[%02u:%02u:%02u.%03u,%03u] ",
+							hours, mins, seconds, ms, us);
+			}
 		}
 	} else {
 		length = 0;
@@ -207,48 +299,58 @@ static int timestamp_print(const struct log_output *log_output,
 	return length;
 }
 
-static void color_print(const struct log_output *log_output,
-			bool color, bool start, u32_t level)
+static void color_print(const struct log_output *output,
+			bool color, bool start, uint32_t level)
 {
 	if (color) {
-		const char *color = start && (colors[level] != NULL) ?
+		const char *log_color = start && (colors[level] != NULL) ?
 				colors[level] : LOG_COLOR_CODE_DEFAULT;
-		print_formatted(log_output, "%s", color);
+		print_formatted(output, "%s", log_color);
 	}
 }
 
-static void color_prefix(const struct log_output *log_output,
-			 bool color, u32_t level)
+static void color_prefix(const struct log_output *output,
+			 bool color, uint32_t level)
 {
-	color_print(log_output, color, true, level);
+	color_print(output, color, true, level);
 }
 
-static void color_postfix(const struct log_output *log_output,
-			  bool color, u32_t level)
+static void color_postfix(const struct log_output *output,
+			  bool color, uint32_t level)
 {
-	color_print(log_output, color, false, level);
+	color_print(output, color, false, level);
 }
 
 
-static int ids_print(const struct log_output *log_output, bool level_on,
-		    bool func_on, u32_t domain_id, u32_t source_id, u32_t level)
+static int ids_print(const struct log_output *output,
+		     bool level_on,
+		     bool func_on,
+		     const char *domain,
+		     const char *source,
+		     uint32_t level)
 {
 	int total = 0;
 
 	if (level_on) {
-		total += print_formatted(log_output, "<%s> ", severity[level]);
+		total += print_formatted(output, "<%s> ", severity[level]);
 	}
 
-	total += print_formatted(log_output,
+	if (domain) {
+		total += print_formatted(output, "%s/", domain);
+	}
+
+	if (source) {
+		total += print_formatted(output,
 				(func_on &&
 				((1 << level) & LOG_FUNCTION_PREFIX_MASK)) ?
 				"%s." : "%s: ",
-				log_source_name_get(domain_id, source_id));
+				source);
+	}
 
 	return total;
 }
 
-static void newline_print(const struct log_output *ctx, u32_t flags)
+static void newline_print(const struct log_output *ctx, uint32_t flags)
 {
 	if (IS_ENABLED(CONFIG_LOG_BACKEND_NET) &&
 	    flags & LOG_OUTPUT_FLAG_FORMAT_SYSLOG) {
@@ -266,188 +368,76 @@ static void newline_print(const struct log_output *ctx, u32_t flags)
 	}
 }
 
-static void std_print(struct log_msg *msg,
-		      const struct log_output *log_output)
+static void hexdump_line_print(const struct log_output *output,
+			       const uint8_t *data, uint32_t length,
+			       int prefix_offset, uint32_t flags)
 {
-	const char *str = log_msg_str_get(msg);
-	u32_t nargs = log_msg_nargs_get(msg);
-	u32_t *args = alloca(sizeof(u32_t)*nargs);
-	int i;
-
-	for (i = 0; i < nargs; i++) {
-		args[i] = log_msg_arg_get(msg, i);
-	}
-
-	switch (log_msg_nargs_get(msg)) {
-	case 0:
-		print_formatted(log_output, str);
-		break;
-	case 1:
-		print_formatted(log_output, str, args[0]);
-		break;
-	case 2:
-		print_formatted(log_output, str, args[0], args[1]);
-		break;
-	case 3:
-		print_formatted(log_output, str, args[0], args[1], args[2]);
-		break;
-	case 4:
-		print_formatted(log_output, str, args[0], args[1], args[2],
-				args[3]);
-		break;
-	case 5:
-		print_formatted(log_output, str, args[0], args[1], args[2],
-				args[3], args[4]);
-		break;
-	case 6:
-		print_formatted(log_output, str, args[0], args[1], args[2],
-				args[3], args[4], args[5]);
-		break;
-	case 7:
-		print_formatted(log_output, str, args[0], args[1], args[2],
-				args[3], args[4], args[5], args[6]);
-		break;
-	case 8:
-		print_formatted(log_output, str, args[0], args[1], args[2],
-				args[3], args[4], args[5], args[6], args[7]);
-		break;
-	case 9:
-		print_formatted(log_output, str, args[0], args[1], args[2],
-				args[3], args[4], args[5], args[6],  args[7],
-				args[8]);
-		break;
-	case 10:
-		print_formatted(log_output, str, args[0], args[1], args[2],
-				args[3], args[4], args[5], args[6],  args[7],
-				args[8], args[9]);
-		break;
-	case 11:
-		print_formatted(log_output, str, args[0], args[1], args[2],
-				args[3], args[4], args[5], args[6],  args[7],
-				args[8], args[9], args[10]);
-		break;
-	case 12:
-		print_formatted(log_output, str, args[0], args[1], args[2],
-				args[3], args[4], args[5], args[6],  args[7],
-				args[8], args[9], args[10], args[11]);
-		break;
-	case 13:
-		print_formatted(log_output, str, args[0], args[1], args[2],
-				args[3], args[4], args[5], args[6],  args[7],
-				args[8], args[9], args[10], args[11], args[12]);
-		break;
-	case 14:
-		print_formatted(log_output, str, args[0], args[1], args[2],
-				args[3], args[4], args[5], args[6],  args[7],
-				args[8], args[9], args[10], args[11], args[12],
-				args[13]);
-		break;
-	case 15:
-		print_formatted(log_output, str, args[0], args[1], args[2],
-				args[3], args[4], args[5], args[6],  args[7],
-				args[8], args[9], args[10], args[11], args[12],
-				args[13], args[14]);
-		break;
-	default:
-		/* Unsupported number of arguments. */
-		__ASSERT_NO_MSG(true);
-		break;
-	}
-}
-
-static void hexdump_line_print(const struct log_output *log_output,
-			       const u8_t *data, u32_t length,
-			       int prefix_offset, u32_t flags)
-{
-	newline_print(log_output, flags);
+	newline_print(output, flags);
 
 	for (int i = 0; i < prefix_offset; i++) {
-		print_formatted(log_output, " ");
+		print_formatted(output, " ");
 	}
 
 	for (int i = 0; i < HEXDUMP_BYTES_IN_LINE; i++) {
+		if (i > 0 && !(i % 8)) {
+			print_formatted(output, " ");
+		}
+
 		if (i < length) {
-			print_formatted(log_output, "%02x ", data[i]);
+			print_formatted(output, "%02x ", data[i]);
 		} else {
-			print_formatted(log_output, "   ");
+			print_formatted(output, "   ");
 		}
 	}
 
-	print_formatted(log_output, "|");
+	print_formatted(output, "|");
 
 	for (int i = 0; i < HEXDUMP_BYTES_IN_LINE; i++) {
+		if (i > 0 && !(i % 8)) {
+			print_formatted(output, " ");
+		}
+
 		if (i < length) {
-			char c = (char)data[i];
+			unsigned char c = (unsigned char)data[i];
 
-			print_formatted(log_output, "%c",
-			      isprint((int)c) ? c : '.');
+			print_formatted(output, "%c",
+			      isprint((int)c) != 0 ? c : '.');
 		} else {
-			print_formatted(log_output, " ");
+			print_formatted(output, " ");
 		}
 	}
 }
 
-static void hexdump_print(struct log_msg *msg,
-			  const struct log_output *log_output,
-			  int prefix_offset, u32_t flags)
+static void log_msg_hexdump(const struct log_output *output,
+			    uint8_t *data, uint32_t len,
+			    int prefix_offset, uint32_t flags)
 {
-	u32_t offset = 0U;
-	u8_t buf[HEXDUMP_BYTES_IN_LINE];
 	size_t length;
 
-	print_formatted(log_output, "%s", log_msg_str_get(msg));
-
 	do {
-		length = sizeof(buf);
-		log_msg_hexdump_data_get(msg, buf, &length, offset);
+		length = MIN(len, HEXDUMP_BYTES_IN_LINE);
 
-		if (length) {
-			hexdump_line_print(log_output, buf, length,
-					   prefix_offset, flags);
-			offset += length;
-		} else {
-			break;
-		}
-	} while (true);
+		hexdump_line_print(output, data, length,
+				   prefix_offset, flags);
+		data += length;
+		len -= length;
+	} while (len);
 }
 
-static void raw_string_print(struct log_msg *msg,
-			     const struct log_output *log_output)
+static uint32_t prefix_print(const struct log_output *output,
+			     uint32_t flags,
+			     bool func_on,
+			     log_timestamp_t timestamp,
+			     const char *domain,
+			     const char *source,
+			     uint8_t level)
 {
-	__ASSERT_NO_MSG(log_output->size);
-
-	size_t offset = 0;
-	size_t length;
-	bool eol = false;
-
-	do {
-		length = log_output->size;
-		/* Sting is stored in a hexdump message. */
-		log_msg_hexdump_data_get(msg, log_output->buf, &length, offset);
-		log_output->control_block->offset = length;
-
-		if (length != 0) {
-			eol = (log_output->buf[length - 1] == '\n');
-		}
-
-		log_output_flush(log_output);
-		offset += length;
-	} while (length > 0);
-
-	if (eol) {
-		print_formatted(log_output, "\r");
-	}
-}
-
-static u32_t prefix_print(const struct log_output *log_output,
-			 u32_t flags, bool func_on, u32_t timestamp, u8_t level,
-			 u8_t domain_id, u16_t source_id)
-{
-	u32_t length = 0U;
+	uint32_t length = 0U;
 
 	bool stamp = flags & LOG_OUTPUT_FLAG_TIMESTAMP;
 	bool colors_on = flags & LOG_OUTPUT_FLAG_COLORS;
 	bool level_on = flags & LOG_OUTPUT_FLAG_LEVEL;
+	const char *tag = IS_ENABLED(CONFIG_LOG) ? z_log_get_tag() : NULL;
 
 	if (IS_ENABLED(CONFIG_LOG_BACKEND_NET) &&
 	    flags & LOG_OUTPUT_FLAG_FORMAT_SYSLOG) {
@@ -459,170 +449,140 @@ static u32_t prefix_print(const struct log_output *log_output,
 		static const int facility = 16; /* local0 */
 
 		length += print_formatted(
-			log_output,
+			output,
 			"<%d>1 ",
 			facility * 8 +
 			level_to_rfc5424_severity(level));
 	}
 
+	if (tag) {
+		length += print_formatted(output, "%s ", tag);
+	}
+
 	if (stamp) {
-		length += timestamp_print(log_output, flags, timestamp);
+		length += timestamp_print(output, flags, timestamp);
 	}
 
 	if (IS_ENABLED(CONFIG_LOG_BACKEND_NET) &&
 	    flags & LOG_OUTPUT_FLAG_FORMAT_SYSLOG) {
 		length += print_formatted(
-			log_output, "%s - - - - ",
-			log_output->control_block->hostname ?
-			log_output->control_block->hostname :
+			output, "%s - - - - ",
+			output->control_block->hostname ?
+			output->control_block->hostname :
 			"zephyr");
-
 	} else {
-		color_prefix(log_output, colors_on, level);
-		length += ids_print(log_output, level_on, func_on,
-				    domain_id, source_id, level);
+		color_prefix(output, colors_on, level);
 	}
+
+	length += ids_print(output, level_on, func_on, domain, source, level);
 
 	return length;
 }
 
-static void postfix_print(const struct log_output *log_output,
-			  u32_t flags, u8_t level)
+static void postfix_print(const struct log_output *output,
+			  uint32_t flags, uint8_t level)
 {
-	color_postfix(log_output, (flags & LOG_OUTPUT_FLAG_COLORS),
+	color_postfix(output, (flags & LOG_OUTPUT_FLAG_COLORS),
 			      level);
-	newline_print(log_output, flags);
+	newline_print(output, flags);
 }
 
-void log_output_msg_process(const struct log_output *log_output,
-			    struct log_msg *msg,
-			    u32_t flags)
+void log_output_process(const struct log_output *output,
+			log_timestamp_t timestamp,
+			const char *domain,
+			const char *source,
+			uint8_t level,
+			const uint8_t *package,
+			const uint8_t *data,
+			size_t data_len,
+			uint32_t flags)
 {
-	bool std_msg = log_msg_is_std(msg);
-	u32_t timestamp = log_msg_timestamp_get(msg);
-	u8_t level = (u8_t)log_msg_level_get(msg);
-	u8_t domain_id = (u8_t)log_msg_domain_id_get(msg);
-	u16_t source_id = (u16_t)log_msg_source_id_get(msg);
 	bool raw_string = (level == LOG_LEVEL_INTERNAL_RAW_STRING);
-	int prefix_offset;
+	uint32_t prefix_offset;
+	cbprintf_cb cb;
 
-	prefix_offset = raw_string ?
-			0 : prefix_print(log_output, flags, std_msg, timestamp,
-					 level, domain_id, source_id);
-
-	if (log_msg_is_std(msg)) {
-		std_print(msg, log_output);
-	} else if (raw_string) {
-		raw_string_print(msg, log_output);
+	if (!raw_string) {
+		prefix_offset = prefix_print(output, flags, 0, timestamp, domain, source, level);
+		cb = out_func;
 	} else {
-		hexdump_print(msg, log_output, prefix_offset, flags);
+		prefix_offset = 0;
+		/* source set to 1 indicates raw string and contrary to printk
+		 * case it should not append anything to the output (printk is
+		 * appending <CR> to the new line character).
+		 */
+		cb = ((uintptr_t)source == 1) ? out_func : cr_out_func;
+	}
+
+	if (package) {
+		int err = cbpprintf(cb, (void *)output, (void *)package);
+
+		(void)err;
+		__ASSERT_NO_MSG(err >= 0);
+	}
+
+	if (data_len) {
+		log_msg_hexdump(output, (uint8_t *)data, data_len, prefix_offset, flags);
 	}
 
 	if (!raw_string) {
-		postfix_print(log_output, flags, level);
+		postfix_print(output, flags, level);
 	}
 
-	log_output_flush(log_output);
+	log_output_flush(output);
 }
 
-static bool ends_with_newline(const char *fmt)
+void log_output_msg_process(const struct log_output *output,
+			    struct log_msg *msg, uint32_t flags)
 {
-	char c = '\0';
+	log_timestamp_t timestamp = log_msg_get_timestamp(msg);
+	uint8_t level = log_msg_get_level(msg);
+	uint8_t domain_id = log_msg_get_domain(msg);
+	int16_t source_id;
 
-	while (*fmt != '\0') {
-		c = *fmt;
-		fmt++;
-	}
+	if (IS_ENABLED(CONFIG_LOG_MULTIDOMAIN) && domain_id != Z_LOG_LOCAL_DOMAIN_ID) {
+		/* Remote domain is converting source pointer to ID */
+		source_id = (int16_t)(uintptr_t)log_msg_get_source(msg);
+	} else {
+		void *source = (void *)log_msg_get_source(msg);
 
-	return (c == '\n');
-}
-
-void log_output_string(const struct log_output *log_output,
-		       struct log_msg_ids src_level, u32_t timestamp,
-		       const char *fmt, va_list ap, u32_t flags)
-{
-	int length;
-	u8_t level = (u8_t)src_level.level;
-	u8_t domain_id = (u8_t)src_level.domain_id;
-	u16_t source_id = (u16_t)src_level.source_id;
-	bool raw_string = (level == LOG_LEVEL_INTERNAL_RAW_STRING);
-
-	if (!raw_string) {
-		prefix_print(log_output, flags, true, timestamp,
-				level, domain_id, source_id);
-	}
-
-#if !defined(CONFIG_NEWLIB_LIBC) && !defined(CONFIG_ARCH_POSIX) && \
-    defined(CONFIG_LOG_ENABLE_FANCY_OUTPUT_FORMATTING)
-	length = z_prf(out_func, (void *)log_output, (char *)fmt, ap);
-#else
-	z_vprintk(out_func, (void *)log_output, fmt, ap);
-#endif
-
-	(void)length;
-
-	if (raw_string) {
-		/* add \r if string ends with newline. */
-		if (ends_with_newline(fmt)) {
-			print_formatted(log_output, "\r");
+		if (source != NULL) {
+			source_id = IS_ENABLED(CONFIG_LOG_RUNTIME_FILTERING) ?
+					log_dynamic_source_id(source) :
+					log_const_source_id(source);
+		} else {
+			source_id = -1;
 		}
-	} else {
-		postfix_print(log_output, flags, level);
 	}
 
-	log_output_flush(log_output);
+	const char *sname = source_id >= 0 ? log_source_name_get(domain_id, source_id) : NULL;
+	size_t plen, dlen;
+	uint8_t *package = log_msg_get_package(msg, &plen);
+	uint8_t *data = log_msg_get_data(msg, &dlen);
+
+	log_output_process(output, timestamp, NULL, sname, level,
+			   plen > 0 ? package : NULL, data, dlen, flags);
 }
 
-void log_output_hexdump(const struct log_output *log_output,
-			     struct log_msg_ids src_level, u32_t timestamp,
-			     const char *metadata, const u8_t *data,
-			     u32_t length, u32_t flags)
-{
-	u32_t prefix_offset;
-	u8_t level = (u8_t)src_level.level;
-	u8_t domain_id = (u8_t)src_level.domain_id;
-	u16_t source_id = (u16_t)src_level.source_id;
-
-	prefix_offset = prefix_print(log_output, flags, true, timestamp,
-				     level, domain_id, source_id);
-
-	/* Print metadata */
-	print_formatted(log_output, "%s", metadata);
-
-	while (length) {
-		u32_t part_len = length > HEXDUMP_BYTES_IN_LINE ?
-				HEXDUMP_BYTES_IN_LINE : length;
-
-		hexdump_line_print(log_output, data, part_len,
-				   prefix_offset, flags);
-
-		data += part_len;
-		length -= part_len;
-	};
-
-	postfix_print(log_output, flags, level);
-	log_output_flush(log_output);
-}
-
-void log_output_dropped_process(const struct log_output *log_output, u32_t cnt)
+void log_output_dropped_process(const struct log_output *output, uint32_t cnt)
 {
 	char buf[5];
 	int len;
 	static const char prefix[] = DROPPED_COLOR_PREFIX "--- ";
 	static const char postfix[] =
 			" messages dropped ---\r\n" DROPPED_COLOR_POSTFIX;
-	log_output_func_t outf = log_output->func;
-	struct device *dev = (struct device *)log_output->control_block->ctx;
+	log_output_func_t outf = output->func;
 
 	cnt = MIN(cnt, 9999);
-	len = snprintf(buf, sizeof(buf), "%d", cnt);
+	len = snprintk(buf, sizeof(buf), "%d", cnt);
 
-	buffer_write(outf, (u8_t *)prefix, sizeof(prefix) - 1, dev);
-	buffer_write(outf, buf, len, dev);
-	buffer_write(outf, (u8_t *)postfix, sizeof(postfix) - 1, dev);
+	buffer_write(outf, (uint8_t *)prefix, sizeof(prefix) - 1,
+		     output->control_block->ctx);
+	buffer_write(outf, buf, len, output->control_block->ctx);
+	buffer_write(outf, (uint8_t *)postfix, sizeof(postfix) - 1,
+		     output->control_block->ctx);
 }
 
-void log_output_timestamp_freq_set(u32_t frequency)
+void log_output_timestamp_freq_set(uint32_t frequency)
 {
 	timestamp_div = 1U;
 	/* There is no point to have frequency higher than 1MHz (ns are not
@@ -634,4 +594,11 @@ void log_output_timestamp_freq_set(u32_t frequency)
 	}
 
 	freq = frequency;
+}
+
+uint64_t log_output_timestamp_to_us(uint32_t timestamp)
+{
+	timestamp /= timestamp_div;
+
+	return ((uint64_t) timestamp * 1000000U) / freq;
 }

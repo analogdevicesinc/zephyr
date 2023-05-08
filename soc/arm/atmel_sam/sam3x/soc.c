@@ -13,12 +13,13 @@
  * for the Atmel SAM3X series processor.
  */
 
-#include <kernel.h>
-#include <device.h>
-#include <init.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/init.h>
 #include <soc.h>
-#include <arch/cpu.h>
-#include <cortex_m/exc.h>
+#include <zephyr/arch/cpu.h>
+#include <zephyr/arch/arm/aarch32/cortex_m/cmsis.h>
+#include <zephyr/irq.h>
 
 /*
  * PLL clock = Main * (MULA + 1) / DIVA
@@ -43,7 +44,7 @@
  */
 static ALWAYS_INLINE void clock_init(void)
 {
-	u32_t reg_val;
+	uint32_t reg_val;
 
 #ifdef CONFIG_SOC_ATMEL_SAM3X_EXT_SLCK
 	/* Switch slow clock to the external 32 kHz crystal oscillator */
@@ -201,11 +202,10 @@ static ALWAYS_INLINE void clock_init(void)
  *
  * @return 0
  */
-static int atmel_sam3x_init(struct device *arg)
+static int atmel_sam3x_init(void)
 {
-	u32_t key;
+	uint32_t key;
 
-	ARG_UNUSED(arg);
 
 	key = irq_lock();
 

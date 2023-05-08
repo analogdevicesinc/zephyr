@@ -3,24 +3,22 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-#include <zephyr.h>
-#include <power/power.h>
+#include <zephyr/kernel.h>
+#include <zephyr/pm/pm.h>
 #include <hal/nrf_power.h>
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_DECLARE(soc, CONFIG_SOC_LOG_LEVEL);
 
 /* Invoke Low Power/System Off specific Tasks */
-void sys_set_power_state(enum power_states state)
+__weak void pm_state_set(enum pm_state state, uint8_t substate_id)
 {
+	ARG_UNUSED(substate_id);
+
 	switch (state) {
-#ifdef CONFIG_SYS_POWER_DEEP_SLEEP_STATES
- #ifdef CONFIG_HAS_SYS_POWER_STATE_DEEP_SLEEP_1
-	case SYS_POWER_STATE_DEEP_SLEEP_1:
-		nrf_power_system_off();
+	case PM_STATE_SOFT_OFF:
+		nrf_power_system_off(NRF_POWER);
 		break;
- #endif
-#endif
 	default:
 		LOG_DBG("Unsupported power state %u", state);
 		break;
@@ -28,16 +26,14 @@ void sys_set_power_state(enum power_states state)
 }
 
 /* Handle SOC specific activity after Low Power Mode Exit */
-void _sys_pm_power_state_exit_post_ops(enum power_states state)
+__weak void pm_state_exit_post_ops(enum pm_state state, uint8_t substate_id)
 {
+	ARG_UNUSED(substate_id);
+
 	switch (state) {
-#ifdef CONFIG_SYS_POWER_DEEP_SLEEP_STATES
- #ifdef CONFIG_HAS_SYS_POWER_STATE_DEEP_SLEEP_1
-	case SYS_POWER_STATE_DEEP_SLEEP_1:
+	case PM_STATE_SOFT_OFF:
 		/* Nothing to do. */
 		break;
- #endif
-#endif
 	default:
 		LOG_DBG("Unsupported power state %u", state);
 		break;

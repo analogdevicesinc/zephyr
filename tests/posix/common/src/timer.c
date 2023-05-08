@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <ztest.h>
+#include <zephyr/ztest.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -22,14 +22,14 @@ void handler(union sigval val)
 	       ++exp_count);
 }
 
-void test_posix_timer(void)
+ZTEST(posix_apis, test_posix_timer)
 {
 	int ret;
 	struct sigevent sig = { 0 };
 	timer_t timerid;
 	struct itimerspec value, ovalue;
 	struct timespec ts, te;
-	s64_t nsecs_elapsed, secs_elapsed, total_secs_timer;
+	int64_t nsecs_elapsed, secs_elapsed, total_secs_timer;
 
 	sig.sigev_notify = SIGEV_SIGNAL;
 	sig.sigev_notify_function = handler;
@@ -78,7 +78,7 @@ void test_posix_timer(void)
 	}
 
 	total_secs_timer = (value.it_value.tv_sec * NSEC_PER_SEC +
-			    value.it_value.tv_nsec + (u64_t) exp_count *
+			    value.it_value.tv_nsec + (uint64_t) exp_count *
 			    (value.it_interval.tv_sec * NSEC_PER_SEC +
 			     value.it_interval.tv_nsec)) / NSEC_PER_SEC;
 

@@ -17,11 +17,11 @@
 
 #else
 
-#include <net/socket.h>
-#include <kernel.h>
+#include <zephyr/net/socket.h>
+#include <zephyr/kernel.h>
 
 #if defined(CONFIG_NET_SOCKETS_SOCKOPT_TLS)
-#include <net/tls_credentials.h>
+#include <zephyr/net/tls_credentials.h>
 #include "ca_certificate.h"
 #endif
 
@@ -76,7 +76,7 @@ int main(void)
 
 	if (st != 0) {
 		printf("Unable to resolve address, quitting\n");
-		return 1;
+		return 0;
 	}
 
 #if 0
@@ -116,7 +116,7 @@ int main(void)
 
 		if (len < 0) {
 			printf("Error reading response\n");
-			return 1;
+			return 0;
 		}
 
 		if (len == 0) {
@@ -130,6 +130,5 @@ int main(void)
 	printf("\n");
 
 	(void)close(sock);
-
 	return 0;
 }

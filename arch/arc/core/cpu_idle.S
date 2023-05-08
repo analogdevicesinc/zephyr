@@ -11,18 +11,19 @@
  * CPU power management routines.
  */
 
-#include <kernel_structs.h>
+#include <zephyr/kernel_structs.h>
 #include <offsets_short.h>
-#include <toolchain.h>
-#include <linker/sections.h>
-#include <arch/cpu.h>
+#include <zephyr/toolchain.h>
+#include <zephyr/linker/sections.h>
+#include <zephyr/arch/cpu.h>
+#include <zephyr/arch/arc/asm-compat/assembler.h>
 
-GTEXT(k_cpu_idle)
-GTEXT(k_cpu_atomic_idle)
-GDATA(k_cpu_sleep_mode)
+GTEXT(arch_cpu_idle)
+GTEXT(arch_cpu_atomic_idle)
+GDATA(z_arc_cpu_sleep_mode)
 
-SECTION_VAR(BSS, k_cpu_sleep_mode)
-	.balign 4
+SECTION_VAR(BSS, z_arc_cpu_sleep_mode)
+	.align 4
 	.word 0
 
 /*
@@ -33,15 +34,16 @@ SECTION_VAR(BSS, k_cpu_sleep_mode)
  * void nanCpuIdle(void)
  */
 
-SECTION_FUNC(TEXT, k_cpu_idle)
+SECTION_FUNC(TEXT, arch_cpu_idle)
 
 #ifdef CONFIG_TRACING
-	push_s blink
-	jl    z_sys_trace_idle
-	pop_s blink
+	PUSHR blink
+	jl    sys_trace_idle
+	POPR blink
 #endif
 
-	ld r1, [k_cpu_sleep_mode]
+	/* z_arc_cpu_sleep_mode is 32 bit despite of platform bittnes */
+	ld r1, [z_arc_cpu_sleep_mode]
 	or r1, r1, (1 << 4) /* set IRQ-enabled bit */
 	sleep r1
 	j_s [blink]
@@ -52,17 +54,18 @@ SECTION_FUNC(TEXT, k_cpu_idle)
  *
  * This function exits with interrupts restored to <key>.
  *
- * void k_cpu_atomic_idle(unsigned int key)
+ * void arch_cpu_atomic_idle(unsigned int key)
  */
-SECTION_FUNC(TEXT, k_cpu_atomic_idle)
+SECTION_FUNC(TEXT, arch_cpu_atomic_idle)
 
 #ifdef CONFIG_TRACING
-	push_s blink
-	jl    z_sys_trace_idle
-	pop_s blink
+	PUSHR blink
+	jl    sys_trace_idle
+	POPR blink
 #endif
 
-	ld r1, [k_cpu_sleep_mode]
+	/* z_arc_cpu_sleep_mode is 32 bit despite of platform bittnes */
+	ld r1, [z_arc_cpu_sleep_mode]
 	or r1, r1, (1 << 4) /* set IRQ-enabled bit */
 	sleep r1
 	j_s.d [blink]

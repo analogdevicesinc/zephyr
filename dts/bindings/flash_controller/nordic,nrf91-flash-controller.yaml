@@ -1,8 +1,11 @@
-title: Nordic NVMC
-
-description: >
-    This binding gives a base representation of the Nordic NVMC
+description: Nordic NVMC (Non-Volatile Memory Controller)
 
 compatible: "nordic,nrf91-flash-controller"
 
 include: flash-controller.yaml
+
+properties:
+  partial-erase:
+    type: boolean
+    description: |
+      If set, indicates that the NVMC supports partial erase of flash pages.

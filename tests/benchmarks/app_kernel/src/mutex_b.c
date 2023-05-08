@@ -14,11 +14,10 @@
  *
  * @brief Mutex lock/unlock test
  *
- * @return N/A
  */
 void mutex_test(void)
 {
-	u32_t et; /* elapsed time */
+	uint32_t et; /* elapsed time */
 	int i;
 
 	PRINT_STRING(dashline, output_file);

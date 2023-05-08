@@ -9,11 +9,12 @@ toolchain:
 ram: 32
 flash: 512
 supported:
-  - counter
-  - i2c
-  - hwinfo
-  - spi
   - adc
   - can
-  - watchdog
+  - counter
+  - dac
+  - dma
+  - i2c
   - pwm
+  - spi
+  - watchdog

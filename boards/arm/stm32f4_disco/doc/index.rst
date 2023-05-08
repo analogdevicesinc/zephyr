@@ -1,7 +1,7 @@
 .. _stm32f4_disco_board:
 
-ST STM32F4DISCOVERY
-###################
+ST STM32F4 Discovery
+####################
 
 Overview
 ********
@@ -33,9 +33,7 @@ some highlights of the STM32F4DISCOVERY board:
 - CS43L22 audio DAC with integrated class D speaker driver
 
 .. image:: img/stm32f4_disco.jpg
-     :width: 350px
      :align: center
-     :height: 550px
      :alt: STM32F4DISCOVERY
 
 More information about the board can be found at the `STM32F4DISCOVERY website`_.
@@ -96,6 +94,12 @@ The Zephyr stm32f4_disco board configuration supports the following hardware fea
 +-----------+------------+-------------------------------------+
 | USB       | on-chip    | usb                                 |
 +-----------+------------+-------------------------------------+
+| CAN       | on-chip    | CAN controller                      |
++-----------+------------+-------------------------------------+
+
+.. note:: CAN feature requires CAN transceiver, such as `SK Pang CAN breakout board`_.
+          Zephyr default configuration uses CAN_2 exclusively, as simultaneous use
+          of CAN_1 and CAN_2 is not yet supported.
 
 Other hardware features are not yet supported on Zephyr porting.
 
@@ -114,6 +118,9 @@ For mode details please refer to `STM32F4DISCOVERY board User Manual`_.
 
 Default Zephyr Peripheral Mapping:
 ----------------------------------
+
+.. rst-class:: rst-columns
+
 - UART_1_TX : PB6
 - UART_1_RX : PB7
 - UART_2_TX : PA2
@@ -125,6 +132,10 @@ Default Zephyr Peripheral Mapping:
 - LD6 : PD15
 - USB DM : PA11
 - USB DP : PA12
+- CAN1_RX : PB8
+- CAN1_TX : PB9
+- CAN2_RX : PB5
+- CAN2_TX : PB13
 
 System Clock
 ============
@@ -198,3 +209,6 @@ You can debug an application in the usual way.  Here is an example for the
 
 .. _STM32F407 reference manual:
    http://www.st.com/resource/en/reference_manual/dm00031020.pdf
+
+.. _SK Pang CAN breakout board:
+   http://skpang.co.uk/catalog/canbus-can-fd-breakout-board-5v-p-242.html

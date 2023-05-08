@@ -6,11 +6,12 @@
 
 /dts-v1/;
 #include <st/h7/stm32h747Xi_m4.dtsi>
+#include <st/h7/stm32h747xihx-pinctrl.dtsi>
 #include "stm32h747i_disco.dtsi"
 
 / {
 	model = "STMicroelectronics STM32H747I DISCOVERY board";
-	compatible = "st,stm32h747i-disco", "st,stm32h747";
+	compatible = "st,stm32h747i-disco";
 
 	/* HW resources are split between CM7 and CM4 */
 	chosen {
@@ -41,3 +42,17 @@
 		sw0 = &joy_center;
 	};
 };
+
+&rcc {
+	clock-frequency = <DT_FREQ_M(200)>;
+};
+
+&usart1 {
+	/* status = "okay"; */
+};
+
+&uart8 {
+	status = "okay";
+};
+
+arduino_serial: &uart8 {};

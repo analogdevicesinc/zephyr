@@ -27,9 +27,7 @@ some highlights of the Nucleo L4R5ZI board:
 - Two push-buttons: USER and RESET
 
 .. image:: img/nucleo_l4r5zi.jpg
-     :width: 250px
      :align: center
-     :height: 250px
      :alt: Nucleo L4R5ZI
 
 More information about the board can be found at the `Nucleo L4R5ZI website`_.
@@ -141,6 +139,8 @@ hardware features:
 +-----------+------------+-------------------------------------+
 | USB       | on-chip    | usb                                 |
 +-----------+------------+-------------------------------------+
+| ADC       | on-chip    | adc                                 |
++-----------+------------+-------------------------------------+
 
 Other hardware features are not yet supported on this Zephyr port.
 
@@ -157,15 +157,15 @@ responsible for pin muxing, input/output, pull-up, etc.
 Available pins:
 ---------------
 .. image:: img/nucleo144_layout.jpg
-     :width: 720px
      :align: center
-     :height: 540px
      :alt: Nucleo L4R5ZI Arduino connectors
 
 For mode details please refer to `STM32 Nucleo-144 board User Manual`_.
 
 Default Zephyr Peripheral Mapping:
 ----------------------------------
+
+.. rst-class:: rst-columns
 
 - UART_1_TX : PA9
 - UART_1_RX : PA10
@@ -175,8 +175,8 @@ Default Zephyr Peripheral Mapping:
 - UART_3_RX : PB11
 - I2C_1_SCL : PB6
 - I2C_1_SDA : PB7
-- SPI_1_NSS : PA4
-- SPI_1_SCK : PB3
+- SPI_1_NSS : PD14
+- SPI_1_SCK : PA5
 - SPI_1_MISO : PA6
 - SPI_1_MOSI : PA7
 - SPI_2_NSS : PB12
@@ -194,6 +194,7 @@ Default Zephyr Peripheral Mapping:
 - LD3 : PB14
 - USB DM : PA11
 - USB DP : PA12
+- ADC1 : PC0
 
 System Clock
 ------------

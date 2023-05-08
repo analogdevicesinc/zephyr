@@ -28,13 +28,12 @@ the following devices:
 * COUNTER
 
 .. figure:: img/nrf52840_papyr.jpg
-     :width: 442px
      :align: center
      :alt: Electronut Labs Papyr
 
      Electronut Labs Papyr (Credit: Electronut Labs)
 
-More information about the board is available at https://docs.electronut.in/papyr/.
+More information about the board is available at https://gitlab.com/electronutlabs-public/papyr.
 
 Hardware
 ********
@@ -192,4 +191,3 @@ References
 .. _Nordic Semiconductor Infocenter: http://infocenter.nordicsemi.com/
 .. _Black Magic Probe website: https://github.com/blacksphere/blackmagic
 .. _Bumpy website: https://docs.electronut.in/bumpy/
-

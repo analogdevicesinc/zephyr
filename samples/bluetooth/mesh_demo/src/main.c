@@ -6,12 +6,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <sys/printk.h>
+#include <zephyr/sys/printk.h>
 
-#include <settings/settings.h>
+#include <zephyr/settings/settings.h>
 
-#include <bluetooth/bluetooth.h>
-#include <bluetooth/mesh.h>
+#include <zephyr/bluetooth/bluetooth.h>
+#include <zephyr/bluetooth/mesh.h>
 
 #include "board.h"
 
@@ -22,47 +22,30 @@
 
 #define OP_VENDOR_BUTTON BT_MESH_MODEL_OP_3(0x00, BT_COMP_ID_LF)
 
-static const u8_t net_key[16] = {
+static const uint8_t net_key[16] = {
 	0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef,
 	0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef,
 };
-static const u8_t dev_key[16] = {
+static const uint8_t dev_key[16] = {
 	0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef,
 	0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef,
 };
-static const u8_t app_key[16] = {
+static const uint8_t app_key[16] = {
 	0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef,
 	0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef,
 };
-static const u16_t net_idx;
-static const u16_t app_idx;
-static const u32_t iv_index;
-static u8_t flags;
-static u16_t addr = NODE_ADDR;
+static const uint16_t net_idx;
+static const uint16_t app_idx;
+static const uint32_t iv_index;
+static uint8_t flags;
+static uint16_t addr = NODE_ADDR;
 
-static void heartbeat(u8_t hops, u16_t feat)
+static void heartbeat(const struct bt_mesh_hb_sub *sub, uint8_t hops,
+		      uint16_t feat)
 {
 	board_heartbeat(hops, feat);
 	board_play("100H");
 }
-
-static struct bt_mesh_cfg_srv cfg_srv = {
-#if defined(CONFIG_BOARD_BBC_MICROBIT)
-	.relay = BT_MESH_RELAY_ENABLED,
-	.beacon = BT_MESH_BEACON_DISABLED,
-#else
-	.relay = BT_MESH_RELAY_ENABLED,
-	.beacon = BT_MESH_BEACON_ENABLED,
-#endif
-	.frnd = BT_MESH_FRIEND_NOT_SUPPORTED,
-	.default_ttl = 7,
-
-	/* 3 transmissions with 20ms interval */
-	.net_transmit = BT_MESH_TRANSMIT(2, 20),
-	.relay_retransmit = BT_MESH_TRANSMIT(3, 20),
-
-	.hb_sub.func = heartbeat,
-};
 
 static struct bt_mesh_cfg_cli cfg_cli = {
 };
@@ -92,27 +75,29 @@ static struct bt_mesh_health_srv health_srv = {
 BT_MESH_HEALTH_PUB_DEFINE(health_pub, 0);
 
 static struct bt_mesh_model root_models[] = {
-	BT_MESH_MODEL_CFG_SRV(&cfg_srv),
+	BT_MESH_MODEL_CFG_SRV,
 	BT_MESH_MODEL_CFG_CLI(&cfg_cli),
 	BT_MESH_MODEL_HEALTH_SRV(&health_srv, &health_pub),
 };
 
-static void vnd_button_pressed(struct bt_mesh_model *model,
+static int vnd_button_pressed(struct bt_mesh_model *model,
 			       struct bt_mesh_msg_ctx *ctx,
 			       struct net_buf_simple *buf)
 {
 	printk("src 0x%04x\n", ctx->addr);
 
 	if (ctx->addr == bt_mesh_model_elem(model)->addr) {
-		return;
+		return 0;
 	}
 
 	board_other_dev_pressed(ctx->addr);
 	board_play("100G200 100G");
+
+	return 0;
 }
 
 static const struct bt_mesh_model_op vnd_ops[] = {
-	{ OP_VENDOR_BUTTON, 0, vnd_button_pressed },
+	{ OP_VENDOR_BUTTON, BT_MESH_LEN_EXACT(0), vnd_button_pressed },
 	BT_MESH_MODEL_OP_END,
 };
 
@@ -135,23 +120,22 @@ static void configure(void)
 	printk("Configuring...\n");
 
 	/* Add Application Key */
-	bt_mesh_cfg_app_key_add(net_idx, addr, net_idx, app_idx, app_key, NULL);
+	bt_mesh_cfg_cli_app_key_add(net_idx, addr, net_idx, app_idx, app_key, NULL);
 
 	/* Bind to vendor model */
-	bt_mesh_cfg_mod_app_bind_vnd(net_idx, addr, addr, app_idx,
-				     MOD_LF, BT_COMP_ID_LF, NULL);
+	bt_mesh_cfg_cli_mod_app_bind_vnd(net_idx, addr, addr, app_idx, MOD_LF, BT_COMP_ID_LF, NULL);
 
 	/* Bind to Health model */
-	bt_mesh_cfg_mod_app_bind(net_idx, addr, addr, app_idx,
-				 BT_MESH_MODEL_ID_HEALTH_SRV, NULL);
+	bt_mesh_cfg_cli_mod_app_bind(net_idx, addr, addr, app_idx, BT_MESH_MODEL_ID_HEALTH_SRV,
+				     NULL);
 
 	/* Add model subscription */
-	bt_mesh_cfg_mod_sub_add_vnd(net_idx, addr, addr, GROUP_ADDR,
-				    MOD_LF, BT_COMP_ID_LF, NULL);
+	bt_mesh_cfg_cli_mod_sub_add_vnd(net_idx, addr, addr, GROUP_ADDR, MOD_LF, BT_COMP_ID_LF,
+					NULL);
 
 #if NODE_ADDR == PUBLISHER_ADDR
 	{
-		struct bt_mesh_cfg_hb_pub pub = {
+		struct bt_mesh_cfg_cli_hb_pub pub = {
 			.dst = GROUP_ADDR,
 			.count = 0xff,
 			.period = 0x05,
@@ -160,7 +144,7 @@ static void configure(void)
 			.net_idx = net_idx,
 		};
 
-		bt_mesh_cfg_hb_pub_set(net_idx, addr, &pub, NULL);
+		bt_mesh_cfg_cli_hb_pub_set(net_idx, addr, &pub, NULL);
 		printk("Publishing heartbeat messages\n");
 	}
 #endif
@@ -169,10 +153,14 @@ static void configure(void)
 	board_play("100C100D100E100F100G100A100H");
 }
 
-static const u8_t dev_uuid[16] = { 0xdd, 0xdd };
+static const uint8_t dev_uuid[16] = { 0xdd, 0xdd };
 
 static const struct bt_mesh_prov prov = {
 	.uuid = dev_uuid,
+};
+
+BT_MESH_HB_CB_DEFINE(hb_cb) = {
+	.recv = heartbeat,
 };
 
 static void bt_ready(int err)
@@ -210,31 +198,30 @@ static void bt_ready(int err)
 	}
 
 #if NODE_ADDR != PUBLISHER_ADDR
-	/* Heartbeat subcscription is a temporary state (due to there
+	/* Heartbeat subscription is a temporary state (due to there
 	 * not being an "indefinite" value for the period, so it never
 	 * gets stored persistently. Therefore, we always have to configure
 	 * it explicitly.
 	 */
 	{
-		struct bt_mesh_cfg_hb_sub sub = {
+		struct bt_mesh_cfg_cli_hb_sub sub = {
 			.src = PUBLISHER_ADDR,
 			.dst = GROUP_ADDR,
 			.period = 0x10,
 		};
 
-		bt_mesh_cfg_hb_sub_set(net_idx, addr, &sub, NULL);
+		bt_mesh_cfg_cli_hb_sub_set(net_idx, addr, &sub, NULL);
 		printk("Subscribing to heartbeat messages\n");
 	}
 #endif
 }
 
-static u16_t target = GROUP_ADDR;
+static uint16_t target = GROUP_ADDR;
 
 void board_button_1_pressed(void)
 {
 	NET_BUF_SIMPLE_DEFINE(msg, 3 + 4);
 	struct bt_mesh_msg_ctx ctx = {
-		.net_idx = net_idx,
 		.app_idx = app_idx,
 		.addr = target,
 		.send_ttl = BT_MESH_TTL_DEFAULT,
@@ -250,7 +237,7 @@ void board_button_1_pressed(void)
 	printk("Button message sent with OpCode 0x%08x\n", OP_VENDOR_BUTTON);
 }
 
-u16_t board_set_target(void)
+uint16_t board_set_target(void)
 {
 	switch (target) {
 	case GROUP_ADDR:
@@ -276,13 +263,17 @@ void board_play(const char *str)
 	k_sem_give(&tune_sem);
 }
 
-void main(void)
+int main(void)
 {
 	int err;
 
 	printk("Initializing...\n");
 
-	board_init(&addr);
+	err = board_init(&addr);
+	if (err) {
+		printk("Board initialization failed\n");
+		return 0;
+	}
 
 	printk("Unicast address: 0x%04x\n", addr);
 
@@ -290,6 +281,7 @@ void main(void)
 	err = bt_enable(bt_ready);
 	if (err) {
 		printk("Bluetooth init failed (err %d)\n", err);
+		return 0;
 	}
 
 	while (1) {
@@ -297,4 +289,5 @@ void main(void)
 		board_play_tune(tune_str);
 	}
 
+	return 0;
 }

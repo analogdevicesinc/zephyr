@@ -1,34 +1,22 @@
-# Kconfig - Bluetooth ATT/GATT configuration options
+# Bluetooth ATT/GATT configuration options
 
-#
 # Copyright (c) 2019 Intel Corporation
-#
 # SPDX-License-Identifier: Apache-2.0
-#
 
 menu "L2CAP Options"
 
-if BT_HCI_ACL_FLOW_CONTROL
-config BT_L2CAP_RX_MTU
-	int "Maximum supported L2CAP MTU for incoming data"
-	default 200 if BT_BREDR
-	default 65 if BT_SMP
-	default 23
-	range 65 1300 if BT_SMP
-	range 23 1300
-	help
-	  Maximum size of each incoming L2CAP PDU.
-endif # BT_HCI_ACL_FLOW_CONTROL
-
 config BT_L2CAP_TX_BUF_COUNT
 	int "Number of L2CAP TX buffers"
-	default 3
+	default NET_BUF_TX_COUNT if NET_L2_BT
+	default 10 if BT_MCS
+	default BT_BUF_ACL_TX_COUNT
 	range 2 255
 	help
 	  Number of buffers available for outgoing L2CAP packets.
 
 config BT_L2CAP_TX_FRAG_COUNT
 	int "Number of L2CAP TX fragment buffers"
+	default NET_BUF_TX_COUNT if NET_L2_BT
 	default 2
 	range 0 255
 	help
@@ -42,12 +30,33 @@ config BT_L2CAP_TX_FRAG_COUNT
 config BT_L2CAP_TX_MTU
 	int "Maximum supported L2CAP MTU for L2CAP TX buffers"
 	default 253 if BT_BREDR
+	default 69 if BT_MESH_GATT
+	default 66 if BT_EATT
 	default 65 if BT_SMP
+	default 64 if BT_BAP_UNICAST_SERVER || \
+		      BT_BAP_UNICAST_CLIENT || \
+		      BT_BAP_BROADCAST_SINK || \
+		      BT_BAP_SCAN_DELEGATOR || \
+		      BT_BAP_BROADCAST_ASSISTANT
+	default 49 if BT_HAS || BT_HAS_CLIENT
 	default 23
+	range 66 2000 if BT_EATT
 	range 65 2000 if BT_SMP
 	range 23 2000
 	help
 	  Maximum L2CAP MTU for L2CAP TX buffers.
+
+config BT_L2CAP_RESCHED_MS
+	int
+	default 1000
+	help
+	  Delay between retries for sending L2CAP segment. Necessary because the
+	  stack might not be able to allocate enough conn contexts and might not
+	  have enough credits, leading to a state where an SDU is stuck
+	  mid-transfer and never resumes.
+
+	  Note that this should seldom happen, this is just to work around a few
+	  edge cases.
 
 config BT_L2CAP_DYNAMIC_CHANNEL
 	bool "L2CAP Dynamic Channel support"
@@ -56,12 +65,11 @@ config BT_L2CAP_DYNAMIC_CHANNEL
 	  This option enables support for LE Connection oriented Channels,
 	  allowing the creation of dynamic L2CAP Channels.
 
-if BT_DEBUG
-config BT_DEBUG_L2CAP
-	bool "Bluetooth L2CAP debug"
+config BT_L2CAP_ECRED
+	bool "L2CAP Enhanced Credit Based Flow Control support"
+	depends on BT_L2CAP_DYNAMIC_CHANNEL
 	help
-	  This option enables debug support for the Bluetooth
-	  L2ACP layer.
-endif # BT_DEBUG
+	  This option enables support for LE Connection oriented Channels with
+	  Enhanced Credit Based Flow Control support on dynamic L2CAP Channels.
 
 endmenu

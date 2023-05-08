@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <kernel.h>
-#include <arch/cpu.h>
-#include <kernel_structs.h>
+#include <zephyr/kernel.h>
+#include <zephyr/arch/cpu.h>
+#include <zephyr/kernel_structs.h>
 #include <inttypes.h>
-#include <logging/log.h>
-LOG_MODULE_DECLARE(os);
+#include <zephyr/logging/log.h>
+LOG_MODULE_DECLARE(os, CONFIG_KERNEL_LOG_LEVEL);
 
 FUNC_NORETURN void z_nios2_fatal_error(unsigned int reason,
 				       const z_arch_esf_t *esf)
@@ -41,7 +41,7 @@ FUNC_NORETURN void z_nios2_fatal_error(unsigned int reason,
 #if defined(CONFIG_EXTRA_EXCEPTION_INFO) && \
 	(defined(CONFIG_PRINTK) || defined(CONFIG_LOG)) \
 	&& defined(ALT_CPU_HAS_EXTRA_EXCEPTION_INFO)
-static char *cause_str(u32_t cause_code)
+static char *cause_str(uint32_t cause_code)
 {
 	switch (cause_code) {
 	case 0:
@@ -105,7 +105,7 @@ FUNC_NORETURN void _Fault(const z_arch_esf_t *esf)
 #if defined(CONFIG_PRINTK) || defined(CONFIG_LOG)
 	/* Unfortunately, completely unavailable on Nios II/e cores */
 #ifdef ALT_CPU_HAS_EXTRA_EXCEPTION_INFO
-	u32_t exc_reg, badaddr_reg, eccftl;
+	uint32_t exc_reg, badaddr_reg, eccftl;
 	enum nios2_exception_cause cause;
 
 	exc_reg = z_nios2_creg_read(NIOS2_CR_EXCEPTION);
@@ -132,7 +132,7 @@ FUNC_NORETURN void _Fault(const z_arch_esf_t *esf)
 }
 
 #ifdef ALT_CPU_HAS_DEBUG_STUB
-FUNC_NORETURN void z_arch_system_halt(unsigned int reason)
+FUNC_NORETURN void arch_system_halt(unsigned int reason)
 {
 	ARG_UNUSED(reason);
 

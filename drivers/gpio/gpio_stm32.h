@@ -11,9 +11,13 @@
  * @file header for STM32 GPIO
  */
 
-#include <clock_control/stm32_clock_control.h>
-#include <pinmux/stm32/pinmux_stm32.h>
-#include <drivers/gpio.h>
+#include <zephyr/drivers/clock_control/stm32_clock_control.h>
+#include <zephyr/drivers/gpio.h>
+#if DT_HAS_COMPAT_STATUS_OKAY(st_stm32f1_pinctrl)
+#include <zephyr/dt-bindings/pinctrl/stm32f1-pinctrl.h>
+#else
+#include <zephyr/dt-bindings/pinctrl/stm32-pinctrl.h>
+#endif /* DT_HAS_COMPAT_STATUS_OKAY(st_stm32f1_pinctrl) */
 
 /* GPIO buses definitions */
 
@@ -102,6 +106,7 @@
 #define STM32_PERIPH_GPIOB LL_IOP_GRP1_PERIPH_GPIOB
 #define STM32_PERIPH_GPIOC LL_IOP_GRP1_PERIPH_GPIOC
 #define STM32_PERIPH_GPIOD LL_IOP_GRP1_PERIPH_GPIOD
+#define STM32_PERIPH_GPIOE LL_IOP_GRP1_PERIPH_GPIOE
 #define STM32_PERIPH_GPIOF LL_IOP_GRP1_PERIPH_GPIOF
 #elif CONFIG_SOC_SERIES_STM32L0X
 #define STM32_CLOCK_BUS_GPIO STM32_CLOCK_BUS_IOP
@@ -132,6 +137,16 @@
 #define STM32_PERIPH_GPIOG LL_AHB2_GRP1_PERIPH_GPIOG
 #define STM32_PERIPH_GPIOH LL_AHB2_GRP1_PERIPH_GPIOH
 #define STM32_PERIPH_GPIOI LL_AHB2_GRP1_PERIPH_GPIOI
+#elif CONFIG_SOC_SERIES_STM32L5X
+#define STM32_CLOCK_BUS_GPIO STM32_CLOCK_BUS_AHB2
+#define STM32_PERIPH_GPIOA LL_AHB2_GRP1_PERIPH_GPIOA
+#define STM32_PERIPH_GPIOB LL_AHB2_GRP1_PERIPH_GPIOB
+#define STM32_PERIPH_GPIOC LL_AHB2_GRP1_PERIPH_GPIOC
+#define STM32_PERIPH_GPIOD LL_AHB2_GRP1_PERIPH_GPIOD
+#define STM32_PERIPH_GPIOE LL_AHB2_GRP1_PERIPH_GPIOE
+#define STM32_PERIPH_GPIOF LL_AHB2_GRP1_PERIPH_GPIOF
+#define STM32_PERIPH_GPIOG LL_AHB2_GRP1_PERIPH_GPIOG
+#define STM32_PERIPH_GPIOH LL_AHB2_GRP1_PERIPH_GPIOH
 #elif CONFIG_SOC_SERIES_STM32MP1X
 #define STM32_CLOCK_BUS_GPIO STM32_CLOCK_BUS_AHB4
 #define STM32_PERIPH_GPIOA LL_AHB4_GRP1_PERIPH_GPIOA
@@ -153,6 +168,21 @@
 #define STM32_PERIPH_GPIOD LL_AHB2_GRP1_PERIPH_GPIOD
 #define STM32_PERIPH_GPIOE LL_AHB2_GRP1_PERIPH_GPIOE
 #define STM32_PERIPH_GPIOH LL_AHB2_GRP1_PERIPH_GPIOH
+#elif CONFIG_SOC_SERIES_STM32G4X
+#define STM32_CLOCK_BUS_GPIO STM32_CLOCK_BUS_AHB2
+#define STM32_PERIPH_GPIOA LL_AHB2_GRP1_PERIPH_GPIOA
+#define STM32_PERIPH_GPIOB LL_AHB2_GRP1_PERIPH_GPIOB
+#define STM32_PERIPH_GPIOC LL_AHB2_GRP1_PERIPH_GPIOC
+#define STM32_PERIPH_GPIOD LL_AHB2_GRP1_PERIPH_GPIOD
+#define STM32_PERIPH_GPIOE LL_AHB2_GRP1_PERIPH_GPIOE
+#define STM32_PERIPH_GPIOF LL_AHB2_GRP1_PERIPH_GPIOF
+#define STM32_PERIPH_GPIOG LL_AHB2_GRP1_PERIPH_GPIOG
+#elif CONFIG_SOC_SERIES_STM32WLX
+#define STM32_CLOCK_BUS_GPIO STM32_CLOCK_BUS_AHB2
+#define STM32_PERIPH_GPIOA LL_AHB2_GRP1_PERIPH_GPIOA
+#define STM32_PERIPH_GPIOB LL_AHB2_GRP1_PERIPH_GPIOB
+#define STM32_PERIPH_GPIOC LL_AHB2_GRP1_PERIPH_GPIOC
+#define STM32_PERIPH_GPIOH LL_AHB2_GRP1_PERIPH_GPIOH
 #endif /* CONFIG_SOC_SERIES_* */
 
 #ifdef CONFIG_SOC_SERIES_STM32F1X
@@ -160,6 +190,10 @@
 					 | STM32_CNF_GP_OUTPUT \
 					 | STM32_CNF_PUSH_PULL)
 #define STM32_PINCFG_MODE_INPUT         STM32_MODE_INPUT
+#define STM32_PINCFG_MODE_ANALOG        (STM32_MODE_INPUT	\
+					 | STM32_CNF_IN_ANALOG)
+#define STM32_PINCFG_PUSH_PULL          STM32_CNF_PUSH_PULL
+#define STM32_PINCFG_OPEN_DRAIN         STM32_CNF_OPEN_DRAIN
 #define STM32_PINCFG_PULL_UP            (STM32_CNF_IN_PUPD | STM32_PUPD_PULL_UP)
 #define STM32_PINCFG_PULL_DOWN          (STM32_CNF_IN_PUPD | \
 					STM32_PUPD_PULL_DOWN)
@@ -168,17 +202,34 @@
 #else
 #define STM32_PINCFG_MODE_OUTPUT        STM32_MODER_OUTPUT_MODE
 #define STM32_PINCFG_MODE_INPUT         STM32_MODER_INPUT_MODE
+#define STM32_PINCFG_MODE_ANALOG        STM32_MODER_ANALOG_MODE
+#define STM32_PINCFG_PUSH_PULL          STM32_OTYPER_PUSH_PULL
+#define STM32_PINCFG_OPEN_DRAIN         STM32_OTYPER_OPEN_DRAIN
 #define STM32_PINCFG_PULL_UP            STM32_PUPDR_PULL_UP
 #define STM32_PINCFG_PULL_DOWN          STM32_PUPDR_PULL_DOWN
 #define STM32_PINCFG_FLOATING           STM32_PUPDR_NO_PULL
 #endif /* CONFIG_SOC_SERIES_STM32F1X */
 
+#if defined(CONFIG_GPIO_GET_CONFIG) && !defined(CONFIG_SOC_SERIES_STM32F1X)
+/**
+ * @brief structure of a GPIO pin (stm32 LL values) use to get the configuration
+ */
+struct gpio_stm32_pin {
+	unsigned int type; /* LL_GPIO_OUTPUT_PUSHPULL or LL_GPIO_OUTPUT_OPENDRAIN */
+	unsigned int pupd; /* LL_GPIO_PULL_NO or LL_GPIO_PULL_UP or LL_GPIO_PULL_DOWN */
+	unsigned int mode; /* LL_GPIO_MODE_INPUT or LL_GPIO_MODE_OUTPUT or other */
+	unsigned int out_state; /* 1 (high level) or 0 (low level) */
+};
+#endif /* CONFIG_GPIO_GET_CONFIG */
+
 /**
  * @brief configuration of GPIO device
  */
 struct gpio_stm32_config {
+	/* gpio_driver_config needs to be first */
+	struct gpio_driver_config common;
 	/* port base address */
-	u32_t *base;
+	uint32_t *base;
 	/* IO port */
 	int port;
 	struct stm32_pclken pclken;
@@ -188,8 +239,10 @@ struct gpio_stm32_config {
  * @brief driver data
  */
 struct gpio_stm32_data {
-	/* Enabled INT pins generating a cb */
-	u32_t cb_pins;
+	/* gpio_driver_data needs to be first */
+	struct gpio_driver_data common;
+	/* device's owner of this data */
+	const struct device *dev;
 	/* user ISR cb */
 	sys_slist_t cb;
 };
@@ -197,11 +250,13 @@ struct gpio_stm32_data {
 /**
  * @brief helper for configuration of GPIO pin
  *
- * @param base_addr GPIO port base address
+ * @param dev GPIO port device pointer
  * @param pin IO pin
- * @param func GPIO mode
- * @param altf Alternate function
+ * @param conf GPIO mode
+ * @param func Pin function
+ *
+ * @return 0 on success, negative errno code on failure
  */
-int gpio_stm32_configure(u32_t *base_addr, int pin, int conf, int altf);
+int gpio_stm32_configure(const struct device *dev, int pin, int conf, int func);
 
 #endif /* ZEPHYR_DRIVERS_GPIO_GPIO_STM32_H_ */

@@ -8,9 +8,19 @@ resource-constrained and embedded systems: from simple embedded environmental
 sensors and LED wearables to sophisticated embedded controllers, smart
 watches, and IoT wireless applications.
 
-The Zephyr kernel supports multiple architectures, including ARM Cortex-M, Intel
-x86, ARC, NIOS II, Tensilica Xtensa and RISC-V 32. The full list of supported
-boards can be found :ref:`here <boards>`.
+The Zephyr kernel supports multiple architectures, including:
+ - ARCv2 (EM and HS) and ARCv3 (HS6X)
+ - ARMv6-M, ARMv7-M, and ARMv8-M (Cortex-M)
+ - ARMv7-A and ARMv8-A (Cortex-A, 32- and 64-bit)
+ - ARMv7-R, ARMv8-R (Cortex-R, 32- and 64-bit)
+ - Intel x86 (32- and 64-bit)
+ - MIPS (MIPS32 Release 1 specification)
+ - NIOS II Gen 2
+ - RISC-V (32- and 64-bit)
+ - SPARC V8
+ - Tensilica Xtensa
+
+The full list of supported boards based on these architectures can be found :ref:`here <boards>`.
 
 Licensing
 *********
@@ -22,7 +32,7 @@ imported or reused components of the Zephyr project that use other licensing,
 as described in :ref:`Zephyr_Licensing`.
 
 .. _Apache 2.0 license:
-   https://github.com/zephyrproject-rtos/zephyr/blob/master/LICENSE
+   https://github.com/zephyrproject-rtos/zephyr/blob/main/LICENSE
 
 .. _GitHub repo: https://github.com/zephyrproject-rtos/zephyr
 
@@ -99,11 +109,9 @@ Zephyr offers a large and ever growing number of features including:
    drivers configured into the system and Allows the reuse of drivers across
    platforms that have common devices/IP blocks
 
-**Device Tree Support**
-   Use of Device Tree (DTS) to describe hardware and configuration information for
-   boards. The DTS information will be used only during compile time.
-   Information about the system is extracted from the compiled DTS and used to
-   create the application image.
+**Devicetree Support**
+   Use of :ref:`devicetree <dt-guide>` to describe hardware.
+   Information from devicetree is used to create the application image.
 
 **Native Networking Stack supporting multiple protocols**
    Networking support is fully featured and optimized, including LwM2M and BSD
@@ -113,8 +121,8 @@ Zephyr offers a large and ever growing number of features including:
 
 **Bluetooth Low Energy 5.0 support**
    Bluetooth 5.0 compliant (ESR10) and Bluetooth Low Energy Controller support
-   (LE Link Layer). Includes BLE Mesh and a Bluetooth qualification-ready BLE
-   controller.
+   (LE Link Layer). Includes Bluetooth mesh and a Bluetooth qualification-ready
+   Bluetooth controller.
 
    * Generic Access Profile (GAP) with all possible LE roles.
    * GATT (Generic Attribute Profile)
@@ -137,8 +145,8 @@ Zephyr offers a large and ever growing number of features including:
    systems. A native POSIX port, lets you build and run Zephyr as a native
    application on Linux and other OSes, aiding development and testing.
 
-**Virtual File System Interface with NFFS and FATFS Support**
-   Newtron Flash Filesystem (NFFS) and FATFS Support,
+**Virtual File System Interface with LittleFS and FATFS Support**
+   LittleFS and FATFS Support,
    FCB (Flash Circular Buffer) for memory constrained applications, and
    file system enhancements for logging and configuration.
 

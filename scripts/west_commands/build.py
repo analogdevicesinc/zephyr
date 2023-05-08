@@ -4,31 +4,49 @@
 
 import argparse
 import os
+import pathlib
+import shlex
+import sys
+import yaml
 
 from west import log
 from west.configuration import config
 from zcmake import DEFAULT_CMAKE_GENERATOR, run_cmake, run_build, CMakeCache
-from build_helpers import is_zephyr_build, find_build_dir, \
+from build_helpers import is_zephyr_build, find_build_dir, load_domains, \
     FIND_BUILD_DIR_DESCRIPTION
 
 from zephyr_ext_common import Forceable
 
 _ARG_SEPARATOR = '--'
 
+SYSBUILD_PROJ_DIR = pathlib.Path(__file__).resolve().parent.parent.parent \
+                    / pathlib.Path('share/sysbuild')
+
 BUILD_USAGE = '''\
-west build [-h] [-b BOARD] [-d BUILD_DIR]
+west build [-h] [-b BOARD[@REV]]] [-d BUILD_DIR]
            [-t TARGET] [-p {auto, always, never}] [-c] [--cmake-only]
            [-n] [-o BUILD_OPT] [-f]
+           [--sysbuild | --no-sysbuild] [--domain DOMAIN]
            [source_dir] -- [cmake_opt [cmake_opt ...]]
 '''
 
-BUILD_DESCRIPTION = '''\
+BUILD_DESCRIPTION = f'''\
 Convenience wrapper for building Zephyr applications.
 
+{FIND_BUILD_DIR_DESCRIPTION}
+
 positional arguments:
-  source_dir            Use this path as the source directory
-  cmake_opt             Extra options to pass to CMake; implies -c
+  source_dir            application source directory
+  cmake_opt             extra options to pass to cmake; implies -c
+                        (these must come after "--" as shown above)
 '''
+
+PRISTINE_DESCRIPTION = """\
+A "pristine" build directory is empty. The -p option controls
+whether the build directory is made pristine before the build
+is done. A bare '--pristine' with no value is the same as
+--pristine=always. Setting --pristine=auto uses heuristics to
+guess if a pristine build may be necessary."""
 
 def _banner(msg):
     log.inf('-- west build: ' + msg, colorize=True)
@@ -81,38 +99,58 @@ class Build(Forceable):
             description=self.description,
             usage=BUILD_USAGE)
 
-        # Remember to update scripts/west-completion.bash if you add or remove
+        # Remember to update west-completion.bash if you add or remove
         # flags
 
-        parser.add_argument('-b', '--board', help='Board to build for')
+        parser.add_argument('-b', '--board',
+                        help='board to build for with optional board revision')
         # Hidden option for backwards compatibility
         parser.add_argument('-s', '--source-dir', help=argparse.SUPPRESS)
         parser.add_argument('-d', '--build-dir',
-                            help='Build directory. ' +
-                            FIND_BUILD_DIR_DESCRIPTION +
-                            " Otherwise the default build directory is " +
-                            "created and used.")
-        parser.add_argument('-t', '--target',
-                            help='''Build system target to run''')
-        parser.add_argument('-p', '--pristine', choices=['auto', 'always',
-                            'never'], action=AlwaysIfMissing, nargs='?',
-                            help='''Control whether the build folder is made
-                            pristine before running CMake. --pristine is the
-                            same as --pristine=always. If 'auto', it will
-                            be made pristine only if needed.''')
-        parser.add_argument('-c', '--cmake', action='store_true',
-                            help='Force CMake to run')
-        parser.add_argument('--cmake-only', action='store_true',
-                            help="Just run CMake; don't build. Implies -c.")
-        parser.add_argument('-n', '--just-print', '--dry-run', '--recon',
-                            dest='dry_run', action='store_true',
-                            help='''Just print the build commands; don't run
-                            them''')
-        parser.add_argument('-o', '--build-opt', default=[], action='append',
-                            help='''Options to pass to the build tool.
-                            May be given more than once to append multiple
-                            values.''')
+                            help='build directory to create or use')
         self.add_force_arg(parser)
+
+        group = parser.add_argument_group('cmake and build tool')
+        group.add_argument('-c', '--cmake', action='store_true',
+                           help='force a cmake run')
+        group.add_argument('--cmake-only', action='store_true',
+                           help="just run cmake; don't build (implies -c)")
+        group.add_argument('--domain', action='append',
+                           help='''execute build tool (make or ninja) only for
+                           given domain''')
+        group.add_argument('-t', '--target',
+                           help='''run build system target TARGET
+                           (try "-t usage")''')
+        group.add_argument('-T', '--test-item',
+                           help='''Build based on test data in testcase.yaml
+                           or sample.yaml''')
+        group.add_argument('-o', '--build-opt', default=[], action='append',
+                           help='''options to pass to the build tool
+                           (make or ninja); may be given more than once''')
+        group.add_argument('-n', '--just-print', '--dry-run', '--recon',
+                            dest='dry_run', action='store_true',
+                            help="just print build commands; don't run them")
+        group.add_argument('-S', '--snippet', dest='snippets',
+                           action='append', default=[],
+                           help='''add the argument to SNIPPET; may be given
+                           multiple times. Forces CMake to run again if given.
+                           Do not use this option with manually specified
+                           -DSNIPPET... cmake arguments: the results are
+                           undefined''')
+
+        group = parser.add_mutually_exclusive_group()
+        group.add_argument('--sysbuild', action='store_true',
+                           help='''create multi domain build system''')
+        group.add_argument('--no-sysbuild', action='store_true',
+                           help='''do not create multi domain build system
+                                   (default)''')
+
+        group = parser.add_argument_group('pristine builds',
+                                          PRISTINE_DESCRIPTION)
+        group.add_argument('-p', '--pristine', choices=['auto', 'always',
+                            'never'], action=AlwaysIfMissing, nargs='?',
+                            help='pristine build folder setting')
+
         return parser
 
     def do_run(self, args, remainder):
@@ -123,6 +161,15 @@ class Build(Forceable):
         # Store legacy -s option locally
         source_dir = self.args.source_dir
         self._parse_remainder(remainder)
+        # Parse testcase.yaml or sample.yaml files for additional options.
+        if self.args.test_item:
+            # we get path + testitem
+            item = os.path.basename(self.args.test_item)
+            test_path = os.path.dirname(self.args.test_item)
+            if test_path:
+                self.args.source_dir = test_path
+            if not self._parse_test_item(item):
+                log.die("No test metadata found")
         if source_dir:
             if self.args.source_dir:
                 log.die("source directory specified twice:({} and {})".format(
@@ -144,7 +191,7 @@ class Build(Forceable):
                     'treating unknown build.pristine value "{}" as "never"'.
                     format(pristine))
                 pristine = 'never'
-        self.auto_pristine = (pristine == 'auto')
+        self.auto_pristine = pristine == 'auto'
 
         log.dbg('pristine: {} auto_pristine: {}'.format(pristine,
                                                         self.auto_pristine),
@@ -156,7 +203,7 @@ class Build(Forceable):
             else:
                 self._update_cache()
                 if (self.args.cmake or self.args.cmake_opts or
-                        self.args.cmake_only):
+                        self.args.cmake_only or self.args.snippets):
                     self.run_cmake = True
         else:
             self.run_cmake = True
@@ -170,15 +217,22 @@ class Build(Forceable):
 
         self._sanity_check()
         self._update_cache()
+        self.domains = load_domains(self.build_dir)
 
-        self._run_build(args.target)
+        self._run_build(args.target, args.domain)
 
     def _find_board(self):
         board, origin = None, None
         if self.cmake_cache:
             board, origin = (self.cmake_cache.get('CACHED_BOARD'),
                              'CMakeCache.txt')
-        elif self.args.board:
+
+            # A malformed CMake cache may exist, but not have a board.
+            # This happens if there's a build error from a previous run.
+            if board is not None:
+                return (board, origin)
+
+        if self.args.board:
             board, origin = self.args.board, 'command line'
         elif 'BOARD' in os.environ:
             board, origin = os.environ['BOARD'], 'env'
@@ -189,6 +243,7 @@ class Build(Forceable):
     def _parse_remainder(self, remainder):
         self.args.source_dir = None
         self.args.cmake_opts = None
+
         try:
             # Only one source_dir is allowed, as the first positional arg
             if remainder[0] != _ARG_SEPARATOR:
@@ -202,6 +257,40 @@ class Build(Forceable):
                 self.args.cmake_opts = remainder
         except IndexError:
             return
+
+    def _parse_test_item(self, test_item):
+        found_test_metadata = False
+        for yp in ['sample.yaml', 'testcase.yaml']:
+            yf = os.path.join(self.args.source_dir, yp)
+            if not os.path.exists(yf):
+                continue
+            found_test_metadata = True
+            with open(yf, 'r') as stream:
+                try:
+                    y = yaml.safe_load(stream)
+                except yaml.YAMLError as exc:
+                    log.die(exc)
+            tests = y.get('tests')
+            if not tests:
+                log.die(f"No tests found in {yf}")
+            item = tests.get(test_item)
+            if not item:
+                log.die(f"Test item {test_item} not found in {yf}")
+
+            for data in ['extra_args', 'extra_configs']:
+                extra = item.get(data)
+                if not extra:
+                    continue
+                if isinstance(extra, str):
+                    arg_list = extra.split(" ")
+                else:
+                    arg_list = extra
+                args = ["-D{}".format(arg.replace('"', '')) for arg in arg_list]
+                if self.args.cmake_opts:
+                    self.args.cmake_opts.extend(args)
+                else:
+                    self.args.cmake_opts = args
+        return found_test_metadata
 
     def _sanity_precheck(self):
         app = self.args.source_dir
@@ -293,24 +382,38 @@ class Build(Forceable):
         if not self.cmake_cache:
             return          # That's all we can check without a cache.
 
-        cached_app = self.cmake_cache.get('APPLICATION_SOURCE_DIR')
-        log.dbg('APPLICATION_SOURCE_DIR:', cached_app,
-                level=log.VERBOSE_EXTREME)
+        if "CMAKE_PROJECT_NAME" not in self.cmake_cache:
+            # This happens sometimes when a build system is not
+            # completely generated due to an error during the
+            # CMake configuration phase.
+            self.run_cmake = True
+
+        cached_proj = self.cmake_cache.get('APPLICATION_SOURCE_DIR')
+        cached_app = self.cmake_cache.get('APP_DIR')
+        # if APP_DIR is None but APPLICATION_SOURCE_DIR is set, that indicates
+        # an older build folder, this still requires pristine.
+        if cached_app is None and cached_proj:
+            cached_app = cached_proj
+
+        log.dbg('APP_DIR:', cached_app, level=log.VERBOSE_EXTREME)
         source_abs = (os.path.abspath(self.args.source_dir)
                       if self.args.source_dir else None)
         cached_abs = os.path.abspath(cached_app) if cached_app else None
 
         log.dbg('pristine:', self.auto_pristine, level=log.VERBOSE_EXTREME)
+
         # If the build directory specifies a source app, make sure it's
         # consistent with --source-dir.
         apps_mismatched = (source_abs and cached_abs and
-                           source_abs != cached_abs)
+            pathlib.Path(source_abs).resolve() != pathlib.Path(cached_abs).resolve())
+
         self.check_force(
             not apps_mismatched or self.auto_pristine,
             'Build directory "{}" is for application "{}", but source '
             'directory "{}" was specified; please clean it, use --pristine, '
             'or use --build-dir to set another build directory'.
             format(self.build_dir, cached_abs, source_abs))
+
         if apps_mismatched:
             self.run_cmake = True  # If they insist, we need to re-run cmake.
 
@@ -355,16 +458,6 @@ class Build(Forceable):
                 self._sanity_check_source_dir()
 
     def _run_cmake(self, board, origin, cmake_opts):
-        _banner(
-            '''build configuration:
-       source directory: {}
-       build directory: {}{}
-       BOARD: {}'''.
-            format(self.source_dir, self.build_dir,
-                   ' (created)' if self.created_build_dir else '',
-                   ('{} (origin: {})'.format(board, origin) if board
-                    else 'UNKNOWN')))
-
         if board is None and config_getboolean('board_warn', True):
             log.wrn('This looks like a fresh build and BOARD is unknown;',
                     "so it probably won't work. To fix, use",
@@ -373,7 +466,6 @@ class Build(Forceable):
                     "'west config build.board_warn false'")
 
         if not self.run_cmake:
-            log.dbg('Not generating a build system; one is present.')
             return
 
         _banner('generating a build system')
@@ -384,6 +476,20 @@ class Build(Forceable):
             cmake_opts = []
         if self.args.cmake_opts:
             cmake_opts.extend(self.args.cmake_opts)
+        if self.args.snippets:
+            cmake_opts.append(f'-DSNIPPET={";".join(self.args.snippets)}')
+
+        user_args = config_get('cmake-args', None)
+        if user_args:
+            cmake_opts.extend(shlex.split(user_args))
+
+        config_sysbuild = config_getboolean('sysbuild', False)
+        if self.args.sysbuild or (config_sysbuild and not self.args.no_sysbuild):
+            cmake_opts.extend(['-S{}'.format(SYSBUILD_PROJ_DIR),
+                               '-DAPP_DIR:PATH={}'.format(self.source_dir)])
+        else:
+            # self.args.no_sysbuild == True or config sysbuild False
+            cmake_opts.extend(['-S{}'.format(self.source_dir)])
 
         # Invoke CMake from the current working directory using the
         # -S and -B options (officially introduced in CMake 3.13.0).
@@ -391,8 +497,8 @@ class Build(Forceable):
         # to Just Work:
         #
         # west build -- -DOVERLAY_CONFIG=relative-path.conf
-        final_cmake_args = ['-B{}'.format(self.build_dir),
-                            '-S{}'.format(self.source_dir),
+        final_cmake_args = ['-DWEST_PYTHON={}'.format(sys.executable),
+                            '-B{}'.format(self.build_dir),
                             '-G{}'.format(config_get('generator',
                                                      DEFAULT_CMAKE_GENERATOR))]
         if cmake_opts:
@@ -401,23 +507,24 @@ class Build(Forceable):
 
     def _run_pristine(self):
         _banner('making build dir {} pristine'.format(self.build_dir))
-
-        zb = os.environ.get('ZEPHYR_BASE')
-        if not zb:
-            log.die('Internal error: ZEPHYR_BASE not set in the environment, '
-                    'and should have been by the main script')
-
         if not is_zephyr_build(self.build_dir):
             log.die('Refusing to run pristine on a folder that is not a '
                     'Zephyr build system')
 
-        cmake_args = ['-P', '{}/cmake/pristine.cmake'.format(zb)]
+        cache = CMakeCache.from_build_dir(self.build_dir)
+
+        app_src_dir = cache.get('APPLICATION_SOURCE_DIR')
+        app_bin_dir = cache.get('APPLICATION_BINARY_DIR')
+
+        cmake_args = [f'-DBINARY_DIR={app_bin_dir}',
+                      f'-DSOURCE_DIR={app_src_dir}',
+                      '-P', cache['ZEPHYR_BASE'] + '/cmake/pristine.cmake']
         run_cmake(cmake_args, cwd=self.build_dir, dry_run=self.args.dry_run)
 
-    def _run_build(self, target):
+    def _run_build(self, target, domain):
         if target:
             _banner('running target {}'.format(target))
-        else:
+        elif self.run_cmake:
             _banner('building application')
         extra_args = ['--target', target] if target else []
         if self.args.build_opt:
@@ -426,8 +533,23 @@ class Build(Forceable):
         if self.args.verbose:
             self._append_verbose_args(extra_args,
                                       not bool(self.args.build_opt))
-        run_build(self.build_dir, extra_args=extra_args,
-                  dry_run=self.args.dry_run)
+
+        domains = load_domains(self.build_dir)
+        build_dir_list = []
+
+        if domain is None:
+            # If no domain is specified, we just build top build dir as that
+            # will build all domains.
+            build_dir_list = [domains.get_top_build_dir()]
+        else:
+            _banner('building domain(s): {}'.format(' '.join(domain)))
+            domain_list = domains.get_domains(domain)
+            for d in domain_list:
+                build_dir_list.append(d.build_dir)
+
+        for b in build_dir_list:
+            run_build(b, extra_args=extra_args,
+                      dry_run=self.args.dry_run)
 
     def _append_verbose_args(self, extra_args, add_dashes):
         # These hacks are only needed for CMake versions earlier than

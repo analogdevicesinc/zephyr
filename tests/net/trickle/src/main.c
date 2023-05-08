@@ -6,25 +6,25 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_test, CONFIG_NET_TRICKLE_LOG_LEVEL);
 
 #include <zephyr/types.h>
-#include <ztest.h>
+#include <zephyr/ztest.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <string.h>
 #include <errno.h>
-#include <sys/printk.h>
-#include <linker/sections.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/linker/sections.h>
 
-#include <tc_util.h>
+#include <zephyr/tc_util.h>
 
-#include <net/buf.h>
-#include <net/net_ip.h>
-#include <net/net_if.h>
+#include <zephyr/net/buf.h>
+#include <zephyr/net/net_ip.h>
+#include <zephyr/net/net_if.h>
 
-#include <net/trickle.h>
+#include <zephyr/net/trickle.h>
 
 #include "net_private.h"
 
@@ -198,22 +198,21 @@ static void test_init(void)
 	k_sem_init(&wait2, 0, UINT_MAX);
 }
 
-/*test case main entry*/
-void test_main(void)
+ZTEST(net_trickle, test_trickle)
 {
-	ztest_test_suite(test_tickle,
-			ztest_unit_test(test_init),
-			ztest_unit_test(test_trickle_create),
-			ztest_unit_test(test_trickle_start),
-			ztest_unit_test(test_trickle_1_status),
-			ztest_unit_test(test_trickle_2_status),
-			ztest_unit_test(test_trickle_1_wait),
-			ztest_unit_test(test_trickle_2_wait),
-			ztest_unit_test(test_trickle_1_update),
-			ztest_unit_test(test_trickle_2_inc),
-			ztest_unit_test(test_trickle_1_status),
-			ztest_unit_test(test_trickle_1_wait_long),
-			ztest_unit_test(test_trickle_stop),
-			ztest_unit_test(test_trickle_1_stopped));
-	ztest_run_test_suite(test_tickle);
+	test_init();
+	test_trickle_create();
+	test_trickle_start();
+	test_trickle_1_status();
+	test_trickle_2_status();
+	test_trickle_1_wait();
+	test_trickle_2_wait();
+	test_trickle_1_update();
+	test_trickle_2_inc();
+	test_trickle_1_status();
+	test_trickle_1_wait_long();
+	test_trickle_stop();
+	test_trickle_1_stopped();
 }
+
+ZTEST_SUITE(net_trickle, NULL, NULL, NULL, NULL, NULL);

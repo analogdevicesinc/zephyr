@@ -8,13 +8,7 @@
 #ifndef _BOARD__H_
 #define _BOARD__H_
 
-#include <misc/util.h>
-
-#ifndef _ASMLANGUAGE
-
-#include <device.h>
-#include <misc/util.h>
-
-#endif /* !_ASMLANGUAGE */
+/* Define CMSIS configurations */
+#define __CR_REV		1U
 
 #endif /* _BOARD__H_ */

@@ -28,10 +28,8 @@ some highlights of the Nucleo F412ZG board:
 - Three user LEDs
 - Two push-buttons: USER and RESET
 
-.. image:: img/nucleo_f412zg.png
-   :width: 720px
+.. image:: img/nucleo_f412zg.jpg
    :align: center
-   :height: 720px
    :alt: Nucleo F412ZG
 
 More information about the board can be found at the `Nucleo F412ZG website`_.
@@ -106,25 +104,17 @@ input/output, pull-up, etc.
 
 Available pins:
 ---------------
-.. image:: img/nucleo_f412zg_zio_left.png
-   :width: 720px
+.. image:: img/nucleo_f412zg_zio_left.jpg
    :align: center
-   :height: 540px
    :alt: Nucleo F412ZG ZIO connectors (left)
-.. image:: img/nucleo_f412zg_zio_right.png
-   :width: 720px
+.. image:: img/nucleo_f412zg_zio_right.jpg
    :align: center
-   :height: 540px
    :alt: Nucleo F412ZG ZIO connectors (right)
-.. image:: img/nucleo_f412zg_morpho_left.png
-   :width: 720px
+.. image:: img/nucleo_f412zg_morpho_left.jpg
    :align: center
-   :height: 540px
    :alt: Nucleo F412ZG Morpho connectors (left)
-.. image:: img/nucleo_f412zg_morpho_right.png
-   :width: 720px
+.. image:: img/nucleo_f412zg_morpho_right.jpg
    :align: center
-   :height: 540px
    :alt: Nucleo F412ZG Morpho connectors (right)
 
 For more details please refer to `STM32 Nucleo-144 board User Manual`_.
@@ -135,7 +125,7 @@ Default Zephyr Peripheral Mapping:
 - UART_3 TX/RX : PD8/PD9 (ST-Link Virtual Port Com)
 - UART_6 TX/RX : PG14/PG9 (Arduino Serial)
 - I2C1 SCL/SDA : PB8/PB9 (Arduino I2C)
-- SPI1 NSS/SCK/MISO/MOSI : PA4/PA5/PA6/PA7 (Arduino SPI)
+- SPI1 NSS/SCK/MISO/MOSI : PD14/PA5/PA6/PA7 (Arduino SPI)
 - PWM_2_CH1 : PA0
 - USER_PB : PC13
 - LD1 : PB0

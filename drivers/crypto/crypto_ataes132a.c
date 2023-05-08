@@ -4,13 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <init.h>
-#include <kernel.h>
+#include <zephyr/init.h>
+#include <zephyr/kernel.h>
 #include <string.h>
-#include <device.h>
-#include <drivers/i2c.h>
-#include <assert.h>
-#include <crypto/cipher.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/i2c.h>
+#include <zephyr/sys/__assert.h>
+#include <zephyr/crypto/crypto.h>
+
+#define DT_DRV_COMPAT atmel_ataes132a
 
 #include "crypto_ataes132a_priv.h"
 
@@ -22,7 +24,7 @@
 #define CRYPTO_MAX_SESSION 16
 
 #define LOG_LEVEL CONFIG_CRYPTO_LOG_LEVEL
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(ataes132a);
 
 static struct ataes132a_driver_state ataes132a_state[CRYPTO_MAX_SESSION];
@@ -37,17 +39,17 @@ static void ataes132a_init_states(void)
 	}
 }
 
-static int ataes132a_send_command(struct device *dev, u8_t opcode,
-				  u8_t mode, u8_t *params,
-				  u8_t nparams, u8_t *response,
-				  u8_t *nresponse)
+static int ataes132a_send_command(const struct device *dev, uint8_t opcode,
+				  uint8_t mode, uint8_t *params,
+				  uint8_t nparams, uint8_t *response,
+				  uint8_t *nresponse)
 {
 	int retry_count = 0;
-	struct ataes132a_device_data *data = dev->driver_data;
-	const struct ataes132a_device_config *cfg = dev->config->config_info;
-	u8_t count;
-	u8_t status;
-	u8_t crc[2];
+	struct ataes132a_device_data *data = dev->data;
+	const struct ataes132a_device_config *cfg = dev->config;
+	uint8_t count;
+	uint8_t status;
+	uint8_t crc[2];
 	int i, i2c_return;
 
 	count = nparams + 5;
@@ -60,12 +62,11 @@ static int ataes132a_send_command(struct device *dev, u8_t opcode,
 	 * If there is concurrency protection around the driver, this should
 	 * never happen.
 	 */
-	read_reg_i2c(data->i2c, cfg->i2c_addr, ATAES_STATUS_REG, &status);
+	read_reg_i2c(&cfg->i2c, ATAES_STATUS_REG, &status);
 
 	while (status & ATAES_STATUS_WIP) {
 		k_busy_wait(D10D24S);
-		read_reg_i2c(data->i2c, cfg->i2c_addr,
-			     ATAES_STATUS_REG, &status);
+		read_reg_i2c(&cfg->i2c, ATAES_STATUS_REG, &status);
 	}
 
 	data->command_buffer[0] = count;
@@ -81,12 +82,10 @@ static int ataes132a_send_command(struct device *dev, u8_t opcode,
 	data->command_buffer[nparams + 4] = crc[1];
 
 	/*Reset i/O address start before sending a command*/
-	write_reg_i2c(data->i2c, cfg->i2c_addr,
-		      ATAES_COMMAND_ADDRR_RESET, 0x0);
+	write_reg_i2c(&cfg->i2c, ATAES_COMMAND_ADDRR_RESET, 0x0);
 
 	/*Send a command through the command buffer*/
-	i2c_return = burst_write_i2c(data->i2c, cfg->i2c_addr,
-				     ATAES_COMMAND_MEM_ADDR,
+	i2c_return = burst_write_i2c(&cfg->i2c, ATAES_COMMAND_MEM_ADDR,
 				     data->command_buffer, count);
 
 	LOG_DBG("BURST WRITE RETURN: %d", i2c_return);
@@ -94,8 +93,7 @@ static int ataes132a_send_command(struct device *dev, u8_t opcode,
 	/* Idle-waiting for the command completion*/
 	do {
 		k_busy_wait(D10D24S);
-		read_reg_i2c(data->i2c, cfg->i2c_addr,
-			     ATAES_STATUS_REG, &status);
+		read_reg_i2c(&cfg->i2c, ATAES_STATUS_REG, &status);
 	} while (status & ATAES_STATUS_WIP);
 
 	if (status & ATAES_STATUS_CRC) {
@@ -109,9 +107,7 @@ static int ataes132a_send_command(struct device *dev, u8_t opcode,
 	}
 
 	/* Read the response */
-	burst_read_i2c(data->i2c, cfg->i2c_addr,
-		       ATAES_COMMAND_MEM_ADDR,
-		       data->command_buffer, 64);
+	burst_read_i2c(&cfg->i2c, ATAES_COMMAND_MEM_ADDR, data->command_buffer, 64);
 
 	count = data->command_buffer[0];
 
@@ -131,9 +127,7 @@ static int ataes132a_send_command(struct device *dev, u8_t opcode,
 			return -EINVAL;
 		}
 
-		burst_read_i2c(data->i2c, cfg->i2c_addr,
-			       ATAES_COMMAND_MEM_ADDR,
-			       data->command_buffer, 64);
+		burst_read_i2c(&cfg->i2c, ATAES_COMMAND_MEM_ADDR, data->command_buffer, 64);
 
 		count = data->command_buffer[0];
 
@@ -164,45 +158,44 @@ static int ataes132a_send_command(struct device *dev, u8_t opcode,
 	return 0;
 }
 
-int ataes132a_init(struct device *dev)
+int ataes132a_init(const struct device *dev)
 {
-	struct ataes132a_device_data *ataes132a = dev->driver_data;
-	const struct ataes132a_device_config *cfg = dev->config->config_info;
-	u32_t i2c_cfg;
+	struct ataes132a_device_data *ataes132a = dev->data;
+	const struct ataes132a_device_config *cfg = dev->config;
+	uint32_t i2c_cfg;
 
 	LOG_DBG("ATAES132A INIT");
 
-	ataes132a->i2c = device_get_binding((char *)cfg->i2c_port);
-	if (!ataes132a->i2c) {
-		LOG_DBG("ATAE132A master controller not found!");
-		return -EINVAL;
+	if (!device_is_ready(cfg->i2c.bus)) {
+		LOG_ERR("Bus device is not ready");
+		return -ENODEV;
 	}
 
-	i2c_cfg = I2C_MODE_MASTER | I2C_SPEED_SET(ATAES132A_BUS_SPEED);
+	i2c_cfg = I2C_MODE_CONTROLLER | I2C_SPEED_SET(ATAES132A_BUS_SPEED);
 
-	i2c_configure(ataes132a->i2c, i2c_cfg);
+	i2c_configure(cfg->i2c.bus, i2c_cfg);
 
-	k_sem_init(&ataes132a->device_sem, 1, UINT_MAX);
+	k_sem_init(&ataes132a->device_sem, 1, K_SEM_MAX_LIMIT);
 
 	ataes132a_init_states();
 
 	return 0;
 }
 
-int ataes132a_aes_ccm_decrypt(struct device *dev,
-			      u8_t key_id,
+int ataes132a_aes_ccm_decrypt(const struct device *dev,
+			      uint8_t key_id,
 			      struct ataes132a_mac_mode *mac_mode,
 			      struct ataes132a_mac_packet *mac_packet,
 			      struct cipher_aead_pkt *aead_op,
-			      u8_t *nonce_buf)
+			      uint8_t *nonce_buf)
 {
-	u8_t command_mode = 0x0;
-	struct ataes132a_device_data *data = dev->driver_data;
-	u8_t out_len;
-	u8_t in_buf_len;
-	u8_t return_code;
-	u8_t expected_out_len;
-	u8_t param_buffer[52];
+	uint8_t command_mode = 0x0;
+	struct ataes132a_device_data *data = dev->data;
+	uint8_t out_len;
+	uint8_t in_buf_len;
+	uint8_t return_code;
+	uint8_t expected_out_len;
+	uint8_t param_buffer[52];
 
 	if (!aead_op) {
 		LOG_ERR("Parameter cannot be null");
@@ -389,19 +382,19 @@ int ataes132a_aes_ccm_decrypt(struct device *dev,
 	return 0;
 }
 
-int ataes132a_aes_ccm_encrypt(struct device *dev,
-			      u8_t key_id,
+int ataes132a_aes_ccm_encrypt(const struct device *dev,
+			      uint8_t key_id,
 			      struct ataes132a_mac_mode *mac_mode,
 			      struct cipher_aead_pkt *aead_op,
-			      u8_t *nonce_buf,
-			      u8_t *mac_count)
+			      uint8_t *nonce_buf,
+			      uint8_t *mac_count)
 {
-	u8_t command_mode = 0x0;
-	struct ataes132a_device_data *data = dev->driver_data;
-	u8_t buf_len;
-	u8_t out_len;
-	u8_t return_code;
-	u8_t param_buffer[40];
+	uint8_t command_mode = 0x0;
+	struct ataes132a_device_data *data = dev->data;
+	uint8_t buf_len;
+	uint8_t out_len;
+	uint8_t return_code;
+	uint8_t param_buffer[40];
 
 	if (!aead_op) {
 		LOG_ERR("Parameter cannot be null");
@@ -577,15 +570,15 @@ int ataes132a_aes_ccm_encrypt(struct device *dev,
 	return 0;
 }
 
-int ataes132a_aes_ecb_block(struct device *dev,
-			    u8_t key_id,
+int ataes132a_aes_ecb_block(const struct device *dev,
+			    uint8_t key_id,
 			    struct cipher_pkt *pkt)
 {
-	struct ataes132a_device_data *data = dev->driver_data;
-	u8_t buf_len;
-	u8_t out_len;
-	u8_t return_code;
-	u8_t param_buffer[19];
+	struct ataes132a_device_data *data = dev->data;
+	uint8_t buf_len;
+	uint8_t out_len;
+	uint8_t return_code;
+	uint8_t param_buffer[19];
 
 	if (!pkt) {
 		LOG_ERR("Parameter cannot be null");
@@ -666,16 +659,16 @@ int ataes132a_aes_ecb_block(struct device *dev,
 }
 
 static int do_ccm_encrypt_mac(struct cipher_ctx *ctx,
-			      struct cipher_aead_pkt *aead_op, u8_t *nonce)
+			      struct cipher_aead_pkt *aead_op, uint8_t *nonce)
 {
-	struct device *dev = ctx->device;
+	const struct device *dev = ctx->device;
 	struct ataes132a_driver_state *state = ctx->drv_sessn_state;
 	struct ataes132a_mac_mode mac_mode;
-	u8_t key_id;
+	uint8_t key_id;
 
 	key_id = state->key_id;
 
-	assert(*(u8_t *)ctx->key.handle == key_id);
+	__ASSERT_NO_MSG(*(uint8_t *)ctx->key.handle == key_id);
 
 	/* Removing all this salt from the MAC reduces the protection
 	 * but allows any other crypto implementations to authorize
@@ -715,16 +708,16 @@ static int do_ccm_encrypt_mac(struct cipher_ctx *ctx,
 }
 
 static int do_ccm_decrypt_auth(struct cipher_ctx *ctx,
-			       struct cipher_aead_pkt *aead_op, u8_t *nonce)
+			       struct cipher_aead_pkt *aead_op, uint8_t *nonce)
 {
-	struct device *dev = ctx->device;
+	const struct device *dev = ctx->device;
 	struct ataes132a_driver_state *state = ctx->drv_sessn_state;
 	struct ataes132a_mac_mode mac_mode;
-	u8_t key_id;
+	uint8_t key_id;
 
 	key_id = state->key_id;
 
-	assert(*(u8_t *)ctx->key.handle == key_id);
+	__ASSERT_NO_MSG(*(uint8_t *)ctx->key.handle == key_id);
 
 	/* Removing all this salt from the MAC reduces the protection
 	 * but allows any other crypto implementations to authorize
@@ -762,13 +755,13 @@ static int do_ccm_decrypt_auth(struct cipher_ctx *ctx,
 
 static int do_block(struct cipher_ctx *ctx, struct cipher_pkt *pkt)
 {
-	struct device *dev = ctx->device;
+	const struct device *dev = ctx->device;
 	struct ataes132a_driver_state *state = ctx->drv_sessn_state;
-	u8_t key_id;
+	uint8_t key_id;
 
 	key_id = state->key_id;
 
-	assert(*(u8_t *)ctx->key.handle == key_id);
+	__ASSERT_NO_MSG(*(uint8_t *)ctx->key.handle == key_id);
 
 	if (pkt->out_buf_max < 16) {
 		LOG_ERR("Not enough space available in out buffer.");
@@ -780,7 +773,7 @@ static int do_block(struct cipher_ctx *ctx, struct cipher_pkt *pkt)
 	return ataes132a_aes_ecb_block(dev, key_id, pkt);
 }
 
-static int ataes132a_session_free(struct device *dev,
+static int ataes132a_session_free(const struct device *dev,
 				  struct cipher_ctx *session)
 {
 	struct ataes132a_driver_state *state = session->drv_sessn_state;
@@ -792,14 +785,14 @@ static int ataes132a_session_free(struct device *dev,
 	return 0;
 }
 
-static int ataes132a_session_setup(struct device *dev, struct cipher_ctx *ctx,
+static int ataes132a_session_setup(const struct device *dev,
+				   struct cipher_ctx *ctx,
 				   enum cipher_algo algo, enum cipher_mode mode,
 				   enum cipher_op op_type)
 {
-	u8_t key_id = *((u8_t *)ctx->key.handle);
-	struct ataes132a_device_data *data = dev->driver_data;
-	const struct ataes132a_device_config *cfg = dev->config->config_info;
-	u8_t config;
+	uint8_t key_id = *((uint8_t *)ctx->key.handle);
+	const struct ataes132a_device_config *cfg = dev->config;
+	uint8_t config;
 
 	if (ataes132a_state[key_id].in_use) {
 		LOG_ERR("Session in progress");
@@ -817,13 +810,9 @@ static int ataes132a_session_setup(struct device *dev, struct cipher_ctx *ctx,
 	}
 
 	ataes132a_state[key_id].in_use = true;
-	read_reg_i2c(data->i2c, cfg->i2c_addr,
-		     ATAES_KEYCFG_REG(key_id),
-		     &config);
+	read_reg_i2c(&cfg->i2c, ATAES_KEYCFG_REG(key_id), &config);
 	ataes132a_state[key_id].key_config = config;
-	read_reg_i2c(data->i2c, cfg->i2c_addr,
-		     ATAES_CHIPCONFIG_REG,
-		     &config);
+	read_reg_i2c(&cfg->i2c, ATAES_CHIPCONFIG_REG, &config);
 	ataes132a_state[key_id].chip_config = config;
 
 	ctx->drv_sessn_state = &ataes132a_state[key_id];
@@ -876,27 +865,26 @@ static int ataes132a_session_setup(struct device *dev, struct cipher_ctx *ctx,
 	return 0;
 }
 
-static int ataes132a_query_caps(struct device *dev)
+static int ataes132a_query_caps(const struct device *dev)
 {
 	return (CAP_OPAQUE_KEY_HNDL | CAP_SEPARATE_IO_BUFS |
 		CAP_SYNC_OPS | CAP_AUTONONCE);
 }
 
-const struct ataes132a_device_config ataes132a_config = {
-	.i2c_port = CONFIG_CRYPTO_ATAES132A_I2C_PORT_NAME,
-	.i2c_addr = CONFIG_CRYPTO_ATAES132A_I2C_ADDR,
-	.i2c_speed = ATAES132A_BUS_SPEED,
+static const struct ataes132a_device_config ataes132a_config = {
+	.i2c = I2C_DT_SPEC_INST_GET(0),
 };
 
 static struct crypto_driver_api crypto_enc_funcs = {
-	.begin_session = ataes132a_session_setup,
-	.free_session = ataes132a_session_free,
-	.crypto_async_callback_set = NULL,
+	.cipher_begin_session = ataes132a_session_setup,
+	.cipher_free_session = ataes132a_session_free,
+	.cipher_async_callback_set = NULL,
 	.query_hw_caps = ataes132a_query_caps,
 };
 
 struct ataes132a_device_data ataes132a_data;
 
-DEVICE_AND_API_INIT(ataes132a, CONFIG_CRYPTO_ATAES132A_DRV_NAME, ataes132a_init,
-		    &ataes132a_data, &ataes132a_config, POST_KERNEL,
-		    CONFIG_CRYPTO_INIT_PRIORITY, (void *)&crypto_enc_funcs);
+DEVICE_DT_INST_DEFINE(0, ataes132a_init,
+		NULL, &ataes132a_data, &ataes132a_config,
+		POST_KERNEL, CONFIG_CRYPTO_INIT_PRIORITY,
+		(void *)&crypto_enc_funcs);

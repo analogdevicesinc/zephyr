@@ -12,48 +12,34 @@
  * for the Nordic Semiconductor nRF52 family processor.
  */
 
-#include <kernel.h>
-#include <init.h>
-#include <cortex_m/exc.h>
+#include <zephyr/kernel.h>
+#include <zephyr/init.h>
+#include <zephyr/arch/arm/aarch32/cortex_m/cmsis.h>
+#include <zephyr/arch/arm/aarch32/nmi.h>
 #include <hal/nrf_power.h>
 #include <soc/nrfx_coredep.h>
-#include <logging/log.h>
-
-#ifdef CONFIG_RUNTIME_NMI
-extern void z_NmiInit(void);
-#define NMI_INIT() z_NmiInit()
-#else
-#define NMI_INIT()
-#endif
-
-#if defined(CONFIG_SOC_NRF52810)
-#include <system_nrf52810.h>
-#elif defined(CONFIG_SOC_NRF52811)
-#include <system_nrf52811.h>
-#elif defined(CONFIG_SOC_NRF52832)
-#include <system_nrf52.h>
-#elif defined(CONFIG_SOC_NRF52840)
-#include <system_nrf52840.h>
-#else
-#error "Unknown SoC."
-#endif
+#include <zephyr/logging/log.h>
 
 #define LOG_LEVEL CONFIG_SOC_LOG_LEVEL
 LOG_MODULE_REGISTER(soc);
 
+#ifdef CONFIG_NRF_STORE_REBOOT_TYPE_GPREGRET
 /* Overrides the weak ARM implementation:
-   Set general purpose retention register and reboot */
+ * Set general purpose retention register and reboot
+ * This is deprecated and has been replaced with the boot mode retention
+ * subsystem
+ */
 void sys_arch_reboot(int type)
 {
-	nrf_power_gpregret_set((uint8_t)type);
+	nrf_power_gpregret_set(NRF_POWER, (uint8_t)type);
 	NVIC_SystemReset();
 }
+#endif
 
-static int nordicsemi_nrf52_init(struct device *arg)
+static int nordicsemi_nrf52_init(void)
 {
-	u32_t key;
+	uint32_t key;
 
-	ARG_UNUSED(arg);
 
 	key = irq_lock();
 
@@ -63,7 +49,10 @@ static int nordicsemi_nrf52_init(struct device *arg)
 #endif
 
 #if defined(CONFIG_SOC_DCDC_NRF52X)
-	nrf_power_dcdcen_set(true);
+	nrf_power_dcdcen_set(NRF_POWER, true);
+#endif
+#if NRF_POWER_HAS_DCDCEN_VDDH && defined(CONFIG_SOC_DCDC_NRF52X_HV)
+	nrf_power_dcdcen_vddh_set(NRF_POWER, true);
 #endif
 
 	/* Install default handler that simply resets the CPU
@@ -76,14 +65,9 @@ static int nordicsemi_nrf52_init(struct device *arg)
 	return 0;
 }
 
-void z_arch_busy_wait(u32_t time_us)
+void arch_busy_wait(uint32_t time_us)
 {
 	nrfx_coredep_delay_us(time_us);
-}
-
-void z_platform_init(void)
-{
-	SystemInit();
 }
 
 SYS_INIT(nordicsemi_nrf52_init, PRE_KERNEL_1, 0);

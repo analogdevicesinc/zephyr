@@ -1,5 +1,5 @@
 identifier: nucleo_g071rb
-name: NUCLEO-G071RB
+name: ST Nucleo G071RB
 type: mcu
 arch: arm
 toolchain:
@@ -9,5 +9,19 @@ toolchain:
 ram: 36
 flash: 128
 supported:
+  - arduino_gpio
+  - arduino_i2c
+  - arduino_spi
+  - arduino_serial
   - uart
   - gpio
+  - i2c
+  - spi
+  - counter
+  - watchdog
+  - pwm
+  - adc
+  - dac
+  - dma
+  - lptim
+  - nvs

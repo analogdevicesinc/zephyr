@@ -1,13 +1,10 @@
-#
 # Copyright (c) 2018 Intel Corporation.
-#
 # SPDX-License-Identifier: Apache-2.0
-#
 
 menuconfig NET_GPTP
-	bool "Enable IEEE 802.1AS (gPTP) support [EXPERIMENTAL]"
-	select NET_PKT_TIMESTAMP
-	select PTP_CLOCK
+	bool "IEEE 802.1AS (gPTP) support [EXPERIMENTAL]"
+	select NET_L2_PTP
+	select EXPERIMENTAL
 	help
 	  Enable gPTP driver that send and receives gPTP packets
 	  and handles network packet timestamps.
@@ -21,7 +18,7 @@ module-help = Enable logs for the gPTP stack.
 source "subsys/net/Kconfig.template.log_config.net"
 
 config NET_GPTP_GM_CAPABLE
-	bool "Enable IEEE 802.1AS GrandMaster Capability"
+	bool "IEEE 802.1AS GrandMaster Capability"
 	help
 	  Enable to mark the whole system as Grand Master Capable.
 
@@ -197,6 +194,31 @@ config NET_GPTP_PATH_TRACE_ELEMENTS
 	  This tells the number of time-aware systems that transmits the
 	  Announce message. Each array element takes 8 bytes. If this value
 	  is set to 8, then 8 * 8 = 64 bytes of memory is used.
+
+config NET_GPTP_BMCA_PRIORITY1
+	int "BMCA priority1 value"
+	default 248 if NET_GPTP_GM_CAPABLE
+	default 255
+	range 0 255
+	help
+	  The priority1 attribute of the local clock. It is used in the
+	  Best Master Clock selection Algorithm (BMCA), lower values take
+	  precedence. The default value is 255 if the device is non grand
+	  master capable, and 248 if it is GM capable.
+	  See Chapter 8.6.2.1 of IEEE 802.1AS for a more detailed description
+	  of priority1. Note that if the system	is non GM capable, then the
+	  value 255 is used always and this setting is ignored.
+
+config NET_GPTP_BMCA_PRIORITY2
+	int "BMCA priority2 value"
+	default 248
+	range 0 255
+	help
+	  The priority2 attribute of the local clock. It is used in the BMCA
+	  (Best Master Clock selection Algorithm), lower values take
+	  precedence. The default value is 248.
+	  See Chapter 8.6.2.5 of IEEE 802.1AS for a more detailed description
+	  of priority2.
 
 config NET_GPTP_STATISTICS
 	bool "Collect gPTP statistics"

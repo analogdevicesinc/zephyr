@@ -4,23 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
- #include <autoconf.h>
- #include <generated_dts_board.h>
+  #include <zephyr/devicetree.h>
+
+#define IS_CHOSEN_SRAM(x) (DT_DEP_ORD(DT_NODELABEL(x)) == DT_DEP_ORD(DT_CHOSEN(zephyr_sram)))
 
 MEMORY
      {
-#if (DT_MMIO_SRAM_20200000_SIZE > 0) && !defined(CONFIG_DATA_OCRAM)
-        OCRAM  (wx) : ORIGIN = DT_MMIO_SRAM_20200000_BASE_ADDRESS, LENGTH = DT_MMIO_SRAM_20200000_SIZE
-#endif
-#if (DT_MMIO_SRAM_80000000_SIZE > 0) && !defined(CONFIG_DATA_SEMC)
-        SDRAM  (wx) : ORIGIN = DT_MMIO_SRAM_80000000_BASE_ADDRESS, LENGTH = DT_MMIO_SRAM_80000000_SIZE
-#endif
-#if (DT_INST_0_NXP_IMX_DTCM_SIZE > 0) && !defined(CONFIG_DATA_DTCM)
-        DTCM    (wx) : ORIGIN = DT_INST_0_NXP_IMX_DTCM_BASE_ADDRESS, LENGTH = DT_INST_0_NXP_IMX_DTCM_SIZE
-#endif
-#if (DT_INST_0_NXP_IMX_ITCM_SIZE > 0) && !defined(CONFIG_CODE_ITCM)
-        ITCM    (wx) : ORIGIN = DT_INST_0_NXP_IMX_ITCM_BASE_ADDRESS, LENGTH = DT_INST_0_NXP_IMX_ITCM_SIZE
+#if (DT_REG_SIZE(DT_NODELABEL(sdram0)) > 0) && !IS_CHOSEN_SRAM(sdram0)
+        SDRAM  (wx) : ORIGIN = DT_REG_ADDR(DT_NODELABEL(sdram0)), LENGTH = DT_REG_SIZE(DT_NODELABEL(sdram0))
 #endif
      }
 
-#include <arch/arm/cortex_m/scripts/linker.ld>
+#include <zephyr/arch/arm/aarch32/cortex_m/scripts/linker.ld>

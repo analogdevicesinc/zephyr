@@ -21,46 +21,22 @@ config NET_L2_ETHERNET
 	default y if !NET_LOOPBACK && !NET_TEST
 
 config ETH_NATIVE_POSIX
-	default y if NET_L2_ETHERNET
+	default y if NET_L2_ETHERNET && ETH_DRIVER
 
 endif # NETWORKING
 
-if ENTROPY_GENERATOR
-
-config FAKE_ENTROPY_NATIVE_POSIX
-	default y
-
-endif # ENTROPY_GENERATOR
-
-if BT_HCI
-
 choice BT_HCI_BUS_TYPE
 	default BT_USERCHAN
+	depends on BT_HCI
 endchoice
-
-endif # BT_HCI
-
-if SERIAL
-
-config UART_NATIVE_POSIX
-	default y
-
-endif # SERIAL
 
 if LOG
 
-config LOG_BACKEND_NATIVE_POSIX
-	default y if !SERIAL
-
-# For native_posix we can log immediately without any problem
+# For native_posix we can log synchronously without any problem
 # Doing so will be nicer for debugging
-config LOG_IMMEDIATE
-	default y
-
-# If we set LOG_IMMEDIATE, there is no need to have the logging thread
-# running
-config LOG_PROCESS_THREAD
-	default n
+choice LOG_MODE
+	default LOG_MODE_IMMEDIATE
+endchoice
 
 endif # LOG
 
@@ -72,34 +48,25 @@ config NATIVE_POSIX_CONSOLE
 config UART_CONSOLE
 	default y if SERIAL
 
-endif #CONSOLE
+endif # CONSOLE
 
-if DISPLAY
-
-config SDL_DISPLAY
+config FLASH_SIMULATOR
 	default y
-
-endif # DISPLAY
-
-if TRACING_CTF
-
-config TRACING_CTF_BOTTOM_POSIX
-	default y
-
-endif # TRACING_CTF
-
-if FLASH
-
-config FLASH_NATIVE_POSIX
-	default y
-
-endif # FLASH
-
-endif # BOARD_NATIVE_POSIX
-
-if USB
+	depends on FLASH
 
 config USB_NATIVE_POSIX
 	default y
+	depends on USB_DEVICE_DRIVER
 
-endif # USB
+config EEPROM_SIMULATOR
+	default y
+	depends on EEPROM
+
+if I2C
+
+config EMUL
+	default y
+
+endif # I2C
+
+endif # BOARD_NATIVE_POSIX

@@ -1,19 +1,28 @@
-/* pwm_mchp_xec.c - Microchip XEC PWM driver */
-
 /*
  * Copyright (c) 2019 Intel Corporation
+ * Copyright (c) 2022 Microchip Technololgy Inc.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
-LOG_MODULE_REGISTER(counter_mchp_xec, CONFIG_PWM_LOG_LEVEL);
+#define DT_DRV_COMPAT microchip_xec_pwm
 
-#include <pwm.h>
-#include <soc.h>
 #include <errno.h>
-
 #include <stdlib.h>
+#include <stdint.h>
+
+#include <zephyr/device.h>
+#include <zephyr/drivers/pwm.h>
+#ifdef CONFIG_SOC_SERIES_MEC172X
+#include <zephyr/drivers/clock_control/mchp_xec_clock_control.h>
+#include <zephyr/drivers/interrupt_controller/intc_mchp_xec_ecia.h>
+#endif
+#include <zephyr/drivers/pinctrl.h>
+#include <zephyr/logging/log.h>
+
+#include <soc.h>
+
+LOG_MODULE_REGISTER(pwm_mchp_xec, CONFIG_PWM_LOG_LEVEL);
 
 /* Minimal on/off are 1 & 1 both are incremented, so 4.
  * 0 cannot be set (used for full low/high output) so a
@@ -30,7 +39,7 @@ LOG_MODULE_REGISTER(counter_mchp_xec, CONFIG_PWM_LOG_LEVEL);
 #define XEC_PWM_MAX_LOW_CLK_FREQ			\
 	(MCHP_PWM_INPUT_FREQ_LO / XEC_PWM_LOWEST_ON_OFF)
 /* Precision factor for frequency calculation
- * To mitigate frequency comparision up to the firt digit after 0.
+ * To mitigate frequency comparision up to the first digit after 0.
  */
 #define XEC_PWM_FREQ_PF		10U
 /* Precision factor for DC calculation
@@ -41,25 +50,21 @@ LOG_MODULE_REGISTER(counter_mchp_xec, CONFIG_PWM_LOG_LEVEL);
 #define XEC_PWM_FREQ_LIMIT	1 /* 0.1hz * XEC_PWM_FREQ_PF */
 
 struct pwm_xec_config {
-	u32_t base_address;
+	struct pwm_regs * const regs;
+	uint8_t pcr_idx;
+	uint8_t pcr_pos;
+	const struct pinctrl_dev_config *pcfg;
 };
-
-#define PWM_XEC_REG_BASE(_dev)				\
-	((PWM_Type *)			\
-	 ((const struct pwm_xec_config * const)		\
-	  _dev->config->config_info)->base_address)
-
-#define PWM_XEC_CONFIG(_dev)				\
-	(((const struct pwm_xec_config * const)		\
-	  _dev->config->config_info))
 
 struct xec_params {
-	u32_t on;
-	u32_t off;
-	u8_t div;
+	uint32_t on;
+	uint32_t off;
+	uint8_t div;
 };
 
-u32_t max_freq_high_on_div[16] = {
+#define NUM_DIV_ELEMS		16
+
+static const uint32_t max_freq_high_on_div[NUM_DIV_ELEMS] = {
 	48000000,
 	24000000,
 	16000000,
@@ -75,10 +80,10 @@ u32_t max_freq_high_on_div[16] = {
 	3692307,
 	3428571,
 	3200000,
-	3000000
+	3000000,
 };
 
-u32_t max_freq_low_on_div[16] = {
+static const uint32_t max_freq_low_on_div[NUM_DIV_ELEMS] = {
 	100000,
 	50000,
 	33333,
@@ -94,17 +99,17 @@ u32_t max_freq_low_on_div[16] = {
 	7692,
 	7142,
 	6666,
-	6250
+	6250,
 };
 
-static u32_t xec_compute_frequency(u32_t clk, u32_t on, u32_t off)
+static uint32_t xec_compute_frequency(uint32_t clk, uint32_t on, uint32_t off)
 {
 	return ((clk * XEC_PWM_FREQ_PF)/((on + 1) + (off + 1)));
 }
 
-static u16_t xec_select_div(u32_t freq, u32_t max_freq[16])
+static uint16_t xec_select_div(uint32_t freq, const uint32_t max_freq[16])
 {
-	u8_t i;
+	uint8_t i;
 
 	if (freq >= max_freq[3]) {
 		return 0;
@@ -121,10 +126,10 @@ static u16_t xec_select_div(u32_t freq, u32_t max_freq[16])
 	return i;
 }
 
-static void xec_compute_on_off(u32_t freq, u32_t dc, u32_t clk,
-			       u32_t *on, u32_t *off)
+static void xec_compute_on_off(uint32_t freq, uint32_t dc, uint32_t clk,
+			       uint32_t *on, uint32_t *off)
 {
-	u32_t on_off;
+	uint64_t on_off;
 
 	on_off = (clk * 10) / freq;
 
@@ -132,21 +137,22 @@ static void xec_compute_on_off(u32_t freq, u32_t dc, u32_t clk,
 	*off = on_off - *on - 2;
 }
 
-static u32_t xec_compute_dc(u32_t on, u32_t off)
+static uint32_t xec_compute_dc(uint32_t on, uint32_t off)
 {
 	int dc = (on + 1) + (off + 1);
 
-	dc = (((on + 1) * XEC_PWM_DC_PF) / dc);
+	/* Make calculation in uint64_t since XEC_PWM_DC_PF is large */
+	dc = (((uint64_t)(on + 1) * XEC_PWM_DC_PF) / dc);
 
-	return (u32_t)dc;
+	return (uint32_t)dc;
 }
 
-static u16_t xec_compare_div_on_off(u32_t target_freq, u32_t dc,
-				    u32_t max_freq[16],
-				    u8_t div_a, u8_t div_b,
-				    u32_t *on_a, u32_t *off_a)
+static uint16_t xec_compare_div_on_off(uint32_t target_freq, uint32_t dc,
+				       const uint32_t max_freq[16],
+				       uint8_t div_a, uint8_t div_b,
+				       uint32_t *on_a, uint32_t *off_a)
 {
-	u32_t freq_a, freq_b, on_b, off_b;
+	uint32_t freq_a, freq_b, on_b, off_b;
 
 	xec_compute_on_off(target_freq, dc, max_freq[div_a],
 			   on_a, off_a);
@@ -174,12 +180,12 @@ static u16_t xec_compare_div_on_off(u32_t target_freq, u32_t dc,
 	return div_a;
 }
 
-static u8_t xec_select_best_div_on_off(u32_t target_freq, u32_t dc,
-					u32_t max_freq[16],
-					u32_t *on, u32_t *off)
+static uint8_t xec_select_best_div_on_off(uint32_t target_freq, uint32_t dc,
+					  const uint32_t max_freq[16],
+					  uint32_t *on, uint32_t *off)
 {
 	int div_comp;
-	u8_t div;
+	uint8_t div;
 
 	div = xec_select_div(target_freq, max_freq);
 
@@ -191,29 +197,30 @@ static u8_t xec_select_best_div_on_off(u32_t target_freq, u32_t dc,
 	return div;
 }
 
-static struct xec_params *xec_compare_params(u32_t target_freq,
+static struct xec_params *xec_compare_params(uint32_t target_freq,
 					     struct xec_params *hc_params,
 					     struct xec_params *lc_params)
 {
 	struct xec_params *params;
-	u32_t freq_h = 0;
-	u32_t freq_l = 0;
+	uint32_t freq_h = 0;
+	uint32_t freq_l = 0;
 
-	if (hc_params->div < UINT8_MAX) {
+	if (hc_params->div < NUM_DIV_ELEMS) {
 		freq_h = xec_compute_frequency(
 				max_freq_high_on_div[hc_params->div],
 				hc_params->on,
 				hc_params->off);
 	}
 
-	if (lc_params->div < UINT8_MAX) {
+	if (lc_params->div < NUM_DIV_ELEMS) {
 		freq_l = xec_compute_frequency(
 				max_freq_low_on_div[lc_params->div],
 				lc_params->on,
 				lc_params->off);
 	}
 
-	if (abs(target_freq - freq_h) < abs(target_freq - freq_l)) {
+	if (abs((int)target_freq - (int)freq_h) <
+	    abs((int)target_freq - (int)freq_l)) {
 		params = hc_params;
 	} else {
 		params = lc_params;
@@ -227,16 +234,17 @@ static struct xec_params *xec_compare_params(u32_t target_freq,
 	return params;
 }
 
-static void xec_compute_and_set_parameters(struct device *dev,
-					   u32_t target_freq,
-					   u32_t on, u32_t off)
+static void xec_compute_and_set_parameters(const struct device *dev,
+					   uint32_t target_freq,
+					   uint32_t on, uint32_t off)
 {
-	PWM_Type *pwm_regs = PWM_XEC_REG_BASE(dev);
+	const struct pwm_xec_config * const cfg = dev->config;
+	struct pwm_regs * const regs = cfg->regs;
 	bool compute_high, compute_low;
 	struct xec_params hc_params;
 	struct xec_params lc_params;
 	struct xec_params *params;
-	u32_t dc, reg;
+	uint32_t dc, cfgval;
 
 	dc = xec_compute_dc(on, off);
 
@@ -281,39 +289,41 @@ static void xec_compute_and_set_parameters(struct device *dev,
 		lc_params.div = UINT8_MAX;
 	}
 done:
-	pwm_regs->CONFIG &= ~MCHP_PWM_CFG_ENABLE;
+	regs->CONFIG &= ~MCHP_PWM_CFG_ENABLE;
 
-	reg = pwm_regs->CONFIG;
+	cfgval = regs->CONFIG;
 
 	params = xec_compare_params(target_freq, &hc_params, &lc_params);
 	if (params == &hc_params) {
-		reg |= MCHP_PWM_CFG_CLK_SEL_48M;
+		cfgval &= ~MCHP_PWM_CFG_CLK_SEL_100K;
 	} else {
-		reg |= MCHP_PWM_CFG_CLK_SEL_100K;
+		cfgval |= MCHP_PWM_CFG_CLK_SEL_100K;
 	}
 
-	pwm_regs->COUNT_ON = params->on;
-	pwm_regs->COUNT_OFF = params->off;
-	reg |= MCHP_PWM_CFG_CLK_PRE_DIV(params->div);
-	reg |= MCHP_PWM_CFG_ENABLE;
+	regs->COUNT_ON = params->on;
+	regs->COUNT_OFF = params->off;
+	cfgval &= ~MCHP_PWM_CFG_CLK_PRE_DIV(0xF);
+	cfgval |= MCHP_PWM_CFG_CLK_PRE_DIV(params->div);
+	cfgval |= MCHP_PWM_CFG_ENABLE;
 
-	pwm_regs->CONFIG = reg;
+	regs->CONFIG = cfgval;
 }
 
-static int pwm_xec_pin_set(struct device *dev, u32_t pwm,
-			   u32_t period_cycles, u32_t pulse_cycles)
+static int pwm_xec_set_cycles(const struct device *dev, uint32_t channel,
+			      uint32_t period_cycles, uint32_t pulse_cycles,
+			      pwm_flags_t flags)
 {
-	PWM_Type *pwm_regs = PWM_XEC_REG_BASE(dev);
-	u32_t target_freq;
-	u32_t on, off;
+	const struct pwm_xec_config * const cfg = dev->config;
+	struct pwm_regs * const regs = cfg->regs;
+	uint32_t target_freq;
+	uint32_t on, off;
 
-	if (pwm > 0) {
+	if (channel > 0) {
 		return -EIO;
 	}
 
-	if (pulse_cycles > period_cycles) {
-		return -EINVAL;
-	}
+	if (flags & PWM_POLARITY_INVERTED)
+		regs->CONFIG |= MCHP_PWM_CFG_ON_POL_LO;
 
 	on = pulse_cycles;
 	off = period_cycles - pulse_cycles;
@@ -325,13 +335,13 @@ static int pwm_xec_pin_set(struct device *dev, u32_t pwm,
 	}
 
 	if ((pulse_cycles == 0U) && (period_cycles == 0U)) {
-		pwm_regs->CONFIG &= ~MCHP_PWM_CFG_ENABLE;
+		regs->CONFIG &= ~MCHP_PWM_CFG_ENABLE;
 	} else if ((pulse_cycles == 0U) && (period_cycles > 0U)) {
-		pwm_regs->COUNT_ON = 0;
-		pwm_regs->COUNT_OFF = 1;
+		regs->COUNT_ON = 0;
+		regs->COUNT_OFF = 1;
 	} else if ((pulse_cycles > 0U) && (period_cycles == 0U)) {
-		pwm_regs->COUNT_ON = 1;
-		pwm_regs->COUNT_OFF = 0;
+		regs->COUNT_ON = 1;
+		regs->COUNT_OFF = 0;
 	} else {
 		xec_compute_and_set_parameters(dev, target_freq, on, off);
 	}
@@ -339,12 +349,12 @@ static int pwm_xec_pin_set(struct device *dev, u32_t pwm,
 	return 0;
 }
 
-static int pwm_xec_get_cyclet_per_sec(struct device *dev, u32_t pwm,
-				      u64_t *cycles)
+static int pwm_xec_get_cycles_per_sec(const struct device *dev,
+				      uint32_t channel, uint64_t *cycles)
 {
 	ARG_UNUSED(dev);
 
-	if (pwm > 0) {
+	if (channel > 0) {
 		return -EIO;
 	}
 
@@ -358,131 +368,43 @@ static int pwm_xec_get_cyclet_per_sec(struct device *dev, u32_t pwm,
 	return 0;
 }
 
-static int pwm_xec_init(struct device *dev)
+static const struct pwm_driver_api pwm_xec_driver_api = {
+	.set_cycles = pwm_xec_set_cycles,
+	.get_cycles_per_sec = pwm_xec_get_cycles_per_sec,
+};
+
+static int pwm_xec_init(const struct device *dev)
 {
-	ARG_UNUSED(dev);
+	const struct pwm_xec_config * const cfg = dev->config;
+	int ret = pinctrl_apply_state(cfg->pcfg, PINCTRL_STATE_DEFAULT);
+
+	if (ret != 0) {
+		LOG_ERR("XEC PWM pinctrl init failed (%d)", ret);
+		return ret;
+	}
 
 	return 0;
 }
 
-static struct pwm_driver_api pwm_xec_api = {
-	.pin_set = pwm_xec_pin_set,
-	.get_cycles_per_sec = pwm_xec_get_cyclet_per_sec
-};
+#define XEC_PWM_CONFIG(inst)							\
+	static struct pwm_xec_config pwm_xec_config_##inst = {			\
+		.regs = (struct pwm_regs * const)DT_INST_REG_ADDR(inst),	\
+		.pcr_idx = (uint8_t)DT_INST_PROP_BY_IDX(inst, pcrs, 0),		\
+		.pcr_pos = (uint8_t)DT_INST_PROP_BY_IDX(inst, pcrs, 1),		\
+		.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(inst),			\
+	};
 
-#if defined(DT_INST_0_MICROCHIP_XEC_PWM)
+#define XEC_PWM_DEVICE_INIT(index)					\
+									\
+	PINCTRL_DT_INST_DEFINE(index);					\
+									\
+	XEC_PWM_CONFIG(index);						\
+									\
+	DEVICE_DT_INST_DEFINE(index, &pwm_xec_init,			\
+			      NULL,					\
+			      NULL,					\
+			      &pwm_xec_config_##index, POST_KERNEL,	\
+			      CONFIG_PWM_INIT_PRIORITY,			\
+			      &pwm_xec_driver_api);
 
-static struct pwm_xec_config pwm_xec_dev_config_0 = {
-	.base_address = DT_INST_0_MICROCHIP_XEC_PWM_BASE_ADDRESS
-};
-
-DEVICE_AND_API_INIT(pwm_xec_0, DT_INST_0_MICROCHIP_XEC_PWM_LABEL,
-		    pwm_xec_init, NULL, &pwm_xec_dev_config_0,
-		    POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
-		    &pwm_xec_api);
-
-#endif /* DT_INST_0_MICROCHIP_XEC_PWM */
-
-#if defined(DT_INST_1_MICROCHIP_XEC_PWM)
-
-static struct pwm_xec_config pwm_xec_dev_config_1 = {
-	.base_address = DT_INST_1_MICROCHIP_XEC_PWM_BASE_ADDRESS
-};
-
-DEVICE_AND_API_INIT(pwm_xec_1, DT_INST_1_MICROCHIP_XEC_PWM_LABEL,
-		    pwm_xec_init, NULL, &pwm_xec_dev_config_1,
-		    POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
-		    &pwm_xec_api);
-
-#endif /* DT_INST_1_MICROCHIP_XEC_PWM */
-
-#if defined(DT_INST_2_MICROCHIP_XEC_PWM)
-
-static struct pwm_xec_config pwm_xec_dev_config_2 = {
-	.base_address = DT_INST_2_MICROCHIP_XEC_PWM_BASE_ADDRESS
-};
-
-DEVICE_AND_API_INIT(pwm_xec_2, DT_INST_2_MICROCHIP_XEC_PWM_LABEL,
-		    pwm_xec_init, NULL, &pwm_xec_dev_config_2,
-		    POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
-		    &pwm_xec_api);
-
-#endif /* DT_INST_2_MICROCHIP_XEC_PWM */
-
-#if defined(DT_INST_3_MICROCHIP_XEC_PWM)
-
-static struct pwm_xec_config pwm_xec_dev_config_3 = {
-	.base_address = DT_INST_3_MICROCHIP_XEC_PWM_BASE_ADDRESS
-};
-
-DEVICE_AND_API_INIT(pwm_xec_3, DT_INST_3_MICROCHIP_XEC_PWM_LABEL,
-		    pwm_xec_init, NULL, &pwm_xec_dev_config_3,
-		    POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
-		    &pwm_xec_api);
-
-#endif /* DT_INST_3_MICROCHIP_XEC_PWM */
-
-#if defined(DT_INST_4_MICROCHIP_XEC_PWM)
-
-static struct pwm_xec_config pwm_xec_dev_config_4 = {
-	.base_address = DT_INST_4_MICROCHIP_XEC_PWM_BASE_ADDRESS
-};
-
-DEVICE_AND_API_INIT(pwm_xec_4, DT_INST_4_MICROCHIP_XEC_PWM_LABEL,
-		    pwm_xec_init, NULL, &pwm_xec_dev_config_4,
-		    POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
-		    &pwm_xec_api);
-
-#endif /* DT_INST_4_MICROCHIP_XEC_PWM */
-
-#if defined(DT_INST_5_MICROCHIP_XEC_PWM)
-
-static struct pwm_xec_config pwm_xec_dev_config_5 = {
-	.base_address = DT_INST_5_MICROCHIP_XEC_PWM_BASE_ADDRESS
-};
-
-DEVICE_AND_API_INIT(pwm_xec_5, DT_INST_5_MICROCHIP_XEC_PWM_LABEL,
-		    pwm_xec_init, NULL, &pwm_xec_dev_config_5,
-		    POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
-		    &pwm_xec_api);
-
-#endif /* DT_INST_5_MICROCHIP_XEC_PWM */
-
-#if defined(DT_INST_6_MICROCHIP_XEC_PWM)
-
-static struct pwm_xec_config pwm_xec_dev_config_6 = {
-	.base_address = DT_INST_6_MICROCHIP_XEC_PWM_BASE_ADDRESS
-};
-
-DEVICE_AND_API_INIT(pwm_xec_6, DT_INST_6_MICROCHIP_XEC_PWM_LABEL,
-		    pwm_xec_init, NULL, &pwm_xec_dev_config_6,
-		    POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
-		    &pwm_xec_api);
-
-#endif /* DT_INST_6_MICROCHIP_XEC_PWM */
-
-#if defined(DT_INST_7_MICROCHIP_XEC_PWM)
-
-static struct pwm_xec_config pwm_xec_dev_config_7 = {
-	.base_address = DT_INST_7_MICROCHIP_XEC_PWM_BASE_ADDRESS
-};
-
-DEVICE_AND_API_INIT(pwm_xec_7, DT_INST_7_MICROCHIP_XEC_PWM_LABEL,
-		    pwm_xec_init, NULL, &pwm_xec_dev_config_7,
-		    POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
-		    &pwm_xec_api);
-
-#endif /* DT_INST_7_MICROCHIP_XEC_PWM */
-
-#if defined(DT_INST_8_MICROCHIP_XEC_PWM)
-
-static struct pwm_xec_config pwm_xec_dev_config_8 = {
-	.base_address = DT_INST_8_MICROCHIP_XEC_PWM_BASE_ADDRESS
-};
-
-DEVICE_AND_API_INIT(pwm_xec_8, DT_INST_8_MICROCHIP_XEC_PWM_LABEL,
-		    pwm_xec_init, NULL, &pwm_xec_dev_config_8,
-		    POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
-		    &pwm_xec_api);
-
-#endif /* DT_INST_8_MICROCHIP_XEC_PWM */
+DT_INST_FOREACH_STATUS_OKAY(XEC_PWM_DEVICE_INIT)

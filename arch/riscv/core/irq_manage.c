@@ -4,18 +4,20 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <toolchain.h>
-#include <kernel_structs.h>
-#include <logging/log.h>
-LOG_MODULE_DECLARE(os);
+#include <zephyr/kernel.h>
+#include <kernel_internal.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/arch/riscv/csr.h>
 
-FUNC_NORETURN void z_irq_spurious(void *unused)
+LOG_MODULE_DECLARE(os, CONFIG_KERNEL_LOG_LEVEL);
+
+FUNC_NORETURN void z_irq_spurious(const void *unused)
 {
-	ulong_t mcause;
+	unsigned long mcause;
 
 	ARG_UNUSED(unused);
 
-	__asm__ volatile("csrr %0, mcause" : "=r" (mcause));
+	mcause = csr_read(mcause);
 
 	mcause &= SOC_MCAUSE_EXP_MASK;
 
@@ -30,15 +32,20 @@ FUNC_NORETURN void z_irq_spurious(void *unused)
 }
 
 #ifdef CONFIG_DYNAMIC_INTERRUPTS
-int z_arch_irq_connect_dynamic(unsigned int irq, unsigned int priority,
-			      void (*routine)(void *parameter), void *parameter,
-			      u32_t flags)
+int arch_irq_connect_dynamic(unsigned int irq, unsigned int priority,
+			     void (*routine)(const void *parameter),
+			     const void *parameter, uint32_t flags)
 {
 	ARG_UNUSED(flags);
 
 	z_isr_install(irq, routine, parameter);
+
 #if defined(CONFIG_RISCV_HAS_PLIC)
-	riscv_plic_set_priority(irq, priority);
+	if (irq_get_level(irq) == 2) {
+		irq = irq_from_level_2(irq);
+
+		riscv_plic_set_priority(irq, priority);
+	}
 #else
 	ARG_UNUSED(priority);
 #endif

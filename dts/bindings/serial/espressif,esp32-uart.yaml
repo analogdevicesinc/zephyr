@@ -1,35 +1,23 @@
-title: ESP32 Uart
-
-description: >
-    This binding gives a base representation of the ESP32 UART
+description: ESP32 UART
 
 compatible: "espressif,esp32-uart"
 
-include: uart-controller.yaml
+include: [uart-controller.yaml, pinctrl-device.yaml]
 
 properties:
-    reg:
-      required: true
+  reg:
+    required: true
 
-    interrupts:
-      required: false
+  pinctrl-0:
+    required: true
 
-    tx-pin:
-      type: int
-      description: TX pin
-      required: true
+  pinctrl-names:
+    required: true
 
-    rx-pin:
-      type: int
-      description: RX pin
-      required: true
-
-    rts-pin:
-      type: int
-      description: RTS pin
-      required: false
-
-    cts-pin:
-      type: int
-      description: CTS pin
-      required: false
+  hw-rs485-hd-mode:
+    type: boolean
+    description: |
+      Enable the hardware RS485 half duplex mode.
+      Overrides hw-flow-control if both are set.
+      Using this mode, the pin assigned to DTR
+      is asserted during transmission.

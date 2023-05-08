@@ -22,11 +22,11 @@ Building and Running
 This sample can be found under :zephyr_file:`samples/subsys/nvs` in the Zephyr tree.
 
 The sample can be build for several platforms, the following commands build the
-application for the nrf51_pca10028 board.
+application for the nrf51dk_nrf51422 board.
 
 .. zephyr-app-commands::
    :zephyr-app: samples/subsys/nvs
-   :board: nrf51_pca10028
+   :board: nrf51dk_nrf51422
    :goals: build flash
    :compact:
 
@@ -42,9 +42,9 @@ Sample Output
    ***** Booting Zephyr OS v1.12.0-rc1-176-gf091be783 *****
    [fs/nvs] [DBG] nvs_reinit: (Re)Initializing sectors
    [fs/nvs] [DBG] _nvs_sector_init: f->write_location set to c
-   [fs/nvs] [INF] nvs_init: maximum storage length 256 byte
-   [fs/nvs] [INF] nvs_init: write-align: 1, write-addr: c
-   [fs/nvs] [INF] nvs_init: entry sector: 0, entry sector ID: 1
+   [fs/nvs] [INF] nvs_mount: maximum storage length 256 byte
+   [fs/nvs] [INF] nvs_mount: write-align: 1, write-addr: c
+   [fs/nvs] [INF] nvs_mount: entry sector: 0, entry sector ID: 1
    No address found, adding 192.168.1.1 at id 1
    No key found, adding it at id 2
    No Reboot counter found, adding it at id 3
@@ -54,9 +54,9 @@ Sample Output
    Oldest reboot counter: 0
    Rebooting in ...5...4...3...2...1
    ***** Booting Zephyr OS v1.12.0-rc1-176-gf091be783 *****
-   [fs/nvs] [INF] nvs_init: maximum storage length 256 byte
-   [fs/nvs] [INF] nvs_init: write-align: 1, write-addr: c7
-   [fs/nvs] [INF] nvs_init: entry sector: 0, entry sector ID: 1
+   [fs/nvs] [INF] nvs_mount: maximum storage length 256 byte
+   [fs/nvs] [INF] nvs_mount: write-align: 1, write-addr: c7
+   [fs/nvs] [INF] nvs_mount: entry sector: 0, entry sector ID: 1
    Entry: 1, Address: 192.168.1.1
    Id: 2, Key: ff fe fd fc fb fa f9 f8
    Id: 3, Reboot_counter: 1

@@ -1,26 +1,25 @@
 tests:
-  test_debug:
+  buildsystem.debug.build:
+    platform_exclude: lpcxpresso55s69_ns nrf9160dk_nrf9160_ns nrf5340dk_nrf5340_cpuapp_ns
     build_only: true
     extra_args: CONF_FILE=debug.conf
-    tags: build_test
-  test_newlib:
+    tags: debug
+    integration_platforms:
+      - native_posix
+    filter: CONFIG_CONSOLE_HAS_DRIVER
+  bootloader.mcuboot.build:
+    tags: mcuboot
     build_only: true
-    extra_args: CONF_FILE=newlib.conf
-    tags: build_test
-    filter: TOOLCHAIN_HAS_NEWLIB == 1
-  test_runtime_nmi:
-    arch_whitelist: arm
-    build_only: true
-    extra_args: CONF_FILE=runtime_nmi.conf
-    tags: build_test
-  test_mcuboot_bootloader:
-    tags: build_test
-    build_only: true
-    platform_whitelist: nrf51_pca10028 nrf52_pca10040
+    platform_allow: nrf51dk_nrf51422 nrf52dk_nrf52832
     extra_configs:
       - CONFIG_BOOTLOADER_MCUBOOT=y
-  test_utf8_in_kconfig_values:
+    integration_platforms:
+      - nrf51dk_nrf51422
+      - nrf52dk_nrf52832
+  buildsystem.kconfig.utf8_in_values:
     build_only: true
-    tags: build_test
+    tags: kconfig
+    integration_platforms:
+      - native_posix
     extra_configs:
       - CONFIG_KERNEL_BIN_NAME="A_kconfig_value_with_a_utf8_char_in_it_Bøe_"

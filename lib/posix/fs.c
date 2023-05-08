@@ -5,15 +5,17 @@
  */
 
 #include <errno.h>
-#include <kernel.h>
+#include <zephyr/kernel.h>
 #include <limits.h>
-#include <posix/unistd.h>
-#include <posix/dirent.h>
+#include <zephyr/posix/unistd.h>
+#include <zephyr/posix/dirent.h>
 #include <string.h>
-#include <sys/fdtable.h>
+#include <zephyr/sys/fdtable.h>
+#include <zephyr/posix/sys/stat.h>
+#include <zephyr/posix/fcntl.h>
+#include <zephyr/fs/fs.h>
 
-BUILD_ASSERT_MSG(PATH_MAX >= MAX_FILE_NAME,
-		"PATH_MAX is less than MAX_FILE_NAME");
+BUILD_ASSERT(PATH_MAX >= MAX_FILE_NAME, "PATH_MAX is less than MAX_FILE_NAME");
 
 struct posix_fs_desc {
 	union {
@@ -55,17 +57,43 @@ static inline void posix_fs_free_obj(struct posix_fs_desc *ptr)
 	ptr->used = false;
 }
 
+static int posix_mode_to_zephyr(int mf)
+{
+	int mode = (mf & O_CREAT) ? FS_O_CREATE : 0;
+
+	mode |= (mf & O_APPEND) ? FS_O_APPEND : 0;
+
+	switch (mf & O_ACCMODE) {
+	case O_RDONLY:
+		mode |= FS_O_READ;
+		break;
+	case O_WRONLY:
+		mode |= FS_O_WRITE;
+		break;
+	case O_RDWR:
+		mode |= FS_O_RDWR;
+		break;
+	default:
+		break;
+	}
+
+	return mode;
+}
+
 /**
  * @brief Open a file.
  *
  * See IEEE 1003.1
  */
-int open(const char *name, int flags)
+int open(const char *name, int flags, ...)
 {
 	int rc, fd;
 	struct posix_fs_desc *ptr = NULL;
+	int zmode = posix_mode_to_zephyr(flags);
 
-	ARG_UNUSED(flags);
+	if (zmode < 0) {
+		return zmode;
+	}
 
 	fd = z_reserve_fd();
 	if (fd < 0) {
@@ -79,9 +107,10 @@ int open(const char *name, int flags)
 		return -1;
 	}
 
-	(void)memset(&ptr->file, 0, sizeof(ptr->file));
+	fs_file_t_init(&ptr->file);
 
-	rc = fs_open(&ptr->file, name);
+	rc = fs_open(&ptr->file, name, zmode);
+
 	if (rc < 0) {
 		posix_fs_free_obj(ptr);
 		z_free_fd(fd);
@@ -94,17 +123,27 @@ int open(const char *name, int flags)
 	return fd;
 }
 
+#if !defined(CONFIG_NEWLIB_LIBC) && !defined(CONFIG_PICOLIBC)
+FUNC_ALIAS(open, _open, int);
+#endif
+
+static int fs_close_vmeth(void *obj)
+{
+	struct posix_fs_desc *ptr = obj;
+	int rc;
+
+	rc = fs_close(&ptr->file);
+	posix_fs_free_obj(ptr);
+
+	return rc;
+}
+
 static int fs_ioctl_vmeth(void *obj, unsigned int request, va_list args)
 {
-	int rc;
+	int rc = 0;
 	struct posix_fs_desc *ptr = obj;
 
 	switch (request) {
-	case ZFD_IOCTL_CLOSE:
-		rc = fs_close(&ptr->file);
-		posix_fs_free_obj(ptr);
-		break;
-
 	case ZFD_IOCTL_LSEEK: {
 		off_t offset;
 		int whence;
@@ -113,6 +152,9 @@ static int fs_ioctl_vmeth(void *obj, unsigned int request, va_list args)
 		whence = va_arg(args, int);
 
 		rc = fs_seek(&ptr->file, offset, whence);
+		if (rc == 0) {
+			rc = fs_tell(&ptr->file);
+		}
 		break;
 	}
 
@@ -126,7 +168,7 @@ static int fs_ioctl_vmeth(void *obj, unsigned int request, va_list args)
 		return -1;
 	}
 
-	return 0;
+	return rc;
 }
 
 /**
@@ -170,6 +212,7 @@ static ssize_t fs_read_vmeth(void *obj, void *buffer, size_t count)
 static struct fd_op_vtable fs_fd_op_vtable = {
 	.read = fs_read_vmeth,
 	.write = fs_write_vmeth,
+	.close = fs_close_vmeth,
 	.ioctl = fs_ioctl_vmeth,
 };
 
@@ -189,7 +232,7 @@ DIR *opendir(const char *dirname)
 		return NULL;
 	}
 
-	(void)memset(&ptr->dir, 0, sizeof(ptr->dir));
+	fs_dir_t_init(&ptr->dir);
 
 	rc = fs_opendir(&ptr->dir, dirname);
 	if (rc < 0) {
@@ -246,6 +289,11 @@ struct dirent *readdir(DIR *dirp)
 	rc = fs_readdir(&ptr->dir, &fdirent);
 	if (rc < 0) {
 		errno = -rc;
+		return NULL;
+	}
+
+	if (fdirent.name[0] == 0) {
+		/* assume end-of-dir, leave errno untouched */
 		return NULL;
 	}
 

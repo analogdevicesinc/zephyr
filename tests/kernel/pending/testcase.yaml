@@ -1,4 +1,3 @@
 tests:
-  kernel.common.timing:
-    min_ram: 16
+  kernel.objects:
     tags: kernel

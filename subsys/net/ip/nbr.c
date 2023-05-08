@@ -6,12 +6,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_nbr, CONFIG_NET_IPV6_NBR_CACHE_LOG_LEVEL);
 
 #include <errno.h>
 
-#include <net/net_core.h>
+#include <zephyr/net/net_core.h>
 
 #include "net_private.h"
 
@@ -61,7 +61,7 @@ static inline struct net_nbr *get_nbr(struct net_nbr *start, int idx)
 {
 	NET_ASSERT(idx < CONFIG_NET_IPV6_MAX_NEIGHBORS);
 
-	return (struct net_nbr *)((u8_t *)start +
+	return (struct net_nbr *)((uint8_t *)start +
 			((sizeof(struct net_nbr) +
 			  start->size + start->extra_data_size) * idx));
 }
@@ -84,7 +84,7 @@ struct net_nbr *net_nbr_get(struct net_nbr_table *table)
 }
 
 int net_nbr_link(struct net_nbr *nbr, struct net_if *iface,
-		 struct net_linkaddr *lladdr)
+		 const struct net_linkaddr *lladdr)
 {
 	int i, avail = -1;
 
@@ -177,11 +177,11 @@ struct net_nbr *net_nbr_lookup(struct net_nbr_table *table,
 	return NULL;
 }
 
-struct net_linkaddr_storage *net_nbr_get_lladdr(u8_t idx)
+struct net_linkaddr_storage *net_nbr_get_lladdr(uint8_t idx)
 {
-	NET_ASSERT_INFO(idx < CONFIG_NET_IPV6_MAX_NEIGHBORS,
-			"idx %d >= max %d", idx,
-			CONFIG_NET_IPV6_MAX_NEIGHBORS);
+	NET_ASSERT(idx < CONFIG_NET_IPV6_MAX_NEIGHBORS,
+		   "idx %d >= max %d", idx,
+		   CONFIG_NET_IPV6_MAX_NEIGHBORS);
 
 	return &net_neighbor_lladdr[idx].lladdr;
 }
@@ -223,9 +223,9 @@ void net_nbr_print(struct net_nbr_table *table)
 				nbr->idx,
 				nbr->idx == NET_NBR_LLADDR_UNKNOWN ?
 				"<unknown>" :
-				log_strdup(net_sprint_ll_addr(
+				net_sprint_ll_addr(
 				   net_neighbor_lladdr[nbr->idx].lladdr.addr,
-				   net_neighbor_lladdr[nbr->idx].lladdr.len)));
+				   net_neighbor_lladdr[nbr->idx].lladdr.len));
 		}
 	}
 }

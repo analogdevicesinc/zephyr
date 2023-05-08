@@ -5,8 +5,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <kernel.h>
-#include <drivers/gpio.h>
+#include <zephyr/kernel.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/spi.h>
 
 #ifndef _ENC28J60_
 #define _ENC28J60_
@@ -99,12 +100,12 @@
 #define ENC28J60_REG_MIRDH    0x2219
 
 /* Bank 3 Registers */
-#define ENC28J60_REG_MAADR1   0x1300
-#define ENC28J60_REG_MAADR0   0x1301
+#define ENC28J60_REG_MAADR5   0x1300
+#define ENC28J60_REG_MAADR6   0x1301
 #define ENC28J60_REG_MAADR3   0x1302
-#define ENC28J60_REG_MAADR2   0x1303
-#define ENC28J60_REG_MAADR5   0x1304
-#define ENC28J60_REG_MAADR4   0x1305
+#define ENC28J60_REG_MAADR4   0x1303
+#define ENC28J60_REG_MAADR1   0x1304
+#define ENC28J60_REG_MAADR2   0x1305
 #define ENC28J60_REG_EBSTSD   0x0306
 #define ENC28J60_REG_EBSTCON  0x0307
 #define ENC28J60_REG_EBSTCSL  0x0308
@@ -153,6 +154,7 @@
 #define ENC28J60_BIT_EIR_PKTIF     (0x40)
 #define ENC28J60_BIT_EIE_TXIE      (0x08)
 #define ENC28J60_BIT_EIE_PKTIE     (0x40)
+#define ENC28J60_BIT_EIE_LINKIE    (0x10)
 #define ENC28J60_BIT_EIE_INTIE     (0x80)
 #define ENC28J60_BIT_EIR_PKTIF     (0x40)
 #define ENC28J60_BIT_EIR_DMAIF     (0x20)
@@ -165,6 +167,9 @@
 #define ENC28J60_BIT_ESTAT_LATECOL (0x10)
 #define ENC28J60_BIT_PHCON1_PDPXMD (0x0100)
 #define ENC28J60_BIT_PHCON2_HDLDIS (0x0001)
+#define ENC28J60_BIT_PHSTAT2_LSTAT (0x0400)
+#define ENC28J60_BIT_PHIE_PGEIE    (0x0002)
+#define ENC28J60_BIT_PHIE_PLNKIE   (0x0010)
 
 /* Driver Static Configuration */
 
@@ -214,30 +219,22 @@
 #define MAX_BUFFER_LENGTH 128
 
 struct eth_enc28j60_config {
-	const char *gpio_port;
-	u8_t gpio_pin;
-	const char *spi_port;
-	u8_t spi_cs_pin;
-	const char *spi_cs_port;
-	u32_t spi_freq;
-	u8_t spi_slave;
-	u8_t full_duplex;
-	s32_t timeout;
+	struct spi_dt_spec spi;
+	struct gpio_dt_spec interrupt;
+	uint8_t full_duplex;
+	int32_t timeout;
 };
 
 struct eth_enc28j60_runtime {
 	struct net_if *iface;
-	K_THREAD_STACK_MEMBER(thread_stack,
+	K_KERNEL_STACK_MEMBER(thread_stack,
 			      CONFIG_ETH_ENC28J60_RX_THREAD_STACK_SIZE);
 	struct k_thread thread;
-	u8_t mac_address[6];
-	struct device *gpio;
-	struct device *spi;
-	struct spi_cs_control spi_cs;
-	struct spi_config spi_cfg;
+	uint8_t mac_address[6];
 	struct gpio_callback gpio_cb;
 	struct k_sem tx_rx_sem;
 	struct k_sem int_sem;
+	bool iface_initialized : 1;
 };
 
 #endif /*_ENC28J60_*/

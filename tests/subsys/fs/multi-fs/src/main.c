@@ -4,65 +4,73 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <zephyr/ztest.h>
+#include "test_common.h"
 #include "test_fat.h"
-#include "test_nffs.h"
+#include "test_littlefs.h"
 #include "test_fs_shell.h"
 
-static struct nffs_area_desc nffs_selftest_area_descs[] = {
-	{ 0x00000000, 16 * 1024 },
-	{ 0x00004000, 16 * 1024 },
-	{ 0x00008000, 16 * 1024 },
-	{ 0x0000c000, 16 * 1024 },
-	{ 0x00010000, 64 * 1024 },
-	{ 0x00020000, 128 * 1024 },
-	{ 0x00040000, 128 * 1024 },
-	{ 0x00060000, 128 * 1024 },
-	{ 0x00080000, 128 * 1024 },
-	{ 0x000a0000, 128 * 1024 },
-	{ 0x000c0000, 128 * 1024 },
-	{ 0x000e0000, 128 * 1024 },
-	{ 0, 0 },
-};
-
-static struct nffs_area_desc *save_area_descs;
-
-static void test_setup(void)
+ZTEST(multi_fs_fat_dir, test_multi_fs_fat)
 {
-	save_area_descs = nffs_current_area_descs;
-	nffs_current_area_descs = nffs_selftest_area_descs;
+	/*
+	 * fat dir operation.
+	 * These tests are order-dependent.
+	 * They have to be executed in order.
+	 */
+	test_fat_mkdir();
+	test_fat_readdir();
+	test_fat_rmdir();
 }
-
-static void test_teardown(void)
+ZTEST(multi_fs_fat_file, test_multi_fs_fat)
 {
-	nffs_current_area_descs = save_area_descs;
+	/*
+	 * fat file operation.
+	 * These tests are order-dependent.
+	 * They have to be executed in order.
+	 */
+	test_fat_open();
+	test_fat_write();
+	test_fat_read();
+	test_fat_close();
+	test_fat_unlink();
 }
-
-void test_main(void)
+ZTEST(multi_fs_littlefs_dir, test_multi_fs_littlefs)
 {
-	ztest_test_suite(multifs_fs_test,
-			 ztest_unit_test(test_fat_mount),
-			 ztest_unit_test_setup_teardown(test_nffs_mount,
-							test_setup, test_teardown),
-			 ztest_unit_test(test_fat_mkdir),
-			 ztest_unit_test_setup_teardown(test_nffs_mkdir,
-							test_setup, test_teardown),
-			 ztest_unit_test(test_fat_readdir),
-			 ztest_unit_test(test_fat_rmdir),
-			 ztest_unit_test_setup_teardown(test_nffs_readdir,
-							test_setup, test_teardown),
-			 ztest_unit_test(test_fat_open),
-			 ztest_unit_test_setup_teardown(test_nffs_open,
-							test_setup, test_teardown),
-			 ztest_unit_test(test_fat_write),
-			 ztest_unit_test_setup_teardown(test_nffs_write,
-							test_setup, test_teardown),
-			 ztest_unit_test(test_fat_read),
-			 ztest_unit_test(test_fat_close),
-			 ztest_unit_test_setup_teardown(test_nffs_read,
-							test_setup, test_teardown),
-			 ztest_unit_test(test_fat_unlink),
-			 ztest_unit_test_setup_teardown(test_nffs_unlink,
-							test_setup, test_teardown),
-			 ztest_unit_test(test_fs_help));
-	ztest_run_test_suite(multifs_fs_test);
+	/*
+	 * littlefs dir operation.
+	 * These tests are order-dependent.
+	 * They have to be executed in order.
+	 */
+	test_littlefs_mkdir();
+	test_littlefs_readdir();
+	test_littlefs_rmdir();
 }
+ZTEST(multi_fs_littlefs_file, test_multi_fs_littlefs)
+{
+	/*
+	 * littlefs file operation.
+	 * These tests are order-dependent.
+	 * They have to be executed in order.
+	 */
+	test_littlefs_open();
+	test_littlefs_write();
+	test_littlefs_read();
+	test_littlefs_close();
+	test_littlefs_unlink();
+}
+static void *multi_fs_fat_setup(void)
+{
+	test_clear_flash();
+	test_fat_mount();
+	return NULL;
+}
+static void *multi_fs_littlefs_setup(void)
+{
+	test_clear_flash();
+	test_littlefs_mount();
+	return NULL;
+}
+ZTEST_SUITE(multi_fs_fat_dir, NULL, multi_fs_fat_setup, NULL, NULL, NULL);
+ZTEST_SUITE(multi_fs_fat_file, NULL, NULL, NULL, NULL, NULL);
+ZTEST_SUITE(multi_fs_littlefs_dir, NULL, multi_fs_littlefs_setup, NULL, NULL, NULL);
+ZTEST_SUITE(multi_fs_littlefs_file, NULL, NULL, NULL, NULL, NULL);

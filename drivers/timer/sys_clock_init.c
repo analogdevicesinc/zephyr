@@ -12,39 +12,16 @@
  * duplication.
  */
 
-#include <kernel.h>
-#include <init.h>
-#include <drivers/timer/system_timer.h>
+#include <zephyr/kernel.h>
+#include <zephyr/init.h>
+#include <zephyr/drivers/timer/system_timer.h>
 
-/* Weak-linked noop defaults for optional driver interfaces: */
+/* Weak-linked noop defaults for optional driver interfaces*/
 
-void __weak z_clock_isr(void *arg)
-{
-	__ASSERT_NO_MSG(false);
-}
-
-int __weak z_clock_driver_init(struct device *device)
-{
-	return 0;
-}
-
-int __weak z_clock_device_ctrl(struct device *device, u32_t ctrl_command,
-			       void *context, device_pm_cb cb, void *arg)
-{
-	return 0;
-}
-
-void __weak z_clock_set_timeout(s32_t ticks, bool idle)
+void __weak sys_clock_set_timeout(int32_t ticks, bool idle)
 {
 }
 
-void __weak z_clock_idle_exit(void)
+void __weak sys_clock_idle_exit(void)
 {
 }
-
-void __weak sys_clock_disable(void)
-{
-}
-
-SYS_DEVICE_DEFINE("sys_clock", z_clock_driver_init, z_clock_device_ctrl,
-		PRE_KERNEL_2, CONFIG_SYSTEM_CLOCK_INIT_PRIORITY);

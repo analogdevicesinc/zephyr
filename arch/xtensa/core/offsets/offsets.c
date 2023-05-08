@@ -1,58 +1,63 @@
 /*
- * Copyright (c) 2013-2014 Wind River Systems, Inc.
- * Copyright (c) 2016 Cadence Design Systems, Inc.
+ * Copyright (c) 2021 Intel Corporation
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/**
- * @file
- * @brief Xtensa kernel structure member offset definition file
- *
- * This module is responsible for the generation of the absolute symbols whose
- * value represents the member offsets for various Xtensa kernel
- * structures.
- *
- * All of the absolute symbols defined by this module will be present in the
- * final kernel or kernel ELF image (due to the linker's reference to
- * the _OffsetAbsSyms symbol).
- *
- * INTERNAL
- * It is NOT necessary to define the offset for every member of a structure.
- * Typically, only those members that are accessed by assembly language routines
- * are defined; however, it doesn't hurt to define all fields for the sake of
- * completeness.
- */
-
-#include <gen_offset.h> /* located in kernel/arch/common/include */
-
-/* list of headers that define whose structure offsets will be generated */
-
-#include <kernel_structs.h>
-
+#include <gen_offset.h>
 #include <kernel_offsets.h>
 
-/* Xtensa-specific k_thread structure member offsets */
-GEN_OFFSET_SYM(_callee_saved_t, topOfStack);
-GEN_OFFSET_SYM(_callee_saved_t, retval);
+#include <xtensa-asm2-context.h>
 
-GEN_OFFSET_SYM(_thread_arch_t, preempCoprocReg);
-#if XCHAL_CP_NUM > 0
-GEN_OFFSET_SYM(tPreempCoprocReg, cpStack);
+GEN_ABSOLUTE_SYM(___xtensa_irq_bsa_t_SIZEOF, sizeof(_xtensa_irq_bsa_t));
+GEN_ABSOLUTE_SYM(___xtensa_irq_stack_frame_raw_t_SIZEOF, sizeof(_xtensa_irq_stack_frame_raw_t));
+GEN_ABSOLUTE_SYM(___xtensa_irq_stack_frame_a15_t_SIZEOF, sizeof(_xtensa_irq_stack_frame_a15_t));
+GEN_ABSOLUTE_SYM(___xtensa_irq_stack_frame_a11_t_SIZEOF, sizeof(_xtensa_irq_stack_frame_a11_t));
+GEN_ABSOLUTE_SYM(___xtensa_irq_stack_frame_a7_t_SIZEOF, sizeof(_xtensa_irq_stack_frame_a7_t));
+GEN_ABSOLUTE_SYM(___xtensa_irq_stack_frame_a3_t_SIZEOF, sizeof(_xtensa_irq_stack_frame_a3_t));
+
+GEN_OFFSET_SYM(_xtensa_irq_bsa_t, a0);
+GEN_OFFSET_SYM(_xtensa_irq_bsa_t, scratch);
+GEN_OFFSET_SYM(_xtensa_irq_bsa_t, a2);
+GEN_OFFSET_SYM(_xtensa_irq_bsa_t, a3);
+
+GEN_OFFSET_SYM(_xtensa_irq_bsa_t, exccause);
+GEN_OFFSET_SYM(_xtensa_irq_bsa_t, pc);
+GEN_OFFSET_SYM(_xtensa_irq_bsa_t, ps);
+GEN_OFFSET_SYM(_xtensa_irq_bsa_t, sar);
+
+#if XCHAL_HAVE_LOOPS
+GEN_OFFSET_SYM(_xtensa_irq_bsa_t, lcount);
+GEN_OFFSET_SYM(_xtensa_irq_bsa_t, lbeg);
+GEN_OFFSET_SYM(_xtensa_irq_bsa_t, lend);
 #endif
 
-/* Xtensa-specific _thread_arch_t structure member offsets */
-GEN_OFFSET_SYM(_thread_arch_t, flags);
+#if XCHAL_HAVE_S32C1I
+GEN_OFFSET_SYM(_xtensa_irq_bsa_t, scompare1);
+#endif
 
-/* Xtensa-specific ESF structure member offsets */
-GEN_OFFSET_SYM(__esf_t, sp);
-GEN_OFFSET_SYM(__esf_t, pc);
+#if XCHAL_HAVE_THREADPTR
+GEN_OFFSET_SYM(_xtensa_irq_bsa_t, threadptr);
+#endif
 
-/* size of the entire __esf_t structure */
-GEN_ABSOLUTE_SYM(____esf_t_SIZEOF, sizeof(__esf_t));
-
-/* size of the struct k_thread structure without save area for coproc regs */
-GEN_ABSOLUTE_SYM(_K_THREAD_NO_FLOAT_SIZEOF,
-		 sizeof(struct k_thread) - sizeof(tCoopCoprocReg) -
-			 sizeof(tPreempCoprocReg) + XT_CP_DESCR_SIZE);
+#if XCHAL_HAVE_FP && defined(CONFIG_CPU_HAS_FPU) && defined(CONFIG_FPU_SHARING)
+GEN_OFFSET_SYM(_xtensa_irq_bsa_t, fcr);
+GEN_OFFSET_SYM(_xtensa_irq_bsa_t, fsr);
+GEN_OFFSET_SYM(_xtensa_irq_bsa_t, fpu0);
+GEN_OFFSET_SYM(_xtensa_irq_bsa_t, fpu1);
+GEN_OFFSET_SYM(_xtensa_irq_bsa_t, fpu2);
+GEN_OFFSET_SYM(_xtensa_irq_bsa_t, fpu3);
+GEN_OFFSET_SYM(_xtensa_irq_bsa_t, fpu4);
+GEN_OFFSET_SYM(_xtensa_irq_bsa_t, fpu5);
+GEN_OFFSET_SYM(_xtensa_irq_bsa_t, fpu6);
+GEN_OFFSET_SYM(_xtensa_irq_bsa_t, fpu7);
+GEN_OFFSET_SYM(_xtensa_irq_bsa_t, fpu8);
+GEN_OFFSET_SYM(_xtensa_irq_bsa_t, fpu9);
+GEN_OFFSET_SYM(_xtensa_irq_bsa_t, fpu10);
+GEN_OFFSET_SYM(_xtensa_irq_bsa_t, fpu11);
+GEN_OFFSET_SYM(_xtensa_irq_bsa_t, fpu12);
+GEN_OFFSET_SYM(_xtensa_irq_bsa_t, fpu13);
+GEN_OFFSET_SYM(_xtensa_irq_bsa_t, fpu14);
+GEN_OFFSET_SYM(_xtensa_irq_bsa_t, fpu15);
+#endif
 
 GEN_ABS_SYM_END

@@ -59,14 +59,14 @@
 #include <tinycrypt/ecc.h>
 #include <tinycrypt/ecc_dh.h>
 #include <tinycrypt/ecc_platform_specific.h>
-#include <test_ecc_utils.h>
-#include <test_utils.h>
+#include "test_ecc_utils.h"
+#include <zephyr/test_utils.h>
 #include <tinycrypt/constants.h>
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <ztest.h>
+#include <zephyr/ztest.h>
 
 int ecdh_vectors(char **qx_vec, char **qy_vec, char **d_vec, char **z_vec,
 		 int tests, int verbose)
@@ -446,11 +446,10 @@ int montecarlo_ecdh(int num_tests, bool verbose)
 	return TC_PASS;
 }
 
-void test_ecc_dh(void)
+ZTEST(tinycrypt, test_ecc_dh)
 {
 	unsigned int result = TC_PASS;
 
-	TC_START("Performing ECC-DH tests:");
 
 	/* Setup of the Cryptographically Secure PRNG. */
 	uECC_set_rng(&default_CSPRNG);

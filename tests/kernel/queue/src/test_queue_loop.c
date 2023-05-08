@@ -6,7 +6,7 @@
 
 #include "test_queue.h"
 
-#define STACK_SIZE (512 + CONFIG_TEST_EXTRA_STACKSIZE)
+#define STACK_SIZE (512 + CONFIG_TEST_EXTRA_STACK_SIZE)
 #define LIST_LEN 4
 #define LOOPS 32
 
@@ -44,14 +44,14 @@ static void tqueue_get(struct k_queue *pqueue)
 	for (int i = 0; i < LIST_LEN; i++) {
 		/**TESTPOINT: queue get*/
 		rx_data = k_queue_get(pqueue, K_NO_WAIT);
-		zassert_equal(rx_data, (void *)&data_p[i], NULL);
+		zassert_equal(rx_data, (void *)&data_p[i]);
 	}
 
 	/*get queue data from "queue_append"*/
 	for (int i = 0; i < LIST_LEN; i++) {
 		/**TESTPOINT: queue get*/
 		rx_data = k_queue_get(pqueue, K_NO_WAIT);
-		zassert_equal(rx_data, (void *)&data[i], NULL);
+		zassert_equal(rx_data, (void *)&data[i]);
 	}
 }
 
@@ -60,29 +60,23 @@ static void tqueue_find_and_remove(struct k_queue *pqueue)
 	/*remove queue data from "queue_find_and_remove"*/
 	for (int i = 0; i < LIST_LEN; i++) {
 		/**TESTPOINT: queue find and remove*/
-		zassert_true(k_queue_remove(pqueue, &data_r[i]), NULL);
+		zassert_true(k_queue_remove(pqueue, &data_r[i]));
 	}
 }
 
 /*entry of contexts*/
-static void tIsr_entry(void *p)
+static void tIsr_entry(const void *p)
 {
-	TC_PRINT("isr queue find and remove\n");
 	tqueue_find_and_remove((struct k_queue *)p);
-	TC_PRINT("isr queue get\n");
 	tqueue_get((struct k_queue *)p);
-	TC_PRINT("isr queue append ---> ");
 	tqueue_append((struct k_queue *)p);
 }
 
 static void tThread_entry(void *p1, void *p2, void *p3)
 {
-	TC_PRINT("thread queue find and remove\n");
 	tqueue_find_and_remove((struct k_queue *)p1);
-	TC_PRINT("thread queue get\n");
 	tqueue_get((struct k_queue *)p1);
 	k_sem_give(&end_sema);
-	TC_PRINT("thread queue append ---> ");
 	tqueue_append((struct k_queue *)p1);
 	k_sem_give(&end_sema);
 }
@@ -94,20 +88,16 @@ static void tqueue_read_write(struct k_queue *pqueue)
 	/**TESTPOINT: thread-isr-thread data passing via queue*/
 	k_tid_t tid = k_thread_create(&tdata, tstack, STACK_SIZE,
 				      tThread_entry, pqueue, NULL, NULL,
-				      K_PRIO_PREEMPT(0), 0, 0);
+				      K_PRIO_PREEMPT(0), 0, K_NO_WAIT);
 
-	TC_PRINT("main queue append ---> ");
 	tqueue_append(pqueue);
-	irq_offload(tIsr_entry, pqueue);
+	irq_offload(tIsr_entry, (const void *)pqueue);
 	k_sem_take(&end_sema, K_FOREVER);
 	k_sem_take(&end_sema, K_FOREVER);
 
-	TC_PRINT("main queue find and remove\n");
 	tqueue_find_and_remove(pqueue);
-	TC_PRINT("main queue get\n");
 	tqueue_get(pqueue);
 	k_thread_abort(tid);
-	TC_PRINT("\n");
 }
 
 /*test cases*/
@@ -117,7 +107,7 @@ static void tqueue_read_write(struct k_queue *pqueue)
  * @see k_queue_append(), k_queue_get(),
  * k_queue_init(), k_queue_remove()
  */
-void test_queue_loop(void)
+ZTEST(queue_api_1cpu, test_queue_loop)
 {
 	k_queue_init(&queue);
 	for (int i = 0; i < LOOPS; i++) {

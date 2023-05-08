@@ -5,92 +5,72 @@
  */
 
 /**
- * @file Sample app to demonstrate PWM.
- *
- * This app uses PWM pins 0, 1, and 2.
+ * @file Sample app to demonstrate PWM-based RGB LED control
  */
 
-#include <zephyr.h>
-#include <sys/printk.h>
-#include <device.h>
-#include <drivers/pwm.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/pwm.h>
 
-#if defined(DT_ALIAS_RED_PWM_LED_PWMS_CONTROLLER) && \
-      defined(DT_ALIAS_RED_PWM_LED_PWMS_CHANNEL) && \
-      defined(DT_ALIAS_GREEN_PWM_LED_PWMS_CONTROLLER) && \
-      defined(DT_ALIAS_GREEN_PWM_LED_PWMS_CHANNEL) && \
-      defined(DT_ALIAS_BLUE_PWM_LED_PWMS_CONTROLLER) && \
-      defined(DT_ALIAS_BLUE_PWM_LED_PWMS_CHANNEL)
-/* Get the defines from dt (based on aliases 'red-pwm-led', 'green-pwm-led' &
- * 'blue-pwm-led')
- */
-#define PWM_DEV0	DT_ALIAS_RED_PWM_LED_PWMS_CONTROLLER
-#define PWM_CH0		DT_ALIAS_RED_PWM_LED_PWMS_CHANNEL
-#define PWM_DEV1	DT_ALIAS_GREEN_PWM_LED_PWMS_CONTROLLER
-#define PWM_CH1		DT_ALIAS_GREEN_PWM_LED_PWMS_CHANNEL
-#define PWM_DEV2	DT_ALIAS_BLUE_PWM_LED_PWMS_CONTROLLER
-#define PWM_CH2		DT_ALIAS_BLUE_PWM_LED_PWMS_CHANNEL
-#else
-#error "Choose supported board or add new board for the application"
-#endif
+static const struct pwm_dt_spec red_pwm_led =
+	PWM_DT_SPEC_GET(DT_ALIAS(red_pwm_led));
+static const struct pwm_dt_spec green_pwm_led =
+	PWM_DT_SPEC_GET(DT_ALIAS(green_pwm_led));
+static const struct pwm_dt_spec blue_pwm_led =
+	PWM_DT_SPEC_GET(DT_ALIAS(blue_pwm_led));
 
-/*
- * 50 is flicker fusion threshold. Modulated light will be perceived
- * as steady by our eyes when blinking rate is at least 50.
- */
-#define PERIOD (USEC_PER_SEC / 50U)
+#define STEP_SIZE PWM_USEC(2000)
 
-/* in micro second */
-#define STEPSIZE	2000
-
-static int write_pin(struct device *pwm_dev, u32_t pwm_pin,
-		     u32_t pulse_width)
+int main(void)
 {
-	return pwm_pin_set_usec(pwm_dev, pwm_pin, PERIOD, pulse_width);
-}
+	uint32_t pulse_red, pulse_green, pulse_blue; /* pulse widths */
+	int ret;
 
-void main(void)
-{
-	struct device *pwm_dev[3];
-	u32_t pulse_width0, pulse_width1, pulse_width2;
+	printk("PWM-based RGB LED control\n");
 
-	printk("PWM demo app-RGB LED\n");
-
-	pwm_dev[0] = device_get_binding(PWM_DEV0);
-	pwm_dev[1] = device_get_binding(PWM_DEV1);
-	pwm_dev[2] = device_get_binding(PWM_DEV2);
-	if (!pwm_dev[0] || !pwm_dev[1] || !pwm_dev[2]) {
-		printk("Cannot find PWM device!\n");
-		return;
+	if (!device_is_ready(red_pwm_led.dev) ||
+	    !device_is_ready(green_pwm_led.dev) ||
+	    !device_is_ready(blue_pwm_led.dev)) {
+		printk("Error: one or more PWM devices not ready\n");
+		return 0;
 	}
 
 	while (1) {
-		for (pulse_width0 = 0U; pulse_width0 <= PERIOD;
-		     pulse_width0 += STEPSIZE) {
-			if (write_pin(pwm_dev[0], PWM_CH0,
-				      pulse_width0) != 0) {
-				printk("pin 0 write fails!\n");
-				return;
+		for (pulse_red = 0U; pulse_red <= red_pwm_led.period;
+		     pulse_red += STEP_SIZE) {
+			ret = pwm_set_pulse_dt(&red_pwm_led, pulse_red);
+			if (ret != 0) {
+				printk("Error %d: red write failed\n", ret);
+				return 0;
 			}
 
-			for (pulse_width1 = 0U; pulse_width1 <= PERIOD;
-			     pulse_width1 += STEPSIZE) {
-				if (write_pin(pwm_dev[1], PWM_CH1,
-					      pulse_width1) != 0) {
-					printk("pin 1 write fails!\n");
-					return;
+			for (pulse_green = 0U;
+			     pulse_green <= green_pwm_led.period;
+			     pulse_green += STEP_SIZE) {
+				ret = pwm_set_pulse_dt(&green_pwm_led,
+						       pulse_green);
+				if (ret != 0) {
+					printk("Error %d: green write failed\n",
+					       ret);
+					return 0;
 				}
 
-				for (pulse_width2 = 0U; pulse_width2 <= PERIOD;
-				     pulse_width2 += STEPSIZE) {
-					if (write_pin(pwm_dev[2], PWM_CH2,
-						      pulse_width2) != 0) {
-						printk("pin 2 write fails!\n");
-						return;
+				for (pulse_blue = 0U;
+				     pulse_blue <= blue_pwm_led.period;
+				     pulse_blue += STEP_SIZE) {
+					ret = pwm_set_pulse_dt(&blue_pwm_led,
+							       pulse_blue);
+					if (ret != 0) {
+						printk("Error %d: "
+						       "blue write failed\n",
+						       ret);
+						return 0;
 					}
-					k_sleep(MSEC_PER_SEC);
+					k_sleep(K_SECONDS(1));
 				}
 			}
 		}
 	}
+	return 0;
 }

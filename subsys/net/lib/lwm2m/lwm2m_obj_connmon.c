@@ -7,16 +7,25 @@
 #define LOG_MODULE_NAME net_lwm2m_obj_conn_mon
 #define LOG_LEVEL CONFIG_LWM2M_LOG_LEVEL
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
 #include <string.h>
-#include <init.h>
-#include <net/net_if.h>
-#include <net/net_ip.h>
+#include <zephyr/init.h>
+#include <zephyr/net/net_if.h>
+#include <zephyr/net/net_ip.h>
 
 #include "lwm2m_object.h"
 #include "lwm2m_engine.h"
+
+#define CONNMON_VERSION_MAJOR 1
+#if defined(CONFIG_LWM2M_CONNMON_OBJECT_VERSION_1_2)
+#define CONNMON_VERSION_MINOR 2
+#define CONNMON_MAX_ID 13
+#else
+#define CONNMON_VERSION_MINOR 0
+#define CONNMON_MAX_ID 11
+#endif /* CONFIG_LWM2M_CONNMON_OBJECT_VERSION_1_2 */
 
 /* Connectivity Monitoring resource IDs */
 #define CONNMON_NETWORK_BEARER_ID		0
@@ -30,8 +39,10 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #define CONNMON_CELLID				8
 #define CONNMON_SMNC				9
 #define CONNMON_SMCC				10
-
-#define CONNMON_MAX_ID				11
+#if defined(CONFIG_LWM2M_CONNMON_OBJECT_VERSION_1_2)
+#define CONNMON_SIGNAL_SNR			11
+#define CONNMON_LAC				12
+#endif
 
 #define CONNMON_STRING_SHORT			8
 
@@ -72,11 +83,16 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 					CONNMON_ROUTER_IP_ADDRESS_MAX)
 
 /* resource state variables */
-static s8_t net_bearer;
-static s8_t rss;
-static u8_t link_quality;
-static u16_t mnc;
-static u16_t mcc;
+static int8_t net_bearer;
+static int8_t rss;
+static uint8_t link_quality;
+static uint32_t cellid;
+static uint16_t mnc;
+static uint16_t mcc;
+#if defined(CONFIG_LWM2M_CONNMON_OBJECT_VERSION_1_2)
+static int32_t snr;
+static uint16_t lac;
+#endif
 
 /* only 1 instance of Connection Monitoring object exists */
 static struct lwm2m_engine_obj connmon;
@@ -89,16 +105,20 @@ static struct lwm2m_engine_obj_field fields[] = {
 	OBJ_FIELD_DATA(CONNMON_ROUTER_IP_ADDRESSES, R_OPT, STRING),
 	OBJ_FIELD_DATA(CONNMON_LINK_UTILIZATION, R_OPT, U8),
 	OBJ_FIELD_DATA(CONNMON_APN, R_OPT, STRING),
-	OBJ_FIELD_DATA(CONNMON_CELLID, R_OPT, S32),
+	OBJ_FIELD_DATA(CONNMON_CELLID, R_OPT, U32),
 	OBJ_FIELD_DATA(CONNMON_SMNC, R_OPT, U16),
-	OBJ_FIELD_DATA(CONNMON_SMCC, R_OPT, U16)
+	OBJ_FIELD_DATA(CONNMON_SMCC, R_OPT, U16),
+#if defined(CONFIG_LWM2M_CONNMON_OBJECT_VERSION_1_2)
+	OBJ_FIELD_DATA(CONNMON_SIGNAL_SNR, R_OPT, S32),
+	OBJ_FIELD_DATA(CONNMON_LAC, R_OPT, U16),
+#endif
 };
 
 static struct lwm2m_engine_obj_inst inst;
 static struct lwm2m_engine_res res[CONNMON_MAX_ID];
 static struct lwm2m_engine_res_inst res_inst[RESOURCE_INSTANCE_COUNT];
 
-static struct lwm2m_engine_obj_inst *connmon_create(u16_t obj_inst_id)
+static struct lwm2m_engine_obj_inst *connmon_create(uint16_t obj_inst_id)
 {
 	int i = 0, j = 0;
 
@@ -128,8 +148,14 @@ static struct lwm2m_engine_obj_inst *connmon_create(u16_t obj_inst_id)
 				   false);
 	INIT_OBJ_RES_MULTI_OPTDATA(CONNMON_APN, res, i, res_inst, j,
 				   CONNMON_APN_MAX, false);
+	INIT_OBJ_RES_DATA(CONNMON_CELLID, res, i, res_inst, j, &cellid,
+			  sizeof(cellid));
 	INIT_OBJ_RES_DATA(CONNMON_SMNC, res, i, res_inst, j, &mnc, sizeof(mnc));
 	INIT_OBJ_RES_DATA(CONNMON_SMCC, res, i, res_inst, j, &mcc, sizeof(mcc));
+#if defined(CONFIG_LWM2M_CONNMON_OBJECT_VERSION_1_2)
+	INIT_OBJ_RES_DATA(CONNMON_SIGNAL_SNR, res, i, res_inst, j, &snr, sizeof(snr));
+	INIT_OBJ_RES_DATA(CONNMON_LAC, res, i, res_inst, j, &lac, sizeof(lac));
+#endif
 
 	inst.resources = res;
 	inst.resource_count = i;
@@ -138,13 +164,16 @@ static struct lwm2m_engine_obj_inst *connmon_create(u16_t obj_inst_id)
 	return &inst;
 }
 
-static int lwm2m_connmon_init(struct device *dev)
+static int lwm2m_connmon_init(void)
 {
 	struct lwm2m_engine_obj_inst *obj_inst = NULL;
 	int ret = 0;
 
 	/* initialize the Connection Monitoring field data */
 	connmon.obj_id = LWM2M_OBJECT_CONNECTIVITY_MONITORING_ID;
+	connmon.version_major = CONNMON_VERSION_MAJOR;
+	connmon.version_minor = CONNMON_VERSION_MINOR;
+	connmon.is_core = true;
 	connmon.fields = fields;
 	connmon.field_count = ARRAY_SIZE(fields);
 	connmon.max_instance_count = 1U;

@@ -10,13 +10,13 @@
 #include <stddef.h>
 #include <string.h>
 #include <errno.h>
-#include <sys/printk.h>
-#include <sys/byteorder.h>
-#include <zephyr.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/sys/byteorder.h>
+#include <zephyr/kernel.h>
 
-#include <bluetooth/bluetooth.h>
-#include <bluetooth/conn.h>
-#include <bluetooth/hfp_hf.h>
+#include <zephyr/bluetooth/bluetooth.h>
+#include <zephyr/bluetooth/conn.h>
+#include <zephyr/bluetooth/hfp_hf.h>
 
 static void connected(struct bt_conn *conn)
 {
@@ -28,37 +28,37 @@ static void disconnected(struct bt_conn *conn)
 	printk("HFP HF Disconnected!\n");
 }
 
-static void service(struct bt_conn *conn, u32_t value)
+static void service(struct bt_conn *conn, uint32_t value)
 {
 	printk("Service indicator value: %u\n", value);
 }
 
-static void call(struct bt_conn *conn, u32_t value)
+static void call(struct bt_conn *conn, uint32_t value)
 {
 	printk("Call indicator value: %u\n", value);
 }
 
-static void call_setup(struct bt_conn *conn, u32_t value)
+static void call_setup(struct bt_conn *conn, uint32_t value)
 {
 	printk("Call Setup indicator value: %u\n", value);
 }
 
-static void call_held(struct bt_conn *conn, u32_t value)
+static void call_held(struct bt_conn *conn, uint32_t value)
 {
 	printk("Call Held indicator value: %u\n", value);
 }
 
-static void signal(struct bt_conn *conn, u32_t value)
+static void signal(struct bt_conn *conn, uint32_t value)
 {
 	printk("Signal indicator value: %u\n", value);
 }
 
-static void roam(struct bt_conn *conn, u32_t value)
+static void roam(struct bt_conn *conn, uint32_t value)
 {
 	printk("Roaming indicator value: %u\n", value);
 }
 
-static void battery(struct bt_conn *conn, u32_t value)
+static void battery(struct bt_conn *conn, uint32_t value)
 {
 	printk("Battery indicator value: %u\n", value);
 }
@@ -114,7 +114,7 @@ static void handsfree_enable(void)
 	}
 }
 
-void main(void)
+int main(void)
 {
 	int err;
 
@@ -124,4 +124,5 @@ void main(void)
 	if (err) {
 		printk("Bluetooth init failed (err %d)\n", err);
 	}
+	return 0;
 }

@@ -2,11 +2,12 @@
 
 /dts-v1/;
 
-#include <nios2f.dtsi>
+#include <mem.h>
+#include <intel/nios2f.dtsi>
 
 / {
 	model = "altera_max10";
-	compatible = "altera,nios2f";
+	compatible = "altr,nios2-max10";
 
 	aliases {
 		uart-0 = &uart0;
@@ -28,4 +29,13 @@
 &i2c0 {
 	status = "okay";
 	clock-frequency = <I2C_BITRATE_ULTRA>;
+};
+
+&qspi {
+	status = "okay";
+	n25q512ax3: n25q512ax3@0 {
+		compatible = "altr,nios2-qspi-nor";
+		size = <DT_SIZE_M(64*8)>;	/* in bits */
+		reg = <0>;
+	};
 };

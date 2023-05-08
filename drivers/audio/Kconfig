@@ -1,13 +1,10 @@
-# Kconfig - Audio Codec configuration options
+# Audio Codec configuration options
 
-#
 # Copyright (c) 2018 Intel Corporation
-#
 # SPDX-License-Identifier: Apache-2.0
-#
 
 menuconfig AUDIO
-	bool "Support for Audio"
+	bool "Audio drivers"
 	help
 	  Enable support for Audio
 
@@ -45,7 +42,7 @@ if AUDIO_DMIC
 
 config AUDIO_DMIC_INIT_PRIORITY
 	int "Init priority"
-	default 60
+	default 80
 	help
 	  Audio Digital Microphone device driver initialization priority.
 
@@ -53,8 +50,8 @@ module = AUDIO_DMIC
 module-str = audio_dmic
 source "subsys/logging/Kconfig.template.log_config"
 
-source "drivers/audio/Kconfig.intel_dmic"
 source "drivers/audio/Kconfig.mpxxdtyy"
+source "drivers/audio/Kconfig.dmic_pdm_nrfx"
 
 endif # AUDIO_DMIC
 

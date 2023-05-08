@@ -4,21 +4,20 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <device.h>
+#include <zephyr/device.h>
 #include <errno.h>
-#include <drivers/led.h>
-#include <sys/util.h>
-#include <zephyr.h>
+#include <zephyr/drivers/led.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/kernel.h>
 
 #define LOG_LEVEL 4
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(main);
 
-#define LED_DEV_NAME DT_INST_0_TI_LP5562_LABEL
 #define NUM_LEDS 4
 #define BLINK_DELAY_ON 500
 #define BLINK_DELAY_OFF 500
-#define DELAY_TIME K_MSEC(2000)
+#define DELAY_TIME 2000
 #define COLORS_TO_SHOW 8
 #define VALUES_PER_COLOR 3
 
@@ -33,7 +32,7 @@ LOG_MODULE_REGISTER(main);
 /*
  * The following colors are shown in the given order.
  */
-static u8_t colors[COLORS_TO_SHOW][VALUES_PER_COLOR] = {
+static uint8_t colors[COLORS_TO_SHOW][VALUES_PER_COLOR] = {
 	{ 0xFF, 0x00, 0x00 }, /*< Red    */
 	{ 0x00, 0xFF, 0x00 }, /*< Green  */
 	{ 0x00, 0x00, 0xFF }, /*< Blue   */
@@ -51,7 +50,7 @@ static u8_t colors[COLORS_TO_SHOW][VALUES_PER_COLOR] = {
  *
  * @return Hex value scaled to percent.
  */
-static inline u8_t scale_color_to_percent(u8_t hex)
+static inline uint8_t scale_color_to_percent(uint8_t hex)
 {
 	return (hex * 100U) / 0xFF;
 }
@@ -66,7 +65,8 @@ static inline u8_t scale_color_to_percent(u8_t hex)
  *
  * @return 0 if successful, -ERRNO otherwise.
  */
-static int set_static_color(struct device *dev, u8_t r, u8_t g, u8_t b)
+static int set_static_color(const struct device *dev, uint8_t r, uint8_t g,
+			    uint8_t b)
 {
 	int ret;
 
@@ -110,8 +110,8 @@ static int set_static_color(struct device *dev, u8_t r, u8_t g, u8_t b)
  *
  * @return 0 if successful, -ERRNO otherwise.
  */
-static int blink_color(struct device *dev, bool r, bool g, bool b,
-		u32_t delay_on, u32_t delay_off)
+static int blink_color(const struct device *dev, bool r, bool g, bool b,
+		       uint32_t delay_on, uint32_t delay_off)
 {
 	int ret;
 
@@ -149,7 +149,7 @@ static int blink_color(struct device *dev, bool r, bool g, bool b,
  *
  * @return 0 if successful, -ERRNO otherwise.
  */
-static int turn_off_all_leds(struct device *dev)
+static int turn_off_all_leds(const struct device *dev)
 {
 	for (int i = 0; i < NUM_LEDS; i++) {
 		int ret = led_off(dev, i);
@@ -162,17 +162,19 @@ static int turn_off_all_leds(struct device *dev)
 	return 0;
 }
 
-void main(void)
+int main(void)
 {
-	struct device *dev;
+	const struct device *const dev = DEVICE_DT_GET_ANY(ti_lp5562);
 	int i, ret;
 
-	dev = device_get_binding(LED_DEV_NAME);
-	if (dev) {
-		LOG_INF("Found LED device %s", LED_DEV_NAME);
+	if (!dev) {
+		LOG_ERR("No \"ti,lp5562\" device found");
+		return 0;
+	} else if (!device_is_ready(dev)) {
+		LOG_ERR("LED device %s is not ready", dev->name);
+		return 0;
 	} else {
-		LOG_ERR("LED device %s not found", LED_DEV_NAME);
-		return;
+		LOG_INF("Found LED device %s", dev->name);
 	}
 
 	LOG_INF("Testing leds");
@@ -185,26 +187,26 @@ void main(void)
 					colors[i][1],
 					colors[i][2]);
 			if (ret) {
-				return;
+				return 0;
 			}
 
-			k_sleep(DELAY_TIME);
+			k_msleep(DELAY_TIME);
 		}
 
 		ret = turn_off_all_leds(dev);
 		if (ret < 0) {
-			return;
+			return 0;
 		}
 
 		/* Blink white. */
 		ret = blink_color(dev, true, true, true, BLINK_DELAY_ON,
 				BLINK_DELAY_OFF);
 		if (ret) {
-			return;
+			return 0;
 		}
 
 		/* Wait a few blinking before turning off the LEDs */
-		k_sleep(DELAY_TIME * 2);
+		k_msleep(DELAY_TIME * 2);
 
 		/* Change the color of the LEDs while keeping blinking. */
 		for (i = 0; i < COLORS_TO_SHOW; i++) {
@@ -213,17 +215,18 @@ void main(void)
 					colors[i][1],
 					colors[i][2]);
 			if (ret) {
-				return;
+				return 0;
 			}
 
-			k_sleep(DELAY_TIME * 2);
+			k_msleep(DELAY_TIME * 2);
 		}
 
 		ret = turn_off_all_leds(dev);
 		if (ret < 0) {
-			return;
+			return 0;
 		}
 
-		k_sleep(DELAY_TIME);
+		k_msleep(DELAY_TIME);
 	}
+	return 0;
 }

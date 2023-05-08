@@ -1,7 +1,7 @@
 /*
  * Copyright (c) 2014-2015 Wind River Systems, Inc.
  * Copyright (c) Thomas Burdick <thomas.burdick@gmail.com>
-
+ * Copyright 2023 NXP
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -17,28 +17,25 @@
 #ifndef _SOC__H_
 #define _SOC__H_
 
-#include <misc/util.h>
+#include <zephyr/sys/util.h>
+#include <fsl_port.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* default system clock */
-
-#define SYSCLK_DEFAULT_IOSC_HZ MHZ(120)
-#define BUSCLK_DEFAULT_IOSC_HZ (SYSCLK_DEFAULT_IOSC_HZ / \
-				CONFIG_K22_BUS_CLOCK_DIVIDER)
-
 /* address bases */
 
 #define PERIPH_ADDR_BASE_WDOG 0x40052000 /* Watchdog Timer module */
 
+#define PORT_MUX_GPIO kPORT_MuxAsGpio /* GPIO setting for the Port Mux Register */
+
 #ifndef _ASMLANGUAGE
 
 #include <fsl_common.h>
-#include <device.h>
-#include <misc/util.h>
-#include <random/rand32.h>
+#include <zephyr/device.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/random/rand32.h>
 
 #endif /* !_ASMLANGUAGE */
 

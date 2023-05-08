@@ -4,16 +4,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_test, CONFIG_NET_SOCKETS_LOG_LEVEL);
 
 #include <stdio.h>
-#include <ztest_assert.h>
+#include <zephyr/ztest_assert.h>
 
-#include <net/net_ip.h>
-#include <net/ethernet.h>
-#include <net/socket.h>
-#include <net/socket_can.h>
+#include <zephyr/net/net_ip.h>
+#include <zephyr/net/ethernet.h>
+#include <zephyr/net/socket.h>
+#include <zephyr/net/socketcan.h>
 
 struct test_case {
 	int family;
@@ -133,7 +133,7 @@ static const struct test_result {
 		.test_case.type = SOCK_RAW,
 		.test_case.proto = IPPROTO_RAW,
 		.result = -1,
-		.error = EPFNOSUPPORT,
+		.error = EAFNOSUPPORT,
 	},
 	{
 		/* 15 */
@@ -142,6 +142,20 @@ static const struct test_result {
 		.test_case.proto = 254,
 		.result = -1,
 		.error = EPROTONOSUPPORT,
+	},
+	{
+		/* 16 */
+		.test_case.family = AF_PACKET,
+		.test_case.type = SOCK_RAW,
+		.test_case.proto = ETH_P_IEEE802154,
+		.result = 0,
+	},
+	{
+		/* 17 */
+		.test_case.family = AF_PACKET,
+		.test_case.type = SOCK_DGRAM,
+		.test_case.proto = ETH_P_IEEE802154,
+		.result = 0,
 	},
 };
 
@@ -187,11 +201,12 @@ static bool is_tls(int family, int type, int proto)
 
 static bool is_packet(int family, int type, int proto)
 {
-	if (type != SOCK_RAW || proto != ETH_P_ALL) {
-		return false;
+	if (((type == SOCK_RAW) && (proto == ETH_P_ALL || proto == ETH_P_IEEE802154)) ||
+	    ((type == SOCK_DGRAM) && (proto > 0))) {
+		return true;
 	}
 
-	return true;
+	return false;
 }
 
 static bool is_can(int family, int type, int proto)
@@ -212,16 +227,18 @@ static bool is_ip(int family, int type, int proto)
 	return true;
 }
 
-NET_SOCKET_REGISTER(af_inet,   AF_INET,   is_ip,      socket_test);
-NET_SOCKET_REGISTER(af_inet6,  AF_INET6,  is_ip,      socket_test);
-NET_SOCKET_REGISTER(af_can2,   AF_CAN,    is_ip,      socket_test);
+#define TEST_SOCKET_PRIO 40
+
+NET_SOCKET_REGISTER(af_inet,   TEST_SOCKET_PRIO, AF_INET,   is_ip,      socket_test);
+NET_SOCKET_REGISTER(af_inet6,  TEST_SOCKET_PRIO, AF_INET6,  is_ip,      socket_test);
+NET_SOCKET_REGISTER(af_can2,   TEST_SOCKET_PRIO, AF_CAN,    is_ip,      socket_test);
 
 /* For these socket families, we return ok always for now */
-NET_SOCKET_REGISTER(tls,       AF_UNSPEC, is_tls,    socket_test_ok);
-NET_SOCKET_REGISTER(af_packet, AF_PACKET, is_packet, socket_test_ok);
-NET_SOCKET_REGISTER(af_can,    AF_CAN,    is_can,    socket_test_ok);
+NET_SOCKET_REGISTER(tls,       TEST_SOCKET_PRIO, AF_UNSPEC, is_tls,    socket_test_ok);
+NET_SOCKET_REGISTER(af_packet, TEST_SOCKET_PRIO, AF_PACKET, is_packet, socket_test_ok);
+NET_SOCKET_REGISTER(af_can,    TEST_SOCKET_PRIO, AF_CAN,    is_can,    socket_test_ok);
 
-void test_create_sockets(void)
+ZTEST(net_socket_register, test_create_sockets)
 {
 	int i, fd, ok_tests = 0, failed_tests = 0;
 
@@ -263,10 +280,4 @@ void test_create_sockets(void)
 		      ok_tests + failed_tests - failed_family, func_called);
 }
 
-void test_main(void)
-{
-	ztest_test_suite(socket_register,
-			 ztest_unit_test(test_create_sockets));
-
-	ztest_run_test_suite(socket_register);
-}
+ZTEST_SUITE(net_socket_register, NULL, NULL, NULL, NULL, NULL);

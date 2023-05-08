@@ -21,31 +21,20 @@
 #ifndef ZEPHYR_ARCH_NIOS2_INCLUDE_KERNEL_ARCH_DATA_H_
 #define ZEPHYR_ARCH_NIOS2_INCLUDE_KERNEL_ARCH_DATA_H_
 
-#include <toolchain.h>
-#include <linker/sections.h>
-#include <arch/cpu.h>
-#include <kernel_arch_thread.h>
-
-/* stacks */
-
-#define STACK_ALIGN_SIZE 4
-
-#define STACK_ROUND_UP(x) ROUND_UP(x, STACK_ALIGN_SIZE)
-#define STACK_ROUND_DOWN(x) ROUND_DOWN(x, STACK_ALIGN_SIZE)
+#include <zephyr/toolchain.h>
+#include <zephyr/linker/sections.h>
+#include <zephyr/arch/cpu.h>
 
 #ifndef _ASMLANGUAGE
 
-#include <kernel.h>
-#include <kernel_internal.h>
+#include <zephyr/kernel.h>
 #include <zephyr/types.h>
-#include <sys/util.h>
-#include <sys/dlist.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/sys/dlist.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-extern K_THREAD_STACK_DEFINE(_interrupt_stack, CONFIG_ISR_STACK_SIZE);
 
 #ifdef __cplusplus
 }

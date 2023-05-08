@@ -4,41 +4,36 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <drivers/spi.h>
+#include <zephyr/drivers/spi.h>
+#include <zephyr/pm/device.h>
+#include <zephyr/drivers/pinctrl.h>
+#include <soc.h>
 #include <nrfx_spi.h>
 
-#define LOG_DOMAIN "spi_nrfx_spi"
-#define LOG_LEVEL CONFIG_SPI_LOG_LEVEL
-#include <logging/log.h>
-LOG_MODULE_REGISTER(spi_nrfx_spi);
+#include <zephyr/logging/log.h>
+#include <zephyr/irq.h>
+LOG_MODULE_REGISTER(spi_nrfx_spi, CONFIG_SPI_LOG_LEVEL);
 
 #include "spi_context.h"
 
 struct spi_nrfx_data {
 	struct spi_context ctx;
+	const struct device *dev;
 	size_t chunk_len;
 	bool   busy;
-#ifdef CONFIG_DEVICE_POWER_MANAGEMENT
-	u32_t pm_state;
-#endif
+	bool   initialized;
 };
 
 struct spi_nrfx_config {
 	nrfx_spi_t	  spi;
-	nrfx_spi_config_t config;
+	nrfx_spi_config_t def_config;
+	void (*irq_connect)(void);
+	const struct pinctrl_dev_config *pcfg;
 };
 
-static inline struct spi_nrfx_data *get_dev_data(struct device *dev)
-{
-	return dev->driver_data;
-}
+static void event_handler(const nrfx_spi_evt_t *p_event, void *p_context);
 
-static inline const struct spi_nrfx_config *get_dev_config(struct device *dev)
-{
-	return dev->config->config_info;
-}
-
-static inline nrf_spi_frequency_t get_nrf_spi_frequency(u32_t frequency)
+static inline nrf_spi_frequency_t get_nrf_spi_frequency(uint32_t frequency)
 {
 	/* Get the highest supported frequency not exceeding the requested one.
 	 */
@@ -59,7 +54,7 @@ static inline nrf_spi_frequency_t get_nrf_spi_frequency(u32_t frequency)
 	}
 }
 
-static inline nrf_spi_mode_t get_nrf_spi_mode(u16_t operation)
+static inline nrf_spi_mode_t get_nrf_spi_mode(uint16_t operation)
 {
 	if (SPI_MODE_GET(operation) & SPI_MODE_CPOL) {
 		if (SPI_MODE_GET(operation) & SPI_MODE_CPHA) {
@@ -76,7 +71,7 @@ static inline nrf_spi_mode_t get_nrf_spi_mode(u16_t operation)
 	}
 }
 
-static inline nrf_spi_bit_order_t get_nrf_spi_bit_order(u16_t operation)
+static inline nrf_spi_bit_order_t get_nrf_spi_bit_order(uint16_t operation)
 {
 	if (operation & SPI_TRANSFER_LSB) {
 		return NRF_SPI_BIT_ORDER_LSB_FIRST;
@@ -85,20 +80,27 @@ static inline nrf_spi_bit_order_t get_nrf_spi_bit_order(u16_t operation)
 	}
 }
 
-static int configure(struct device *dev,
+static int configure(const struct device *dev,
 		     const struct spi_config *spi_cfg)
 {
-	struct spi_context *ctx = &get_dev_data(dev)->ctx;
-	const nrfx_spi_t *spi = &get_dev_config(dev)->spi;
+	struct spi_nrfx_data *dev_data = dev->data;
+	const struct spi_nrfx_config *dev_config = dev->config;
+	struct spi_context *ctx = &dev_data->ctx;
+	nrfx_spi_config_t config;
+	nrfx_err_t result;
 
-	if (spi_context_configured(ctx, spi_cfg)) {
+	if (dev_data->initialized && spi_context_configured(ctx, spi_cfg)) {
 		/* Already configured. No need to do it again. */
 		return 0;
 	}
 
+	if (spi_cfg->operation & SPI_HALF_DUPLEX) {
+		LOG_ERR("Half-duplex not supported");
+		return -ENOTSUP;
+	}
+
 	if (SPI_OP_MODE_GET(spi_cfg->operation) != SPI_OP_MODE_MASTER) {
-		LOG_ERR("Slave mode is not supported on %s",
-			    dev->config->name);
+		LOG_ERR("Slave mode is not supported on %s", dev->name);
 		return -EINVAL;
 	}
 
@@ -107,14 +109,14 @@ static int configure(struct device *dev,
 		return -EINVAL;
 	}
 
-	if ((spi_cfg->operation & SPI_LINES_MASK) != SPI_LINES_SINGLE) {
+	if (IS_ENABLED(CONFIG_SPI_EXTENDED_MODES) &&
+	    (spi_cfg->operation & SPI_LINES_MASK) != SPI_LINES_SINGLE) {
 		LOG_ERR("Only single line mode is supported");
 		return -EINVAL;
 	}
 
 	if (SPI_WORD_SIZE_GET(spi_cfg->operation) != 8) {
-		LOG_ERR("Word sizes other than 8 bits"
-			    " are not supported");
+		LOG_ERR("Word sizes other than 8 bits are not supported");
 		return -EINVAL;
 	}
 
@@ -123,25 +125,52 @@ static int configure(struct device *dev,
 		return -EINVAL;
 	}
 
-	ctx->config = spi_cfg;
-	spi_context_cs_configure(ctx);
+	config = dev_config->def_config;
 
-	nrf_spi_configure(spi->p_reg,
-			  get_nrf_spi_mode(spi_cfg->operation),
-			  get_nrf_spi_bit_order(spi_cfg->operation));
-	nrf_spi_frequency_set(spi->p_reg,
-			      get_nrf_spi_frequency(spi_cfg->frequency));
+	config.frequency = get_nrf_spi_frequency(spi_cfg->frequency);
+	config.mode      = get_nrf_spi_mode(spi_cfg->operation);
+	config.bit_order = get_nrf_spi_bit_order(spi_cfg->operation);
+
+	if (dev_data->initialized) {
+		nrfx_spi_uninit(&dev_config->spi);
+		dev_data->initialized = false;
+	}
+
+	result = nrfx_spi_init(&dev_config->spi, &config,
+			       event_handler, dev_data);
+	if (result != NRFX_SUCCESS) {
+		LOG_ERR("Failed to initialize nrfx driver: %08x", result);
+		return -EIO;
+	}
+
+	dev_data->initialized = true;
+
+	ctx->config = spi_cfg;
 
 	return 0;
 }
 
-static void transfer_next_chunk(struct device *dev)
+static void finish_transaction(const struct device *dev, int error)
 {
-	struct spi_nrfx_data *dev_data = get_dev_data(dev);
+	struct spi_nrfx_data *dev_data = dev->data;
+	struct spi_context *ctx = &dev_data->ctx;
+
+	spi_context_cs_control(ctx, false);
+
+	LOG_DBG("Transaction finished with status %d", error);
+
+	spi_context_complete(ctx, dev, error);
+	dev_data->busy = false;
+}
+
+static void transfer_next_chunk(const struct device *dev)
+{
+	const struct spi_nrfx_config *dev_config = dev->config;
+	struct spi_nrfx_data *dev_data = dev->data;
 	struct spi_context *ctx = &dev_data->ctx;
 	int error = 0;
 
-	size_t chunk_len = spi_context_longest_current_buf(ctx);
+	size_t chunk_len = spi_context_max_continuous_chunk(ctx);
 
 	if (chunk_len > 0) {
 		nrfx_spi_xfer_desc_t xfer;
@@ -153,7 +182,7 @@ static void transfer_next_chunk(struct device *dev)
 		xfer.tx_length   = spi_context_tx_buf_on(ctx) ? chunk_len : 0;
 		xfer.p_rx_buffer = ctx->rx_buf;
 		xfer.rx_length   = spi_context_rx_buf_on(ctx) ? chunk_len : 0;
-		result = nrfx_spi_xfer(&get_dev_config(dev)->spi, &xfer, 0);
+		result = nrfx_spi_xfer(&dev_config->spi, &xfer, 0);
 		if (result == NRFX_SUCCESS) {
 			return;
 		}
@@ -161,21 +190,42 @@ static void transfer_next_chunk(struct device *dev)
 		error = -EIO;
 	}
 
-	spi_context_cs_control(ctx, false);
-
-	LOG_DBG("Transaction finished with status %d", error);
-
-	spi_context_complete(ctx, error);
-	dev_data->busy = false;
+	finish_transaction(dev, error);
 }
 
-static int transceive(struct device *dev,
+static void event_handler(const nrfx_spi_evt_t *p_event, void *p_context)
+{
+	struct spi_nrfx_data *dev_data = p_context;
+
+	if (p_event->type == NRFX_SPI_EVENT_DONE) {
+		/* Chunk length is set to 0 when a transaction is aborted
+		 * due to a timeout.
+		 */
+		if (dev_data->chunk_len == 0) {
+			finish_transaction(dev_data->dev, -ETIMEDOUT);
+			return;
+		}
+
+		spi_context_update_tx(&dev_data->ctx, 1, dev_data->chunk_len);
+		spi_context_update_rx(&dev_data->ctx, 1, dev_data->chunk_len);
+
+		transfer_next_chunk(dev_data->dev);
+	}
+}
+
+static int transceive(const struct device *dev,
 		      const struct spi_config *spi_cfg,
 		      const struct spi_buf_set *tx_bufs,
-		      const struct spi_buf_set *rx_bufs)
+		      const struct spi_buf_set *rx_bufs,
+		      bool asynchronous,
+		      spi_callback_t cb,
+		      void *userdata)
 {
-	struct spi_nrfx_data *dev_data = get_dev_data(dev);
+	struct spi_nrfx_data *dev_data = dev->data;
+	const struct spi_nrfx_config *dev_config = dev->config;
 	int error;
+
+	spi_context_lock(&dev_data->ctx, asynchronous, cb, userdata, spi_cfg);
 
 	error = configure(dev, spi_cfg);
 	if (error == 0) {
@@ -187,6 +237,27 @@ static int transceive(struct device *dev,
 		transfer_next_chunk(dev);
 
 		error = spi_context_wait_for_completion(&dev_data->ctx);
+		if (error == -ETIMEDOUT) {
+			/* Set the chunk length to 0 so that event_handler()
+			 * knows that the transaction timed out and is to be
+			 * aborted.
+			 */
+			dev_data->chunk_len = 0;
+			/* Abort the current transfer by deinitializing
+			 * the nrfx driver.
+			 */
+			nrfx_spi_uninit(&dev_config->spi);
+			dev_data->initialized = false;
+
+			/* Make sure the transaction is finished (it may be
+			 * already finished if it actually did complete before
+			 * the nrfx driver was deinitialized).
+			 */
+			finish_transaction(dev, -ETIMEDOUT);
+
+			/* Clean up the driver state. */
+			k_sem_reset(&dev_data->ctx.sync);
+		}
 	}
 
 	spi_context_release(&dev_data->ctx, error);
@@ -194,31 +265,30 @@ static int transceive(struct device *dev,
 	return error;
 }
 
-static int spi_nrfx_transceive(struct device *dev,
+static int spi_nrfx_transceive(const struct device *dev,
 			       const struct spi_config *spi_cfg,
 			       const struct spi_buf_set *tx_bufs,
 			       const struct spi_buf_set *rx_bufs)
 {
-	spi_context_lock(&get_dev_data(dev)->ctx, false, NULL);
-	return transceive(dev, spi_cfg, tx_bufs, rx_bufs);
+	return transceive(dev, spi_cfg, tx_bufs, rx_bufs, false, NULL, NULL);
 }
 
 #ifdef CONFIG_SPI_ASYNC
-static int spi_nrfx_transceive_async(struct device *dev,
+static int spi_nrfx_transceive_async(const struct device *dev,
 				     const struct spi_config *spi_cfg,
 				     const struct spi_buf_set *tx_bufs,
 				     const struct spi_buf_set *rx_bufs,
-				     struct k_poll_signal *async)
+				     spi_callback_t cb,
+				     void *userdata)
 {
-	spi_context_lock(&get_dev_data(dev)->ctx, true, async);
-	return transceive(dev, spi_cfg, tx_bufs, rx_bufs);
+	return transceive(dev, spi_cfg, tx_bufs, rx_bufs, true, cb, userdata);
 }
 #endif /* CONFIG_SPI_ASYNC */
 
-static int spi_nrfx_release(struct device *dev,
+static int spi_nrfx_release(const struct device *dev,
 			    const struct spi_config *spi_cfg)
 {
-	struct spi_nrfx_data *dev_data = get_dev_data(dev);
+	struct spi_nrfx_data *dev_data = dev->data;
 
 	if (!spi_context_configured(&dev_data->ctx, spi_cfg)) {
 		return -EINVAL;
@@ -241,129 +311,126 @@ static const struct spi_driver_api spi_nrfx_driver_api = {
 	.release = spi_nrfx_release,
 };
 
-
-static void event_handler(const nrfx_spi_evt_t *p_event, void *p_context)
-{
-	struct device *dev = p_context;
-	struct spi_nrfx_data *dev_data = get_dev_data(dev);
-
-	if (p_event->type == NRFX_SPI_EVENT_DONE) {
-		spi_context_update_tx(&dev_data->ctx, 1, dev_data->chunk_len);
-		spi_context_update_rx(&dev_data->ctx, 1, dev_data->chunk_len);
-
-		transfer_next_chunk(dev);
-	}
-}
-
-static int init_spi(struct device *dev)
-{
-	/* This sets only default values of frequency, mode and bit order.
-	 * The proper ones are set in configure() when a transfer is started.
-	 */
-	nrfx_err_t result = nrfx_spi_init(&get_dev_config(dev)->spi,
-					  &get_dev_config(dev)->config,
-					  event_handler,
-					  dev);
-	if (result != NRFX_SUCCESS) {
-		LOG_ERR("Failed to initialize device: %s",
-			    dev->config->name);
-		return -EBUSY;
-	}
-
-#ifdef CONFIG_DEVICE_POWER_MANAGEMENT
-	get_dev_data(dev)->pm_state = DEVICE_PM_ACTIVE_STATE;
-#endif
-	spi_context_unlock_unconditionally(&get_dev_data(dev)->ctx);
-
-	return 0;
-}
-
-#ifdef CONFIG_DEVICE_POWER_MANAGEMENT
-static int spi_nrfx_pm_control(struct device *dev, u32_t ctrl_command,
-				void *context, device_pm_cb cb, void *arg)
+#ifdef CONFIG_PM_DEVICE
+static int spi_nrfx_pm_action(const struct device *dev,
+			      enum pm_device_action action)
 {
 	int ret = 0;
+	struct spi_nrfx_data *dev_data = dev->data;
+	const struct spi_nrfx_config *dev_config = dev->config;
 
-	if (ctrl_command == DEVICE_PM_SET_POWER_STATE) {
-		u32_t new_state = *((const u32_t *)context);
-
-		if (new_state != get_dev_data(dev)->pm_state) {
-			switch (new_state) {
-			case DEVICE_PM_ACTIVE_STATE:
-				init_spi(dev);
-				/* Force reconfiguration before next transfer */
-				get_dev_data(dev)->ctx.config = NULL;
-				break;
-
-			case DEVICE_PM_LOW_POWER_STATE:
-			case DEVICE_PM_SUSPEND_STATE:
-			case DEVICE_PM_OFF_STATE:
-				nrfx_spi_uninit(&get_dev_config(dev)->spi);
-				break;
-
-			default:
-				ret = -ENOTSUP;
-			}
-			if (!ret) {
-				get_dev_data(dev)->pm_state = new_state;
-			}
+	switch (action) {
+	case PM_DEVICE_ACTION_RESUME:
+		ret = pinctrl_apply_state(dev_config->pcfg,
+					  PINCTRL_STATE_DEFAULT);
+		if (ret < 0) {
+			return ret;
 		}
-	} else {
-		assert(ctrl_command == DEVICE_PM_GET_POWER_STATE);
-		*((u32_t *)context) = get_dev_data(dev)->pm_state;
-	}
+		/* nrfx_spi_init() will be called at configuration before
+		 * the next transfer.
+		 */
+		break;
 
-	if (cb) {
-		cb(dev, ret, context, arg);
+	case PM_DEVICE_ACTION_SUSPEND:
+		if (dev_data->initialized) {
+			nrfx_spi_uninit(&dev_config->spi);
+			dev_data->initialized = false;
+		}
+
+		ret = pinctrl_apply_state(dev_config->pcfg,
+					  PINCTRL_STATE_SLEEP);
+		if (ret < 0) {
+			return ret;
+		}
+		break;
+
+	default:
+		ret = -ENOTSUP;
 	}
 
 	return ret;
 }
-#endif /* CONFIG_DEVICE_POWER_MANAGEMENT */
+#endif /* CONFIG_PM_DEVICE */
 
+static int spi_nrfx_init(const struct device *dev)
+{
+	const struct spi_nrfx_config *dev_config = dev->config;
+	struct spi_nrfx_data *dev_data = dev->data;
+	int err;
 
-#define SPI_NRFX_SPI_DEVICE(idx)					       \
-	static int spi_##idx##_init(struct device *dev)			       \
+	err = pinctrl_apply_state(dev_config->pcfg, PINCTRL_STATE_DEFAULT);
+	if (err < 0) {
+		return err;
+	}
+
+	dev_config->irq_connect();
+
+	err = spi_context_cs_configure_all(&dev_data->ctx);
+	if (err < 0) {
+		return err;
+	}
+
+	spi_context_unlock_unconditionally(&dev_data->ctx);
+
+	return 0;
+}
+
+/*
+ * Current factors requiring use of DT_NODELABEL:
+ *
+ * - HAL design (requirement of drv_inst_idx in nrfx_spi_t)
+ * - Name-based HAL IRQ handlers, e.g. nrfx_spi_0_irq_handler
+ */
+
+#define SPI(idx)			DT_NODELABEL(spi##idx)
+#define SPI_PROP(idx, prop)		DT_PROP(SPI(idx), prop)
+
+#define SPI_NRFX_SPI_DEFINE(idx)					       \
+	NRF_DT_CHECK_NODE_HAS_PINCTRL_SLEEP(SPI(idx));			       \
+	static void irq_connect##idx(void)				       \
 	{								       \
-		IRQ_CONNECT(NRFX_IRQ_NUMBER_GET(NRF_SPI##idx),		       \
-			    DT_NORDIC_NRF_SPI_SPI_##idx##_IRQ_0_PRIORITY,      \
+		IRQ_CONNECT(DT_IRQN(SPI(idx)), DT_IRQ(SPI(idx), priority),     \
 			    nrfx_isr, nrfx_spi_##idx##_irq_handler, 0);	       \
-		return init_spi(dev);					       \
 	}								       \
 	static struct spi_nrfx_data spi_##idx##_data = {		       \
 		SPI_CONTEXT_INIT_LOCK(spi_##idx##_data, ctx),		       \
 		SPI_CONTEXT_INIT_SYNC(spi_##idx##_data, ctx),		       \
+		SPI_CONTEXT_CS_GPIOS_INITIALIZE(SPI(idx), ctx)		       \
+		.dev  = DEVICE_DT_GET(SPI(idx)),			       \
 		.busy = false,						       \
 	};								       \
+	PINCTRL_DT_DEFINE(SPI(idx));					       \
 	static const struct spi_nrfx_config spi_##idx##z_config = {	       \
-		.spi = NRFX_SPI_INSTANCE(idx),				       \
-		.config = {						       \
-			.sck_pin   = DT_NORDIC_NRF_SPI_SPI_##idx##_SCK_PIN,    \
-			.mosi_pin  = DT_NORDIC_NRF_SPI_SPI_##idx##_MOSI_PIN,   \
-			.miso_pin  = DT_NORDIC_NRF_SPI_SPI_##idx##_MISO_PIN,   \
-			.ss_pin    = NRFX_SPI_PIN_NOT_USED,		       \
-			.orc       = CONFIG_SPI_##idx##_NRF_ORC,	       \
-			.frequency = NRF_SPI_FREQ_4M,			       \
-			.mode      = NRF_SPI_MODE_0,			       \
-			.bit_order = NRF_SPI_BIT_ORDER_MSB_FIRST,	       \
-		}							       \
+		.spi = {						       \
+			.p_reg = (NRF_SPI_Type *)DT_REG_ADDR(SPI(idx)),	       \
+			.drv_inst_idx = NRFX_SPI##idx##_INST_IDX,	       \
+		},							       \
+		.def_config = {						       \
+			.skip_gpio_cfg = true,				       \
+			.skip_psel_cfg = true,				       \
+			.ss_pin = NRFX_SPI_PIN_NOT_USED,		       \
+			.orc    = SPI_PROP(idx, overrun_character),	       \
+		},							       \
+		.irq_connect = irq_connect##idx,			       \
+		.pcfg = PINCTRL_DT_DEV_CONFIG_GET(SPI(idx)),		       \
 	};								       \
-	DEVICE_DEFINE(spi_##idx, DT_NORDIC_NRF_SPI_SPI_##idx##_LABEL,	       \
-		      spi_##idx##_init,					       \
-		      spi_nrfx_pm_control,				       \
+	PM_DEVICE_DT_DEFINE(SPI(idx), spi_nrfx_pm_action);		       \
+	DEVICE_DT_DEFINE(SPI(idx),					       \
+		      spi_nrfx_init,					       \
+		      PM_DEVICE_DT_GET(SPI(idx)),			       \
 		      &spi_##idx##_data,				       \
 		      &spi_##idx##z_config,				       \
 		      POST_KERNEL, CONFIG_SPI_INIT_PRIORITY,		       \
 		      &spi_nrfx_driver_api)
 
 #ifdef CONFIG_SPI_0_NRF_SPI
-SPI_NRFX_SPI_DEVICE(0);
+SPI_NRFX_SPI_DEFINE(0);
 #endif
 
 #ifdef CONFIG_SPI_1_NRF_SPI
-SPI_NRFX_SPI_DEVICE(1);
+SPI_NRFX_SPI_DEFINE(1);
 #endif
 
 #ifdef CONFIG_SPI_2_NRF_SPI
-SPI_NRFX_SPI_DEVICE(2);
+SPI_NRFX_SPI_DEFINE(2);
 #endif

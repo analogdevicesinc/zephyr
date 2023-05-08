@@ -1,17 +1,19 @@
 /*
- * Copyright (c) 2018 Intel Corporation.
+ * Copyright (c) 2018,2022 Intel Corporation.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-#include <zephyr.h>
-#include <tc_util.h>
-#include <ztest.h>
-#include <kernel.h>
-#include <spinlock.h>
+#include <zephyr/tc_util.h>
+#include <zephyr/ztest.h>
+#include <zephyr/kernel.h>
+#include <zephyr/spinlock.h>
+
+BUILD_ASSERT(CONFIG_MP_MAX_NUM_CPUS > 1);
 
 #define CPU1_STACK_SIZE 1024
 
 K_THREAD_STACK_DEFINE(cpu1_stack, CPU1_STACK_SIZE);
+struct k_thread cpu1_thread;
 
 static struct k_spinlock bounce_lock;
 
@@ -35,7 +37,7 @@ volatile int bounce_owner, bounce_done;
  *
  * @see k_spin_lock(), k_spin_unlock()
  */
-void test_spinlock_basic(void)
+ZTEST(spinlock, test_spinlock_basic)
 {
 	k_spinlock_key_t key;
 	static struct k_spinlock l;
@@ -91,10 +93,11 @@ void bounce_once(int id)
 	k_spin_unlock(&bounce_lock, key);
 }
 
-void cpu1_fn(int key, void *arg)
+void cpu1_fn(void *p1, void *p2, void *p3)
 {
-	ARG_UNUSED(key);
-	ARG_UNUSED(arg);
+	ARG_UNUSED(p1);
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
 
 	while (1) {
 		bounce_once(4321);
@@ -106,13 +109,15 @@ void cpu1_fn(int key, void *arg)
  *
  * @ingroup kernel_spinlock_tests
  *
- * @see z_arch_start_cpu()
+ * @see arch_start_cpu()
  */
-void test_spinlock_bounce(void)
+ZTEST(spinlock, test_spinlock_bounce)
 {
 	int i;
 
-	z_arch_start_cpu(1, cpu1_stack, CPU1_STACK_SIZE, cpu1_fn, 0);
+	k_thread_create(&cpu1_thread, cpu1_stack, CPU1_STACK_SIZE,
+			cpu1_fn, NULL, NULL, NULL,
+			0, 0, K_NO_WAIT);
 
 	k_busy_wait(10);
 
@@ -123,10 +128,49 @@ void test_spinlock_bounce(void)
 	bounce_done = 1;
 }
 
-void test_main(void)
+/**
+ * @brief Test basic mutual exclusion using interrupt masking
+ *
+ * @details
+ * - Spinlocks can be initialized at run-time.
+ * - Spinlocks in uniprocessor context should achieve mutual exclusion using
+ *   interrupt masking.
+ *
+ * @ingroup kernel_spinlock_tests
+ *
+ * @see k_spin_lock(), k_spin_unlock()
+ */
+ZTEST(spinlock, test_spinlock_mutual_exclusion)
 {
-	ztest_test_suite(spinlock,
-			 ztest_unit_test(test_spinlock_basic),
-			 ztest_unit_test(test_spinlock_bounce));
-	ztest_run_test_suite(spinlock);
+	k_spinlock_key_t key;
+	static struct k_spinlock lock_runtime;
+	unsigned int irq_key;
+
+	(void)memset(&lock_runtime, 0, sizeof(lock_runtime));
+
+	key = k_spin_lock(&lock_runtime);
+
+	zassert_true(lock_runtime.locked, "Spinlock failed to lock");
+
+	/* check irq has not locked */
+	zassert_true(arch_irq_unlocked(key.key),
+			"irq should be first locked!");
+
+	/*
+	 * We make irq locked nested to check if interrupt
+	 * disable happened or not.
+	 */
+	irq_key = arch_irq_lock();
+
+	/* check irq has already locked */
+	zassert_false(arch_irq_unlocked(irq_key),
+			"irq should be already locked!");
+
+	arch_irq_unlock(irq_key);
+
+	k_spin_unlock(&lock_runtime, key);
+
+	zassert_true(!lock_runtime.locked, "Spinlock failed to unlock");
 }
+
+ZTEST_SUITE(spinlock, NULL, NULL, NULL, NULL, NULL);

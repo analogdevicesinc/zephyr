@@ -1,25 +1,29 @@
 /*
  * Copyright (c) 2016 Intel Corporation.
+ * Copyright (c) 2023 Husqvarna AB
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/**
- * @addtogroup t_fat_fs
- * @{
- * @defgroup t_fat_fs_basic test_fat_fs_basic_operations
- * @}
- */
 
 #include "test_fat.h"
+void test_fs_open_flags(void);
+const char *test_fs_open_flags_file_path =  FATFS_MNTP"/the_file.txt";
 
-void test_main(void)
+static void *fat_fs_basic_setup(void)
 {
-	ztest_test_suite(fat_fs_basic_test,
-			 ztest_unit_test(test_fat_mount),
-			 ztest_unit_test(test_fat_file),
-			 ztest_unit_test(test_fat_dir),
-			 ztest_unit_test(test_fat_fs),
-			 ztest_unit_test(test_fat_rename));
-	ztest_run_test_suite(fat_fs_basic_test);
+	fs_file_t_init(&filep);
+	test_fat_mount();
+	test_fat_file();
+	test_fat_dir();
+	test_fat_fs();
+	test_fat_rename();
+	test_fs_open_flags();
+#ifdef CONFIG_FS_FATFS_REENTRANT
+	test_fat_file_reentrant();
+#endif /* CONFIG_FS_FATFS_REENTRANT */
+	test_fat_unmount();
+
+	return NULL;
 }
+ZTEST_SUITE(fat_fs_basic, NULL, fat_fs_basic_setup, NULL, NULL, NULL);

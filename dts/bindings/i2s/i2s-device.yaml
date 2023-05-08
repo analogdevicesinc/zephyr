@@ -5,10 +5,8 @@
 
 include: base.yaml
 
-parent-bus: i2s
+on-bus: i2s
 
 properties:
-    reg:
-      required: true
-    label:
-      required: true
+  reg:
+    required: true

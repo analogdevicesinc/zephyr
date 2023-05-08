@@ -7,11 +7,11 @@
 
 /dts-v1/;
 #include <nordic/nrf52832_qfaa.dtsi>
+#include "nrf52_sparkfun-pinctrl.dtsi"
 
 / {
 	model = "Sparkfun nRF52832 Breakout";
-	compatible = "sparkfun,nrf52832", "nordic,nrf52832-qfaa",
-		     "nordic,nrf52832";
+	compatible = "sparkfun,nrf52832";
 
 	chosen {
 		zephyr,console = &uart0;
@@ -27,12 +27,13 @@
 	aliases {
 		led0 = &led0;
 		sw0 = &button0;
+		watchdog0 = &wdt0;
 	};
 
 	leds {
 		compatible = "gpio-leds";
 		led0: led_0 {
-			gpios = <&gpio0 7 0>;
+			gpios = <&gpio0 7 GPIO_ACTIVE_LOW>;
 			label = "LED";
 		};
 	};
@@ -41,7 +42,7 @@
 		compatible = "gpio-keys";
 		button0: button_0 {
 			/* gpio flags need validation */
-			gpios = <&gpio0 6 GPIO_INT_ACTIVE_LOW>;
+			gpios = <&gpio0 6 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
 			label = "Button";
 		};
 	};
@@ -59,15 +60,13 @@
 	compatible = "nordic,nrf-uart";
 	current-speed = <115200>;
 	status = "okay";
-	tx-pin = <27>;
-	rx-pin = <26>;
+	pinctrl-0 = <&uart0_default>;
+	pinctrl-1 = <&uart0_sleep>;
+	pinctrl-names = "default", "sleep";
 };
 
 &flash0 {
-	/*
-	 * For more information, see:
-	 * http://docs.zephyrproject.org/latest/guides/dts/index.html#flash-partitions
-	 */
+
 	partitions {
 		compatible = "fixed-partitions";
 		#address-cells = <1>;

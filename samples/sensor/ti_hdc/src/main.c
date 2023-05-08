@@ -4,22 +4,25 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <device.h>
-#include <drivers/sensor.h>
-#include <sys/printk.h>
-#include <sys/__assert.h>
-#include <logging/log.h>
-#include <drivers/gpio.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/sys/__assert.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/drivers/gpio.h>
 
-void main(void)
+int main(void)
 {
 	printk("Running on %s!\n", CONFIG_ARCH);
-	struct device *dev = device_get_binding(DT_INST_0_TI_HDC_LABEL);
+	const struct device *const dev = DEVICE_DT_GET_ONE(ti_hdc);
 
-	__ASSERT(dev != NULL, "Failed to get device binding");
+	if (!device_is_ready(dev)) {
+		printk("sensor: device not ready.\n");
+		return 0;
+	}
 
-	printk("Dev %p name %s is ready!\n", dev, dev->config->name);
+	printk("Dev %p name %s is ready!\n", dev, dev->name);
 
 	struct sensor_value temp, humidity;
 
@@ -37,4 +40,5 @@ void main(void)
 		/* wait for the next sample */
 		k_sleep(K_SECONDS(10));
 	}
+	return 0;
 }

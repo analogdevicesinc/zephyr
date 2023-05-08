@@ -4,6 +4,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import argparse
+import os
 from unittest.mock import patch, call
 
 import pytest
@@ -54,6 +55,13 @@ def find_device_patch():
 def require_patch(program):
     assert program in [DFU_UTIL, TEST_EXE]
 
+os_path_isfile = os.path.isfile
+
+def os_path_isfile_patch(filename):
+    if filename == RC_KERNEL_BIN:
+        return True
+    return os_path_isfile(filename)
+
 def id_fn(tc):
     return 'exe={},alt={},dfuse_config={},img={}'.format(*tc)
 
@@ -75,7 +83,8 @@ def test_dfu_util_init(cc, req, find_device, tc, runner_config):
     exe, alt, dfuse_config, img = tc
     runner = DfuUtilBinaryRunner(runner_config, TEST_PID, alt, img, exe=exe,
                                  dfuse_config=dfuse_config)
-    runner.run('flash')
+    with patch('os.path.isfile', side_effect=os_path_isfile_patch):
+        runner.run('flash')
     assert find_device.called
     assert req.called_with(exe)
     assert cc.call_args_list == [call(EXPECTED_COMMAND[tc])]
@@ -93,14 +102,13 @@ def get_flash_address_patch(args, bcfg):
     (None, TEST_ALT_INT, True, None, None),
 
 ], ids=id_fn)
-@patch('runners.core.BuildConfiguration._init',)
 @patch('runners.dfu.DfuUtilBinaryRunner.find_device',
        side_effect=find_device_patch)
 @patch('runners.core.ZephyrBinaryRunner.get_flash_address',
        side_effect=get_flash_address_patch)
 @patch('runners.core.ZephyrBinaryRunner.require', side_effect=require_patch)
 @patch('runners.core.ZephyrBinaryRunner.check_call')
-def test_dfu_util_create(cc, req, gfa, find_device, bcfg, tc, runner_config):
+def test_dfu_util_create(cc, req, gfa, find_device, tc, runner_config, tmpdir):
     '''Test commands using a runner created from command line parameters.'''
     exe, alt, dfuse, modifiers, img = tc
     args = ['--pid', TEST_PID, '--alt', alt]
@@ -115,11 +123,17 @@ def test_dfu_util_create(cc, req, gfa, find_device, bcfg, tc, runner_config):
     if exe:
         args.extend(['--dfu-util', exe])
 
-    parser = argparse.ArgumentParser()
+    (tmpdir / 'zephyr').mkdir()
+    with open(os.fspath(tmpdir / 'zephyr' / '.config'), 'w') as f:
+        f.write('\n')
+    runner_config = runner_config._replace(build_dir=os.fspath(tmpdir))
+
+    parser = argparse.ArgumentParser(allow_abbrev=False)
     DfuUtilBinaryRunner.add_parser(parser)
     arg_namespace = parser.parse_args(args)
     runner = DfuUtilBinaryRunner.create(runner_config, arg_namespace)
-    runner.run('flash')
+    with patch('os.path.isfile', side_effect=os_path_isfile_patch):
+        runner.run('flash')
 
     if dfuse:
         cfg = DfuSeConfig(address=TEST_DFUSE_ADDR, options=modifiers or '')

@@ -5,17 +5,22 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <drivers/flash.h>
-#include <device.h>
+#include <zephyr/kernel.h>
+#include <zephyr/drivers/flash.h>
+#include <zephyr/storage/flash_map.h>
+#include <zephyr/device.h>
+#include <zephyr/devicetree.h>
 #include <stdio.h>
 
 
 #ifdef CONFIG_TRUSTED_EXECUTION_NONSECURE
-#define FLASH_TEST_OFFSET DT_FLASH_AREA_IMAGE_1_NONSECURE_OFFSET
+#define TEST_PARTITION	slot1_ns_partition
 #else
-#define FLASH_TEST_OFFSET DT_FLASH_AREA_IMAGE_1_OFFSET
+#define TEST_PARTITION	slot1_partition
 #endif
+
+#define TEST_PARTITION_OFFSET	FIXED_PARTITION_OFFSET(TEST_PARTITION)
+#define TEST_PARTITION_DEVICE	FIXED_PARTITION_DEVICE(TEST_PARTITION)
 
 #define FLASH_PAGE_SIZE   4096
 #define TEST_DATA_WORD_0  0x1122
@@ -26,54 +31,50 @@
 #define FLASH_TEST_OFFSET2 0x41234
 #define FLASH_TEST_PAGE_IDX 37
 
-void main(void)
+int main(void)
 {
-	struct device *flash_dev;
-	u32_t buf_array_1[4] = { TEST_DATA_WORD_0, TEST_DATA_WORD_1,
+	const struct device *flash_dev = TEST_PARTITION_DEVICE;
+	uint32_t buf_array_1[4] = { TEST_DATA_WORD_0, TEST_DATA_WORD_1,
 				    TEST_DATA_WORD_2, TEST_DATA_WORD_3 };
-	u32_t buf_array_2[4] = { TEST_DATA_WORD_3, TEST_DATA_WORD_1,
+	uint32_t buf_array_2[4] = { TEST_DATA_WORD_3, TEST_DATA_WORD_1,
 				    TEST_DATA_WORD_2, TEST_DATA_WORD_0 };
-	u32_t buf_array_3[8] = { TEST_DATA_WORD_0, TEST_DATA_WORD_1,
+	uint32_t buf_array_3[8] = { TEST_DATA_WORD_0, TEST_DATA_WORD_1,
 				    TEST_DATA_WORD_2, TEST_DATA_WORD_3,
 				    TEST_DATA_WORD_0, TEST_DATA_WORD_1,
 				    TEST_DATA_WORD_2, TEST_DATA_WORD_3 };
-	u32_t buf_word = 0U;
-	u32_t i, offset;
+	uint32_t buf_word = 0U;
+	uint32_t i, offset;
 
 	printf("\nNordic nRF5 Flash Testing\n");
 	printf("=========================\n");
 
-	flash_dev = device_get_binding(DT_FLASH_DEV_NAME);
-
-	if (!flash_dev) {
-		printf("Nordic nRF5 flash driver was not found!\n");
-		return;
+	if (!device_is_ready(flash_dev)) {
+		printf("Flash device not ready\n");
+		return 0;
 	}
 
-	printf("\nTest 1: Flash erase page at 0x%x\n", FLASH_TEST_OFFSET);
-	flash_write_protection_set(flash_dev, false);
-	if (flash_erase(flash_dev, FLASH_TEST_OFFSET, FLASH_PAGE_SIZE) != 0) {
+	printf("\nTest 1: Flash erase page at 0x%x\n", TEST_PARTITION_OFFSET);
+	if (flash_erase(flash_dev, TEST_PARTITION_OFFSET, FLASH_PAGE_SIZE) != 0) {
 		printf("   Flash erase failed!\n");
 	} else {
 		printf("   Flash erase succeeded!\n");
 	}
 
 	printf("\nTest 2: Flash write (word array 1)\n");
-	flash_write_protection_set(flash_dev, false);
 	for (i = 0U; i < ARRAY_SIZE(buf_array_1); i++) {
-		offset = FLASH_TEST_OFFSET + (i << 2);
+		offset = TEST_PARTITION_OFFSET + (i << 2);
 		printf("   Attempted to write %x at 0x%x\n", buf_array_1[i],
 				offset);
 		if (flash_write(flash_dev, offset, &buf_array_1[i],
-					sizeof(u32_t)) != 0) {
+					sizeof(uint32_t)) != 0) {
 			printf("   Flash write failed!\n");
-			return;
+			return 0;
 		}
 		printf("   Attempted to read 0x%x\n", offset);
 		if (flash_read(flash_dev, offset, &buf_word,
-					sizeof(u32_t)) != 0) {
+					sizeof(uint32_t)) != 0) {
 			printf("   Flash read failed!\n");
-			return;
+			return 0;
 		}
 		printf("   Data read: %x\n", buf_word);
 		if (buf_array_1[i] == buf_word) {
@@ -83,7 +84,7 @@ void main(void)
 		}
 	}
 
-	offset = FLASH_TEST_OFFSET - FLASH_PAGE_SIZE * 2;
+	offset = TEST_PARTITION_OFFSET - FLASH_PAGE_SIZE * 2;
 	printf("\nTest 3: Flash erase (4 pages at 0x%x)\n", offset);
 	if (flash_erase(flash_dev, offset, FLASH_PAGE_SIZE * 4) != 0) {
 		printf("   Flash erase failed!\n");
@@ -92,21 +93,20 @@ void main(void)
 	}
 
 	printf("\nTest 4: Flash write (word array 2)\n");
-	flash_write_protection_set(flash_dev, false);
 	for (i = 0U; i < ARRAY_SIZE(buf_array_2); i++) {
-		offset = FLASH_TEST_OFFSET + (i << 2);
+		offset = TEST_PARTITION_OFFSET + (i << 2);
 		printf("   Attempted to write %x at 0x%x\n", buf_array_2[i],
 				offset);
 		if (flash_write(flash_dev, offset, &buf_array_2[i],
-					sizeof(u32_t)) != 0) {
+					sizeof(uint32_t)) != 0) {
 			printf("   Flash write failed!\n");
-			return;
+			return 0;
 		}
 		printf("   Attempted to read 0x%x\n", offset);
 		if (flash_read(flash_dev, offset, &buf_word,
-					sizeof(u32_t)) != 0) {
+					sizeof(uint32_t)) != 0) {
 			printf("   Flash read failed!\n");
-			return;
+			return 0;
 		}
 		printf("   Data read: %x\n", buf_word);
 		if (buf_array_2[i] == buf_word) {
@@ -116,29 +116,28 @@ void main(void)
 		}
 	}
 
-	printf("\nTest 5: Flash erase page at 0x%x\n", FLASH_TEST_OFFSET);
-	if (flash_erase(flash_dev, FLASH_TEST_OFFSET, FLASH_PAGE_SIZE) != 0) {
+	printf("\nTest 5: Flash erase page at 0x%x\n", TEST_PARTITION_OFFSET);
+	if (flash_erase(flash_dev, TEST_PARTITION_OFFSET, FLASH_PAGE_SIZE) != 0) {
 		printf("   Flash erase failed!\n");
 	} else {
 		printf("   Flash erase succeeded!\n");
 	}
 
 	printf("\nTest 6: Non-word aligned write (word array 3)\n");
-	flash_write_protection_set(flash_dev, false);
 	for (i = 0U; i < ARRAY_SIZE(buf_array_3); i++) {
-		offset = FLASH_TEST_OFFSET + (i << 2) + 1;
+		offset = TEST_PARTITION_OFFSET + (i << 2) + 1;
 		printf("   Attempted to write %x at 0x%x\n", buf_array_3[i],
 				offset);
 		if (flash_write(flash_dev, offset, &buf_array_3[i],
-					sizeof(u32_t)) != 0) {
+					sizeof(uint32_t)) != 0) {
 			printf("   Flash write failed!\n");
-			return;
+			return 0;
 		}
 		printf("   Attempted to read 0x%x\n", offset);
 		if (flash_read(flash_dev, offset, &buf_word,
-					sizeof(u32_t)) != 0) {
+					sizeof(uint32_t)) != 0) {
 			printf("   Flash read failed!\n");
-			return;
+			return 0;
 		}
 		printf("   Data read: %x\n", buf_word);
 		if (buf_array_3[i] == buf_word) {
@@ -147,7 +146,6 @@ void main(void)
 			printf("   Data read does not match data written!\n");
 		}
 	}
-	flash_write_protection_set(flash_dev, true);
 
 #if defined(CONFIG_FLASH_PAGE_LAYOUT)
 	struct flash_pages_info info;
@@ -159,8 +157,8 @@ void main(void)
 
 	if (!rc) {
 		printf("   Offset  0x%08x:\n", FLASH_TEST_OFFSET2);
-		printf("     belongs to the page %u of start offset 0x%08x\n",
-		       info.index, info.start_offset);
+		printf("     belongs to the page %u of start offset 0x%08lx\n",
+		       info.index, (unsigned long) info.start_offset);
 		printf("     and the size of 0x%08x B.\n", info.size);
 	} else {
 		printf("   Error: flash_get_page_info_by_offs returns %d\n",
@@ -170,9 +168,9 @@ void main(void)
 	rc = flash_get_page_info_by_idx(flash_dev, FLASH_TEST_PAGE_IDX, &info);
 
 	if (!rc) {
-		printf("   Page of number %u has start offset 0x%08x\n",
+		printf("   Page of number %u has start offset 0x%08lx\n",
 		       FLASH_TEST_PAGE_IDX,
-		       info.start_offset);
+		       (unsigned long) info.start_offset);
 		printf("     and size of 0x%08x B.\n", info.size);
 		if (info.index == FLASH_TEST_PAGE_IDX) {
 			printf("     Page index resolved properly\n");
@@ -193,4 +191,5 @@ void main(void)
 	printf("\nTest 8: Write block size API\n");
 	printf("   write-block-size = %u\n",
 	       flash_get_write_block_size(flash_dev));
+	return 0;
 }

@@ -5,30 +5,28 @@ if BOARD_UP_SQUARED
 config BOARD
 	default "up_squared"
 
+config MP_MAX_NUM_CPUS
+	default 2 if BOARD_UP_SQUARED
+
 config BUILD_OUTPUT_STRIPPED
 	default y
 
-if UART_NS16550
-
-config UART_NS16550_PORT_0
+config APIC_TSC_DEADLINE_TIMER
 	default y
 
-config UART_NS16550_PORT_1
-	default y
+# TSC on this board is 1.5936 GHz, HPET and APIC are 19.2 MHz
+config SYS_CLOCK_HW_CYCLES_PER_SEC
+	default 1593600000 if APIC_TSC_DEADLINE_TIMER
+	default 1593600000 if APIC_TIMER_TSC
+	default 19200000
 
-endif # UART_NS16550
-
-if I2C
-
-config I2C_0
-	default y
-
-config I2C_1
-	default y
-
-endif # I2C
-
-config APIC_TIMER
-	default y if !HPET_TIMER
+if APIC_TIMER
+config APIC_TIMER_IRQ
+	default 24
+config APIC_TIMER_TSC_M
+	default 3
+config APIC_TIMER_TSC_N
+	default 249
+endif
 
 endif # BOARD_UP_SQUARED

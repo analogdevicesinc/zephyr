@@ -1,16 +1,13 @@
-# Kconfig - ADC configuration options
+# ADC configuration options
 
-#
 # Copyright (c) 2015 Intel Corporation
-#
 # SPDX-License-Identifier: Apache-2.0
-#
 
 #
 # ADC options
 #
 menuconfig ADC
-	bool "ADC drivers"
+	bool "Analog-to-Digital Converter (ADC) drivers"
 	# All platforms that implement the ADC driver are now required to
 	# provide relevant DTS entries.
 	help
@@ -19,7 +16,9 @@ menuconfig ADC
 if ADC
 
 config ADC_SHELL
-	bool "Enable ADC Shell"
+	bool "ADC Shell"
+	default y
+	depends on SHELL
 	help
 	  Enable ADC Shell for testing.
 
@@ -30,29 +29,24 @@ config ADC_CONFIGURABLE_INPUTS
 	bool
 
 config ADC_ASYNC
-	bool "Enable asynchronous call support"
+	bool "Asynchronous call support"
 	select POLL
 	help
 	  This option enables the asynchronous API calls.
+
+config ADC_INIT_PRIORITY
+	int "ADC init priority"
+	default KERNEL_INIT_PRIORITY_DEVICE
+	help
+	  ADC driver device initialization priority.
 
 module = ADC
 module-str = ADC
 source "subsys/logging/Kconfig.template.log_config"
 
-config ADC_INIT_PRIORITY
-	int "Init priority"
-	default 80
-	help
-	  ADC Device driver initialization priority.
+source "drivers/adc/Kconfig.b91"
 
-config ADC_0
-	bool "Enable ADC 0"
-
-config ADC_1
-	bool "Enable ADC 1"
-
-config ADC_2
-	bool "Enable ADC 2"
+source "drivers/adc/Kconfig.it8xxx2"
 
 source "drivers/adc/Kconfig.mcux"
 
@@ -60,10 +54,46 @@ source "drivers/adc/Kconfig.nrfx"
 
 source "drivers/adc/Kconfig.sam_afec"
 
+source "drivers/adc/Kconfig.sam"
+
 source "drivers/adc/Kconfig.sam0"
 
 source "drivers/adc/Kconfig.stm32"
 
+source "drivers/adc/Kconfig.esp32"
+
 source "drivers/adc/Kconfig.xec"
+
+source "drivers/adc/Kconfig.lmp90xxx"
+
+source "drivers/adc/Kconfig.mcp320x"
+
+source "drivers/adc/Kconfig.npcx"
+
+source "drivers/adc/Kconfig.cc32xx"
+
+source "drivers/adc/Kconfig.cc13xx_cc26xx"
+
+source "drivers/adc/Kconfig.adc_emul"
+
+source "drivers/adc/Kconfig.test"
+
+source "drivers/adc/Kconfig.ads1x1x"
+
+source "drivers/adc/Kconfig.gd32"
+
+source "drivers/adc/Kconfig.ads1119"
+
+source "drivers/adc/Kconfig.ads7052"
+
+source "drivers/adc/Kconfig.ads114s0x"
+
+source "drivers/adc/Kconfig.rpi_pico"
+
+source "drivers/adc/Kconfig.xmc4xxx"
+
+source "drivers/adc/Kconfig.gecko"
+
+source "drivers/adc/Kconfig.ifx_cat1"
 
 endif # ADC

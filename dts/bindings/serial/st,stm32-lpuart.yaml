@@ -1,19 +1,5 @@
-title: STM32 LPUART
-
-description: >
-    This binding gives a base representation of the STM32 LPUART
+description: STM32 LPUART
 
 compatible: "st,stm32-lpuart"
 
-include: uart-controller.yaml
-
-properties:
-    reg:
-      required: true
-
-    interrupts:
-      required: true
-
-    clocks:
-      required: true
-
+include: st,stm32-uart-base.yaml

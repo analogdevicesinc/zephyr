@@ -7,38 +7,29 @@
 /dts-v1/;
 
 #include "skeleton.dtsi"
+#include <mem.h>
 
 / {
 	cpus {
 		#address-cells = <1>;
 		#size-cells = <0>;
-
-		intc: arcv2-intc {
-			compatible = "snps,arcv2-intc";
-			interrupt-controller;
-			#interrupt-cells = <2>;
-		};
 	};
 
-	iccm0: iccm@0 {
-		compatible = "arc,iccm";
-		reg = <0x0 0x80000>;
+	intc: arcv2-intc {
+		compatible = "snps,arcv2-intc";
+		interrupt-controller;
+		#interrupt-cells = <2>;
 	};
 
-	dccm0: dccm@80000000 {
-		compatible = "arc,dccm";
-		reg = <0x80000000 0x80000>;
+	timer0: timer0 {
+		compatible = "snps,arc-timer";
+		interrupts = <16 1>;
+		interrupt-parent = <&intc>;
 	};
 
-	uart0: uart@f0000000 {
-		compatible = "snps,nsim-uart";
-		reg = <0xf0000000 0x100>;
-		label = "UART_0";
-	};
-
-	chosen {
-		zephyr,sram = &dccm0;
-		zephyr,console = &uart0;
-		zephyr,shell-uart = &uart0;
+	timer1: timer1 {
+		compatible = "snps,arc-timer";
+		interrupts = <17 1>;
+		interrupt-parent = <&intc>;
 	};
 };

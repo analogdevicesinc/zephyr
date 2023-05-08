@@ -13,7 +13,7 @@ on-die XIP flash, and a full complement of peripherals, including a
 2.4 GHz multi-protocol radio. It also has built-in sensors and
 Arduino-style expansion connectors.
 
-.. figure:: rv32m1_vega.png
+.. figure:: rv32m1_vega.jpg
    :align: center
    :alt: RV32M1-VEGA
 
@@ -88,6 +88,10 @@ the following hardware features:
 +-----------+------------+-------------------------------------+
 | I2C(M)    | on-chip    | i2c                                 |
 +-----------+------------+-------------------------------------+
+| SPI       | on-chip    | spi                                 |
++-----------+------------+-------------------------------------+
+| TPM       | on-chip    | pwm                                 |
++-----------+------------+-------------------------------------+
 | SENSOR    | off-chip   | fxos8700 polling;                   |
 |           |            | fxos8700 trigger;                   |
 +-----------+------------+-------------------------------------+
@@ -112,9 +116,42 @@ supports the following hardware features:
 +-----------+------------+-------------------------------------+
 | I2C(M)    | on-chip    | i2c                                 |
 +-----------+------------+-------------------------------------+
+| TPM       | on-chip    | pwm                                 |
++-----------+------------+-------------------------------------+
 | SENSOR    | off-chip   | fxos8700 polling;                   |
 |           |            | fxos8700 trigger;                   |
 +-----------+------------+-------------------------------------+
+
+BLE Software Link Layer experimental support
+==================================================
+This is an experimental feature supported on the Zephyr's RI5CY
+configuration, ``rv32m1_vega_ri5cy``. It  uses the Software Link Layer
+framework by Nordic Semi to enable the the on-SoC radio and transceiver for
+implementing a software defined BLE controller. By using both the controller
+and the host stack available in Zephyr, the following BLE samples can be used
+with this board:
+
+- beacon
+- central
+- central_hr
+- eddystone
+- hci_uart
+- ibeacon
+- peripheral_csc (Cycling Speed Cadence)
+- peripheral_dis (Device Information Service)
+- peripheral_esp (Environmental Sensing Service)
+- peripheral_hr (Heart Rate)
+- peripheral_ht (Health Thermometer)
+- peripheral
+- scan_adv
+
+.. note::
+
+   BLE Software Link Layer limitations:
+
+   - no 512/256 Kbps PHY
+   - no TX power adjustment
+
 
 Connections and IOs
 ===================
@@ -276,8 +313,8 @@ Additional Pins
 For an up-to-date description of additional pins (such as buttons,
 LEDs, etc.) supported by Zephyr, see the board DTS files in the Zephyr
 source code, i.e.
-:zephyr_file:`boards/riscv32/rv32m1_vega/rv32m1_vega_ri5cy.dts` for RI5CY and
-:zephyr_file:`boards/riscv32/rv32m1_vega/rv32m1_vega_zero_riscy.dts` for
+:zephyr_file:`boards/riscv/rv32m1_vega/rv32m1_vega_ri5cy.dts` for RI5CY and
+:zephyr_file:`boards/riscv/rv32m1_vega/rv32m1_vega_zero_riscy.dts` for
 ZERO-RISCY.
 
 See the schematic in the documentation available from the `OpenISA
@@ -395,7 +432,7 @@ For simplicity, this guide assumes:
 You can put them elsewhere, but be aware:
 
 - If you put the toolchain somewhere else, you will need to change
-  the :envvar:`CROSS_COMPILE` value described below accordingly.
+  the ``CROSS_COMPILE`` value described below accordingly.
 - If you put OpenOCD somewhere else, you will need to change the
   OpenOCD path in the flashing and debugging instructions below.
 - Don't use installation directories with spaces anywhere in the path;
@@ -457,13 +494,13 @@ first make sure you're booting the right core.
 
 1. In one terminal, use OpenOCD to connect to the board::
 
-     ~/rv32m1-openocd -f boards/riscv32/rv32m1_vega/support/openocd_rv32m1_vega_ri5cy.cfg
+     ~/rv32m1-openocd -f boards/riscv/rv32m1_vega/support/openocd_rv32m1_vega_ri5cy.cfg
 
    The output should look like this:
 
    .. code-block:: none
 
-      $ ~/rv32m1-openocd -f boards/riscv32/rv32m1_vega/support/openocd_rv32m1_vega_ri5cy.cfg
+      $ ~/rv32m1-openocd -f boards/riscv/rv32m1_vega/support/openocd_rv32m1_vega_ri5cy.cfg
       Open On-Chip Debugger 0.10.0+dev-00431-ge1ec3c7d (2018-10-31-07:29)
       [...]
       Info : Listening on port 3333 for gdb connections
@@ -489,7 +526,6 @@ first make sure you're booting the right core.
 
   .. figure:: ri5cy_boot.jpg
      :align: center
-     :width: 4in
      :alt: Reset button is pressed
 
   Now quit the telnet session in this terminal and exit OpenOCD in the
@@ -737,9 +773,9 @@ instructions in the ``rv32m1_gnu_toolchain_patch`` repository's
 
 If you set ``<toolchain-installation-dir>`` to
 :file:`~/riscv32-unknown-elf-gcc`, you can use the above instructions
-for setting :envvar:`CROSS_COMPILE` when building Zephyr
+for setting ``CROSS_COMPILE`` when building Zephyr
 applications. If you set it to something else, you will need to update
-your :envvar:`CROSS_COMPILE` setting accordingly.
+your ``CROSS_COMPILE`` setting accordingly.
 
 .. note::
 
@@ -798,7 +834,7 @@ in the above flash and debug instructions.
 .. [#toolchain_openocd]
 
    For Linux users, the RISC-V toolchain in the :ref:`Zephyr SDK
-   <zephyr_sdk>` may work, but it hasn't been thoroughly tested with this
+   <toolchain_zephyr_sdk>` may work, but it hasn't been thoroughly tested with this
    SoC, and will not allow use of any available RISC-V ISA extensions.
 
    Support for the RV32M1 SoC is not currently available in the OpenOCD

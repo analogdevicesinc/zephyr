@@ -4,9 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <syscall_handler.h>
-#include <ztest.h>
+#include <zephyr/kernel.h>
+#include <zephyr/syscall_handler.h>
+#include <zephyr/ztest.h>
+#include <kernel_internal.h>
 
 #define SEM_ARRAY_SIZE	16
 
@@ -17,6 +18,8 @@ extern struct k_sem sem1;
 
 static struct k_sem semarray[SEM_ARRAY_SIZE];
 static struct k_sem *dyn_sem[SEM_ARRAY_SIZE];
+
+static struct k_mutex *test_dyn_mutex;
 
 K_SEM_DEFINE(sem1, 0, 1);
 static struct k_sem sem2;
@@ -65,23 +68,27 @@ void object_permission_checks(struct k_sem *sem, bool skip_init)
 		      "object should have had sufficient permissions");
 }
 
-extern const k_tid_t _main_thread;
-
 /**
- * @brief Tests to verify object permission
+ * @brief Test to verify object permission
+ *
+ * @details
+ * - The kernel must be able to associate kernel object memory addresses
+ *   with whether the calling thread has access to that object, the object is
+ *   of the expected type, and the object is of the expected init state.
+ * - Test support freeing kernel objects allocated at runtime manually.
  *
  * @ingroup kernel_memprotect_tests
  *
  * @see k_object_alloc(), k_object_access_grant()
  */
-void test_generic_object(void)
+ZTEST(object_validation, test_generic_object)
 {
 	struct k_sem stack_sem;
 
 	/* None of these should be even in the table */
-	zassert_false(test_object(&stack_sem, -EBADF), NULL);
-	zassert_false(test_object((struct k_sem *)&bad_sem, -EBADF), NULL);
-	zassert_false(test_object((struct k_sem *)0xFFFFFFFF, -EBADF), NULL);
+	zassert_false(test_object(&stack_sem, -EBADF));
+	zassert_false(test_object((struct k_sem *)&bad_sem, -EBADF));
+	zassert_false(test_object((struct k_sem *)0xFFFFFFFF, -EBADF));
 	object_permission_checks(&sem3, false);
 	object_permission_checks(&sem1, true);
 	object_permission_checks(&sem2, false);
@@ -93,24 +100,94 @@ void test_generic_object(void)
 		/* Give an extra reference to another thread so the object
 		 * doesn't disappear if we revoke our own
 		 */
-		k_object_access_grant(dyn_sem[i], _main_thread);
+		k_object_access_grant(dyn_sem[i], &z_main_thread);
 	}
 
 	/* dynamic object table well-populated with semaphores at this point */
 	for (int i = 0; i < SEM_ARRAY_SIZE; i++) {
 		/* Should have permission granted but be uninitialized */
-		zassert_false(test_object(dyn_sem[i], -EINVAL), NULL);
+		zassert_false(test_object(dyn_sem[i], -EINVAL));
 		k_object_access_revoke(dyn_sem[i], k_current_get());
 		object_permission_checks(dyn_sem[i], false);
 		k_object_free(dyn_sem[i]);
-		zassert_false(test_object(dyn_sem[i], -EBADF), NULL);
+		zassert_false(test_object(dyn_sem[i], -EBADF));
 	}
 }
 
-void test_main(void)
+/**
+ * @brief Test requestor thread will implicitly be assigned permission on the
+ * dynamically allocated object
+ *
+ * @details
+ * - Create kernel object semaphore, dynamically allocate it from the calling
+ *   thread's resource pool.
+ * - Check that object's address is in bounds of that memory pool.
+ * - Then check the requestor thread will implicitly be assigned permission on
+ *   the allocated object by using semaphore API k_sem_init()
+ *
+ * @ingroup kernel_memprotect_tests
+ *
+ * @see k_object_alloc()
+ */
+ZTEST(object_validation, test_kobj_assign_perms_on_alloc_obj)
+{
+	static struct k_sem *test_dyn_sem;
+	struct k_thread *thread = _current;
+
+	uintptr_t start_addr, end_addr;
+	size_t size_heap = CONFIG_HEAP_MEM_POOL_SIZE;
+
+	/* dynamically allocate kernel object semaphore */
+	test_dyn_sem = k_object_alloc(K_OBJ_SEM);
+	zassert_not_null(test_dyn_sem, "Cannot allocate sem k_object");
+
+	start_addr = *((uintptr_t *)(void *)thread->resource_pool);
+	end_addr = start_addr + size_heap;
+
+	/* check semaphore initialized within thread's mem pool address space */
+	zassert_true(((uintptr_t)test_dyn_sem > start_addr) &&
+				 ((uintptr_t)test_dyn_sem < end_addr),
+				 "semaphore object not in bound of thread's memory pool");
+
+	/* try to init that object, thread should have permissions implicitly */
+	k_sem_init(test_dyn_sem, 1, 1);
+}
+
+/**
+ * @brief Test dynamically allocated kernel object release memory
+ *
+ * @details Dynamically allocated kernel objects whose access is controlled by
+ * the permission system will use object permission as a reference count.
+ * If no threads have access to an object, the object's memory released.
+ *
+ * @ingroup kernel_memprotect_tests
+ *
+ * @see k_object_alloc()
+ */
+ZTEST(object_validation, test_no_ref_dyn_kobj_release_mem)
+{
+	int ret;
+
+	/* dynamically allocate kernel object mutex */
+	test_dyn_mutex = k_object_alloc(K_OBJ_MUTEX);
+	zassert_not_null(test_dyn_mutex,
+					 "Can not allocate dynamic kernel object");
+
+	struct k_thread *thread = _current;
+
+	/* revoke access from the current thread */
+	k_object_access_revoke(test_dyn_mutex, thread);
+
+	/* check object was released, when no threads have access to it */
+	ret = z_object_validate(z_object_find(test_dyn_mutex), K_OBJ_MUTEX, 0);
+	zassert_true(ret == -EBADF, "Dynamic kernel object not released");
+}
+
+void *object_validation_setup(void)
 {
 	k_thread_system_pool_assign(k_current_get());
-	ztest_test_suite(object_validation,
-			 ztest_unit_test(test_generic_object));
-	ztest_run_test_suite(object_validation);
+
+	return NULL;
 }
+
+ZTEST_SUITE(object_validation, NULL, object_validation_setup, NULL, NULL, NULL);

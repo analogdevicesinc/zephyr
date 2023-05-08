@@ -4,247 +4,283 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#define IS_ACL_HANDLE(_handle) ((_handle) < CONFIG_BT_MAX_CONN)
+
+enum llcp {
+	LLCP_NONE,
+	LLCP_CONN_UPD,
+	LLCP_CHAN_MAP,
+
+	/*
+	 * LLCP_TERMINATE,
+	 * LLCP_FEATURE_EXCHANGE,
+	 * LLCP_VERSION_EXCHANGE,
+	 */
+
+#if defined(CONFIG_BT_CTLR_LE_ENC)
+	LLCP_ENCRYPTION,
+#endif /* CONFIG_BT_CTLR_LE_ENC */
+
+	LLCP_CONNECTION_PARAM_REQ,
+
+#if defined(CONFIG_BT_CTLR_LE_PING)
+	LLCP_PING,
+#endif /* CONFIG_BT_CTLR_LE_PING */
+
+#if defined(CONFIG_BT_CTLR_PHY)
+	LLCP_PHY_UPD,
+#endif /* CONFIG_BT_CTLR_PHY */
+};
+
+/*
+ * to reduce length and unreadability of the ll_conn struct the
+ * structures inside it have been defined first
+ */
+struct llcp_struct {
+	/* Local Request */
+	struct {
+		sys_slist_t pend_proc_list;
+		uint8_t state;
+		/* Procedure Response Timeout timer expire value */
+		uint16_t prt_expire;
+		uint8_t pause;
+	} local;
+
+	/* Remote Request */
+	struct {
+		sys_slist_t pend_proc_list;
+		uint8_t state;
+		/* Procedure Response Timeout timer expire value */
+		uint16_t prt_expire;
+		uint8_t pause;
+		uint8_t collision;
+		uint8_t incompat;
+		uint8_t reject_opcode;
+#if defined(CONFIG_BT_CTLR_DF_CONN_CTE_RSP) || defined(CONFIG_BT_CTLR_DF_CONN_CTE_REQ)
+		uint8_t paused_cmd;
+#endif /* CONFIG_BT_CTLR_DF_CONN_CTE_RSP || CONFIG_BT_CTLR_DF_CONN_CTE_REQ */
+	} remote;
+
+	/* Procedure Response Timeout timer reload value */
+	uint16_t prt_reload;
+
+	/* Prepare parameters */
+	struct {
+		uint32_t ticks_at_expire; /* Vendor specific tick units */
+		uint32_t remainder;       /* Vendor specific remainder fraction of a tick unit */
+		uint16_t lazy;            /* Previous skipped radio event count */
+	} prep;
+
+	/* Version Exchange Procedure State */
+	struct {
+		uint8_t sent;
+		uint8_t valid;
+		struct pdu_data_llctrl_version_ind cached;
+	} vex;
+
+	/*
+	 * As of today only 36 feature bits are in use,
+	 * so some optimisation is possible
+	 * we also need to keep track of the features of the
+	 * other node, so that we can send a proper
+	 * reply over HCI to the host
+	 * see BT Core spec 5.2 Vol 6, Part B, sec. 5.1.4
+	 */
+	struct {
+		uint8_t valid;
+		/*
+		 * Stores features supported by peer device. The content of the member may be
+		 * verified when feature exchange procedure has completed, valid member is set to 1.
+		 */
+		uint64_t features_peer;
+		/*
+		 * Stores features common for two connected devices. Before feature exchange
+		 * procedure is completed, the member stores information about all features
+		 * supported by local device. After completion of the procedure, the feature set
+		 * may be limited to features that are common.
+		 */
+		uint64_t features_used;
+	} fex;
+
+	/* Minimum used channels procedure state */
+	struct {
+		uint8_t phys;
+		uint8_t min_used_chans;
+	} muc;
+
+	/* TODO: we'll need the next few structs eventually,
+	 * Thomas and Szymon please comment on names etc.
+	 */
+	struct {
+		uint16_t *pdu_win_offset;
+		uint32_t ticks_anchor;
+	} conn_upd;
+
+#if defined(CONFIG_BT_CTLR_DF_CONN_CTE_REQ)
+	/* @brief Constant Tone Extension configuration for CTE request control procedure. */
+	struct llcp_df_req_cfg {
+		/* Procedure may be active periodically, active state must be stored.
+		 * If procedure is active, request parameters update may not be issued.
+		 */
+		volatile uint8_t is_enabled;
+		uint8_t cte_type;
+		/* Minimum requested CTE length in 8us units */
+		uint8_t min_cte_len;
+		uint16_t req_interval;
+		uint16_t req_expire;
+	} cte_req;
+#endif /* CONFIG_BT_CTLR_DF_CONN_CTE_REQ */
+
+#if defined(CONFIG_BT_CTLR_DF_CONN_CTE_RSP)
+	struct llcp_df_rsp_cfg {
+		uint8_t is_enabled:1;
+		uint8_t is_active:1;
+		uint8_t cte_types;
+		uint8_t max_cte_len;
+		void *disable_param;
+		void (*disable_cb)(void *param);
+	} cte_rsp;
+#endif /* CONFIG_BT_CTLR_DF_CONN_CTE_RSP */
+
+	struct {
+		uint8_t terminate_ack;
+	} cis;
+
+	uint8_t tx_buffer_alloc;
+	uint8_t tx_q_pause_data_mask;
+}; /* struct llcp_struct */
+
 struct ll_conn {
-	struct evt_hdr  evt;
 	struct ull_hdr  ull;
 	struct lll_conn lll;
 
-	u16_t connect_expire;
-	u16_t supervision_reload;
-	u16_t supervision_expire;
-	u16_t procedure_reload;
-	u16_t procedure_expire;
-
-#if defined(CONFIG_BT_CTLR_LE_PING)
-	u16_t appto_reload;
-	u16_t appto_expire;
-	u16_t apto_reload;
-	u16_t apto_expire;
-#endif /* CONFIG_BT_CTLR_LE_PING */
-
-#if defined(CONFIG_BT_CTLR_DATA_LENGTH)
-	u16_t default_tx_octets;
-
-#if defined(CONFIG_BT_CTLR_PHY)
-	u16_t default_tx_time;
-#endif /* CONFIG_BT_CTLR_PHY */
-#endif /* CONFIG_BT_CTLR_DATA_LENGTH */
-
-	union {
-		struct {
-			u8_t fex_valid:1;
-		} common;
-
-		struct {
-			u8_t fex_valid:1;
-			u32_t force;
-			u32_t ticks_to_offset;
-		} slave;
-
-		struct {
-			u8_t fex_valid:1;
-		} master;
-	};
-
-	u8_t llcp_req;
-	u8_t llcp_ack;
-	u8_t llcp_type;
-
-	union {
-		struct {
-			enum {
-				LLCP_CUI_STATE_INPROG,
-				LLCP_CUI_STATE_USE,
-				LLCP_CUI_STATE_SELECT
-			} state:2 __packed;
-			u8_t  is_internal:1;
-			u16_t interval;
-			u16_t latency;
-			u16_t timeout;
-			u16_t instant;
-			u32_t win_offset_us;
-			u8_t  win_size;
-			u16_t *pdu_win_offset;
-			u32_t ticks_anchor;
-		} conn_upd;
-
-		struct {
-			u8_t  initiate;
-			u8_t  chm[5];
-			u16_t instant;
-		} chan_map;
-
-#if defined(CONFIG_BT_CTLR_PHY)
-		struct {
-			u8_t initiate:1;
-			u8_t cmd:1;
-			u8_t tx:3;
-			u8_t rx:3;
-			u16_t instant;
-		} phy_upd_ind;
-#endif /* CONFIG_BT_CTLR_PHY */
-
-#if defined(CONFIG_BT_CTLR_LE_ENC)
-		struct {
-			u8_t  initiate;
-			u8_t  error_code;
-			u8_t  skd[16];
-		} encryption;
-#endif /* CONFIG_BT_CTLR_LE_ENC */
-	} llcp;
-
-	struct node_rx_pdu *llcp_rx;
-
-	u32_t llcp_features;
+	struct ull_tx_q tx_q;
+	struct llcp_struct llcp;
 
 	struct {
-		u8_t  tx:1;
-		u8_t  rx:1;
-		u8_t  version_number;
-		u16_t company_id;
-		u16_t sub_version_number;
-	} llcp_version;
-
-	struct {
-		u8_t req;
-		u8_t ack;
-		u8_t reason_own;
-		u8_t reason_peer;
+		uint8_t reason_final;
+		/* node rx type with memory aligned storage for terminate
+		 * reason.
+		 * HCI will reference the value using the pdu member of
+		 * struct node_rx_pdu.
+		 */
 		struct {
 			struct node_rx_hdr hdr;
-			u8_t reason;
+
+			uint8_t reason __aligned(4);
 		} node_rx;
 	} llcp_terminate;
 
+/*
+ * TODO: all the following comes from the legacy LL llcp structure
+ * and/or needs to be properly integrated in the control procedures
+ */
+	union {
+		struct {
+#if defined(CONFIG_BT_CTLR_CONN_META)
+			uint8_t  is_must_expire:1;
+#endif /* CONFIG_BT_CTLR_CONN_META */
+		} common;
+#if defined(CONFIG_BT_PERIPHERAL)
+		struct {
+#if defined(CONFIG_BT_CTLR_CONN_META)
+			uint8_t  is_must_expire:1;
+#endif /* CONFIG_BT_CTLR_CONN_META */
+			uint8_t  latency_cancel:1;
+			uint8_t  sca:3;
+			uint32_t force;
+			uint32_t ticks_to_offset;
+		} periph;
+#endif /* CONFIG_BT_PERIPHERAL */
+
+#if defined(CONFIG_BT_CENTRAL)
+		struct {
+#if defined(CONFIG_BT_CTLR_CONN_META)
+			uint8_t  is_must_expire:1;
+#endif /* CONFIG_BT_CTLR_CONN_META */
+			uint8_t terminate_ack:1;
+		} central;
+#endif /* CONFIG_BT_CENTRAL */
+	};
+
+	/* Cancel the prepare in the instant a Connection Update takes place */
+	uint8_t cancel_prepare:1;
+
 #if defined(CONFIG_BT_CTLR_LE_ENC)
-	struct {
-		u8_t req;
-		u8_t ack;
-		u8_t pause_rx:1;
-		u8_t pause_tx:1;
-		u8_t refresh:1;
-		u8_t ediv[2];
-		u8_t rand[8];
-		u8_t ltk[16];
-	} llcp_enc;
+	/* Pause Rx data PDU's */
+	uint8_t pause_rx_data:1;
 #endif /* CONFIG_BT_CTLR_LE_ENC */
 
-#if defined(CONFIG_BT_CTLR_CONN_PARAM_REQ)
-	struct {
-		u8_t  req;
-		u8_t  ack;
-		enum {
-			LLCP_CPR_STATE_REQ,
-			LLCP_CPR_STATE_RSP,
-			LLCP_CPR_STATE_APP_REQ,
-			LLCP_CPR_STATE_APP_WAIT,
-			LLCP_CPR_STATE_RSP_WAIT,
-			LLCP_CPR_STATE_UPD
-		} state:3 __packed;
-		u8_t  cmd:1;
-		u8_t  disabled:1;
-		u8_t  status;
-		u16_t interval_min;
-		u16_t interval_max;
-		u16_t latency;
-		u16_t timeout;
-		u8_t  preferred_periodicity;
-		u16_t reference_conn_event_count;
-		u16_t offset0;
-		u16_t offset1;
-		u16_t offset2;
-		u16_t offset3;
-		u16_t offset4;
-		u16_t offset5;
-		u16_t *pdu_win_offset0;
-		u32_t ticks_ref;
-		u32_t ticks_to_offset_next;
-	} llcp_conn_param;
-#endif /* CONFIG_BT_CTLR_CONN_PARAM_REQ */
+#if defined(CONFIG_BT_CTLR_LE_PING)
+	uint16_t appto_reload;
+	uint16_t appto_expire;
+	uint16_t apto_reload;
+	uint16_t apto_expire;
+#endif /* CONFIG_BT_CTLR_LE_PING */
 
-#if defined(CONFIG_BT_CTLR_DATA_LENGTH)
-	struct {
-		u8_t  req;
-		u8_t  ack;
-		u8_t  state:2;
-#define LLCP_LENGTH_STATE_REQ        0
-#define LLCP_LENGTH_STATE_ACK_WAIT   1
-#define LLCP_LENGTH_STATE_RSP_WAIT   2
-#define LLCP_LENGTH_STATE_RESIZE     3
-		u8_t  pause_tx:1;
-		u16_t rx_octets;
-		u16_t tx_octets;
+	uint16_t connect_expire;
+	uint16_t supervision_timeout;
+	uint16_t supervision_expire;
+	uint32_t connect_accept_to;
+
 #if defined(CONFIG_BT_CTLR_PHY)
-		u16_t rx_time;
-		u16_t tx_time;
+	uint8_t phy_pref_tx:3;
+	uint8_t phy_pref_rx:3;
 #endif /* CONFIG_BT_CTLR_PHY */
-	} llcp_length;
+#if defined(CONFIG_BT_CTLR_DATA_LENGTH)
+	uint16_t default_tx_octets;
+
+#if defined(CONFIG_BT_CTLR_PHY)
+	uint16_t default_tx_time;
+#endif /* CONFIG_BT_CTLR_PHY */
 #endif /* CONFIG_BT_CTLR_DATA_LENGTH */
 
-#if defined(CONFIG_BT_CTLR_PHY)
-	struct {
-		u8_t req;
-		u8_t ack;
-		u8_t state:2;
-#define LLCP_PHY_STATE_REQ      0
-#define LLCP_PHY_STATE_ACK_WAIT 1
-#define LLCP_PHY_STATE_RSP_WAIT 2
-#define LLCP_PHY_STATE_UPD      3
-		u8_t tx:3;
-		u8_t rx:3;
-		u8_t pause_tx:1;
-		u8_t flags:1;
-		u8_t cmd:1;
-	} llcp_phy;
-
-	u8_t phy_pref_tx:3;
-	u8_t phy_pref_flags:1;
-	u8_t phy_pref_rx:3;
-#endif /* CONFIG_BT_CTLR_PHY */
+#if defined(CONFIG_BT_CTLR_CHECK_SAME_PEER_CONN)
+	uint8_t own_id_addr_type:1;
+	uint8_t peer_id_addr_type:1;
+	uint8_t own_id_addr[BDADDR_SIZE];
+	uint8_t peer_id_addr[BDADDR_SIZE];
+#endif /* CONFIG_BT_CTLR_CHECK_SAME_PEER_CONN */
 
 #if defined(CONFIG_BT_CTLR_LLID_DATA_START_EMPTY)
 	/* Detect empty L2CAP start frame */
-	u8_t  start_empty:1;
+	uint8_t  start_empty:1;
 #endif /* CONFIG_BT_CTLR_LLID_DATA_START_EMPTY */
-
-	struct node_tx *tx_head;
-	struct node_tx *tx_ctrl;
-	struct node_tx *tx_ctrl_last;
-	struct node_tx *tx_data;
-	struct node_tx *tx_data_last;
-
-	u8_t chm_updated;
-};
+}; /* struct ll_conn */
 
 struct node_rx_cc {
-	u8_t  status;
-	u8_t  role;
-	u8_t  peer_addr_type;
-	u8_t  peer_addr[BDADDR_SIZE];
+	uint8_t  status;
+	uint8_t  role;
+	uint8_t  peer_addr_type;
+	uint8_t  peer_addr[BDADDR_SIZE];
 #if defined(CONFIG_BT_CTLR_PRIVACY)
-	u8_t  peer_rpa[BDADDR_SIZE];
-	u8_t  own_addr_type;
-	u8_t  own_addr[BDADDR_SIZE];
+	uint8_t  peer_rpa[BDADDR_SIZE];
+	uint8_t  local_rpa[BDADDR_SIZE];
 #endif /* CONFIG_BT_CTLR_PRIVACY */
-	u16_t interval;
-	u16_t latency;
-	u16_t timeout;
-	u8_t  sca;
+	uint16_t interval;
+	uint16_t latency;
+	uint16_t timeout;
+	uint8_t  sca;
 };
 
 struct node_rx_cu {
-	u8_t  status;
-	u16_t interval;
-	u16_t latency;
-	u16_t timeout;
+	uint8_t  status;
+	uint16_t interval;
+	uint16_t latency;
+	uint16_t timeout;
 };
 
 struct node_rx_cs {
-	u8_t csa;
+	uint8_t csa;
 };
 
 struct node_rx_pu {
-	u8_t status;
-	u8_t tx;
-	u8_t rx;
+	uint8_t status;
+	uint8_t tx;
+	uint8_t rx;
+};
+
+struct node_rx_sca {
+	uint8_t status;
+	uint8_t sca;
 };

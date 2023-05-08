@@ -3,12 +3,11 @@
 
 # Common fields for I2C devices
 
-include: base.yaml
+include: [base.yaml, power.yaml]
 
-parent-bus: i2c
+on-bus: i2c
 
 properties:
-    reg:
-      required: true
-    label:
-      required: true
+  reg:
+    required: true
+    description: device address on i2c bus

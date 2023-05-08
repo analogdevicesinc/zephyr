@@ -5,22 +5,29 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <device.h>
-#include <drivers/gpio.h>
-#include <display/cfb.h>
-#include <sys/printk.h>
-#include <drivers/flash.h>
-#include <drivers/sensor.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/devicetree.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/display/cfb.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/drivers/flash.h>
+#include <zephyr/storage/flash_map.h>
+#include <zephyr/drivers/sensor.h>
 
 #include <string.h>
 #include <stdio.h>
 
-#include <bluetooth/bluetooth.h>
-#include <bluetooth/mesh/access.h>
+#include <zephyr/bluetooth/bluetooth.h>
+#include <zephyr/bluetooth/mesh/access.h>
 
 #include "mesh.h"
 #include "board.h"
+
+#define STORAGE_PARTITION		storage_partition
+#define STORAGE_PARTITION_DEV		FIXED_PARTITION_DEVICE(STORAGE_PARTITION)
+#define STORAGE_PARTITION_OFFSET	FIXED_PARTITION_OFFSET(STORAGE_PARTITION)
+#define STORAGE_PARTITION_SIZE		FIXED_PARTITION_SIZE(STORAGE_PARTITION)
 
 enum font_size {
 	FONT_SMALL = 0,
@@ -36,7 +43,7 @@ enum screen_ids {
 };
 
 struct font_info {
-	u8_t columns;
+	uint8_t columns;
 } fonts[] = {
 	[FONT_BIG] =    { .columns = 12 },
 	[FONT_MEDIUM] = { .columns = 16 },
@@ -47,40 +54,28 @@ struct font_info {
 
 #define STAT_COUNT 128
 
-#define EDGE (GPIO_INT_EDGE | GPIO_INT_DOUBLE_EDGE)
-
-#ifdef DT_ALIAS_SW0_GPIOS_FLAGS
-#define PULL_UP DT_ALIAS_SW0_GPIOS_FLAGS
-#else
-#define PULL_UP 0
-#endif
-
-static struct device *epd_dev;
+static const struct device *const epd_dev = DEVICE_DT_GET_ONE(solomon_ssd16xxfb);
 static bool pressed;
-static u8_t screen_id = SCREEN_MAIN;
-static struct device *gpio;
-static struct k_delayed_work epd_work;
-static struct k_delayed_work long_press_work;
+static uint8_t screen_id = SCREEN_MAIN;
+static struct k_work_delayable epd_work;
+static struct k_work_delayable long_press_work;
 static char str_buf[256];
 
-static struct {
-	struct device *dev;
-	const char *name;
-	u32_t pin;
-} leds[] = {
-	{ .name = DT_ALIAS_LED0_GPIOS_CONTROLLER, .pin = DT_ALIAS_LED0_GPIOS_PIN, },
-	{ .name = DT_ALIAS_LED1_GPIOS_CONTROLLER, .pin = DT_ALIAS_LED1_GPIOS_PIN, },
-	{ .name = DT_ALIAS_LED2_GPIOS_CONTROLLER, .pin = DT_ALIAS_LED2_GPIOS_PIN, },
-	{ .name = DT_ALIAS_LED3_GPIOS_CONTROLLER, .pin = DT_ALIAS_LED3_GPIOS_PIN, },
+static const struct gpio_dt_spec leds[] = {
+	GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios),
+	GPIO_DT_SPEC_GET(DT_ALIAS(led1), gpios),
+	GPIO_DT_SPEC_GET(DT_ALIAS(led2), gpios),
 };
 
-struct k_delayed_work led_timer;
+static const struct gpio_dt_spec sw0_gpio = GPIO_DT_SPEC_GET(DT_ALIAS(sw0), gpios);
+
+struct k_work_delayable led_timer;
 
 static size_t print_line(enum font_size font_size, int row, const char *text,
 			 size_t len, bool center)
 {
-	u8_t font_height, font_width;
-	u8_t line[fonts[FONT_SMALL].columns + 1];
+	uint8_t font_height, font_width;
+	uint8_t line[fonts[FONT_SMALL].columns + 1];
 	int pad;
 
 	cfb_framebuffer_set_font(epd_dev, font_size);
@@ -134,10 +129,10 @@ static size_t get_len(enum font_size font, const char *text)
 
 void board_blink_leds(void)
 {
-	k_delayed_work_submit(&led_timer, K_MSEC(100));
+	k_work_reschedule(&led_timer, K_MSEC(100));
 }
 
-void board_show_text(const char *text, bool center, s32_t duration)
+void board_show_text(const char *text, bool center, k_timeout_t duration)
 {
 	int i;
 
@@ -163,18 +158,18 @@ void board_show_text(const char *text, bool center, s32_t duration)
 
 	cfb_framebuffer_finalize(epd_dev);
 
-	if (duration != K_FOREVER) {
-		k_delayed_work_submit(&epd_work, duration);
+	if (!K_TIMEOUT_EQ(duration, K_FOREVER)) {
+		k_work_reschedule(&epd_work, duration);
 	}
 }
 
 static struct stat {
-	u16_t addr;
+	uint16_t addr;
 	char name[9];
-	u8_t min_hops;
-	u8_t max_hops;
-	u16_t hello_count;
-	u16_t heartbeat_count;
+	uint8_t min_hops;
+	uint8_t max_hops;
+	uint16_t hello_count;
+	uint16_t heartbeat_count;
 } stats[STAT_COUNT] = {
 	[0 ... (STAT_COUNT - 1)] = {
 		.min_hops = BT_MESH_TTL_MAX,
@@ -182,11 +177,11 @@ static struct stat {
 	},
 };
 
-static u32_t stat_count;
+static uint32_t stat_count;
 
 #define NO_UPDATE -1
 
-static int add_hello(u16_t addr, const char *name)
+static int add_hello(uint16_t addr, const char *name)
 {
 	int i;
 
@@ -217,7 +212,7 @@ static int add_hello(u16_t addr, const char *name)
 	return NO_UPDATE;
 }
 
-static int add_heartbeat(u16_t addr, u8_t hops)
+static int add_heartbeat(uint16_t addr, uint8_t hops)
 {
 	int i;
 
@@ -252,18 +247,18 @@ static int add_heartbeat(u16_t addr, u8_t hops)
 	return NO_UPDATE;
 }
 
-void board_add_hello(u16_t addr, const char *name)
+void board_add_hello(uint16_t addr, const char *name)
 {
-	u32_t sort_i;
+	uint32_t sort_i;
 
 	sort_i = add_hello(addr, name);
 	if (sort_i != NO_UPDATE) {
 	}
 }
 
-void board_add_heartbeat(u16_t addr, u8_t hops)
+void board_add_heartbeat(uint16_t addr, uint8_t hops)
 {
-	u32_t sort_i;
+	uint32_t sort_i;
 
 	sort_i = add_heartbeat(addr, hops);
 	if (sort_i != NO_UPDATE) {
@@ -343,11 +338,11 @@ static void show_statistics(void)
 	cfb_framebuffer_finalize(epd_dev);
 }
 
-static void show_sensors_data(s32_t interval)
+static void show_sensors_data(k_timeout_t interval)
 {
 	struct sensor_value val[3];
-	u8_t line = 0U;
-	u16_t len = 0U;
+	uint8_t line = 0U;
+	uint16_t len = 0U;
 
 	cfb_framebuffer_clear(epd_dev, false);
 
@@ -393,7 +388,7 @@ static void show_sensors_data(s32_t interval)
 
 	cfb_framebuffer_finalize(epd_dev);
 
-	k_delayed_work_submit(&epd_work, interval);
+	k_work_reschedule(&epd_work, interval);
 
 	return;
 
@@ -445,15 +440,12 @@ static void long_press(struct k_work *work)
 
 static bool button_is_pressed(void)
 {
-	u32_t val;
-
-	gpio_pin_read(gpio, DT_ALIAS_SW0_GPIOS_PIN, &val);
-
-	return !val;
+	return gpio_pin_get_dt(&sw0_gpio) > 0;
 }
 
-static void button_interrupt(struct device *dev, struct gpio_callback *cb,
-			     u32_t pins)
+static void button_interrupt(const struct device *dev,
+			     struct gpio_callback *cb,
+			     uint32_t pins)
 {
 	if (button_is_pressed() == pressed) {
 		return;
@@ -463,11 +455,11 @@ static void button_interrupt(struct device *dev, struct gpio_callback *cb,
 	printk("Button %s\n", pressed ? "pressed" : "released");
 
 	if (pressed) {
-		k_delayed_work_submit(&long_press_work, LONG_PRESS_TIMEOUT);
+		k_work_reschedule(&long_press_work, LONG_PRESS_TIMEOUT);
 		return;
 	}
 
-	k_delayed_work_cancel(&long_press_work);
+	k_work_cancel_delayable(&long_press_work);
 
 	if (!mesh_is_initialized()) {
 		return;
@@ -479,9 +471,9 @@ static void button_interrupt(struct device *dev, struct gpio_callback *cb,
 	case SCREEN_STATS:
 		return;
 	case SCREEN_MAIN:
-		if (pins & BIT(DT_ALIAS_SW0_GPIOS_PIN)) {
-			u32_t uptime = k_uptime_get_32();
-			static u32_t bad_count, press_ts;
+		if (pins & BIT(sw0_gpio.pin)) {
+			uint32_t uptime = k_uptime_get_32();
+			static uint32_t bad_count, press_ts;
 
 			if (uptime - press_ts < 500) {
 				bad_count++;
@@ -512,20 +504,25 @@ static int configure_button(void)
 {
 	static struct gpio_callback button_cb;
 
-	gpio = device_get_binding(DT_ALIAS_SW0_GPIOS_CONTROLLER);
-	if (!gpio) {
+	if (!device_is_ready(sw0_gpio.port)) {
+		printk("%s: device not ready.\n", sw0_gpio.port->name);
 		return -ENODEV;
 	}
 
-	gpio_pin_configure(gpio, DT_ALIAS_SW0_GPIOS_PIN,
-			   (GPIO_DIR_IN | GPIO_INT |  PULL_UP | EDGE));
+	gpio_pin_configure_dt(&sw0_gpio, GPIO_INPUT);
 
-	gpio_init_callback(&button_cb, button_interrupt, BIT(DT_ALIAS_SW0_GPIOS_PIN));
-	gpio_add_callback(gpio, &button_cb);
+	gpio_pin_interrupt_configure_dt(&sw0_gpio, GPIO_INT_EDGE_BOTH);
 
-	gpio_pin_enable_callback(gpio, DT_ALIAS_SW0_GPIOS_PIN);
+	gpio_init_callback(&button_cb, button_interrupt, BIT(sw0_gpio.pin));
+
+	gpio_add_callback(sw0_gpio.port, &button_cb);
 
 	return 0;
+}
+
+int set_led_state(uint8_t id, bool state)
+{
+	return gpio_pin_set_dt(&leds[id], state);
 }
 
 static void led_timeout(struct k_work *work)
@@ -535,7 +532,7 @@ static void led_timeout(struct k_work *work)
 
 	/* Disable all LEDs */
 	for (i = 0; i < ARRAY_SIZE(leds); i++) {
-		gpio_pin_write(leds[i].dev, leds[i].pin, 1);
+		set_led_state(i, 0);
 	}
 
 	/* Stop after 5 iterations */
@@ -546,9 +543,9 @@ static void led_timeout(struct k_work *work)
 
 	/* Select and enable current LED */
 	i = led_cntr++ % ARRAY_SIZE(leds);
-	gpio_pin_write(leds[i].dev, leds[i].pin, 0);
+	set_led_state(i, 1);
 
-	k_delayed_work_submit(&led_timer, K_MSEC(100));
+	k_work_reschedule(&led_timer, K_MSEC(100));
 }
 
 static int configure_leds(void)
@@ -556,41 +553,39 @@ static int configure_leds(void)
 	int i;
 
 	for (i = 0; i < ARRAY_SIZE(leds); i++) {
-		leds[i].dev = device_get_binding(leds[i].name);
-		if (!leds[i].dev) {
-			printk("Failed to get %s device\n", leds[i].name);
+		if (!device_is_ready(leds[i].port)) {
+			printk("%s: device not ready.\n", leds[i].port->name);
 			return -ENODEV;
 		}
 
-		gpio_pin_configure(leds[i].dev, leds[i].pin, GPIO_DIR_OUT);
-		gpio_pin_write(leds[i].dev, leds[i].pin, 1);
-
+		gpio_pin_configure_dt(&leds[i], GPIO_OUTPUT_INACTIVE);
 	}
 
-	k_delayed_work_init(&led_timer, led_timeout);
+	k_work_init_delayable(&led_timer, led_timeout);
 	return 0;
 }
 
 static int erase_storage(void)
 {
-	struct device *dev;
+	const struct device *dev = STORAGE_PARTITION_DEV;
 
-	dev = device_get_binding(DT_FLASH_DEV_NAME);
+	if (!device_is_ready(dev)) {
+		printk("Flash device not ready\n");
+		return -ENODEV;
+	}
 
-	return flash_erase(dev, DT_FLASH_AREA_STORAGE_OFFSET,
-			   DT_FLASH_AREA_STORAGE_SIZE);
+	return flash_erase(dev, STORAGE_PARTITION_OFFSET, STORAGE_PARTITION_SIZE);
 }
 
 void board_refresh_display(void)
 {
-	k_delayed_work_submit(&epd_work, K_NO_WAIT);
+	k_work_reschedule(&epd_work, K_NO_WAIT);
 }
 
 int board_init(void)
 {
-	epd_dev = device_get_binding(DT_INST_0_SOLOMON_SSD16XXFB_LABEL);
-	if (epd_dev == NULL) {
-		printk("SSD16XX device not found\n");
+	if (!device_is_ready(epd_dev)) {
+		printk("%s: device not ready.\n", epd_dev->name);
 		return -ENODEV;
 	}
 
@@ -611,8 +606,8 @@ int board_init(void)
 		return -EIO;
 	}
 
-	k_delayed_work_init(&epd_work, epd_update);
-	k_delayed_work_init(&long_press_work, long_press);
+	k_work_init_delayable(&epd_work, epd_update);
+	k_work_init_delayable(&long_press_work, long_press);
 
 	pressed = button_is_pressed();
 	if (pressed) {

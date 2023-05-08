@@ -3,14 +3,15 @@ sample:
     using K_THREAD_DEFINE
   name: Basic Thread Demo
 tests:
-  sample.threads:
+  sample.basic.threads:
     tags: kernel threads gpio
-    filter: DT_GPIO_LEDS_LED0_GPIOS_CONTROLLER and DT_GPIO_LEDS_LED1_GPIOS_CONTROLLER
+    filter: dt_enabled_alias_with_parent_compat("led0", "gpio-leds") and
+            dt_enabled_alias_with_parent_compat("led1", "gpio-leds")
     depends_on: gpio
     harness: console
     harness_config:
       type: multi_line
       ordered: false
       regex:
-        - "Toggle USR0 LED(.*)"
-        - "Toggle USR1 LED(.*)"
+        - "Toggled led0; counter=(.*)"
+        - "Toggled led1; counter=(.*)"

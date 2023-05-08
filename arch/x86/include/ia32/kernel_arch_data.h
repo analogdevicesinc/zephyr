@@ -26,17 +26,15 @@
 #ifndef ZEPHYR_ARCH_X86_INCLUDE_IA32_KERNEL_ARCH_DATA_H_
 #define ZEPHYR_ARCH_X86_INCLUDE_IA32_KERNEL_ARCH_DATA_H_
 
-#include <toolchain.h>
-#include <linker/sections.h>
+#include <zephyr/toolchain.h>
+#include <zephyr/linker/sections.h>
 #include <ia32/exception.h>
-#include <kernel_arch_thread.h>
-#include <sys/util.h>
+#include <zephyr/sys/util.h>
 
 #ifndef _ASMLANGUAGE
-#include <kernel.h>
-#include <kernel_internal.h>
+#include <zephyr/kernel.h>
 #include <zephyr/types.h>
-#include <sys/dlist.h>
+#include <zephyr/sys/dlist.h>
 #endif
 
 /* Some configurations require that the stack/registers be adjusted before
@@ -46,19 +44,15 @@
 #define _THREAD_WRAPPER_REQUIRED
 #endif
 
-/* increase to 16 bytes (or more?) to support SSE/SSE2 instructions? */
-
-#define STACK_ALIGN_SIZE 4
-
-#if defined(CONFIG_LAZY_FP_SHARING) && defined(CONFIG_SSE)
+#if defined(CONFIG_LAZY_FPU_SHARING) && defined(CONFIG_X86_SSE)
 #define _FP_USER_MASK (K_FP_REGS | K_SSE_REGS)
-#elif defined(CONFIG_LAZY_FP_SHARING)
+#elif defined(CONFIG_LAZY_FPU_SHARING)
 #define _FP_USER_MASK (K_FP_REGS)
 #endif
 
 #ifndef _ASMLANGUAGE
 
-#include <sys/util.h>
+#include <zephyr/sys/util.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -68,6 +62,10 @@ extern "C" {
 extern void z_x86_thread_entry_wrapper(k_thread_entry_t entry,
 				      void *p1, void *p2, void *p3);
 #endif /* _THREAD_WRAPPER_REQUIRED */
+
+#ifdef CONFIG_THREAD_LOCAL_STORAGE
+extern void z_x86_tls_update_gdt(struct k_thread *thread);
+#endif
 
 #ifdef __cplusplus
 }

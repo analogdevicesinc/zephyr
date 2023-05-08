@@ -4,20 +4,20 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_ethernet_stats, CONFIG_NET_L2_ETHERNET_LOG_LEVEL);
 
-#include <kernel.h>
+#include <zephyr/kernel.h>
 #include <string.h>
 #include <errno.h>
-#include <net/net_core.h>
-#include <net/ethernet.h>
+#include <zephyr/net/net_core.h>
+#include <zephyr/net/ethernet.h>
 
 #include "net_stats.h"
 
 #if defined(CONFIG_NET_STATISTICS_USER_API)
 
-static int eth_stats_get(u32_t mgmt_request, struct net_if *iface,
+static int eth_stats_get(uint32_t mgmt_request, struct net_if *iface,
 			 void *data, size_t len)
 {
 	size_t len_chk = 0;
@@ -30,7 +30,7 @@ static int eth_stats_get(u32_t mgmt_request, struct net_if *iface,
 			return -ENOENT;
 		}
 
-		eth = net_if_get_device(iface)->driver_api;
+		eth = net_if_get_device(iface)->api;
 		if (eth == NULL || eth->get_stats == NULL) {
 			return -ENOENT;
 		}

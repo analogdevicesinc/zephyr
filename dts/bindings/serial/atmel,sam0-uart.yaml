@@ -1,35 +1,51 @@
-title: Atmel SAM0 SERCOM UART driver
-
-description: >
-    This binding gives a base representation of the Atmel SAM0 SERCOM UART driver
+description: Atmel SAM0 SERCOM UART driver
 
 compatible: "atmel,sam0-uart"
 
-include: uart-controller.yaml
+include:
+  - name: uart-controller.yaml
+  - name: pinctrl-device.yaml
 
 properties:
-    reg:
-      required: true
+  reg:
+    required: true
 
-    interrupts:
-      required: true
+  interrupts:
+    required: true
 
-    rxpo:
-      type: int
-      required: true
-      description: Receive Data Pinout
+  clocks:
+    required: true
 
-    txpo:
-      type: int
-      required: true
-      description: Transmit Data Pinout
+  clock-names:
+    required: true
 
-    rxdma:
-      type: int
-      required: false
-      description: Receive DMA channel
+  rxpo:
+    type: int
+    required: true
+    description: Receive Data Pinout
 
-    txdma:
-      type: int
-      required: false
-      description: Transmit DMA channel
+  txpo:
+    type: int
+    required: true
+    description: Transmit Data Pinout
+
+  collision-detection:
+    type: boolean
+    description: Enable collision detection for half-duplex mode.
+
+  dmas:
+    description: |
+      Optional TX & RX dma specifiers.  Each specifier will have a phandle
+      reference to the dmac controller, the channel number, and peripheral
+      trigger source.
+
+      For example dmas for TX, RX on SERCOM3
+         dmas = <&dmac 0 0xb>, <&dmac 0 0xa>;
+
+  dma-names:
+    description: |
+      Required if the dmas property exists.  This should be "tx" and "rx"
+      to match the dmas property.
+
+      For example
+         dma-names = "tx", "rx";

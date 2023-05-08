@@ -1,66 +1,61 @@
-# Kconfig - DMA configuration options
-#
-#
+# DMA configuration options
+
 # Copyright (c) 2016 Intel Corporation
-#
 # SPDX-License-Identifier: Apache-2.0
-#
 
 #
 # DMA options
 #
 menuconfig DMA
-	bool "DMA driver Configuration"
+	bool "Direct Memory Access (DMA) drivers"
 
 if DMA
-config DMA_0_NAME
-	string "Device name for DMA Controller 0"
-	default "DMA_0"
+config DMA_64BIT
+	bool "DMA 64 bit address support"
 	help
-	  Device name for DMA Controller 0.
+	  When this option is true, 64 bit source and dest
+	  DMA addresses are supported.
 
-config DMA_0_IRQ_PRI
-	int "IRQ Priority for DMA Controller 0"
-	default 3
+config DMA_INIT_PRIORITY
+	int "DMA init priority"
+	default KERNEL_INIT_PRIORITY_DEFAULT
 	help
-	  IRQ Priority for the DMA Controller.
-
-config DMA_1_NAME
-	string "Device name for DMA Controller 1"
-	default "DMA_1"
-	help
-	  Device name for DMA Controller 1.
-
-config DMA_1_IRQ_PRI
-	int "IRQ Priority for DMA Controller 1"
-	default 3
-	help
-	  IRQ Priority for DMA Controller 1.
-
-config DMA_2_NAME
-	string "Device name for DMA Controller 2"
-	default "DMA_2"
-	help
-	  Device name for DMA Controller 2.
-
-config DMA_2_IRQ_PRI
-	int "IRQ Priority for DMA Controller 2"
-	default 3
-	help
-	  IRQ Priority for DMA Controller 2.
+	  DMA driver device initialization priority.
 
 module = DMA
 module-str = dma
 source "subsys/logging/Kconfig.template.log_config"
 
-source "drivers/dma/Kconfig.stm32f4x"
+source "drivers/dma/Kconfig.stm32"
 
 source "drivers/dma/Kconfig.sam_xdmac"
 
-source "drivers/dma/Kconfig.cavs"
+source "drivers/dma/Kconfig.dw"
 
 source "drivers/dma/Kconfig.nios2_msgdma"
 
 source "drivers/dma/Kconfig.sam0"
+
+source "drivers/dma/Kconfig.mcux_edma"
+
+source "drivers/dma/Kconfig.mcux_lpc"
+
+source "drivers/dma/Kconfig.dma_pl330"
+
+source "drivers/dma/Kconfig.iproc_pax"
+
+source "drivers/dma/Kconfig.intel_adsp_gpdma"
+
+source "drivers/dma/Kconfig.intel_adsp_hda"
+
+source "drivers/dma/Kconfig.gd32"
+
+source "drivers/dma/Kconfig.esp32"
+
+source "drivers/dma/Kconfig.xec"
+
+source "drivers/dma/Kconfig.xmc4xxx"
+
+source "drivers/dma/Kconfig.rpi_pico"
 
 endif # DMA

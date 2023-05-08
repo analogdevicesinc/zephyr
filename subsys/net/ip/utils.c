@@ -9,21 +9,22 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_utils, CONFIG_NET_UTILS_LOG_LEVEL);
 
-#include <kernel.h>
+#include <zephyr/kernel.h>
 #include <stdlib.h>
-#include <syscall_handler.h>
+#include <zephyr/syscall_handler.h>
 #include <zephyr/types.h>
 #include <stdbool.h>
 #include <string.h>
 #include <errno.h>
 
-#include <net/net_ip.h>
-#include <net/net_pkt.h>
-#include <net/net_core.h>
-#include <net/socket_can.h>
+#include <zephyr/sys/byteorder.h>
+#include <zephyr/net/net_ip.h>
+#include <zephyr/net/net_pkt.h>
+#include <zephyr/net/net_core.h>
+#include <zephyr/net/socketcan.h>
 
 char *net_sprint_addr(sa_family_t af, const void *addr)
 {
@@ -62,7 +63,7 @@ const char *net_proto2str(int family, int proto)
 	return "UNK_PROTO";
 }
 
-char *net_byte_to_hex(char *ptr, u8_t byte, char base, bool pad)
+char *net_byte_to_hex(char *ptr, uint8_t byte, char base, bool pad)
 {
 	int i, val;
 
@@ -82,11 +83,15 @@ char *net_byte_to_hex(char *ptr, u8_t byte, char base, bool pad)
 	return ptr;
 }
 
-char *net_sprint_ll_addr_buf(const u8_t *ll, u8_t ll_len,
+char *net_sprint_ll_addr_buf(const uint8_t *ll, uint8_t ll_len,
 			     char *buf, int buflen)
 {
-	u8_t i, len, blen;
+	uint8_t i, len, blen;
 	char *ptr = buf;
+
+	if (ll == NULL) {
+		return "<unknown>";
+	}
 
 	switch (ll_len) {
 	case 8:
@@ -117,9 +122,9 @@ char *net_sprint_ll_addr_buf(const u8_t *ll, u8_t ll_len,
 	return buf;
 }
 
-static int net_value_to_udec(char *buf, u32_t value, int precision)
+static int net_value_to_udec(char *buf, uint32_t value, int precision)
 {
-	u32_t divisor;
+	uint32_t divisor;
 	int i;
 	int temp;
 	char *start = buf;
@@ -147,23 +152,23 @@ char *z_impl_net_addr_ntop(sa_family_t family, const void *src,
 {
 	struct in_addr *addr;
 	struct in6_addr *addr6;
-	u16_t *w;
-	u8_t i, bl, bh, longest = 1U;
-	s8_t pos = -1;
+	uint16_t *w;
+	uint8_t i, bl, bh, longest = 1U;
+	int8_t pos = -1;
 	char delim = ':';
 	unsigned char zeros[8] = { 0 };
 	char *ptr = dst;
 	int len = -1;
-	u16_t value;
+	uint16_t value;
 	bool needcolon = false;
 
 	if (family == AF_INET6) {
 		addr6 = (struct in6_addr *)src;
-		w = (u16_t *)addr6->s6_addr16;
+		w = (uint16_t *)addr6->s6_addr16;
 		len = 8;
 
 		for (i = 0U; i < 8; i++) {
-			u8_t j;
+			uint8_t j;
 
 			for (j = i; j < 8; j++) {
 				if (UNALIGNED_GET(&w[j]) != 0) {
@@ -196,9 +201,9 @@ char *z_impl_net_addr_ntop(sa_family_t family, const void *src,
 	for (i = 0U; i < len; i++) {
 		/* IPv4 address a.b.c.d */
 		if (len == 4) {
-			u8_t l;
+			uint8_t l;
 
-			value = (u32_t)addr->s4_addr[i];
+			value = (uint32_t)addr->s4_addr[i];
 
 			/* net_byte_to_udec() eats 0 */
 			if (value == 0U) {
@@ -230,10 +235,9 @@ char *z_impl_net_addr_ntop(sa_family_t family, const void *src,
 
 		if (needcolon) {
 			*ptr++ = ':';
-			needcolon = false;
 		}
 
-		value = (u32_t)sys_be16_to_cpu(UNALIGNED_GET(&w[i]));
+		value = (uint32_t)sys_be16_to_cpu(UNALIGNED_GET(&w[i]));
 		bh = value >> 8;
 		bl = value & 0xff;
 
@@ -448,12 +452,11 @@ int z_impl_net_addr_pton(sa_family_t family, const char *src,
 int z_vrfy_net_addr_pton(sa_family_t family, const char *src,
 			 void *dst)
 {
-	char str[INET6_ADDRSTRLEN];
+	char str[MAX(INET_ADDRSTRLEN, INET6_ADDRSTRLEN)] = {};
 	struct in6_addr addr6;
 	struct in_addr addr4;
 	void *addr;
 	size_t size;
-	size_t nlen;
 	int err;
 
 	if (family == AF_INET) {
@@ -466,58 +469,120 @@ int z_vrfy_net_addr_pton(sa_family_t family, const char *src,
 		return -EINVAL;
 	}
 
-	memset(str, 0, sizeof(str));
-
-	nlen = z_user_string_nlen((const char *)src, sizeof(str), &err);
-	if (err) {
+	if (z_user_string_copy(str, (char *)src, sizeof(str)) != 0) {
 		return -EINVAL;
 	}
 
 	Z_OOPS(Z_SYSCALL_MEMORY_WRITE(dst, size));
-	Z_OOPS(Z_SYSCALL_MEMORY_READ(src, nlen));
-	Z_OOPS(z_user_from_copy(str, (const void *)src, nlen));
 
 	err = z_impl_net_addr_pton(family, str, addr);
 	if (err) {
 		return err;
 	}
 
-	Z_OOPS(z_user_to_copy((void *)src, addr, size));
+	Z_OOPS(z_user_to_copy((void *)dst, addr, size));
 
 	return 0;
 }
 #include <syscalls/net_addr_pton_mrsh.c>
 #endif /* CONFIG_USERSPACE */
 
-static u16_t calc_chksum(u16_t sum, const u8_t *data, size_t len)
+
+#ifdef CONFIG_LITTLE_ENDIAN
+#define CHECKSUM_BIG_ENDIAN 0
+#else
+#define CHECKSUM_BIG_ENDIAN 1
+#endif
+
+static uint16_t offset_based_swap8(const uint8_t *data)
 {
-	const u8_t *end;
-	u16_t tmp;
+	uint16_t data16 = (uint16_t)*data;
 
-	end = data + len - 1;
-
-	while (data < end) {
-		tmp = (data[0] << 8) + data[1];
-		sum += tmp;
-		if (sum < tmp) {
-			sum++;
-		}
-
-		data += 2;
+	if (((uintptr_t)(data) & 1) == CHECKSUM_BIG_ENDIAN) {
+		return data16;
+	} else {
+		return data16 << 8;
 	}
-
-	if (data == end) {
-		tmp = data[0] << 8;
-		sum += tmp;
-		if (sum < tmp) {
-			sum++;
-		}
-	}
-
-	return sum;
 }
 
-static inline u16_t pkt_calc_chksum(struct net_pkt *pkt, u16_t sum)
+/* Word based checksum calculation based on:
+ * https://blogs.igalia.com/dpino/2018/06/14/fast-checksum-computation/
+ * It’s not necessary to add octets as 16-bit words. Due to the associative property of addition,
+ * it is possible to do parallel addition using larger word sizes such as 32-bit or 64-bit words.
+ * In those cases the variable that stores the accumulative sum has to be bigger too.
+ * Once the sum is computed a final step folds the sum to a 16-bit word (adding carry if any).
+ */
+uint16_t calc_chksum(uint16_t sum_in, const uint8_t *data, size_t len)
+{
+	uint64_t sum;
+	uint32_t *p;
+	size_t i = 0;
+	size_t pending = len;
+	int odd_start = ((uintptr_t)data & 0x01);
+
+	/* Sum in is in host endiannes, working order endiannes is both dependent on endianness
+	 * and the offset of starting
+	 */
+	if (odd_start == CHECKSUM_BIG_ENDIAN) {
+		sum = __bswap_16(sum_in);
+	} else {
+		sum = sum_in;
+	}
+
+	/* Process up to 3 data elements up front, so the data is aligned further down the line */
+	if ((((uintptr_t)data & 0x01) != 0) && (pending >= 1)) {
+		sum += offset_based_swap8(data);
+		data++;
+		pending--;
+	}
+	if ((((uintptr_t)data & 0x02) != 0) && (pending >= sizeof(uint16_t))) {
+		pending -= sizeof(uint16_t);
+		sum = sum + *((uint16_t *)data);
+		data += sizeof(uint16_t);
+	}
+	p = (uint32_t *)data;
+
+	/* Do loop unrolling for the very large data sets */
+	while (pending >= sizeof(uint32_t) * 4) {
+		uint64_t sum_a = p[i];
+		uint64_t sum_b = p[i + 1];
+
+		pending -= sizeof(uint32_t) * 4;
+		sum_a += p[i + 2];
+		sum_b += p[i + 3];
+		i += 4;
+		sum += sum_a + sum_b;
+	}
+	while (pending >= sizeof(uint32_t)) {
+		pending -= sizeof(uint32_t);
+		sum = sum + p[i++];
+	}
+	data = (uint8_t *)(p + i);
+	if (pending >= 2) {
+		pending -= sizeof(uint16_t);
+		sum = sum + *((uint16_t *)data);
+		data += sizeof(uint16_t);
+	}
+	if (pending == 1) {
+		sum += offset_based_swap8(data);
+	}
+
+	/* Fold sum into 16-bit word. */
+	while (sum >> 16) {
+		sum = (sum & 0xffff) + (sum >> 16);
+	}
+
+	/* Sum in is in host endiannes, working order endiannes is both dependent on endianness
+	 * and the offset of starting
+	 */
+	if (odd_start == CHECKSUM_BIG_ENDIAN) {
+		return __bswap_16((uint16_t)sum);
+	} else {
+		return sum;
+	}
+}
+
+static inline uint16_t pkt_calc_chksum(struct net_pkt *pkt, uint16_t sum)
 {
 	struct net_pkt_cursor *cur = &pkt->cursor;
 	size_t len;
@@ -554,10 +619,11 @@ static inline u16_t pkt_calc_chksum(struct net_pkt *pkt, u16_t sum)
 	return sum;
 }
 
-u16_t net_calc_chksum(struct net_pkt *pkt, u8_t proto)
+#if defined(CONFIG_NET_IP)
+uint16_t net_calc_chksum(struct net_pkt *pkt, uint8_t proto)
 {
 	size_t len = 0U;
-	u16_t sum = 0U;
+	uint16_t sum = 0U;
 	struct net_pkt_cursor backup;
 	bool ow;
 
@@ -566,7 +632,8 @@ u16_t net_calc_chksum(struct net_pkt *pkt, u8_t proto)
 		if (proto != IPPROTO_ICMP) {
 			len = 2 * sizeof(struct in_addr);
 			sum = net_pkt_get_len(pkt) -
-				net_pkt_ip_hdr_len(pkt) + proto;
+				net_pkt_ip_hdr_len(pkt) -
+				net_pkt_ipv4_opts_len(pkt) + proto;
 		}
 	} else if (IS_ENABLED(CONFIG_NET_IPV6) &&
 		   net_pkt_family(pkt) == AF_INET6) {
@@ -588,8 +655,7 @@ u16_t net_calc_chksum(struct net_pkt *pkt, u8_t proto)
 	net_pkt_skip(pkt, net_pkt_ip_hdr_len(pkt) - len);
 
 	sum = calc_chksum(sum, pkt->cursor.pos, len);
-
-	net_pkt_skip(pkt, len + net_pkt_ipv6_ext_len(pkt));
+	net_pkt_skip(pkt, len + net_pkt_ip_opts_len(pkt));
 
 	sum = pkt_calc_chksum(pkt, sum);
 
@@ -601,13 +667,16 @@ u16_t net_calc_chksum(struct net_pkt *pkt, u8_t proto)
 
 	return ~sum;
 }
+#endif
 
 #if defined(CONFIG_NET_IPV4)
-u16_t net_calc_chksum_ipv4(struct net_pkt *pkt)
+uint16_t net_calc_chksum_ipv4(struct net_pkt *pkt)
 {
-	u16_t sum;
+	uint16_t sum;
 
-	sum = calc_chksum(0, pkt->buffer->data, net_pkt_ip_hdr_len(pkt));
+	sum = calc_chksum(0, pkt->buffer->data,
+			  net_pkt_ip_hdr_len(pkt) +
+			  net_pkt_ipv4_opts_len(pkt));
 
 	sum = (sum == 0U) ? 0xffff : htons(sum);
 
@@ -615,8 +684,20 @@ u16_t net_calc_chksum_ipv4(struct net_pkt *pkt)
 }
 #endif /* CONFIG_NET_IPV4 */
 
-#if defined(CONFIG_NET_IPV6) || defined(CONFIG_NET_IPV4)
-static bool convert_port(const char *buf, u16_t *port)
+#if defined(CONFIG_NET_IPV4_IGMP)
+uint16_t net_calc_chksum_igmp(uint8_t *data, size_t len)
+{
+	uint16_t sum;
+
+	sum = calc_chksum(0, data, len);
+	sum = (sum == 0U) ? 0xffff : htons(sum);
+
+	return ~sum;
+}
+#endif /* CONFIG_NET_IPV4_IGMP */
+
+#if defined(CONFIG_NET_IP)
+static bool convert_port(const char *buf, uint16_t *port)
 {
 	unsigned long tmp;
 	char *endptr;
@@ -632,7 +713,7 @@ static bool convert_port(const char *buf, u16_t *port)
 
 	return true;
 }
-#endif /* CONFIG_NET_IPV6 || CONFIG_NET_IPV4 */
+#endif /* CONFIG_NET_IP */
 
 #if defined(CONFIG_NET_IPV6)
 static bool parse_ipv6(const char *str, size_t str_len,
@@ -642,7 +723,7 @@ static bool parse_ipv6(const char *str, size_t str_len,
 	struct in6_addr *addr6;
 	char ipaddr[INET6_ADDRSTRLEN + 1];
 	int end, len, ret, i;
-	u16_t port;
+	uint16_t port;
 
 	len = MIN(INET6_ADDRSTRLEN, str_len);
 
@@ -709,13 +790,11 @@ static bool parse_ipv6(const char *str, size_t str_len,
 		net_sin6(addr)->sin6_port = htons(port);
 
 		NET_DBG("IPv6 host %s port %d",
-			log_strdup(net_addr_ntop(AF_INET6, addr6,
-						 ipaddr, sizeof(ipaddr) - 1)),
+			net_addr_ntop(AF_INET6, addr6, ipaddr, sizeof(ipaddr) - 1),
 			port);
 	} else {
 		NET_DBG("IPv6 host %s",
-			log_strdup(net_addr_ntop(AF_INET6, addr6,
-						 ipaddr, sizeof(ipaddr) - 1)));
+			net_addr_ntop(AF_INET6, addr6, ipaddr, sizeof(ipaddr) - 1));
 	}
 
 	return true;
@@ -736,7 +815,7 @@ static bool parse_ipv4(const char *str, size_t str_len,
 	char ipaddr[NET_IPV4_ADDR_LEN + 1];
 	struct in_addr *addr4;
 	int end, len, ret, i;
-	u16_t port;
+	uint16_t port;
 
 	len = MIN(NET_IPV4_ADDR_LEN, str_len);
 
@@ -786,8 +865,7 @@ static bool parse_ipv4(const char *str, size_t str_len,
 	net_sin(addr)->sin_port = htons(port);
 
 	NET_DBG("IPv4 host %s port %d",
-		log_strdup(net_addr_ntop(AF_INET, addr4,
-					 ipaddr, sizeof(ipaddr) - 1)),
+		net_addr_ntop(AF_INET, addr4, ipaddr, sizeof(ipaddr) - 1),
 		port);
 	return true;
 }
@@ -844,7 +922,7 @@ bool net_ipaddr_parse(const char *str, size_t str_len, struct sockaddr *addr)
 	return false;
 }
 
-int net_bytes_from_str(u8_t *buf, int buf_len, const char *src)
+int net_bytes_from_str(uint8_t *buf, int buf_len, const char *src)
 {
 	unsigned int i;
 	char *endptr;

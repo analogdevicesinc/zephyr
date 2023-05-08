@@ -4,20 +4,23 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <zephyr/kernel.h>
+#include <zephyr/ztest_assert.h>
 #include <zephyr/types.h>
 #include <stddef.h>
 #include <string.h>
 #include <errno.h>
-#include <net/net_pkt.h>
-#include <net/net_if.h>
-#include <net/net_ip.h>
-#include <net/ethernet.h>
+#include <zephyr/net/net_pkt.h>
+#include <zephyr/net/net_if.h>
+#include <zephyr/net/net_ip.h>
+#include <zephyr/net/ethernet.h>
+#include <zephyr/random/rand32.h>
 
-#include <ztest.h>
+#include <zephyr/ztest.h>
 
-static u8_t mac_addr[sizeof(struct net_eth_addr)];
+static uint8_t mac_addr[sizeof(struct net_eth_addr)];
 static struct net_if *eth_if;
-static u8_t small_buffer[512];
+static uint8_t small_buffer[512];
 
 /************************\
  * FAKE ETHERNET DEVICE *
@@ -40,12 +43,12 @@ static void fake_dev_iface_init(struct net_if *iface)
 	eth_if = iface;
 }
 
-static int fake_dev_send(struct device *dev, struct net_pkt *pkt)
+static int fake_dev_send(const struct device *dev, struct net_pkt *pkt)
 {
 	return 0;
 }
 
-int fake_dev_init(struct device *dev)
+int fake_dev_init(const struct device *dev)
 {
 	ARG_UNUSED(dev);
 
@@ -73,7 +76,7 @@ static const struct dummy_api fake_dev_api = {
 #endif
 
 NET_DEVICE_INIT(fake_dev, "fake_dev",
-		fake_dev_init, NULL, NULL,
+		fake_dev_init, NULL, NULL, NULL,
 		CONFIG_KERNEL_INIT_PRIORITY_DEFAULT,
 		&fake_dev_api, _ETH_L2_LAYER, _ETH_L2_CTX_TYPE,
 		NET_ETH_MTU);
@@ -103,8 +106,7 @@ static void pkt_print_cursor(struct net_pkt *pkt)
 /*****************************\
  * HOW TO ALLOCATE - 2 TESTS *
 \*****************************/
-
-static void test_net_pkt_allocate_wo_buffer(void)
+ZTEST(net_pkt_test_suite, test_net_pkt_allocate_wo_buffer)
 {
 	struct net_pkt *pkt;
 
@@ -128,7 +130,7 @@ static void test_net_pkt_allocate_wo_buffer(void)
 		     "Pkt not properly unreferenced");
 }
 
-static void test_net_pkt_allocate_with_buffer(void)
+ZTEST(net_pkt_test_suite, test_net_pkt_allocate_with_buffer)
 {
 	struct net_pkt *pkt;
 
@@ -199,17 +201,46 @@ static void test_net_pkt_allocate_with_buffer(void)
 	net_pkt_unref(pkt);
 	zassert_true(atomic_get(&pkt->atomic_ref) == 0,
 		     "Pkt not properly unreferenced");
+
+	/* d) - with a zero payload but AF_INET family
+	 */
+	pkt = net_pkt_alloc_with_buffer(eth_if, 0,
+					AF_INET, 0, K_NO_WAIT);
+	zassert_true(pkt != NULL, "Pkt not allocated");
+
+	/* Did we get the requested size? */
+	zassert_true(pkt_is_of_size(pkt, NET_IPV4H_LEN),
+		     "Pkt size is not right");
+
+	/* Freeing the packet */
+	net_pkt_unref(pkt);
+	zassert_true(atomic_get(&pkt->atomic_ref) == 0,
+		     "Pkt not properly unreferenced");
+
+	/* e) - with a zero payload but AF_PACKET family
+	 */
+	pkt = net_pkt_alloc_with_buffer(eth_if, 0,
+					AF_PACKET, 0, K_NO_WAIT);
+	zassert_true(pkt != NULL, "Pkt not allocated");
+
+	/* Did we get the requested size? */
+	zassert_true(pkt_is_of_size(pkt, 0), "Pkt size is not right");
+
+	/* Freeing the packet */
+	net_pkt_unref(pkt);
+	zassert_true(atomic_get(&pkt->atomic_ref) == 0,
+		     "Pkt not properly unreferenced");
 }
 
 /********************************\
  * HOW TO R/W A PACKET -  TESTS *
 \********************************/
 
-static void test_net_pkt_basics_of_rw(void)
+ZTEST(net_pkt_test_suite, test_net_pkt_basics_of_rw)
 {
 	struct net_pkt_cursor backup;
 	struct net_pkt *pkt;
-	u16_t value16;
+	uint16_t value16;
 	int ret;
 
 	pkt = net_pkt_alloc_with_buffer(eth_if, 512,
@@ -388,7 +419,7 @@ static void test_net_pkt_basics_of_rw(void)
 		     "Pkt not properly unreferenced");
 }
 
-void test_net_pkt_advanced_basics(void)
+ZTEST(net_pkt_test_suite, test_net_pkt_advanced_basics)
 {
 	struct net_pkt_cursor backup;
 	struct net_pkt *pkt;
@@ -457,7 +488,7 @@ void test_net_pkt_advanced_basics(void)
 	 * position in the buffer and cast it to the type you want.
 	 */
 	{
-		u32_t *val = (u32_t *)net_pkt_cursor_get_pos(pkt);
+		uint32_t *val = (uint32_t *)net_pkt_cursor_get_pos(pkt);
 
 		*val = 0U;
 		/* etc... */
@@ -481,7 +512,7 @@ void test_net_pkt_advanced_basics(void)
 	 */
 }
 
-void test_net_pkt_easier_rw_usage(void)
+ZTEST(net_pkt_test_suite, test_net_pkt_easier_rw_usage)
 {
 	struct net_pkt *pkt;
 	int ret;
@@ -534,47 +565,53 @@ void test_net_pkt_easier_rw_usage(void)
 		     "Pkt not properly unreferenced");
 }
 
-u8_t b5_data[10] = "qrstuvwxyz";
+uint8_t b5_data[10] = "qrstuvwxyz";
 struct net_buf b5 = {
 	.ref   = 1,
 	.data  = b5_data,
 	.len   = 0,
 	.size  = 0,
+	.__buf  = b5_data,
 };
 
-u8_t b4_data[4] = "mnop";
+uint8_t b4_data[4] = "mnop";
 struct net_buf b4 = {
 	.frags = &b5,
 	.ref   = 1,
 	.data  = b4_data,
 	.len   = sizeof(b4_data) - 2,
 	.size  = sizeof(b4_data),
+	.__buf  = b4_data,
 };
 
 struct net_buf b3 = {
 	.frags = &b4,
 	.ref   = 1,
+	.data  = NULL,
+	.__buf  = NULL,
 };
 
-u8_t b2_data[8] = "efghijkl";
+uint8_t b2_data[8] = "efghijkl";
 struct net_buf b2 = {
 	.frags = &b3,
 	.ref   = 1,
 	.data  = b2_data,
 	.len   = 0,
 	.size  = sizeof(b2_data),
+	.__buf  = b2_data,
 };
 
-u8_t b1_data[4] = "abcd";
+uint8_t b1_data[4] = "abcd";
 struct net_buf b1 = {
 	.frags = &b2,
 	.ref   = 1,
 	.data  = b1_data,
 	.len   = sizeof(b1_data) - 2,
 	.size  = sizeof(b1_data),
+	.__buf  = b1_data,
 };
 
-void test_net_pkt_copy(void)
+ZTEST(net_pkt_test_suite, test_net_pkt_copy)
 {
 	struct net_pkt *pkt_src;
 	struct net_pkt *pkt_dst;
@@ -629,18 +666,577 @@ void test_net_pkt_copy(void)
 		     "Pkt not properly unreferenced");
 }
 
-void test_main(void)
+#define PULL_TEST_PKT_DATA_SIZE 600
+
+ZTEST(net_pkt_test_suite, test_net_pkt_pull)
 {
-	eth_if = net_if_get_default();
+	const int PULL_AMOUNT = 8;
+	const int LARGE_PULL_AMOUNT = 200;
+	struct net_pkt *dummy_pkt;
+	static uint8_t pkt_data[PULL_TEST_PKT_DATA_SIZE];
+	static uint8_t pkt_data_readback[PULL_TEST_PKT_DATA_SIZE];
+	size_t len;
+	int i, ret;
 
-	ztest_test_suite(net_pkt_tests,
-			 ztest_unit_test(test_net_pkt_allocate_wo_buffer),
-			 ztest_unit_test(test_net_pkt_allocate_with_buffer),
-			 ztest_unit_test(test_net_pkt_basics_of_rw),
-			 ztest_unit_test(test_net_pkt_advanced_basics),
-			 ztest_unit_test(test_net_pkt_easier_rw_usage),
-			 ztest_unit_test(test_net_pkt_copy)
-		);
+	for (i = 0; i < PULL_TEST_PKT_DATA_SIZE; ++i) {
+		pkt_data[i] = i & 0xff;
+	}
 
-	ztest_run_test_suite(net_pkt_tests);
+	dummy_pkt = net_pkt_alloc_with_buffer(eth_if,
+					      PULL_TEST_PKT_DATA_SIZE,
+					      AF_UNSPEC,
+					      0,
+					      K_NO_WAIT);
+	zassert_true(dummy_pkt != NULL, "Pkt not allocated");
+
+	zassert_true(net_pkt_write(dummy_pkt,
+				   pkt_data,
+				   PULL_TEST_PKT_DATA_SIZE) == 0,
+		     "Write packet failed");
+
+	net_pkt_cursor_init(dummy_pkt);
+	net_pkt_pull(dummy_pkt, PULL_AMOUNT);
+	zassert_equal(net_pkt_get_len(dummy_pkt),
+		      PULL_TEST_PKT_DATA_SIZE - PULL_AMOUNT,
+		      "Pull failed to set new size");
+	zassert_true(net_pkt_read(dummy_pkt,
+				  pkt_data_readback,
+				  PULL_TEST_PKT_DATA_SIZE - PULL_AMOUNT) == 0,
+		     "Read packet failed");
+	zassert_mem_equal(pkt_data_readback,
+			  &pkt_data[PULL_AMOUNT],
+			  PULL_TEST_PKT_DATA_SIZE - PULL_AMOUNT,
+			  "Packet data changed");
+
+	net_pkt_cursor_init(dummy_pkt);
+	net_pkt_pull(dummy_pkt, LARGE_PULL_AMOUNT);
+	zassert_equal(net_pkt_get_len(dummy_pkt),
+		      PULL_TEST_PKT_DATA_SIZE - PULL_AMOUNT -
+		      LARGE_PULL_AMOUNT,
+		      "Large pull failed to set new size (%d vs %d)",
+		      net_pkt_get_len(dummy_pkt),
+		      PULL_TEST_PKT_DATA_SIZE - PULL_AMOUNT -
+		      LARGE_PULL_AMOUNT);
+
+	net_pkt_cursor_init(dummy_pkt);
+	net_pkt_pull(dummy_pkt, net_pkt_get_len(dummy_pkt));
+	zassert_equal(net_pkt_get_len(dummy_pkt), 0,
+		      "Full pull failed to set new size (%d)",
+		      net_pkt_get_len(dummy_pkt));
+
+	net_pkt_cursor_init(dummy_pkt);
+	ret = net_pkt_pull(dummy_pkt, 1);
+	zassert_equal(ret, -ENOBUFS, "Did not return error");
+	zassert_equal(net_pkt_get_len(dummy_pkt), 0,
+		      "Empty pull set new size (%d)",
+		      net_pkt_get_len(dummy_pkt));
+
+	net_pkt_unref(dummy_pkt);
+
+	dummy_pkt = net_pkt_alloc_with_buffer(eth_if,
+					      PULL_TEST_PKT_DATA_SIZE,
+					      AF_UNSPEC,
+					      0,
+					      K_NO_WAIT);
+	zassert_true(dummy_pkt != NULL, "Pkt not allocated");
+
+	zassert_true(net_pkt_write(dummy_pkt,
+				   pkt_data,
+				   PULL_TEST_PKT_DATA_SIZE) == 0,
+		     "Write packet failed");
+
+	net_pkt_cursor_init(dummy_pkt);
+	ret = net_pkt_pull(dummy_pkt, net_pkt_get_len(dummy_pkt) + 1);
+	zassert_equal(ret, -ENOBUFS, "Did not return error");
+	zassert_equal(net_pkt_get_len(dummy_pkt), 0,
+		      "Not empty after full pull (%d)",
+		      net_pkt_get_len(dummy_pkt));
+
+	net_pkt_unref(dummy_pkt);
+
+	dummy_pkt = net_pkt_alloc_with_buffer(eth_if,
+					      PULL_TEST_PKT_DATA_SIZE,
+					      AF_UNSPEC,
+					      0,
+					      K_NO_WAIT);
+	zassert_true(dummy_pkt != NULL, "Pkt not allocated");
+
+	zassert_true(net_pkt_write(dummy_pkt,
+				   pkt_data,
+				   PULL_TEST_PKT_DATA_SIZE) == 0,
+		     "Write packet failed");
+
+	net_pkt_cursor_init(dummy_pkt);
+	len = net_pkt_get_len(dummy_pkt);
+
+	for (i = 0; i < len; i++) {
+		ret = net_pkt_pull(dummy_pkt, 1);
+		zassert_equal(ret, 0, "Did return error");
+	}
+
+	ret = net_pkt_pull(dummy_pkt, 1);
+	zassert_equal(ret, -ENOBUFS, "Did not return error");
+
+	zassert_equal(dummy_pkt->buffer, NULL, "buffer list not empty");
+
+	net_pkt_unref(dummy_pkt);
 }
+
+ZTEST(net_pkt_test_suite, test_net_pkt_clone)
+{
+	uint8_t buf[26] = {"abcdefghijklmnopqrstuvwxyz"};
+	struct net_pkt *pkt;
+	struct net_pkt *cloned_pkt;
+	int ret;
+
+	pkt = net_pkt_alloc_with_buffer(eth_if, 64,
+					AF_UNSPEC, 0, K_NO_WAIT);
+	zassert_true(pkt != NULL, "Pkt not allocated");
+
+	ret = net_pkt_write(pkt, buf, sizeof(buf));
+	zassert_true(ret == 0, "Pkt write failed");
+
+	zassert_true(net_pkt_get_len(pkt) == sizeof(buf),
+		     "Pkt length mismatch");
+
+	net_pkt_cursor_init(pkt);
+	net_pkt_set_overwrite(pkt, true);
+	net_pkt_skip(pkt, 6);
+	zassert_true(sizeof(buf) - 6 == net_pkt_remaining_data(pkt),
+		     "Pkt remaining data mismatch");
+
+	net_pkt_lladdr_src(pkt)->addr = pkt->buffer->data;
+	net_pkt_lladdr_src(pkt)->len = NET_LINK_ADDR_MAX_LENGTH;
+	net_pkt_lladdr_src(pkt)->type = NET_LINK_ETHERNET;
+	zassert_mem_equal(net_pkt_lladdr_src(pkt)->addr, buf, NET_LINK_ADDR_MAX_LENGTH);
+	net_pkt_lladdr_dst(pkt)->addr = net_pkt_cursor_get_pos(pkt);
+	net_pkt_lladdr_dst(pkt)->len = NET_LINK_ADDR_MAX_LENGTH;
+	net_pkt_lladdr_dst(pkt)->type = NET_LINK_ETHERNET;
+	zassert_mem_equal(net_pkt_lladdr_dst(pkt)->addr, &buf[6], NET_LINK_ADDR_MAX_LENGTH);
+
+	net_pkt_set_overwrite(pkt, false);
+	cloned_pkt = net_pkt_clone(pkt, K_NO_WAIT);
+	zassert_true(cloned_pkt != NULL, "Pkt not cloned");
+
+	zassert_true(net_pkt_get_len(cloned_pkt) == sizeof(buf),
+		     "Cloned pkt length mismatch");
+
+	zassert_true(sizeof(buf) - 6 == net_pkt_remaining_data(pkt),
+		     "Pkt remaining data mismatch");
+
+	zassert_true(sizeof(buf) - 6 == net_pkt_remaining_data(cloned_pkt),
+		     "Cloned pkt remaining data mismatch");
+
+	zassert_false(net_pkt_is_being_overwritten(cloned_pkt),
+		     "Cloned pkt overwrite flag not restored");
+
+	zassert_false(net_pkt_is_being_overwritten(pkt),
+		     "Pkt overwrite flag not restored");
+
+	zassert_mem_equal(net_pkt_lladdr_src(cloned_pkt)->addr, buf, NET_LINK_ADDR_MAX_LENGTH);
+	zassert_true(net_pkt_lladdr_src(cloned_pkt)->addr == cloned_pkt->buffer->data,
+		     "Cloned pkt ll src addr mismatch");
+
+	zassert_mem_equal(net_pkt_lladdr_dst(cloned_pkt)->addr, &buf[6], NET_LINK_ADDR_MAX_LENGTH);
+	zassert_true(net_pkt_lladdr_dst(cloned_pkt)->addr == net_pkt_cursor_get_pos(cloned_pkt),
+		     "Cloned pkt ll dst addr mismatch");
+
+	net_pkt_unref(pkt);
+	net_pkt_unref(cloned_pkt);
+}
+
+NET_BUF_POOL_FIXED_DEFINE(test_net_pkt_headroom_pool, 4, 2, 4, NULL);
+
+ZTEST(net_pkt_test_suite, test_net_pkt_headroom)
+{
+	struct net_pkt *pkt;
+	struct net_buf *frag1;
+	struct net_buf *frag2;
+	struct net_buf *frag3;
+	struct net_buf *frag4;
+
+	/*
+	 * Create a net_pkt; append net_bufs with reserved bytes (headroom).
+	 *
+	 * Layout to be crafted before writing to the net_buf: "HA|HH|HA|AA"
+	 *  H: Headroom
+	 *  |: net_buf/fragment delimiter
+	 *  A: available byte
+	 */
+	pkt = net_pkt_alloc_on_iface(eth_if, K_NO_WAIT);
+	zassert_true(pkt != NULL, "Pkt not allocated");
+
+	/* 1st fragment has 1 byte headroom and one byte available: "HA" */
+	frag1 = net_buf_alloc_len(&test_net_pkt_headroom_pool, 2, K_NO_WAIT);
+	net_buf_reserve(frag1, 1);
+	net_pkt_append_buffer(pkt, frag1);
+	zassert_equal(net_pkt_available_buffer(pkt), 1, "Wrong space left");
+	zassert_equal(net_pkt_get_len(pkt), 0, "Length mismatch");
+
+	/* 2nd fragment affecting neither size nor length: "HH" */
+	frag2 = net_buf_alloc_len(&test_net_pkt_headroom_pool, 2, K_NO_WAIT);
+	net_buf_reserve(frag2, 2);
+	net_pkt_append_buffer(pkt, frag2);
+	zassert_equal(net_pkt_available_buffer(pkt), 1, "Wrong space left");
+	zassert_equal(net_pkt_get_len(pkt), 0, "Length mismatch");
+
+	/* 3rd fragment has 1 byte headroom and one byte available: "HA" */
+	frag3 = net_buf_alloc_len(&test_net_pkt_headroom_pool, 2, K_NO_WAIT);
+	net_buf_reserve(frag3, 1);
+	net_pkt_append_buffer(pkt, frag3);
+	zassert_equal(net_pkt_available_buffer(pkt), 2, "Wrong space left");
+	zassert_equal(net_pkt_get_len(pkt), 0, "Length mismatch");
+
+	/* 4th fragment has no headroom and two available bytes: "AA" */
+	frag4 = net_buf_alloc_len(&test_net_pkt_headroom_pool, 2, K_NO_WAIT);
+	net_pkt_append_buffer(pkt, frag4);
+	zassert_equal(net_pkt_available_buffer(pkt), 4, "Wrong space left");
+	zassert_equal(net_pkt_get_len(pkt), 0, "Length mismatch");
+
+	/* Writing net_pkt via cursor, spanning all 4 fragments */
+	net_pkt_cursor_init(pkt);
+	zassert_true(net_pkt_write(pkt, "1234", 4) == 0, "Pkt write failed");
+
+	/* Expected layout across all four fragments: "H1|HH|H2|34" */
+	zassert_equal(frag1->size, 2, "Size mismatch");
+	zassert_equal(frag1->len, 1, "Length mismatch");
+	zassert_equal(frag2->size, 2, "Size mismatch");
+	zassert_equal(frag2->len, 0, "Length mismatch");
+	zassert_equal(frag3->size, 2, "Size mismatch");
+	zassert_equal(frag3->len, 1, "Length mismatch");
+	zassert_equal(frag4->size, 2, "Size mismatch");
+	zassert_equal(frag4->len, 2, "Length mismatch");
+	net_pkt_cursor_init(pkt);
+	zassert_true(net_pkt_read(pkt, small_buffer, 4) == 0, "Read failed");
+	zassert_mem_equal(small_buffer, "1234", 4, "Data mismatch");
+
+	/* Making use of the headrooms */
+	net_buf_push_u8(frag3, 'D');
+	net_buf_push_u8(frag2, 'C');
+	net_buf_push_u8(frag2, 'B');
+	net_buf_push_u8(frag1, 'A');
+	net_pkt_cursor_init(pkt);
+	zassert_true(net_pkt_read(pkt, small_buffer, 8) == 0, "Read failed");
+	zassert_mem_equal(small_buffer, "A1BCD234", 8, "Data mismatch");
+
+	net_pkt_unref(pkt);
+}
+
+NET_BUF_POOL_FIXED_DEFINE(test_net_pkt_headroom_copy_pool, 2, 4, 4, NULL);
+
+ZTEST(net_pkt_test_suite, test_net_pkt_headroom_copy)
+{
+	struct net_pkt *pkt_src;
+	struct net_pkt *pkt_dst;
+	struct net_buf *frag1_dst;
+	struct net_buf *frag2_dst;
+	int res;
+
+	/* Create et_pkt containing the bytes "0123" */
+	pkt_src = net_pkt_alloc_with_buffer(eth_if, 4,
+					AF_UNSPEC, 0, K_NO_WAIT);
+	zassert_true(pkt_src != NULL, "Pkt not allocated");
+	res = net_pkt_write(pkt_src, "0123", 4);
+	zassert_equal(res, 0, "Pkt write failed");
+
+	/* Create net_pkt consisting of net_buf fragments with reserved bytes */
+	pkt_dst = net_pkt_alloc_on_iface(eth_if, K_NO_WAIT);
+	zassert_true(pkt_src != NULL, "Pkt not allocated");
+
+	frag1_dst = net_buf_alloc_len(&test_net_pkt_headroom_copy_pool, 2,
+				      K_NO_WAIT);
+	net_buf_reserve(frag1_dst, 1);
+	net_pkt_append_buffer(pkt_dst, frag1_dst);
+	frag2_dst = net_buf_alloc_len(&test_net_pkt_headroom_copy_pool, 4,
+				      K_NO_WAIT);
+	net_buf_reserve(frag2_dst, 1);
+	net_pkt_append_buffer(pkt_dst, frag2_dst);
+	zassert_equal(net_pkt_available_buffer(pkt_dst), 4, "Wrong space left");
+	zassert_equal(net_pkt_get_len(pkt_dst), 0, "Length missmatch");
+
+	/* Copy to net_pkt which contains fragments with reserved bytes */
+	net_pkt_cursor_init(pkt_src);
+	net_pkt_cursor_init(pkt_dst);
+	res = net_pkt_copy(pkt_dst, pkt_src, 4);
+	zassert_equal(res, 0, "Pkt copy failed");
+	zassert_equal(net_pkt_available_buffer(pkt_dst), 0, "Wrong space left");
+	zassert_equal(net_pkt_get_len(pkt_dst), 4, "Length missmatch");
+
+	net_pkt_cursor_init(pkt_dst);
+	zassert_true(net_pkt_read(pkt_dst, small_buffer, 4) == 0,
+		     "Pkt read failed");
+	zassert_mem_equal(small_buffer, "0123", 4, "Data mismatch");
+
+	net_pkt_unref(pkt_dst);
+	net_pkt_unref(pkt_src);
+}
+
+ZTEST(net_pkt_test_suite, test_net_pkt_get_contiguous_len)
+{
+	size_t cont_len;
+	int res;
+	/* Allocate pkt with 2 fragments */
+	struct net_pkt *pkt = net_pkt_rx_alloc_with_buffer(
+					   NULL, CONFIG_NET_BUF_DATA_SIZE * 2,
+					   AF_UNSPEC, 0, K_NO_WAIT);
+
+	zassert_not_null(pkt, "Pkt not allocated");
+
+	net_pkt_cursor_init(pkt);
+
+	cont_len = net_pkt_get_contiguous_len(pkt);
+	zassert_equal(CONFIG_NET_BUF_DATA_SIZE, cont_len,
+		      "Expected one complete available net_buf");
+
+	net_pkt_set_overwrite(pkt, false);
+
+	/* now write 3 byte into the pkt */
+	for (int i = 0; i < 3; ++i) {
+		res = net_pkt_write_u8(pkt, 0xAA);
+		zassert_equal(0, res, "Write packet failed");
+	}
+
+	cont_len = net_pkt_get_contiguous_len(pkt);
+	zassert_equal(CONFIG_NET_BUF_DATA_SIZE - 3, cont_len,
+		      "Expected a three byte reduction");
+
+	/* Fill the first fragment up until only 3 bytes are free */
+	for (int i = 0; i < CONFIG_NET_BUF_DATA_SIZE - 6; ++i) {
+		res = net_pkt_write_u8(pkt, 0xAA);
+		zassert_equal(0, res, "Write packet failed");
+	}
+
+	cont_len = net_pkt_get_contiguous_len(pkt);
+	zassert_equal(3, cont_len, "Expected only three bytes are available");
+
+	/* Fill the complete first fragment, so the cursor points to the second
+	 * fragment.
+	 */
+	for (int i = 0; i < 3; ++i) {
+		res = net_pkt_write_u8(pkt, 0xAA);
+		zassert_equal(0, res, "Write packet failed");
+	}
+
+	cont_len = net_pkt_get_contiguous_len(pkt);
+	zassert_equal(CONFIG_NET_BUF_DATA_SIZE, cont_len,
+		      "Expected next full net_buf is available");
+
+	/* Fill the last fragment */
+	for (int i = 0; i < CONFIG_NET_BUF_DATA_SIZE; ++i) {
+		res = net_pkt_write_u8(pkt, 0xAA);
+		zassert_equal(0, res, "Write packet failed");
+	}
+
+	cont_len = net_pkt_get_contiguous_len(pkt);
+	zassert_equal(0, cont_len, "Expected no available space");
+
+	net_pkt_unref(pkt);
+}
+
+ZTEST(net_pkt_test_suite, test_net_pkt_remove_tail)
+{
+	struct net_pkt *pkt;
+	int err;
+
+	pkt = net_pkt_alloc_with_buffer(NULL,
+					CONFIG_NET_BUF_DATA_SIZE * 2 + 3,
+					AF_UNSPEC, 0, K_NO_WAIT);
+	zassert_true(pkt != NULL, "Pkt not allocated");
+
+	net_pkt_cursor_init(pkt);
+	net_pkt_write(pkt, small_buffer, CONFIG_NET_BUF_DATA_SIZE * 2 + 3);
+
+	zassert_equal(net_pkt_get_len(pkt), CONFIG_NET_BUF_DATA_SIZE * 2 + 3,
+		      "Pkt length is invalid");
+	zassert_equal(pkt->frags->frags->frags->len, 3,
+		      "3rd buffer length is invalid");
+
+	/* Remove some bytes from last buffer */
+	err = net_pkt_remove_tail(pkt, 2);
+	zassert_equal(err, 0, "Failed to remove tail");
+
+	zassert_equal(net_pkt_get_len(pkt), CONFIG_NET_BUF_DATA_SIZE * 2 + 1,
+		      "Pkt length is invalid");
+	zassert_not_equal(pkt->frags->frags->frags, NULL,
+			  "3rd buffer was removed");
+	zassert_equal(pkt->frags->frags->frags->len, 1,
+		      "3rd buffer length is invalid");
+
+	/* Remove last byte from last buffer */
+	err = net_pkt_remove_tail(pkt, 1);
+	zassert_equal(err, 0, "Failed to remove tail");
+
+	zassert_equal(net_pkt_get_len(pkt), CONFIG_NET_BUF_DATA_SIZE * 2,
+		      "Pkt length is invalid");
+	zassert_equal(pkt->frags->frags->frags, NULL,
+		      "3rd buffer was not removed");
+	zassert_equal(pkt->frags->frags->len, CONFIG_NET_BUF_DATA_SIZE,
+		      "2nd buffer length is invalid");
+
+	/* Remove 2nd buffer and one byte from 1st buffer */
+	err = net_pkt_remove_tail(pkt, CONFIG_NET_BUF_DATA_SIZE + 1);
+	zassert_equal(err, 0, "Failed to remove tail");
+
+	zassert_equal(net_pkt_get_len(pkt), CONFIG_NET_BUF_DATA_SIZE - 1,
+		      "Pkt length is invalid");
+	zassert_equal(pkt->frags->frags, NULL,
+		      "2nd buffer was not removed");
+	zassert_equal(pkt->frags->len, CONFIG_NET_BUF_DATA_SIZE - 1,
+		      "1st buffer length is invalid");
+
+	net_pkt_unref(pkt);
+
+	pkt = net_pkt_rx_alloc_with_buffer(NULL,
+					   CONFIG_NET_BUF_DATA_SIZE * 2 + 3,
+					   AF_UNSPEC, 0, K_NO_WAIT);
+
+	net_pkt_cursor_init(pkt);
+	net_pkt_write(pkt, small_buffer, CONFIG_NET_BUF_DATA_SIZE * 2 + 3);
+
+	zassert_equal(net_pkt_get_len(pkt), CONFIG_NET_BUF_DATA_SIZE * 2 + 3,
+		      "Pkt length is invalid");
+	zassert_equal(pkt->frags->frags->frags->len, 3,
+		      "3rd buffer length is invalid");
+
+	/* Remove bytes spanning 3 buffers */
+	err = net_pkt_remove_tail(pkt, CONFIG_NET_BUF_DATA_SIZE + 5);
+	zassert_equal(err, 0, "Failed to remove tail");
+
+	zassert_equal(net_pkt_get_len(pkt), CONFIG_NET_BUF_DATA_SIZE - 2,
+		      "Pkt length is invalid");
+	zassert_equal(pkt->frags->frags, NULL,
+		      "2nd buffer was not removed");
+	zassert_equal(pkt->frags->len, CONFIG_NET_BUF_DATA_SIZE - 2,
+		      "1st buffer length is invalid");
+
+	/* Try to remove more bytes than packet has */
+	err = net_pkt_remove_tail(pkt, CONFIG_NET_BUF_DATA_SIZE);
+	zassert_equal(err, -EINVAL,
+		      "Removing more bytes than available should fail");
+
+	net_pkt_unref(pkt);
+}
+
+ZTEST(net_pkt_test_suite, test_net_pkt_shallow_clone_noleak_buf)
+{
+	const int bufs_to_allocate = 3;
+	const size_t pkt_size = CONFIG_NET_BUF_DATA_SIZE * bufs_to_allocate;
+	struct net_pkt *pkt, *shallow_pkt;
+	struct net_buf_pool *tx_data;
+
+	pkt = net_pkt_alloc_with_buffer(NULL, pkt_size,
+					AF_UNSPEC, 0, K_NO_WAIT);
+
+	zassert_true(pkt != NULL, "Pkt not allocated");
+
+	net_pkt_get_info(NULL, NULL, NULL, &tx_data);
+	zassert_equal(atomic_get(&tx_data->avail_count), tx_data->buf_count - bufs_to_allocate,
+		      "Incorrect net buf allocation");
+
+	shallow_pkt = net_pkt_shallow_clone(pkt, K_NO_WAIT);
+	zassert_true(shallow_pkt != NULL, "Pkt not allocated");
+	zassert_equal(atomic_get(&tx_data->avail_count), tx_data->buf_count - bufs_to_allocate,
+		      "Incorrect available net buf count");
+
+	net_pkt_unref(pkt);
+	zassert_equal(atomic_get(&tx_data->avail_count), tx_data->buf_count - bufs_to_allocate,
+		      "Incorrect available net buf count");
+
+	net_pkt_unref(shallow_pkt);
+	zassert_equal(atomic_get(&tx_data->avail_count), tx_data->buf_count,
+		      "Leak detected");
+
+}
+
+void test_net_pkt_shallow_clone_append_buf(int extra_frag_refcounts)
+{
+	const int bufs_to_allocate = 3;
+	const int bufs_frag = 2;
+
+	zassert_true(bufs_frag + bufs_to_allocate < CONFIG_NET_BUF_DATA_SIZE,
+		     "Total bufs to allocate must less than available space");
+
+	const size_t pkt_size = CONFIG_NET_BUF_DATA_SIZE * bufs_to_allocate;
+
+	struct net_pkt *pkt, *shallow_pkt;
+	struct net_buf *frag_head;
+	struct net_buf *frag;
+	struct net_buf_pool *tx_data;
+
+	pkt = net_pkt_alloc_with_buffer(NULL, pkt_size, AF_UNSPEC, 0, K_NO_WAIT);
+	zassert_true(pkt != NULL, "Pkt not allocated");
+
+	net_pkt_get_info(NULL, NULL, NULL, &tx_data);
+	zassert_equal(atomic_get(&tx_data->avail_count), tx_data->buf_count
+		      - bufs_to_allocate, "Incorrect net buf allocation");
+
+	shallow_pkt = net_pkt_shallow_clone(pkt, K_NO_WAIT);
+	zassert_true(shallow_pkt != NULL, "Pkt not allocated");
+
+	/* allocate buffers for the frag */
+	for (int i = 0; i < bufs_frag; i++) {
+		frag = net_buf_alloc_len(tx_data, CONFIG_NET_BUF_DATA_SIZE, K_NO_WAIT);
+		zassert_true(frag != NULL, "Frag not allocated");
+		net_pkt_append_buffer(pkt, frag);
+		if (i == 0) {
+			frag_head = frag;
+		}
+	}
+
+	zassert_equal(atomic_get(&tx_data->avail_count), tx_data->buf_count
+		      - bufs_to_allocate - bufs_frag, "Incorrect net buf allocation");
+
+	/* Note: if the frag is appended to a net buf, then the nut buf */
+	/* takes ownership of one ref count. Otherwise net_buf_unref() must */
+	/* be called on the frag to free the buffers. */
+
+	for (int i = 0; i < extra_frag_refcounts; i++) {
+		frag_head = net_buf_ref(frag_head);
+	}
+
+	net_pkt_unref(pkt);
+
+	/* we shouldn't have freed any buffers yet */
+	zassert_equal(atomic_get(&tx_data->avail_count), tx_data->buf_count
+		      - bufs_to_allocate - bufs_frag,
+		      "Incorrect net buf allocation");
+
+	net_pkt_unref(shallow_pkt);
+
+	if (extra_frag_refcounts == 0) {
+		/* if no extra ref counts to frag were added then we should free */
+		/* all the buffers at this point */
+		zassert_equal(atomic_get(&tx_data->avail_count), tx_data->buf_count,
+			      "Leak detected");
+	} else {
+		/* otherwise only bufs_frag should be available, and frag could */
+		/* still used at this point */
+		zassert_equal(atomic_get(&tx_data->avail_count),
+			      tx_data->buf_count - bufs_frag, "Leak detected");
+	}
+
+	for (int i = 0; i < extra_frag_refcounts; i++) {
+		net_buf_unref(frag_head);
+	}
+
+	/* all the buffers should be freed now */
+	zassert_equal(atomic_get(&tx_data->avail_count), tx_data->buf_count,
+		      "Leak detected");
+}
+
+ZTEST(net_pkt_test_suite, test_net_pkt_shallow_clone_append_buf_0)
+{
+	test_net_pkt_shallow_clone_append_buf(0);
+}
+
+ZTEST(net_pkt_test_suite, test_net_pkt_shallow_clone_append_buf_1)
+{
+	test_net_pkt_shallow_clone_append_buf(2);
+}
+
+ZTEST(net_pkt_test_suite, test_net_pkt_shallow_clone_append_buf_2)
+{
+	test_net_pkt_shallow_clone_append_buf(2);
+}
+
+ZTEST_SUITE(net_pkt_test_suite, NULL, NULL, NULL, NULL, NULL);

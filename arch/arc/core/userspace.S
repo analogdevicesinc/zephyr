@@ -5,11 +5,11 @@
  */
 
 #include <offsets_short.h>
-#include <toolchain.h>
-#include <linker/sections.h>
-#include <kernel_structs.h>
-#include <arch/cpu.h>
-#include <syscall.h>
+#include <zephyr/toolchain.h>
+#include <zephyr/linker/sections.h>
+#include <zephyr/kernel_structs.h>
+#include <zephyr/arch/cpu.h>
+#include <zephyr/syscall.h>
 #include <swap_macros.h>
 #include <v2/irq.h>
 
@@ -48,15 +48,15 @@
 GTEXT(z_arc_userspace_enter)
 GTEXT(_arc_do_syscall)
 GTEXT(z_user_thread_entry_wrapper)
-GTEXT(z_arch_user_string_nlen)
-GTEXT(z_arch_user_string_nlen_fault_start)
-GTEXT(z_arch_user_string_nlen_fault_end)
-GTEXT(z_arch_user_string_nlen_fixup)
-/*
+GTEXT(arch_user_string_nlen)
+GTEXT(z_arc_user_string_nlen_fault_start)
+GTEXT(z_arc_user_string_nlen_fault_end)
+GTEXT(z_arc_user_string_nlen_fixup)
+
+/**
  * @brief Wrapper for z_thread_entry in the case of user thread
- * The init parameters are in privileged stack
  *
- * @return N/A
+ * The init parameters are in privileged stack
  */
 SECTION_FUNC(TEXT, z_user_thread_entry_wrapper)
 	seti _ARC_V2_INIT_IRQ_LOCK_KEY
@@ -93,22 +93,15 @@ SECTION_FUNC(TEXT, z_arc_userspace_enter)
 	/*
 	 * In ARCv2, the U bit can only be set through exception return
 	 */
-#ifdef CONFIG_ARC_STACK_CHECKING
 	/* disable stack checking as the stack should be initialized */
-#ifdef CONFIG_ARC_SECURE_FIRMWARE
-	lr blink, [_ARC_V2_SEC_STAT]
-	bclr blink, blink, _ARC_V2_SEC_STAT_SSC_BIT
-	sflag blink
-#else
-	lr blink, [_ARC_V2_STATUS32]
-	bclr blink, blink, _ARC_V2_STATUS32_SC_BIT
-	kflag blink
-#endif
-#endif
+	_disable_stack_checking blink
+
 	/* the end of user stack in r5 */
 	add r5, r4, r5
-	/* start of privilege stack */
-	add blink, r5, CONFIG_PRIVILEGED_STACK_SIZE+STACK_GUARD_SIZE
+	/* get start of privilege stack, r6 points to current thread */
+	ld blink, [r6, _thread_offset_to_priv_stack_start]
+	add blink, blink, CONFIG_PRIVILEGED_STACK_SIZE
+
 	mov_s sp, r5
 
 	push_s r0
@@ -118,6 +111,9 @@ SECTION_FUNC(TEXT, z_arc_userspace_enter)
 
 	mov r5, sp /* skip r0, r1, r2, r3 */
 
+/* to avoid the leakage of kernel info, the thread stack needs to be
+ * re-initialized
+ */
 #ifdef CONFIG_INIT_STACKS
 	mov_s r0, 0xaaaaaaaa
 #else
@@ -128,23 +124,22 @@ _clear_user_stack:
 	cmp r4, r5
 	jlt _clear_user_stack
 
+/* reload the stack checking regs as the original kernel stack
+ * becomes user stack
+ */
 #ifdef CONFIG_ARC_STACK_CHECKING
-	mov_s r1, _kernel
-	ld_s r2, [r1, _kernel_offset_to_current]
+/* current thread in r6, SMP case is also considered */
+	mov r2, r6
 
 	_load_stack_check_regs
 
-#ifdef CONFIG_ARC_SECURE_FIRMWARE
-	lr r0, [_ARC_V2_SEC_STAT]
-	bset r0, r0, _ARC_V2_SEC_STAT_SSC_BIT
-	sflag r0
-#else
-	lr r0, [_ARC_V2_STATUS32]
-	bset r0, r0, _ARC_V2_STATUS32_SC_BIT
-	kflag r0
-#endif
+	_enable_stack_checking r0
 #endif
 
+/* the following codes are used to switch from kernel mode
+ * to user mode by fake exception, because U bit can only be set
+ * by exception
+ */
 _arc_go_to_user_space:
 	lr r0, [_ARC_V2_STATUS32]
 	bset r0, r0, _ARC_V2_STATUS32_U_BIT
@@ -156,7 +151,7 @@ _arc_go_to_user_space:
 
 	/* fake exception return */
 	lr r0, [_ARC_V2_STATUS32]
-	bclr r0, r0, _ARC_V2_STATUS32_AE_BIT
+	bset r0, r0, _ARC_V2_STATUS32_AE_BIT
 	kflag r0
 
 /* when exception returns from kernel to user, sp and _ARC_V2_USER_SP
@@ -179,15 +174,10 @@ _arc_go_to_user_space:
 
 	clear_scratch_regs
 
-	mov_s fp, 0
-	mov_s r29, 0
-	mov_s r30, 0
-	mov_s blink, 0
-
-#ifdef CONFIG_EXECUTION_BENCHMARKING
-	b _capture_value_for_benchmarking_userspace
-return_loc_userspace_enter:
-#endif /* CONFIG_EXECUTION_BENCHMARKING */
+	mov fp, 0
+	mov r29, 0
+	mov r30, 0
+	mov blink, 0
 
 	rtie
 
@@ -202,50 +192,55 @@ return_loc_userspace_enter:
  *
  */
 SECTION_FUNC(TEXT, _arc_do_syscall)
-	/* r0-r5: arg1-arg6, r6 is call id */
-	/* the call id is already checked in trap_s handler */
-	push_s blink
+	/*
+	 * r0-r5: arg1-arg6, r6 is call id which is already checked in
+	 * trap_s handler, r7 is the system call stack frame pointer
+	 * need to recover r0, r1, r2 because they will be modified in
+	 * _create_irq_stack_frame. If a specific syscall frame (different
+	 * with irq stack frame) is defined, the cover of r0, r1, r2 can be
+	 * optimized.
+	 */
+	ld_s r0, [sp, ___isf_t_r0_OFFSET]
+	ld_s r1, [sp, ___isf_t_r1_OFFSET]
+	ld_s r2, [sp, ___isf_t_r2_OFFSET]
+
+	mov r7, sp
 
 	mov_s blink, _k_syscall_table
 	ld.as r6, [blink, r6]
 
 	jl [r6]
 
-	/*
-	 * no need to clear callee regs, as they will be saved and restored
-	 * automatically
-	 */
-	clear_scratch_regs
+	/* save return value */
+	st_s r0, [sp, ___isf_t_r0_OFFSET]
 
-	mov_s r29, 0
-	mov_s r30, 0
-
-	pop_s blink
+	mov r29, 0
+	mov r30, 0
 
 	/* through fake exception return, go back to the caller */
-	lr r6, [_ARC_V2_STATUS32]
-	bclr r6, r6, _ARC_V2_STATUS32_AE_BIT
-	kflag r6
+	lr r0, [_ARC_V2_STATUS32]
+	bset r0, r0, _ARC_V2_STATUS32_AE_BIT
+	kflag r0
 
-	/* the status and return address are saved in trap_s handler */
-	pop r6
-	sr r6, [_ARC_V2_ERSTATUS]
-	pop r6
-	sr r6, [_ARC_V2_ERET]
+
 #ifdef CONFIG_ARC_SECURE_FIRMWARE
-	pop r6
-	sr r6, [_ARC_V2_ERSEC_STAT]
+	ld_s r0, [sp, ___isf_t_sec_stat_OFFSET]
+	sr r0,[_ARC_V2_ERSEC_STAT]
 #endif
+	ld_s r0, [sp, ___isf_t_status32_OFFSET]
+	sr r0,[_ARC_V2_ERSTATUS]
 
-	mov_s r6, 0
+	ld_s r0, [sp, ___isf_t_pc_OFFSET] /* eret into pc */
+	sr r0,[_ARC_V2_ERET]
+
+	_pop_irq_stack_frame
 
 	rtie
 
-
 /*
- * size_t z_arch_user_string_nlen(const char *s, size_t maxsize, int *err_arg)
+ * size_t arch_user_string_nlen(const char *s, size_t maxsize, int *err_arg)
  */
-SECTION_FUNC(TEXT, z_arch_user_string_nlen)
+SECTION_FUNC(TEXT, arch_user_string_nlen)
 	/* int err; */
 	sub_s sp,sp,0x4
 
@@ -264,11 +259,11 @@ SECTION_FUNC(TEXT, z_arch_user_string_nlen)
 	mov lp_count, r1
 
 strlen_loop:
-z_arch_user_string_nlen_fault_start:
+z_arc_user_string_nlen_fault_start:
 	/* is the byte at ++r12 a NULL? if so, we're done. Might fault! */
 	ldb.aw r1, [r12, 1]
 
-z_arch_user_string_nlen_fault_end:
+z_arc_user_string_nlen_fault_end:
 	brne_s r1, 0, not_null
 
 strlen_done:
@@ -276,7 +271,7 @@ strlen_done:
 	mov_s r1, 0
 	st_s r1, [sp, 0]
 
-z_arch_user_string_nlen_fixup:
+z_arc_user_string_nlen_fixup:
 	/* *err_arg = err; Pop stack and return */
 	ld_s r1, [sp, 0]
 	add_s sp, sp, 4
@@ -293,20 +288,3 @@ inc_len:
 	/* increment length measurement, loop again */
 	add_s r0, r0, 1
 	b_s strlen_loop
-
-#ifdef CONFIG_EXECUTION_BENCHMARKING
-	.balign 4
-_capture_value_for_benchmarking_userspace:
-	mov r1, _kernel
-	ld_s r2, [r1, _kernel_offset_to_current]
-	_save_callee_saved_regs
-	push_s blink
-
-	bl read_timer_end_of_userspace_enter
-
-	pop_s blink
-	mov r1, _kernel
-	ld_s r2, [r1, _kernel_offset_to_current]
-	_load_callee_saved_regs
-	b return_loc_userspace_enter
-#endif

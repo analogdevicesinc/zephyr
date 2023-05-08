@@ -4,22 +4,30 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <device.h>
-#include <drivers/sensor.h>
-#include <sys/printk.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/sys/printk.h>
 #include <stdio.h>
 
-static void do_main(struct device *dev)
+int main(void)
 {
-	int ret;
+	const struct device *const dev = DEVICE_DT_GET(DT_ALIAS(magn0));
 	struct sensor_value value_x, value_y, value_z;
+	int ret;
+
+	if (!device_is_ready(dev)) {
+		printk("sensor: device not ready.\n");
+		return 0;
+	}
+
+	printk("Polling magnetometer data from %s.\n", dev->name);
 
 	while (1) {
 		ret = sensor_sample_fetch(dev);
 		if (ret) {
 			printk("sensor_sample_fetch failed ret %d\n", ret);
-			return;
+			return 0;
 		}
 
 		ret = sensor_channel_get(dev, SENSOR_CHAN_MAGN_X, &value_x);
@@ -30,37 +38,7 @@ static void do_main(struct device *dev)
 		       sensor_value_to_double(&value_y),
 		       sensor_value_to_double(&value_z));
 
-		k_sleep(500);
+		k_sleep(K_MSEC(500));
 	}
-}
-
-struct device *sensor_search_for_magnetometer()
-{
-	static char *magn_sensors[] = {"bmc150_magn", NULL};
-	struct device *dev;
-	int i;
-
-	i = 0;
-	while (magn_sensors[i]) {
-		dev = device_get_binding(magn_sensors[i]);
-		if (dev) {
-			return dev;
-		}
-		++i;
-	}
-
-	return NULL;
-}
-
-void main(void)
-{
-	struct device *dev;
-
-	dev = sensor_search_for_magnetometer();
-	if (dev) {
-		printk("Found device is %p, name is %s\n", dev, dev->config->name);
-		do_main(dev);
-	} else {
-		printk("There is no available magnetometer device.\n");
-	}
+	return 0;
 }

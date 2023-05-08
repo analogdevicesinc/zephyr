@@ -4,13 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 #include <errno.h>
-#include <kernel.h>
-#include <arch/cpu.h>
+#include <zephyr/kernel.h>
+#include <zephyr/arch/cpu.h>
 #include <zephyr/types.h>
-#include <soc.h>
-#include <toolchain.h>
+#include <zephyr/toolchain.h>
 
-#include <arch/arc/v2/secureshield/arc_secure.h>
+#include <zephyr/arch/arc/v2/secureshield/arc_secure.h>
 
 #define IRQ_PRIO_MASK (0xffff << ARC_N_IRQ_START_LEVEL)
 /*
@@ -22,7 +21,7 @@
  * an secure service to access secure aux regs. Check should be done
  * to decide whether the access is valid.
  */
-static s32_t arc_s_aux_read(u32_t aux_reg)
+static int32_t arc_s_aux_read(uint32_t aux_reg)
 {
 	return -1;
 }
@@ -37,7 +36,7 @@ static s32_t arc_s_aux_read(u32_t aux_reg)
  * an secure service to access secure aux regs. Check should be done
  * to decide whether the access is valid.
  */
-static s32_t arc_s_aux_write(u32_t aux_reg, u32_t val)
+static int32_t arc_s_aux_write(uint32_t aux_reg, uint32_t val)
 {
 	if (aux_reg == _ARC_V2_AUX_IRQ_ACT) {
 		/* 0 -> CONFIG_NUM_IRQ_PRIO_LEVELS allocated to secure world
@@ -64,7 +63,7 @@ static s32_t arc_s_aux_write(u32_t aux_reg, u32_t val)
  * apply one. Necessary check should be done to decide whether the apply is
  * valid
  */
-static s32_t arc_s_irq_alloc(u32_t intno)
+static int32_t arc_s_irq_alloc(uint32_t intno)
 {
 	z_arc_v2_irq_uinit_secure_set(intno, 0);
 	return 0;

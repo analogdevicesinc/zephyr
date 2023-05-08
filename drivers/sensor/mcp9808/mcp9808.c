@@ -1,74 +1,91 @@
-/* sensor_mcp9808.c - Driver for MCP9808 temperature sensor */
-
 /*
+ * Copyright (c) 2019 Peter Bigot Consulting, LLC
  * Copyright (c) 2016 Intel Corporation
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#define DT_DRV_COMPAT microchip_mcp9808
+
 #include <errno.h>
 
-#include <kernel.h>
-#include <drivers/i2c.h>
-#include <init.h>
-#include <sys/byteorder.h>
-#include <sys/__assert.h>
-#include <logging/log.h>
+#include <zephyr/kernel.h>
+#include <zephyr/drivers/i2c.h>
+#include <zephyr/init.h>
+#include <zephyr/sys/byteorder.h>
+#include <zephyr/sys/__assert.h>
+#include <zephyr/logging/log.h>
 
 #include "mcp9808.h"
 
-#define LOG_LEVEL CONFIG_SENSOR_LOG_LEVEL
-LOG_MODULE_REGISTER(MCP9808);
+LOG_MODULE_REGISTER(MCP9808, CONFIG_SENSOR_LOG_LEVEL);
 
-int mcp9808_reg_read(struct mcp9808_data *data, u8_t reg, u16_t *val)
+int mcp9808_reg_read(const struct device *dev, uint8_t reg, uint16_t *val)
 {
-	struct i2c_msg msgs[2] = {
-		{
-			.buf = &reg,
-			.len = 1,
-			.flags = I2C_MSG_WRITE | I2C_MSG_RESTART,
-		},
-		{
-			.buf = (u8_t *)val,
-			.len = 2,
-			.flags = I2C_MSG_READ | I2C_MSG_STOP,
-		},
-	};
+	const struct mcp9808_config *cfg = dev->config;
+	int rc = i2c_write_read_dt(&cfg->i2c, &reg, sizeof(reg), val,
+				   sizeof(*val));
 
-	if (i2c_transfer(data->i2c_master, msgs, 2, data->i2c_slave_addr)
-			 < 0) {
-		return -EIO;
+	if (rc == 0) {
+		*val = sys_be16_to_cpu(*val);
 	}
 
-	*val = sys_be16_to_cpu(*val);
-
-	return 0;
+	return rc;
 }
 
-static int mcp9808_sample_fetch(struct device *dev, enum sensor_channel chan)
+int mcp9808_reg_write_16bit(const struct device *dev, uint8_t reg,
+			    uint16_t val)
 {
-	struct mcp9808_data *data = dev->driver_data;
+	const struct mcp9808_config *cfg = dev->config;
+
+	uint8_t buf[3];
+
+	buf[0] = reg;
+	sys_put_be16(val, &buf[1]);
+
+	return i2c_write_dt(&cfg->i2c, buf, sizeof(buf));
+}
+
+int mcp9808_reg_write_8bit(const struct device *dev, uint8_t reg,
+			   uint8_t val)
+{
+	const struct mcp9808_config *cfg = dev->config;
+	uint8_t buf[2] = {
+		reg,
+		val,
+	};
+
+	return i2c_write_dt(&cfg->i2c, buf, sizeof(buf));
+}
+
+static int mcp9808_set_temperature_resolution(const struct device *dev,
+					      uint8_t resolution)
+{
+	return mcp9808_reg_write_8bit(dev, MCP9808_REG_RESOLUTION, resolution);
+}
+
+static int mcp9808_sample_fetch(const struct device *dev,
+				enum sensor_channel chan)
+{
+	struct mcp9808_data *data = dev->data;
 
 	__ASSERT_NO_MSG(chan == SENSOR_CHAN_ALL || chan == SENSOR_CHAN_AMBIENT_TEMP);
 
-	return mcp9808_reg_read(data, MCP9808_REG_TEMP_AMB, &data->reg_val);
+	return mcp9808_reg_read(dev, MCP9808_REG_TEMP_AMB, &data->reg_val);
 }
 
-static int mcp9808_channel_get(struct device *dev,
+static int mcp9808_channel_get(const struct device *dev,
 			       enum sensor_channel chan,
 			       struct sensor_value *val)
 {
-	struct mcp9808_data *data = dev->driver_data;
+	const struct mcp9808_data *data = dev->data;
+	int temp = mcp9808_temp_signed_from_reg(data->reg_val);
 
 	__ASSERT_NO_MSG(chan == SENSOR_CHAN_AMBIENT_TEMP);
 
-	val->val1 = (data->reg_val & MCP9808_TEMP_INT_MASK) >>
-		     MCP9808_TEMP_INT_SHIFT;
-	val->val2 = (data->reg_val & MCP9808_TEMP_FRAC_MASK) * 62500U;
-
-	if (data->reg_val & MCP9808_SIGN_BIT) {
-		val->val1 -= 256;
-	}
+	val->val1 = temp / MCP9808_TEMP_SCALE_CEL;
+	temp -= val->val1 * MCP9808_TEMP_SCALE_CEL;
+	val->val2 = (temp * 1000000) / MCP9808_TEMP_SCALE_CEL;
 
 	return 0;
 }
@@ -76,30 +93,49 @@ static int mcp9808_channel_get(struct device *dev,
 static const struct sensor_driver_api mcp9808_api_funcs = {
 	.sample_fetch = mcp9808_sample_fetch,
 	.channel_get = mcp9808_channel_get,
+#ifdef CONFIG_MCP9808_TRIGGER
 	.attr_set = mcp9808_attr_set,
 	.trigger_set = mcp9808_trigger_set,
+#endif /* CONFIG_MCP9808_TRIGGER */
 };
 
-int mcp9808_init(struct device *dev)
+int mcp9808_init(const struct device *dev)
 {
-	struct mcp9808_data *data = dev->driver_data;
+	const struct mcp9808_config *cfg = dev->config;
+	int rc = 0;
 
-	data->i2c_master = device_get_binding(CONFIG_MCP9808_I2C_DEV_NAME);
-	if (!data->i2c_master) {
-		LOG_DBG("mcp9808: i2c master not found: %s",
-		    CONFIG_MCP9808_I2C_DEV_NAME);
-		return -EINVAL;
+	if (!device_is_ready(cfg->i2c.bus)) {
+		LOG_ERR("Bus device is not ready");
+		return -ENODEV;
 	}
 
-	data->i2c_slave_addr = CONFIG_MCP9808_I2C_ADDR;
+	rc = mcp9808_set_temperature_resolution(dev, cfg->resolution);
+	if (rc) {
+		LOG_ERR("Could not set the resolution of mcp9808 module");
+		return rc;
+	}
 
-	mcp9808_setup_interrupt(dev);
+#ifdef CONFIG_MCP9808_TRIGGER
+	if (cfg->int_gpio.port) {
+		rc = mcp9808_setup_interrupt(dev);
+	}
+#endif /* CONFIG_MCP9808_TRIGGER */
 
-	return 0;
+	return rc;
 }
 
-struct mcp9808_data mcp9808_data;
+#define MCP9808_DEFINE(inst)									\
+	static struct mcp9808_data mcp9808_data_##inst;						\
+												\
+	static const struct mcp9808_config mcp9808_config_##inst = {				\
+		.i2c = I2C_DT_SPEC_INST_GET(inst),						\
+		.resolution = DT_INST_PROP(inst, resolution),					\
+		IF_ENABLED(CONFIG_MCP9808_TRIGGER,						\
+			   (.int_gpio = GPIO_DT_SPEC_INST_GET_OR(inst, int_gpios, { 0 }),))	\
+	};											\
+												\
+	SENSOR_DEVICE_DT_INST_DEFINE(inst, mcp9808_init, NULL,					\
+			      &mcp9808_data_##inst, &mcp9808_config_##inst, POST_KERNEL,	\
+			      CONFIG_SENSOR_INIT_PRIORITY, &mcp9808_api_funcs);			\
 
-DEVICE_AND_API_INIT(mcp9808, CONFIG_MCP9808_DEV_NAME, mcp9808_init,
-		    &mcp9808_data, NULL, POST_KERNEL,
-		    CONFIG_SENSOR_INIT_PRIORITY, &mcp9808_api_funcs);
+DT_INST_FOREACH_STATUS_OKAY(MCP9808_DEFINE)

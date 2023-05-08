@@ -7,11 +7,10 @@
 #ifndef ZEPHYR_DRIVERS_SENSOR_TMP007_TMP007_H_
 #define ZEPHYR_DRIVERS_SENSOR_TMP007_TMP007_H_
 
-#include <device.h>
-#include <drivers/gpio.h>
-#include <sys/util.h>
-
-#define TMP007_I2C_ADDRESS		CONFIG_TMP007_I2C_ADDR
+#include <zephyr/device.h>
+#include <zephyr/drivers/i2c.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/sys/util.h>
 
 #define TMP007_REG_CONFIG		0x02
 #define TMP007_ALERT_EN_BIT		BIT(8)
@@ -33,50 +32,55 @@
 #define TMP007_TEMP_SCALE		31250
 #define TMP007_TEMP_TH_SCALE		500000
 
+struct tmp007_config {
+	struct i2c_dt_spec i2c;
+#ifdef CONFIG_TMP007_TRIGGER
+	struct gpio_dt_spec int_gpio;
+#endif
+};
+
 struct tmp007_data {
-	struct device *i2c;
-	s16_t sample;
+	int16_t sample;
 
 #ifdef CONFIG_TMP007_TRIGGER
-	struct device *gpio;
 	struct gpio_callback gpio_cb;
+	const struct device *dev;
 
 	sensor_trigger_handler_t drdy_handler;
-	struct sensor_trigger drdy_trigger;
+	const struct sensor_trigger *drdy_trigger;
 
 	sensor_trigger_handler_t th_handler;
-	struct sensor_trigger th_trigger;
+	const struct sensor_trigger *th_trigger;
 
 #if defined(CONFIG_TMP007_TRIGGER_OWN_THREAD)
-	K_THREAD_STACK_MEMBER(thread_stack, CONFIG_TMP007_THREAD_STACK_SIZE);
+	K_KERNEL_STACK_MEMBER(thread_stack, CONFIG_TMP007_THREAD_STACK_SIZE);
 	struct k_sem gpio_sem;
 	struct k_thread thread;
 #elif defined(CONFIG_TMP007_TRIGGER_GLOBAL_THREAD)
 	struct k_work work;
-	struct device *dev;
 #endif
 
 #endif /* CONFIG_TMP007_TRIGGER */
 };
 
 #ifdef CONFIG_TMP007_TRIGGER
-int tmp007_reg_read(struct tmp007_data *drv_data, u8_t reg, u16_t *val);
+int tmp007_reg_read(const struct i2c_dt_spec *i2c, uint8_t reg, uint16_t *val);
 
-int tmp007_reg_write(struct tmp007_data *drv_data, u8_t reg, u16_t val);
+int tmp007_reg_write(const struct i2c_dt_spec *i2c, uint8_t reg, uint16_t val);
 
-int tmp007_reg_update(struct tmp007_data *drv_data, u8_t reg,
-		      u16_t mask, u16_t val);
+int tmp007_reg_update(const struct i2c_dt_spec *i2c, uint8_t reg,
+		      uint16_t mask, uint16_t val);
 
-int tmp007_attr_set(struct device *dev,
+int tmp007_attr_set(const struct device *dev,
 		    enum sensor_channel chan,
 		    enum sensor_attribute attr,
 		    const struct sensor_value *val);
 
-int tmp007_trigger_set(struct device *dev,
+int tmp007_trigger_set(const struct device *dev,
 		       const struct sensor_trigger *trig,
 		       sensor_trigger_handler_t handler);
 
-int tmp007_init_interrupt(struct device *dev);
+int tmp007_init_interrupt(const struct device *dev);
 #endif
 
 #endif /* _SENSOR_TMP007_ */

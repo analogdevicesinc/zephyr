@@ -1,51 +1,43 @@
 # Copyright (c) 2018, Nordic Semiconductor ASA
 # SPDX-License-Identifier: Apache-2.0
 
-title: Nordic nRF Family QDEC node
-
-description: >
-    This is a representation of the Nordic nRF QDEC node
+description: Nordic nRF quadrature decoder (QDEC) node
 
 compatible: "nordic,nrf-qdec"
 
-include: base.yaml
+include: [sensor-device.yaml, pinctrl-device.yaml]
 
 properties:
-    reg:
-      required: true
+  reg:
+    required: true
 
-    interrupts:
-      required: true
+  interrupts:
+    required: true
 
-    a-pin:
-      type: int
-      description: A pin
-      required: true
+  pinctrl-0:
+    required: true
 
-    b-pin:
-      type: int
-      description: B pin
-      required: true
+  enable-pin:
+    type: int
+    description: |
+      The enable pin to use, to enable a connected QDEC device
 
-    led-pin:
-      type: int
-      description: LED pin for light based QDEC device
-      required: false
+      For pins P0.0 through P0.31, use the pin number. For example,
+      to use P0.16 for the A pin, set:
 
-    enable-pin:
-      type: int
-      description: Enables connected QDEC device
-      required: false
+          enable-pin = <16>;
 
-    led-pre:
-      type: int
-      description: Time LED is enabled prior to sampling event (in us)
-      required: true
+      For pins P1.0 through P1.31, add 32 to the pin number. For
+      example, to use P1.2 for the A pin, set:
 
-    steps:
-      type: int
-      description: Number of steps on the rotating wheel
-      required: true
+          enable-pin = <34>;  /* 32 + 2 */
 
-    label:
-      required: true
+  led-pre:
+    type: int
+    description: Time LED is enabled prior to sampling event (in us)
+    required: true
+
+  steps:
+    type: int
+    description: Number of steps on the rotating wheel
+    required: true

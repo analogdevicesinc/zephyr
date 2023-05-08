@@ -5,9 +5,9 @@ set_ifndef(C++ g++)
 # Configures CMake for using GCC, this script is re-used by several
 # GCC-based toolchains
 
-find_program(CMAKE_C_COMPILER ${CROSS_COMPILE}${CC} PATH ${TOOLCHAIN_HOME} NO_DEFAULT_PATH)
+find_program(CMAKE_C_COMPILER ${CROSS_COMPILE}${CC} PATHS ${TOOLCHAIN_HOME} NO_DEFAULT_PATH)
 
-if(CONFIG_CPLUSPLUS)
+if(CONFIG_CPP)
   set(cplusplus_compiler ${CROSS_COMPILE}${C++})
 else()
   if(EXISTS ${CROSS_COMPILE}${C++})
@@ -19,7 +19,7 @@ else()
     set(cplusplus_compiler ${CMAKE_C_COMPILER})
   endif()
 endif()
-find_program(CMAKE_CXX_COMPILER ${cplusplus_compiler} PATH ${TOOLCHAIN_HOME} NO_DEFAULT_PATH)
+find_program(CMAKE_CXX_COMPILER ${cplusplus_compiler} PATHS ${TOOLCHAIN_HOME} NO_DEFAULT_PATH)
 
 set(NOSTDINC "")
 
@@ -51,7 +51,7 @@ list(APPEND TOOLCHAIN_LIBS
 # link a dummy C file.
 #
 # CMake checks compiler flags with check_c_compiler_flag() (Which we
-# wrap with target_cc_option() in extentions.cmake)
+# wrap with target_cc_option() in extensions.cmake)
 foreach(isystem_include_dir ${NOSTDINC})
   list(APPEND isystem_include_flags -isystem "\"${isystem_include_dir}\"")
 endforeach()
@@ -65,14 +65,3 @@ endforeach()
 # toolchain-specific flags at generation time.
 list(APPEND CMAKE_REQUIRED_FLAGS -nostartfiles -nostdlib ${isystem_include_flags} -Wl,--unresolved-symbols=ignore-in-object-files)
 string(REPLACE ";" " " CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS}")
-
-# Load toolchain_cc-family macros
-include(${ZEPHYR_BASE}/cmake/compiler/gcc/target_security_fortify.cmake)
-include(${ZEPHYR_BASE}/cmake/compiler/gcc/target_security_canaries.cmake)
-include(${ZEPHYR_BASE}/cmake/compiler/gcc/target_optimizations.cmake)
-include(${ZEPHYR_BASE}/cmake/compiler/gcc/target_cpp.cmake)
-include(${ZEPHYR_BASE}/cmake/compiler/gcc/target_asm.cmake)
-include(${ZEPHYR_BASE}/cmake/compiler/gcc/target_baremetal.cmake)
-include(${ZEPHYR_BASE}/cmake/compiler/gcc/target_warnings.cmake)
-include(${ZEPHYR_BASE}/cmake/compiler/gcc/target_imacros.cmake)
-include(${ZEPHYR_BASE}/cmake/compiler/gcc/target_base.cmake)

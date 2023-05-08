@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
+cmake_minimum_required(VERSION 3.20.0)
+
 project(math_extras)
-set(SOURCES main.c portable.c)
-include($ENV{ZEPHYR_BASE}/subsys/testsuite/unittest.cmake)
+find_package(Zephyr COMPONENTS unittest REQUIRED HINTS $ENV{ZEPHYR_BASE})
+target_sources(testbinary PRIVATE main.c)

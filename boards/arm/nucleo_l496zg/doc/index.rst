@@ -29,9 +29,7 @@ some highlights of the Nucleo L476ZG board:
 - 2 push buttons: USER and RESET
 
 .. image:: img/nucleo_l496zg.jpg
-   :width: 250px
    :align: center
-   :height: 250px
    :alt: Nucleo L496ZG
 
 More information about the board can be found at the `Nucleo L496ZG website`_.
@@ -158,6 +156,7 @@ Default Zephyr Peripheral Mapping:
 - PWM_2_CH1: PA0
 - I2C_1_SCL: PB8
 - I2C_1_SDA: PB7
+- SPI_1_NSS: PD14
 - SPI_1_SCK: PA5
 - SPI_1_MISO: PA6
 - SPI_1_MOSI: PA7

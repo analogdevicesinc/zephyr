@@ -49,6 +49,16 @@ Glossary of Terms
       specified by the build system can be over-ridden by the application,
       if desired.
 
+   device runtime power management
+      Device Runtime Power Management (PM) refers the capability of devices to
+      save energy independently of the the system power state. Devices will keep
+      reference of their usage and will automatically be suspended or resumed.
+      This feature is enabled via the :kconfig:option:`CONFIG_PM_DEVICE_RUNTIME`
+      Kconfig option.
+
+   idle thread
+      A system thread that runs when there are no other threads ready to run.
+
    IDT
       (Interrupt Descriptor Table) a data structure used by the x86
       architecture to implement an interrupt vector table. The IDT is used
@@ -65,27 +75,48 @@ Glossary of Terms
       The set of Zephyr-supplied files that implement the Zephyr kernel,
       including its core services, device drivers, network stack, and so on.
 
+   power domain
+      A power domain is a collection of devices for which power is
+      applied and removed collectively in a single action. Power
+      domains are represented by :c:struct:`device`.
+
+   power gating
+      Power gating reduces power consumption by shutting off areas of an
+      integrated circuit that are not in use.
+
+   SoC
+      `System on a chip`_
+
+   system power state
+      System power states describe the power consumption of the system as a
+      whole. System power states are are represented by :c:enum:`pm_state`.
+
    west
       A multi-repo meta-tool developed for the Zephyr project. See :ref:`west`.
 
    west installation
-      A directory on your system with a :file:`.west` subdirectory and
-      a :term:`west manifest repository`. You clone the Zephyr source
-      code onto your system by creating a west installation using the
-      ``west init`` command. See :ref:`west-multi-repo`.
+      An obsolete term for a :term:`west workspace` used prior to west 0.7.
 
    west manifest
-      A YAML file named :file:`west.yml` which describes projects, or the Git
-      repositories which make up a :term:`west installation`, along with
-      additional metadata. See :ref:`west-multi-repo` for general information
+      A YAML file, usually named :file:`west.yml`, which describes projects, or
+      the Git repositories which make up a :term:`west workspace`, along with
+      additional metadata. See :ref:`west-basics` for general information
       and :ref:`west-manifests` for details.
 
    west manifest repository
-      The Git repository in a :term:`west installation` which contains the
+      The Git repository in a :term:`west workspace` which contains the
       :term:`west manifest`. Its location is given by the :ref:`manifest.path
-      configuration option <west-config-index>`. See :ref:`west-multi-repo`.
+      configuration option <west-config-index>`. See :ref:`west-basics`.
+
+   west workspace
+      A directory on your system with a :file:`.west` subdirectory and
+      a :term:`west manifest repository`. You clone the Zephyr source
+      code onto your system by creating a west workspace using the
+      ``west init`` command. See :ref:`west-basics`.
 
    XIP
       (eXecute In Place) a method of executing programs directly from long
       term storage rather than copying it into RAM, saving writable memory for
       dynamic data and not the static program code.
+
+.. _System on a chip: https://en.wikipedia.org/wiki/System_on_a_chip

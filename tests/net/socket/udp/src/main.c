@@ -1,18 +1,19 @@
 /*
  * Copyright (c) 2017 Linaro Limited
+ * Copyright (c) 2021 Nordic Semiconductor
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_test, CONFIG_NET_SOCKETS_LOG_LEVEL);
 
 #include <stdio.h>
-#include <sys/mutex.h>
-#include <ztest_assert.h>
+#include <zephyr/sys/mutex.h>
+#include <zephyr/ztest_assert.h>
 
-#include <net/socket.h>
-#include <net/ethernet.h>
+#include <zephyr/net/socket.h>
+#include <zephyr/net/ethernet.h>
 
 #include "ipv6.h"
 #include "../../socket_helpers.h"
@@ -34,10 +35,20 @@ LOG_MODULE_REGISTER(net_test, CONFIG_NET_SOCKETS_LOG_LEVEL);
 	"from across the industry to build a best-in-breed small, scalable, " \
 	"real-time operating system (RTOS) optimized for resource-" \
 	"constrained devices, across multiple architectures."
+/* More than available TX buffers */
+static const char test_str_all_tx_bufs[] =
+#include <string_all_tx_bufs.inc>
+"!"
+;
+
+#define MY_IPV4_ADDR "127.0.0.1"
+#define MY_IPV6_ADDR "::1"
 
 #define ANY_PORT 0
 #define SERVER_PORT 4242
 #define CLIENT_PORT 9898
+
+static ZTEST_BMEM char rx_buf[NET_ETH_MTU + 1];
 
 /* Common routine to communicate packets over pair of sockets. */
 static void comm_sendto_recvfrom(int client_sock,
@@ -53,7 +64,6 @@ static void comm_sendto_recvfrom(int client_sock,
 	socklen_t addrlen;
 	struct sockaddr addr2;
 	socklen_t addrlen2;
-	static char rx_buf[400] = {0};
 
 	zassert_not_null(client_addr, "null client addr");
 	zassert_not_null(server_addr, "null server addr");
@@ -144,7 +154,7 @@ static void comm_sendto_recvfrom(int client_sock,
 	zassert_mem_equal(rx_buf, BUF_AND_SIZE(TEST_STR_SMALL), "wrong data");
 }
 
-void test_v4_sendto_recvfrom(void)
+ZTEST(net_socket_udp, test_02_v4_sendto_recvfrom)
 {
 	int rv;
 	int client_sock;
@@ -152,10 +162,8 @@ void test_v4_sendto_recvfrom(void)
 	struct sockaddr_in client_addr;
 	struct sockaddr_in server_addr;
 
-	prepare_sock_udp_v4(CONFIG_NET_CONFIG_MY_IPV4_ADDR, ANY_PORT,
-			    &client_sock, &client_addr);
-	prepare_sock_udp_v4(CONFIG_NET_CONFIG_MY_IPV4_ADDR, SERVER_PORT,
-			    &server_sock, &server_addr);
+	prepare_sock_udp_v4(MY_IPV4_ADDR, ANY_PORT, &client_sock, &client_addr);
+	prepare_sock_udp_v4(MY_IPV4_ADDR, SERVER_PORT, &server_sock, &server_addr);
 
 	rv = bind(server_sock,
 		  (struct sockaddr *)&server_addr,
@@ -175,7 +183,7 @@ void test_v4_sendto_recvfrom(void)
 	zassert_equal(rv, 0, "close failed");
 }
 
-void test_v6_sendto_recvfrom(void)
+ZTEST(net_socket_udp, test_03_v6_sendto_recvfrom)
 {
 	int rv;
 	int client_sock;
@@ -183,10 +191,8 @@ void test_v6_sendto_recvfrom(void)
 	struct sockaddr_in6 client_addr;
 	struct sockaddr_in6 server_addr;
 
-	prepare_sock_udp_v6(CONFIG_NET_CONFIG_MY_IPV6_ADDR, ANY_PORT,
-			    &client_sock, &client_addr);
-	prepare_sock_udp_v6(CONFIG_NET_CONFIG_MY_IPV6_ADDR, SERVER_PORT,
-			    &server_sock, &server_addr);
+	prepare_sock_udp_v6(MY_IPV6_ADDR, ANY_PORT, &client_sock, &client_addr);
+	prepare_sock_udp_v6(MY_IPV6_ADDR, SERVER_PORT, &server_sock, &server_addr);
 
 	rv = bind(server_sock,
 		  (struct sockaddr *)&server_addr, sizeof(server_addr));
@@ -205,7 +211,7 @@ void test_v6_sendto_recvfrom(void)
 	zassert_equal(rv, 0, "close failed");
 }
 
-void test_v4_bind_sendto(void)
+ZTEST(net_socket_udp, test_04_v4_bind_sendto)
 {
 	int rv;
 	int client_sock;
@@ -213,10 +219,8 @@ void test_v4_bind_sendto(void)
 	struct sockaddr_in client_addr;
 	struct sockaddr_in server_addr;
 
-	prepare_sock_udp_v4(CONFIG_NET_CONFIG_MY_IPV4_ADDR, CLIENT_PORT,
-			    &client_sock, &client_addr);
-	prepare_sock_udp_v4(CONFIG_NET_CONFIG_MY_IPV4_ADDR, SERVER_PORT,
-			    &server_sock, &server_addr);
+	prepare_sock_udp_v4(MY_IPV4_ADDR, CLIENT_PORT, &client_sock, &client_addr);
+	prepare_sock_udp_v4(MY_IPV4_ADDR, SERVER_PORT, &server_sock, &server_addr);
 
 	rv = bind(client_sock,
 		  (struct sockaddr *)&client_addr, sizeof(client_addr));
@@ -239,7 +243,7 @@ void test_v4_bind_sendto(void)
 	zassert_equal(rv, 0, "close failed");
 }
 
-void test_v6_bind_sendto(void)
+ZTEST(net_socket_udp, test_05_v6_bind_sendto)
 {
 	int rv;
 	int client_sock;
@@ -247,10 +251,8 @@ void test_v6_bind_sendto(void)
 	struct sockaddr_in6 client_addr;
 	struct sockaddr_in6 server_addr;
 
-	prepare_sock_udp_v6(CONFIG_NET_CONFIG_MY_IPV6_ADDR, CLIENT_PORT,
-			    &client_sock, &client_addr);
-	prepare_sock_udp_v6(CONFIG_NET_CONFIG_MY_IPV6_ADDR, SERVER_PORT,
-			    &server_sock, &server_addr);
+	prepare_sock_udp_v6(MY_IPV6_ADDR, CLIENT_PORT, &client_sock, &client_addr);
+	prepare_sock_udp_v6(MY_IPV6_ADDR, SERVER_PORT, &server_sock, &server_addr);
 
 	rv = bind(client_sock,
 		  (struct sockaddr *)&client_addr, sizeof(client_addr));
@@ -273,17 +275,15 @@ void test_v6_bind_sendto(void)
 	zassert_equal(rv, 0, "close failed");
 }
 
-void test_send_recv_2_sock(void)
+ZTEST(net_socket_udp, test_01_send_recv_2_sock)
 {
 	int sock1, sock2;
 	struct sockaddr_in bind_addr, conn_addr;
 	char buf[10];
 	int len, rv;
 
-	prepare_sock_udp_v4(CONFIG_NET_CONFIG_MY_IPV4_ADDR, 55555,
-			    &sock1, &bind_addr);
-	prepare_sock_udp_v4(CONFIG_NET_CONFIG_MY_IPV4_ADDR, 55555,
-			    &sock2, &conn_addr);
+	prepare_sock_udp_v4(MY_IPV4_ADDR, 55555, &sock1, &bind_addr);
+	prepare_sock_udp_v4(MY_IPV4_ADDR, 55555, &sock2, &conn_addr);
 
 	rv = bind(sock1, (struct sockaddr *)&bind_addr, sizeof(bind_addr));
 	zassert_equal(rv, 0, "bind failed");
@@ -310,17 +310,15 @@ void test_send_recv_2_sock(void)
 	zassert_equal(rv, 0, "close failed");
 }
 
-void test_so_priority(void)
+ZTEST(net_socket_udp, test_07_so_priority)
 {
 	struct sockaddr_in bind_addr4;
 	struct sockaddr_in6 bind_addr6;
 	int sock1, sock2, rv;
-	u8_t optval;
+	uint8_t optval;
 
-	prepare_sock_udp_v4(CONFIG_NET_CONFIG_MY_IPV4_ADDR, 55555,
-			    &sock1, &bind_addr4);
-	prepare_sock_udp_v6(CONFIG_NET_CONFIG_MY_IPV6_ADDR, 55555,
-			    &sock2, &bind_addr6);
+	prepare_sock_udp_v4(MY_IPV4_ADDR, 55555, &sock1, &bind_addr4);
+	prepare_sock_udp_v6(MY_IPV6_ADDR, 55555, &sock2, &bind_addr6);
 
 	rv = bind(sock1, (struct sockaddr *)&bind_addr4, sizeof(bind_addr4));
 	zassert_equal(rv, 0, "bind failed");
@@ -356,7 +354,6 @@ static void comm_sendmsg_recvfrom(int client_sock,
 	ssize_t recved;
 	struct sockaddr addr;
 	socklen_t addrlen;
-	static char rx_buf[400];
 	int len, i;
 
 	zassert_not_null(client_addr, "null client addr");
@@ -409,7 +406,7 @@ static void comm_sendmsg_recvfrom(int client_sock,
 	}
 }
 
-void test_v4_sendmsg_recvfrom(void)
+ZTEST_USER(net_socket_udp, test_12_v4_sendmsg_recvfrom)
 {
 	int rv;
 	int client_sock;
@@ -424,10 +421,8 @@ void test_v4_sendmsg_recvfrom(void)
 		unsigned char  buf[CMSG_SPACE(sizeof(int))];
 	} cmsgbuf;
 
-	prepare_sock_udp_v4(CONFIG_NET_CONFIG_MY_IPV4_ADDR, ANY_PORT,
-			    &client_sock, &client_addr);
-	prepare_sock_udp_v4(CONFIG_NET_CONFIG_MY_IPV4_ADDR, SERVER_PORT,
-			    &server_sock, &server_addr);
+	prepare_sock_udp_v4(MY_IPV4_ADDR, ANY_PORT, &client_sock, &client_addr);
+	prepare_sock_udp_v4(MY_IPV4_ADDR, SERVER_PORT, &server_sock, &server_addr);
 
 	rv = bind(server_sock,
 		  (struct sockaddr *)&server_addr,
@@ -470,7 +465,53 @@ void test_v4_sendmsg_recvfrom(void)
 	zassert_equal(rv, 0, "close failed");
 }
 
-void test_v6_sendmsg_recvfrom(void)
+ZTEST_USER(net_socket_udp, test_13_v4_sendmsg_recvfrom_no_aux_data)
+{
+	int rv;
+	int client_sock;
+	int server_sock;
+	struct sockaddr_in client_addr;
+	struct sockaddr_in server_addr;
+	struct msghdr msg;
+	struct iovec io_vector[1];
+
+	prepare_sock_udp_v4(MY_IPV4_ADDR, ANY_PORT, &client_sock, &client_addr);
+	prepare_sock_udp_v4(MY_IPV4_ADDR, SERVER_PORT, &server_sock, &server_addr);
+
+	rv = bind(server_sock,
+		  (struct sockaddr *)&server_addr,
+		  sizeof(server_addr));
+	zassert_equal(rv, 0, "server bind failed");
+
+	rv = bind(client_sock,
+		  (struct sockaddr *)&client_addr,
+		  sizeof(client_addr));
+	zassert_equal(rv, 0, "client bind failed");
+
+	io_vector[0].iov_base = TEST_STR_SMALL;
+	io_vector[0].iov_len = strlen(TEST_STR_SMALL);
+
+	memset(&msg, 0, sizeof(msg));
+	msg.msg_iov = io_vector;
+	msg.msg_iovlen = 1;
+	msg.msg_name = &server_addr;
+	msg.msg_namelen = sizeof(server_addr);
+
+	comm_sendmsg_recvfrom(client_sock,
+			      (struct sockaddr *)&client_addr,
+			      sizeof(client_addr),
+			      &msg,
+			      server_sock,
+			      (struct sockaddr *)&server_addr,
+			      sizeof(server_addr));
+
+	rv = close(client_sock);
+	zassert_equal(rv, 0, "close failed");
+	rv = close(server_sock);
+	zassert_equal(rv, 0, "close failed");
+}
+
+ZTEST_USER(net_socket_udp, test_14_v6_sendmsg_recvfrom)
 {
 	int rv;
 	int client_sock;
@@ -485,10 +526,8 @@ void test_v6_sendmsg_recvfrom(void)
 		unsigned char  buf[CMSG_SPACE(sizeof(int))];
 	} cmsgbuf;
 
-	prepare_sock_udp_v6(CONFIG_NET_CONFIG_MY_IPV6_ADDR, ANY_PORT,
-			    &client_sock, &client_addr);
-	prepare_sock_udp_v6(CONFIG_NET_CONFIG_MY_IPV6_ADDR, SERVER_PORT,
-			    &server_sock, &server_addr);
+	prepare_sock_udp_v6(MY_IPV6_ADDR, ANY_PORT, &client_sock, &client_addr);
+	prepare_sock_udp_v6(MY_IPV6_ADDR, SERVER_PORT, &server_sock, &server_addr);
 
 	rv = bind(server_sock,
 		  (struct sockaddr *)&server_addr, sizeof(server_addr));
@@ -530,7 +569,7 @@ void test_v6_sendmsg_recvfrom(void)
 	zassert_equal(rv, 0, "close failed");
 }
 
-void test_v4_sendmsg_recvfrom_connected(void)
+ZTEST_USER(net_socket_udp, test_15_v4_sendmsg_recvfrom_connected)
 {
 	int rv;
 	int client_sock;
@@ -545,10 +584,8 @@ void test_v4_sendmsg_recvfrom_connected(void)
 		unsigned char  buf[CMSG_SPACE(sizeof(int))];
 	} cmsgbuf;
 
-	prepare_sock_udp_v4(CONFIG_NET_CONFIG_MY_IPV4_ADDR, ANY_PORT,
-			    &client_sock, &client_addr);
-	prepare_sock_udp_v4(CONFIG_NET_CONFIG_MY_IPV4_ADDR, SERVER_PORT,
-			    &server_sock, &server_addr);
+	prepare_sock_udp_v4(MY_IPV4_ADDR, ANY_PORT, &client_sock, &client_addr);
+	prepare_sock_udp_v4(MY_IPV4_ADDR, SERVER_PORT, &server_sock, &server_addr);
 
 	rv = bind(server_sock,
 		  (struct sockaddr *)&server_addr,
@@ -593,7 +630,7 @@ void test_v4_sendmsg_recvfrom_connected(void)
 	zassert_equal(rv, 0, "close failed");
 }
 
-void test_v6_sendmsg_recvfrom_connected(void)
+ZTEST_USER(net_socket_udp, test_06_v6_sendmsg_recvfrom_connected)
 {
 	int rv;
 	int client_sock;
@@ -608,10 +645,8 @@ void test_v6_sendmsg_recvfrom_connected(void)
 		unsigned char  buf[CMSG_SPACE(sizeof(int))];
 	} cmsgbuf;
 
-	prepare_sock_udp_v6(CONFIG_NET_CONFIG_MY_IPV6_ADDR, ANY_PORT,
-			    &client_sock, &client_addr);
-	prepare_sock_udp_v6(CONFIG_NET_CONFIG_MY_IPV6_ADDR, SERVER_PORT,
-			    &server_sock, &server_addr);
+	prepare_sock_udp_v6(MY_IPV6_ADDR, ANY_PORT, &client_sock, &client_addr);
+	prepare_sock_udp_v6(MY_IPV6_ADDR, SERVER_PORT, &server_sock, &server_addr);
 
 	rv = bind(server_sock,
 		  (struct sockaddr *)&server_addr, sizeof(server_addr));
@@ -655,7 +690,34 @@ void test_v6_sendmsg_recvfrom_connected(void)
 	zassert_equal(rv, 0, "close failed");
 }
 
-void test_so_txtime(void)
+ZTEST(net_socket_udp, test_06_so_type)
+{
+	struct sockaddr_in bind_addr4;
+	struct sockaddr_in6 bind_addr6;
+	int sock1, sock2, rv;
+	int optval;
+	socklen_t optsize = sizeof(optval);
+
+	prepare_sock_udp_v4(MY_IPV4_ADDR, 55555, &sock1, &bind_addr4);
+	prepare_sock_udp_v6(MY_IPV6_ADDR, 55555, &sock2, &bind_addr6);
+
+	rv = getsockopt(sock1, SOL_SOCKET, SO_TYPE, &optval, &optsize);
+	zassert_equal(rv, 0, "getsockopt failed (%d)", errno);
+	zassert_equal(optval, SOCK_DGRAM, "getsockopt got invalid type");
+	zassert_equal(optsize, sizeof(optval), "getsockopt got invalid size");
+
+	rv = getsockopt(sock2, SOL_SOCKET, SO_TYPE, &optval, &optsize);
+	zassert_equal(rv, 0, "getsockopt failed (%d)", errno);
+	zassert_equal(optval, SOCK_DGRAM, "getsockopt got invalid type");
+	zassert_equal(optsize, sizeof(optval), "getsockopt got invalid size");
+
+	rv = close(sock1);
+	zassert_equal(rv, 0, "close failed");
+	rv = close(sock2);
+	zassert_equal(rv, 0, "close failed");
+}
+
+ZTEST(net_socket_udp, test_08_so_txtime)
 {
 	struct sockaddr_in bind_addr4;
 	struct sockaddr_in6 bind_addr6;
@@ -663,10 +725,8 @@ void test_so_txtime(void)
 	socklen_t optlen;
 	bool optval;
 
-	prepare_sock_udp_v4(CONFIG_NET_CONFIG_MY_IPV4_ADDR, 55555,
-			    &sock1, &bind_addr4);
-	prepare_sock_udp_v6(CONFIG_NET_CONFIG_MY_IPV6_ADDR, 55555,
-			    &sock2, &bind_addr6);
+	prepare_sock_udp_v4(MY_IPV4_ADDR, 55555, &sock1, &bind_addr4);
+	prepare_sock_udp_v6(MY_IPV6_ADDR, 55555, &sock2, &bind_addr6);
 
 	rv = bind(sock1, (struct sockaddr *)&bind_addr4, sizeof(bind_addr4));
 	zassert_equal(rv, 0, "bind failed");
@@ -704,6 +764,129 @@ void test_so_txtime(void)
 	zassert_equal(rv, 0, "close failed");
 }
 
+ZTEST(net_socket_udp, test_09_so_rcvtimeo)
+{
+	struct sockaddr_in bind_addr4;
+	struct sockaddr_in6 bind_addr6;
+	int sock1, sock2, rv;
+	ssize_t recved = 0;
+	struct sockaddr addr;
+	socklen_t addrlen;
+	uint32_t start_time, time_diff;
+
+	struct timeval optval = {
+		.tv_sec = 2,
+		.tv_usec = 500000,
+	};
+
+	prepare_sock_udp_v4(MY_IPV4_ADDR, 55555, &sock1, &bind_addr4);
+	prepare_sock_udp_v6(MY_IPV6_ADDR, 55555, &sock2, &bind_addr6);
+
+	rv = bind(sock1, (struct sockaddr *)&bind_addr4, sizeof(bind_addr4));
+	zassert_equal(rv, 0, "bind failed");
+
+	rv = bind(sock2, (struct sockaddr *)&bind_addr6, sizeof(bind_addr6));
+	zassert_equal(rv, 0, "bind failed");
+
+	rv = setsockopt(sock1, SOL_SOCKET, SO_RCVTIMEO, &optval,
+			sizeof(optval));
+	zassert_equal(rv, 0, "setsockopt failed (%d)", errno);
+
+	optval.tv_usec = 0;
+	rv = setsockopt(sock2, SOL_SOCKET, SO_RCVTIMEO, &optval,
+			sizeof(optval));
+	zassert_equal(rv, 0, "setsockopt failed (%d)", errno);
+
+	addrlen = sizeof(addr);
+	clear_buf(rx_buf);
+	start_time = k_uptime_get_32();
+	recved = recvfrom(sock1, rx_buf, sizeof(rx_buf),
+			  0, &addr, &addrlen);
+	time_diff = k_uptime_get_32() - start_time;
+
+	zassert_equal(recved, -1, "Unexpected return code");
+	zassert_equal(errno, EAGAIN, "Unexpected errno value: %d", errno);
+	zassert_true(time_diff >= 2500, "Expected timeout after 2500ms but "
+			"was %dms", time_diff);
+
+	start_time = k_uptime_get_32();
+	recved = recvfrom(sock2, rx_buf, sizeof(rx_buf),
+			  0, &addr, &addrlen);
+	time_diff = k_uptime_get_32() - start_time;
+
+	zassert_equal(recved, -1, "Unexpected return code");
+	zassert_equal(errno, EAGAIN, "Unexpected errno value: %d", errno);
+	zassert_true(time_diff >= 2000, "Expected timeout after 2000ms but "
+			"was %dms", time_diff);
+
+	rv = close(sock1);
+	zassert_equal(rv, 0, "close failed");
+	rv = close(sock2);
+	zassert_equal(rv, 0, "close failed");
+}
+
+ZTEST(net_socket_udp, test_10_so_sndtimeo)
+{
+	struct sockaddr_in bind_addr4;
+	struct sockaddr_in6 bind_addr6;
+	int sock1, sock2, rv;
+
+	struct timeval optval = {
+		.tv_sec = 2,
+		.tv_usec = 500000,
+	};
+
+	prepare_sock_udp_v4(MY_IPV4_ADDR, 55555, &sock1, &bind_addr4);
+	prepare_sock_udp_v6(MY_IPV6_ADDR, 55555, &sock2, &bind_addr6);
+
+	rv = bind(sock1, (struct sockaddr *)&bind_addr4, sizeof(bind_addr4));
+	zassert_equal(rv, 0, "bind failed");
+
+	rv = bind(sock2, (struct sockaddr *)&bind_addr6, sizeof(bind_addr6));
+	zassert_equal(rv, 0, "bind failed");
+
+	rv = setsockopt(sock1, SOL_SOCKET, SO_SNDTIMEO, &optval,
+			sizeof(optval));
+	zassert_equal(rv, 0, "setsockopt failed (%d)", errno);
+
+	optval.tv_usec = 0;
+	rv = setsockopt(sock2, SOL_SOCKET, SO_SNDTIMEO, &optval,
+			sizeof(optval));
+	zassert_equal(rv, 0, "setsockopt failed");
+
+	rv = close(sock1);
+	zassert_equal(rv, 0, "close failed");
+	rv = close(sock2);
+	zassert_equal(rv, 0, "close failed");
+}
+
+ZTEST(net_socket_udp, test_11_so_protocol)
+{
+	struct sockaddr_in bind_addr4;
+	struct sockaddr_in6 bind_addr6;
+	int sock1, sock2, rv;
+	int optval;
+	socklen_t optsize = sizeof(optval);
+
+	prepare_sock_udp_v4(MY_IPV4_ADDR, 55555, &sock1, &bind_addr4);
+	prepare_sock_udp_v6(MY_IPV6_ADDR, 55555, &sock2, &bind_addr6);
+
+	rv = getsockopt(sock1, SOL_SOCKET, SO_PROTOCOL, &optval, &optsize);
+	zassert_equal(rv, 0, "getsockopt failed (%d)", errno);
+	zassert_equal(optval, IPPROTO_UDP, "getsockopt got invalid protocol");
+	zassert_equal(optsize, sizeof(optval), "getsockopt got invalid size");
+
+	rv = getsockopt(sock2, SOL_SOCKET, SO_PROTOCOL, &optval, &optsize);
+	zassert_equal(rv, 0, "getsockopt failed (%d)", errno);
+	zassert_equal(optval, IPPROTO_UDP, "getsockopt got invalid protocol");
+	zassert_equal(optsize, sizeof(optval), "getsockopt got invalid size");
+
+	rv = close(sock1);
+	zassert_equal(rv, 0, "close failed");
+	rv = close(sock2);
+	zassert_equal(rv, 0, "close failed");
+}
+
 static void comm_sendmsg_with_txtime(int client_sock,
 				     struct sockaddr *client_addr,
 				     socklen_t client_addrlen,
@@ -734,11 +917,11 @@ static void comm_sendmsg_with_txtime(int client_sock,
  */
 struct eth_fake_context {
 	struct net_if *iface;
-	u8_t mac_address[6];
+	uint8_t mac_address[6];
 };
 
 static struct eth_fake_context eth_fake_data;
-static struct sockaddr_in6 server_addr;
+static ZTEST_BMEM struct sockaddr_in6 server_addr;
 
 /* The semaphore is there to wait the data to be received. */
 static ZTEST_BMEM SYS_MUTEX_DEFINE(wait_data);
@@ -748,21 +931,21 @@ static ZTEST_BMEM bool test_started;
 static ZTEST_BMEM bool test_failed;
 static struct in6_addr my_addr1 = { { { 0x20, 0x01, 0x0d, 0xb8, 1, 0, 0, 0,
 					0, 0, 0, 0, 0, 0, 0, 0x1 } } };
-static u8_t server_lladdr[] = { 0x01, 0x02, 0x03, 0xff, 0xfe,
+static uint8_t server_lladdr[] = { 0x01, 0x02, 0x03, 0xff, 0xfe,
 				0x04, 0x05, 0x06 };
 static struct net_linkaddr server_link_addr = {
 	.addr = server_lladdr,
 	.len = sizeof(server_lladdr),
 };
-#define MY_IPV6_ADDR "2001:db8:100::1"
-#define PEER_IPV6_ADDR "2001:db8:100::2"
+#define MY_IPV6_ADDR_ETH   "2001:db8:100::1"
+#define PEER_IPV6_ADDR_ETH "2001:db8:100::2"
 #define TEST_TXTIME 0xff112233445566ff
-#define WAIT_TIME 250
+#define WAIT_TIME K_MSEC(250)
 
 static void eth_fake_iface_init(struct net_if *iface)
 {
-	struct device *dev = net_if_get_device(iface);
-	struct eth_fake_context *ctx = dev->driver_data;
+	const struct device *dev = net_if_get_device(iface);
+	struct eth_fake_context *ctx = dev->data;
 
 	ctx->iface = iface;
 
@@ -773,9 +956,9 @@ static void eth_fake_iface_init(struct net_if *iface)
 	ethernet_init(iface);
 }
 
-static int eth_fake_send(struct device *dev, struct net_pkt *pkt)
+static int eth_fake_send(const struct device *dev, struct net_pkt *pkt)
 {
-	u64_t txtime;
+	uint64_t txtime;
 
 	ARG_UNUSED(dev);
 	ARG_UNUSED(pkt);
@@ -801,23 +984,26 @@ static struct ethernet_api eth_fake_api_funcs = {
 	.send = eth_fake_send,
 };
 
-static int eth_fake_init(struct device *dev)
-{
-	ARG_UNUSED(dev);
+ETH_NET_DEVICE_INIT(eth_fake, "eth_fake", NULL, NULL, &eth_fake_data, NULL,
+		    CONFIG_ETH_INIT_PRIORITY, &eth_fake_api_funcs, NET_ETH_MTU);
 
-	return 0;
+static void iface_cb(struct net_if *iface, void *user_data)
+{
+	struct net_if **my_iface = user_data;
+
+	if (net_if_l2(iface) == &NET_L2_GET_NAME(ETHERNET)) {
+		if (PART_OF_ARRAY(NET_IF_GET_NAME(eth_fake, 0), iface)) {
+			*my_iface = iface;
+		}
+	}
 }
 
-ETH_NET_DEVICE_INIT(eth_fake, "eth_fake", eth_fake_init, &eth_fake_data,
-		    NULL, CONFIG_ETH_INIT_PRIORITY, &eth_fake_api_funcs,
-		    NET_ETH_MTU);
-
-static void setup_eth(void)
+ZTEST(net_socket_udp, test_17_setup_eth)
 {
 	struct net_if_addr *ifaddr;
 	int ret;
 
-	eth_iface = net_if_get_first_by_type(&NET_L2_GET_NAME(ETHERNET));
+	net_if_foreach(iface_cb, &eth_iface);
 	zassert_not_null(eth_iface, "No ethernet interface found");
 
 	ifaddr = net_if_ipv6_addr_add(eth_iface, &my_addr1,
@@ -833,7 +1019,7 @@ static void setup_eth(void)
 	(void)memset(&server_addr, 0, sizeof(server_addr));
 	server_addr.sin6_family = AF_INET6;
 	server_addr.sin6_port = htons(1234);
-	ret = inet_pton(AF_INET6, PEER_IPV6_ADDR, &server_addr.sin6_addr);
+	ret = inet_pton(AF_INET6, PEER_IPV6_ADDR_ETH, &server_addr.sin6_addr);
 	zassert_equal(ret, 1, "inet_pton failed");
 
 	/* In order to avoid neighbor discovery, populate neighbor cache */
@@ -841,23 +1027,22 @@ static void setup_eth(void)
 			 true, NET_IPV6_NBR_STATE_REACHABLE);
 }
 
-void test_v6_sendmsg_with_txtime(void)
+ZTEST_USER(net_socket_udp, test_18_v6_sendmsg_with_txtime)
 {
 	int rv;
 	int client_sock;
 	bool optval;
-	u64_t txtime;
+	uint64_t txtime;
 	struct sockaddr_in6 client_addr;
 	struct msghdr msg;
 	struct cmsghdr *cmsg;
 	struct iovec io_vector[1];
 	union {
 		struct cmsghdr hdr;
-		unsigned char  buf[CMSG_SPACE(sizeof(u64_t))];
+		unsigned char  buf[CMSG_SPACE(sizeof(uint64_t))];
 	} cmsgbuf;
 
-	prepare_sock_udp_v6(MY_IPV6_ADDR, ANY_PORT, &client_sock,
-			    &client_addr);
+	prepare_sock_udp_v6(MY_IPV6_ADDR_ETH, ANY_PORT, &client_sock, &client_addr);
 
 	rv = bind(client_sock,
 		  (struct sockaddr *)&client_addr,
@@ -881,7 +1066,7 @@ void test_v6_sendmsg_with_txtime(void)
 	cmsg->cmsg_len = CMSG_LEN(sizeof(txtime));
 	cmsg->cmsg_level = SOL_SOCKET;
 	cmsg->cmsg_type = SCM_TXTIME;
-	*(u64_t *)CMSG_DATA(cmsg) = txtime;
+	*(uint64_t *)CMSG_DATA(cmsg) = txtime;
 
 	optval = true;
 	rv = setsockopt(client_sock, SOL_SOCKET, SO_TXTIME, &optval,
@@ -906,26 +1091,199 @@ void test_v6_sendmsg_with_txtime(void)
 	test_started = false;
 }
 
-void test_main(void)
+void test_msg_trunc(int sock_c, int sock_s, struct sockaddr *addr_c,
+		    socklen_t addrlen_c, struct sockaddr *addr_s,
+		    socklen_t addrlen_s)
 {
-	k_thread_system_pool_assign(k_current_get());
+	int rv;
+	uint8_t rx_buf[sizeof(TEST_STR_SMALL) - 1];
 
-	ztest_test_suite(socket_udp,
-			 ztest_unit_test(test_send_recv_2_sock),
-			 ztest_unit_test(test_v4_sendto_recvfrom),
-			 ztest_unit_test(test_v6_sendto_recvfrom),
-			 ztest_unit_test(test_v4_bind_sendto),
-			 ztest_unit_test(test_v6_bind_sendto),
-			 ztest_unit_test(test_so_priority),
-			 ztest_unit_test(test_so_txtime),
-			 ztest_unit_test(test_v4_sendmsg_recvfrom),
-			 ztest_unit_test(test_v6_sendmsg_recvfrom),
-			 ztest_unit_test(test_v4_sendmsg_recvfrom_connected),
-			 ztest_unit_test(test_v6_sendmsg_recvfrom_connected),
-			 ztest_unit_test(setup_eth),
-			 ztest_unit_test(test_v6_sendmsg_with_txtime),
-			 ztest_user_unit_test(test_v6_sendmsg_with_txtime)
-		);
+	rv = bind(sock_s, addr_s, addrlen_s);
+	zassert_equal(rv, 0, "server bind failed");
 
-	ztest_run_test_suite(socket_udp);
+	rv = bind(sock_c, addr_c, addrlen_c);
+	zassert_equal(rv, 0, "client bind failed");
+
+	rv = connect(sock_c, addr_s, addrlen_s);
+	zassert_equal(rv, 0, "connect failed");
+
+	/* MSG_TRUNC */
+
+	rv = send(sock_c, BUF_AND_SIZE(TEST_STR_SMALL), 0);
+	zassert_equal(rv, sizeof(TEST_STR_SMALL) - 1, "send failed");
+
+	memset(rx_buf, 0, sizeof(rx_buf));
+	rv = recv(sock_s, rx_buf, 2, ZSOCK_MSG_TRUNC);
+	zassert_equal(rv, sizeof(TEST_STR_SMALL) - 1, "MSG_TRUNC flag failed");
+	zassert_mem_equal(rx_buf, TEST_STR_SMALL, 2, "invalid rx data");
+	zassert_equal(rx_buf[2], 0, "received more than requested");
+
+	/* The remaining data should've been discarded */
+	rv = recv(sock_s, rx_buf, sizeof(rx_buf), ZSOCK_MSG_DONTWAIT);
+	zassert_equal(rv, -1, "consecutive recv should've failed");
+	zassert_equal(errno, EAGAIN, "incorrect errno value");
+
+	/* MSG_TRUNC & MSG_PEEK combo */
+
+	rv = send(sock_c, BUF_AND_SIZE(TEST_STR_SMALL), 0);
+	zassert_equal(rv, sizeof(TEST_STR_SMALL) - 1, "send failed");
+
+	memset(rx_buf, 0, sizeof(rx_buf));
+	rv = recv(sock_s, rx_buf, 2, ZSOCK_MSG_TRUNC | ZSOCK_MSG_PEEK);
+	zassert_equal(rv, sizeof(TEST_STR_SMALL) - 1, "MSG_TRUNC flag failed");
+
+	/* The packet should still be available due to MSG_PEEK */
+	rv = recv(sock_s, rx_buf, sizeof(rx_buf), ZSOCK_MSG_TRUNC);
+	zassert_equal(rv, sizeof(TEST_STR_SMALL) - 1,
+		      "recv after MSG_PEEK failed");
+	zassert_mem_equal(rx_buf, BUF_AND_SIZE(TEST_STR_SMALL),
+			  "invalid rx data");
+
+	rv = close(sock_c);
+	zassert_equal(rv, 0, "close failed");
+	rv = close(sock_s);
+	zassert_equal(rv, 0, "close failed");
 }
+
+ZTEST(net_socket_udp, test_19_v4_msg_trunc)
+{
+	int client_sock;
+	int server_sock;
+	struct sockaddr_in client_addr;
+	struct sockaddr_in server_addr;
+
+	prepare_sock_udp_v4(MY_IPV4_ADDR, ANY_PORT, &client_sock, &client_addr);
+	prepare_sock_udp_v4(MY_IPV4_ADDR, SERVER_PORT, &server_sock, &server_addr);
+
+	test_msg_trunc(client_sock, server_sock,
+		       (struct sockaddr *)&client_addr, sizeof(client_addr),
+		       (struct sockaddr *)&server_addr, sizeof(server_addr));
+}
+
+ZTEST(net_socket_udp, test_20_v6_msg_trunc)
+{
+	int client_sock;
+	int server_sock;
+	struct sockaddr_in6 client_addr;
+	struct sockaddr_in6 server_addr;
+
+	prepare_sock_udp_v6(MY_IPV6_ADDR, ANY_PORT, &client_sock, &client_addr);
+	prepare_sock_udp_v6(MY_IPV6_ADDR, SERVER_PORT, &server_sock, &server_addr);
+
+	test_msg_trunc(client_sock, server_sock,
+		       (struct sockaddr *)&client_addr, sizeof(client_addr),
+		       (struct sockaddr *)&server_addr, sizeof(server_addr));
+}
+
+static void test_dgram_overflow(int sock_c, int sock_s,
+				struct sockaddr *addr_c, socklen_t addrlen_c,
+				struct sockaddr *addr_s, socklen_t addrlen_s,
+				const void *buf, size_t buf_size)
+{
+	int rv;
+
+	rv = bind(sock_s, addr_s, addrlen_s);
+	zassert_equal(rv, 0, "server bind failed");
+
+	rv = bind(sock_c, addr_c, addrlen_c);
+	zassert_equal(rv, 0, "client bind failed");
+
+	rv = connect(sock_c, addr_s, addrlen_s);
+	zassert_equal(rv, 0, "connect failed");
+
+	rv = send(sock_c, buf, buf_size, 0);
+	zassert_equal(rv, -1, "send succeeded");
+	zassert_equal(errno, ENOMEM, "incorrect errno value");
+
+	rv = close(sock_c);
+	zassert_equal(rv, 0, "close failed");
+	rv = close(sock_s);
+	zassert_equal(rv, 0, "close failed");
+}
+
+static void test_dgram_fragmented(int sock_c, int sock_s,
+				  struct sockaddr *addr_c, socklen_t addrlen_c,
+				  struct sockaddr *addr_s, socklen_t addrlen_s,
+				  const void *buf, size_t buf_size)
+{
+	int rv;
+
+	rv = bind(sock_s, addr_s, addrlen_s);
+	zassert_equal(rv, 0, "server bind failed");
+
+	rv = bind(sock_c, addr_c, addrlen_c);
+	zassert_equal(rv, 0, "client bind failed");
+
+	rv = connect(sock_c, addr_s, addrlen_s);
+	zassert_equal(rv, 0, "connect failed");
+
+	rv = send(sock_c, buf, buf_size, 0);
+	zassert_equal(rv, buf_size, "send failed");
+
+	memset(rx_buf, 0, sizeof(rx_buf));
+	rv = recv(sock_s, rx_buf, sizeof(rx_buf), 0);
+	zassert_equal(rv, buf_size, "recv failed");
+	zassert_mem_equal(rx_buf, buf, buf_size, "wrong data");
+
+	rv = close(sock_c);
+	zassert_equal(rv, 0, "close failed");
+	rv = close(sock_s);
+	zassert_equal(rv, 0, "close failed");
+}
+
+ZTEST(net_socket_udp, test_21_v4_dgram_overflow)
+{
+	int client_sock;
+	int server_sock;
+	struct sockaddr_in client_addr;
+	struct sockaddr_in server_addr;
+
+	prepare_sock_udp_v4(MY_IPV4_ADDR, ANY_PORT, &client_sock, &client_addr);
+	prepare_sock_udp_v4(MY_IPV4_ADDR, SERVER_PORT, &server_sock, &server_addr);
+
+	test_dgram_overflow(client_sock, server_sock,
+			    (struct sockaddr *)&client_addr, sizeof(client_addr),
+			    (struct sockaddr *)&server_addr, sizeof(server_addr),
+			    test_str_all_tx_bufs, NET_ETH_MTU + 1);
+}
+
+ZTEST(net_socket_udp, test_22_v6_dgram_fragmented_or_overflow)
+{
+	int client_sock;
+	int server_sock;
+	struct sockaddr_in6 client_addr;
+	struct sockaddr_in6 server_addr;
+
+	prepare_sock_udp_v6(MY_IPV6_ADDR, ANY_PORT, &client_sock, &client_addr);
+	prepare_sock_udp_v6(MY_IPV6_ADDR, SERVER_PORT, &server_sock, &server_addr);
+
+	if (IS_ENABLED(CONFIG_NET_IPV6_FRAGMENT)) {
+		test_dgram_fragmented(client_sock, server_sock,
+				      (struct sockaddr *)&client_addr, sizeof(client_addr),
+				      (struct sockaddr *)&server_addr, sizeof(server_addr),
+				      test_str_all_tx_bufs, NET_ETH_MTU + 1);
+	} else {
+		test_dgram_overflow(client_sock, server_sock,
+				    (struct sockaddr *)&client_addr, sizeof(client_addr),
+				    (struct sockaddr *)&server_addr, sizeof(server_addr),
+				    test_str_all_tx_bufs, NET_ETH_MTU + 1);
+	}
+}
+
+ZTEST(net_socket_udp, test_23_v6_dgram_overflow)
+{
+	int client_sock;
+	int server_sock;
+	struct sockaddr_in6 client_addr;
+	struct sockaddr_in6 server_addr;
+
+	prepare_sock_udp_v6(MY_IPV6_ADDR, ANY_PORT, &client_sock, &client_addr);
+	prepare_sock_udp_v6(MY_IPV6_ADDR, SERVER_PORT, &server_sock, &server_addr);
+
+	test_dgram_overflow(client_sock, server_sock,
+			    (struct sockaddr *)&client_addr, sizeof(client_addr),
+			    (struct sockaddr *)&server_addr, sizeof(server_addr),
+			    BUF_AND_SIZE(test_str_all_tx_bufs));
+}
+
+ZTEST_SUITE(net_socket_udp, NULL, NULL, NULL, NULL, NULL);

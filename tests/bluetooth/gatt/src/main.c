@@ -6,13 +6,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
+#include <zephyr/kernel.h>
 #include <stddef.h>
-#include <ztest.h>
+#include <zephyr/ztest.h>
 
-#include <bluetooth/buf.h>
-#include <bluetooth/bluetooth.h>
-#include <bluetooth/gatt.h>
+#include <zephyr/bluetooth/buf.h>
+#include <zephyr/bluetooth/bluetooth.h>
+#include <zephyr/bluetooth/gatt.h>
 
 /* Custom Service Variables */
 static struct bt_uuid_128 test_uuid = BT_UUID_INIT_128(
@@ -22,7 +22,7 @@ static struct bt_uuid_128 test_chrc_uuid = BT_UUID_INIT_128(
 	0xf2, 0xde, 0xbc, 0x9a, 0x78, 0x56, 0x34, 0x12,
 	0x78, 0x56, 0x34, 0x12, 0x78, 0x56, 0x34, 0x12);
 
-static u8_t test_value[] = { 'T', 'e', 's', 't', '\0' };
+static uint8_t test_value[] = { 'T', 'e', 's', 't', '\0' };
 
 static struct bt_uuid_128 test1_uuid = BT_UUID_INIT_128(
 	0xf4, 0xde, 0xbc, 0x9a, 0x78, 0x56, 0x34, 0x12,
@@ -32,15 +32,15 @@ static const struct bt_uuid_128 test1_nfy_uuid = BT_UUID_INIT_128(
 	0xf5, 0xde, 0xbc, 0x9a, 0x78, 0x56, 0x34, 0x12,
 	0x78, 0x56, 0x34, 0x12, 0x78, 0x56, 0x34, 0x12);
 
-static u8_t nfy_enabled;
+static uint8_t nfy_enabled;
 
-static void test1_ccc_cfg_changed(const struct bt_gatt_attr *attr, u16_t value)
+static void test1_ccc_cfg_changed(const struct bt_gatt_attr *attr, uint16_t value)
 {
 	nfy_enabled = (value == BT_GATT_CCC_NOTIFY) ? 1 : 0;
 }
 
 static ssize_t read_test(struct bt_conn *conn, const struct bt_gatt_attr *attr,
-			void *buf, u16_t len, u16_t offset)
+			void *buf, uint16_t len, uint16_t offset)
 {
 	const char *value = attr->user_data;
 
@@ -49,10 +49,10 @@ static ssize_t read_test(struct bt_conn *conn, const struct bt_gatt_attr *attr,
 }
 
 static ssize_t write_test(struct bt_conn *conn, const struct bt_gatt_attr *attr,
-			 const void *buf, u16_t len, u16_t offset,
-			 u8_t flags)
+			 const void *buf, uint16_t len, uint16_t offset,
+			 uint8_t flags)
 {
-	u8_t *value = attr->user_data;
+	uint8_t *value = attr->user_data;
 
 	if (offset + len > sizeof(test_value)) {
 		return BT_GATT_ERR(BT_ATT_ERR_INVALID_OFFSET);
@@ -89,8 +89,14 @@ static struct bt_gatt_attr test1_attrs[] = {
 
 static struct bt_gatt_service test1_svc = BT_GATT_SERVICE(test1_attrs);
 
-void test_gatt_register(void)
+ZTEST_SUITE(test_gatt, NULL, NULL, NULL, NULL, NULL);
+
+ZTEST(test_gatt, test_gatt_register)
 {
+	/* Ensure our test services are not already registered */
+	bt_gatt_service_unregister(&test_svc);
+	bt_gatt_service_unregister(&test1_svc);
+
 	/* Attempt to register services */
 	zassert_false(bt_gatt_service_register(&test_svc),
 		     "Test service registration failed");
@@ -104,7 +110,7 @@ void test_gatt_register(void)
 		     "Test service1 duplicate succeeded");
 }
 
-void test_gatt_unregister(void)
+ZTEST(test_gatt, test_gatt_unregister)
 {
 	/* Attempt to unregister last */
 	zassert_false(bt_gatt_service_unregister(&test1_svc),
@@ -136,16 +142,18 @@ void test_gatt_unregister(void)
 		     "Test service unregister failed");
 }
 
-static u8_t count_attr(const struct bt_gatt_attr *attr, void *user_data)
+static uint8_t count_attr(const struct bt_gatt_attr *attr, uint16_t handle,
+			  void *user_data)
 {
-	u16_t *count = user_data;
+	uint16_t *count = user_data;
 
 	(*count)++;
 
 	return BT_GATT_ITER_CONTINUE;
 }
 
-static u8_t find_attr(const struct bt_gatt_attr *attr, void *user_data)
+static uint8_t find_attr(const struct bt_gatt_attr *attr, uint16_t handle,
+			 void *user_data)
 {
 	const struct bt_gatt_attr **tmp = user_data;
 
@@ -154,10 +162,10 @@ static u8_t find_attr(const struct bt_gatt_attr *attr, void *user_data)
 	return BT_GATT_ITER_CONTINUE;
 }
 
-void test_gatt_foreach(void)
+ZTEST(test_gatt, test_gatt_foreach)
 {
 	const struct bt_gatt_attr *attr;
-	u16_t num = 0;
+	uint16_t num = 0;
 
 	/* Attempt to register services */
 	zassert_false(bt_gatt_service_register(&test_svc),
@@ -222,10 +230,10 @@ void test_gatt_foreach(void)
 	}
 }
 
-void test_gatt_read(void)
+ZTEST(test_gatt, test_gatt_read)
 {
 	const struct bt_gatt_attr *attr;
-	u8_t buf[256];
+	uint8_t buf[256];
 	ssize_t ret;
 
 	/* Find attribute by UUID */
@@ -244,11 +252,15 @@ void test_gatt_read(void)
 			  "Attribute read value don't match");
 }
 
-void test_gatt_write(void)
+ZTEST(test_gatt, test_gatt_write)
 {
 	const struct bt_gatt_attr *attr;
 	char *value = "    ";
 	ssize_t ret;
+
+	/* Need our service to be registered */
+	zassert_false(bt_gatt_service_register(&test_svc),
+		     "Test service registration failed");
 
 	/* Find attribute by UUID */
 	attr = NULL;
@@ -261,16 +273,4 @@ void test_gatt_write(void)
 	zassert_equal(ret, strlen(value), "Attribute write unexpected return");
 	zassert_mem_equal(value, test_value, ret,
 			  "Attribute write value don't match");
-}
-
-/*test case main entry*/
-void test_main(void)
-{
-	ztest_test_suite(test_gatt,
-			 ztest_unit_test(test_gatt_register),
-			 ztest_unit_test(test_gatt_unregister),
-			 ztest_unit_test(test_gatt_foreach),
-			 ztest_unit_test(test_gatt_read),
-			 ztest_unit_test(test_gatt_write));
-	ztest_run_test_suite(test_gatt);
 }

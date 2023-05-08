@@ -4,51 +4,65 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <sys/crc.h>
+#include <zephyr/sys/crc.h>
 
-u16_t crc16(const u8_t *src, size_t len, u16_t polynomial,
-	    u16_t initial_value, bool pad)
+uint16_t crc16(uint16_t poly, uint16_t seed, const uint8_t *src, size_t len)
 {
-	u16_t crc = initial_value;
-	size_t padding = pad ? sizeof(crc) : 0;
-	size_t i, b;
+	uint16_t crc = seed;
+	size_t i, j;
 
-	/* src length + padding (if required) */
-	for (i = 0; i < len + padding; i++) {
+	for (i = 0; i < len; i++) {
+		crc ^= (uint16_t)(src[i] << 8U);
 
-		for (b = 0; b < 8; b++) {
-			u16_t divide = crc & 0x8000UL;
-
-			crc = (crc << 1U);
-
-			/* choose input bytes or implicit trailing zeros */
-			if (i < len) {
-				crc |= !!(src[i] & (0x80U >> b));
-			}
-
-			if (divide != 0U) {
-				crc = crc ^ polynomial;
+		for (j = 0; j < 8; j++) {
+			if (crc & 0x8000UL) {
+				crc = (crc << 1U) ^ poly;
+			} else {
+				crc = crc << 1U;
 			}
 		}
 	}
 
+
 	return crc;
 }
 
-u16_t crc16_ccitt(u16_t seed, const u8_t *src, size_t len)
+uint16_t crc16_reflect(uint16_t poly, uint16_t seed, const uint8_t *src, size_t len)
+{
+	uint16_t crc = seed;
+	size_t i, j;
+
+	for (i = 0; i < len; i++) {
+		crc ^= (uint16_t)src[i];
+
+		for (j = 0; j < 8; j++) {
+			if (crc & 0x0001UL) {
+				crc = (crc >> 1U) ^ poly;
+			} else {
+				crc = crc >> 1U;
+			}
+		}
+	}
+
+
+	return crc;
+}
+
+
+uint16_t crc16_ccitt(uint16_t seed, const uint8_t *src, size_t len)
 {
 	for (; len > 0; len--) {
-		u8_t e, f;
+		uint8_t e, f;
 
 		e = seed ^ *src++;
 		f = e ^ (e << 4);
-		seed = (seed >> 8) ^ (f << 8) ^ (f << 3) ^ (f >> 4);
+		seed = (seed >> 8) ^ ((uint16_t)f << 8) ^ ((uint16_t)f << 3) ^ ((uint16_t)f >> 4);
 	}
 
 	return seed;
 }
 
-u16_t crc16_itu_t(u16_t seed, const u8_t *src, size_t len)
+uint16_t crc16_itu_t(uint16_t seed, const uint8_t *src, size_t len)
 {
 	for (; len > 0; len--) {
 		seed = (seed >> 8U) | (seed << 8U);

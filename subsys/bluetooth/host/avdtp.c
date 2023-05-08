@@ -5,27 +5,27 @@
  *
  */
 
-#include <zephyr.h>
+#include <zephyr/kernel.h>
 #include <string.h>
 #include <strings.h>
 #include <errno.h>
-#include <sys/atomic.h>
-#include <sys/byteorder.h>
-#include <sys/util.h>
+#include <zephyr/sys/atomic.h>
+#include <zephyr/sys/byteorder.h>
+#include <zephyr/sys/util.h>
 
-#include <bluetooth/hci.h>
-#include <bluetooth/bluetooth.h>
-#include <bluetooth/l2cap.h>
-#include <bluetooth/avdtp.h>
-
-#define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_DEBUG_AVDTP)
-#define LOG_MODULE_NAME bt_avdtp
-#include "common/log.h"
+#include <zephyr/bluetooth/hci.h>
+#include <zephyr/bluetooth/bluetooth.h>
+#include <zephyr/bluetooth/l2cap.h>
+#include <zephyr/bluetooth/avdtp.h>
 
 #include "hci_core.h"
 #include "conn_internal.h"
 #include "l2cap_internal.h"
 #include "avdtp_internal.h"
+
+#define LOG_LEVEL CONFIG_BT_AVDTP_LOG_LEVEL
+#include <zephyr/logging/log.h>
+LOG_MODULE_REGISTER(bt_avdtp);
 
 #define AVDTP_MSG_POISTION 0x00
 #define AVDTP_PKT_POSITION 0x02
@@ -49,9 +49,9 @@ static struct bt_avdtp_seid_lsep *lseps;
 #define AVDTP_TIMEOUT K_SECONDS(6)
 
 static const struct {
-	u8_t sig_id;
+	uint8_t sig_id;
 	void (*func)(struct bt_avdtp *session, struct net_buf *buf,
-		     u8_t msg_type);
+		     uint8_t msg_type);
 } handler[] = {
 };
 
@@ -65,30 +65,31 @@ static int avdtp_send(struct bt_avdtp *session,
 
 	result = bt_l2cap_chan_send(&session->br_chan.chan, buf);
 	if (result < 0) {
-		BT_ERR("Error:L2CAP send fail - result = %d", result);
+		LOG_ERR("Error:L2CAP send fail - result = %d", result);
+		net_buf_unref(buf);
 		return result;
 	}
 
 	/*Save the sent request*/
 	req->sig = AVDTP_GET_SIG_ID(hdr->signal_id);
 	req->tid = AVDTP_GET_TR_ID(hdr->hdr);
-	BT_DBG("sig 0x%02X, tid 0x%02X", req->sig, req->tid);
+	LOG_DBG("sig 0x%02X, tid 0x%02X", req->sig, req->tid);
 
 	session->req = req;
 	/* Start timeout work */
-	k_delayed_work_submit(&session->req->timeout_work, AVDTP_TIMEOUT);
+	k_work_reschedule(&session->req->timeout_work, AVDTP_TIMEOUT);
 	return result;
 }
 
-static struct net_buf *avdtp_create_pdu(u8_t msg_type,
-					u8_t pkt_type,
-					u8_t sig_id)
+static struct net_buf *avdtp_create_pdu(uint8_t msg_type,
+					uint8_t pkt_type,
+					uint8_t sig_id)
 {
 	struct net_buf *buf;
-	static u8_t tid;
+	static uint8_t tid;
 	struct bt_avdtp_single_sig_hdr *hdr;
 
-	BT_DBG("");
+	LOG_DBG("");
 
 	buf = bt_l2cap_create_pdu(NULL, 0);
 
@@ -99,14 +100,14 @@ static struct net_buf *avdtp_create_pdu(u8_t msg_type,
 	tid %= 16; /* Loop for 16*/
 	hdr->signal_id = sig_id & AVDTP_SIGID_MASK;
 
-	BT_DBG("hdr = 0x%02X, Signal_ID = 0x%02X", hdr->hdr, hdr->signal_id);
+	LOG_DBG("hdr = 0x%02X, Signal_ID = 0x%02X", hdr->hdr, hdr->signal_id);
 	return buf;
 }
 
 /* Timeout handler */
 static void avdtp_timeout(struct k_work *work)
 {
-	BT_DBG("Failed Signal_id = %d", (AVDTP_KWORK(work))->sig);
+	LOG_DBG("Failed Signal_id = %d", (AVDTP_KWORK(work))->sig);
 
 	/* Gracefully Disconnect the Signalling and streaming L2cap chann*/
 
@@ -118,14 +119,14 @@ void bt_avdtp_l2cap_connected(struct bt_l2cap_chan *chan)
 	struct bt_avdtp *session;
 
 	if (!chan) {
-		BT_ERR("Invalid AVDTP chan");
+		LOG_ERR("Invalid AVDTP chan");
 		return;
 	}
 
 	session = AVDTP_CHAN(chan);
-	BT_DBG("chan %p session %p", chan, session);
+	LOG_DBG("chan %p session %p", chan, session);
 	/* Init the timer */
-	k_delayed_work_init(&session->req->timeout_work, avdtp_timeout);
+	k_work_init_delayable(&session->req->timeout_work, avdtp_timeout);
 
 }
 
@@ -133,24 +134,24 @@ void bt_avdtp_l2cap_disconnected(struct bt_l2cap_chan *chan)
 {
 	struct bt_avdtp *session = AVDTP_CHAN(chan);
 
-	BT_DBG("chan %p session %p", chan, session);
+	LOG_DBG("chan %p session %p", chan, session);
 	session->br_chan.chan.conn = NULL;
 	/* Clear the Pending req if set*/
 }
 
-void bt_avdtp_l2cap_encrypt_changed(struct bt_l2cap_chan *chan, u8_t status)
+void bt_avdtp_l2cap_encrypt_changed(struct bt_l2cap_chan *chan, uint8_t status)
 {
-	BT_DBG("");
+	LOG_DBG("");
 }
 
 int bt_avdtp_l2cap_recv(struct bt_l2cap_chan *chan, struct net_buf *buf)
 {
 	struct bt_avdtp_single_sig_hdr *hdr;
 	struct bt_avdtp *session = AVDTP_CHAN(chan);
-	u8_t i, msgtype, sigid, tid;
+	uint8_t i, msgtype, sigid, tid;
 
 	if (buf->len < sizeof(*hdr)) {
-		BT_ERR("Recvd Wrong AVDTP Header");
+		LOG_ERR("Recvd Wrong AVDTP Header");
 		return 0;
 	}
 
@@ -159,19 +160,18 @@ int bt_avdtp_l2cap_recv(struct bt_l2cap_chan *chan, struct net_buf *buf)
 	sigid = AVDTP_GET_SIG_ID(hdr->signal_id);
 	tid = AVDTP_GET_TR_ID(hdr->hdr);
 
-	BT_DBG("msg_type[0x%02x] sig_id[0x%02x] tid[0x%02x]",
-		msgtype, sigid, tid);
+	LOG_DBG("msg_type[0x%02x] sig_id[0x%02x] tid[0x%02x]", msgtype, sigid, tid);
 
 	/* validate if there is an outstanding resp expected*/
 	if (msgtype != BT_AVDTP_CMD) {
 		if (session->req == NULL) {
-			BT_DBG("Unexpected peer response");
+			LOG_DBG("Unexpected peer response");
 			return 0;
 		}
 
 		if (session->req->sig != sigid ||
 		    session->req->tid != tid) {
-			BT_DBG("Peer mismatch resp, expected sig[0x%02x]"
+			LOG_DBG("Peer mismatch resp, expected sig[0x%02x]"
 				"tid[0x%02x]", session->req->sig,
 				session->req->tid);
 			return 0;
@@ -191,7 +191,7 @@ int bt_avdtp_l2cap_recv(struct bt_l2cap_chan *chan, struct net_buf *buf)
 /*A2DP Layer interface */
 int bt_avdtp_connect(struct bt_conn *conn, struct bt_avdtp *session)
 {
-	static struct bt_l2cap_chan_ops ops = {
+	static const struct bt_l2cap_chan_ops ops = {
 		.connected = bt_avdtp_l2cap_connected,
 		.disconnected = bt_avdtp_l2cap_disconnected,
 		.encrypt_change = bt_avdtp_l2cap_encrypt_changed,
@@ -203,7 +203,7 @@ int bt_avdtp_connect(struct bt_conn *conn, struct bt_avdtp *session)
 	}
 
 	session->br_chan.chan.ops = &ops;
-	session->br_chan.chan.required_sec_level = BT_SECURITY_L2;
+	session->br_chan.required_sec_level = BT_SECURITY_L2;
 
 	return bt_l2cap_chan_connect(conn, &session->br_chan.chan,
 				     BT_L2CAP_PSM_AVDTP);
@@ -215,7 +215,7 @@ int bt_avdtp_disconnect(struct bt_avdtp *session)
 		return -EINVAL;
 	}
 
-	BT_DBG("session %p", session);
+	LOG_DBG("session %p", session);
 
 	return bt_l2cap_chan_disconnect(&session->br_chan.chan);
 }
@@ -224,13 +224,13 @@ int bt_avdtp_l2cap_accept(struct bt_conn *conn, struct bt_l2cap_chan **chan)
 {
 	struct bt_avdtp *session = NULL;
 	int result;
-	static struct bt_l2cap_chan_ops ops = {
+	static const struct bt_l2cap_chan_ops ops = {
 		.connected = bt_avdtp_l2cap_connected,
 		.disconnected = bt_avdtp_l2cap_disconnected,
 		.recv = bt_avdtp_l2cap_recv,
 	};
 
-	BT_DBG("conn %p", conn);
+	LOG_DBG("conn %p", conn);
 	/* Get the AVDTP session from upper layer */
 	result = event_cb->accept(conn, &session);
 	if (result < 0) {
@@ -245,7 +245,7 @@ int bt_avdtp_l2cap_accept(struct bt_conn *conn, struct bt_l2cap_chan **chan)
 /* Application will register its callback */
 int bt_avdtp_register(struct bt_avdtp_event_cb *cb)
 {
-	BT_DBG("");
+	LOG_DBG("");
 
 	if (event_cb) {
 		return -EALREADY;
@@ -256,12 +256,12 @@ int bt_avdtp_register(struct bt_avdtp_event_cb *cb)
 	return 0;
 }
 
-int bt_avdtp_register_sep(u8_t media_type, u8_t role,
+int bt_avdtp_register_sep(uint8_t media_type, uint8_t role,
 			  struct bt_avdtp_seid_lsep *lsep)
 {
-	BT_DBG("");
+	LOG_DBG("");
 
-	static u8_t bt_avdtp_seid = BT_AVDTP_MIN_SEID;
+	static uint8_t bt_avdtp_seid = BT_AVDTP_MIN_SEID;
 
 	if (!lsep) {
 		return -EIO;
@@ -292,12 +292,12 @@ int bt_avdtp_init(void)
 		.accept = bt_avdtp_l2cap_accept,
 	};
 
-	BT_DBG("");
+	LOG_DBG("");
 
 	/* Register AVDTP PSM with L2CAP */
 	err = bt_l2cap_br_server_register(&avdtp_l2cap);
 	if (err < 0) {
-		BT_ERR("AVDTP L2CAP Registration failed %d", err);
+		LOG_ERR("AVDTP L2CAP Registration failed %d", err);
 	}
 
 	return err;
@@ -309,9 +309,9 @@ int bt_avdtp_discover(struct bt_avdtp *session,
 {
 	struct net_buf *buf;
 
-	BT_DBG("");
+	LOG_DBG("");
 	if (!param || !session) {
-		BT_DBG("Error: Callback/Session not valid");
+		LOG_DBG("Error: Callback/Session not valid");
 		return -EINVAL;
 	}
 
@@ -319,7 +319,7 @@ int bt_avdtp_discover(struct bt_avdtp *session,
 			       BT_AVDTP_PACKET_TYPE_SINGLE,
 			       BT_AVDTP_DISCOVER);
 	if (!buf) {
-		BT_ERR("Error: No Buff available");
+		LOG_ERR("Error: No Buff available");
 		return -ENOMEM;
 	}
 

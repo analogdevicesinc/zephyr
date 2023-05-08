@@ -4,30 +4,31 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_bt, CONFIG_NET_L2_BT_LOG_LEVEL);
 
-#include <kernel.h>
-#include <toolchain.h>
-#include <linker/sections.h>
+#include <zephyr/kernel.h>
+#include <zephyr/toolchain.h>
+#include <zephyr/linker/sections.h>
 #include <string.h>
 #include <errno.h>
 
-#include <device.h>
-#include <init.h>
+#include <zephyr/device.h>
+#include <zephyr/init.h>
 
-#include <net/net_pkt.h>
-#include <net/net_core.h>
-#include <net/net_l2.h>
-#include <net/net_if.h>
-#include <net/bt.h>
+#include <zephyr/net/net_pkt.h>
+#include <zephyr/net/net_core.h>
+#include <zephyr/net/net_l2.h>
+#include <zephyr/net/net_if.h>
+#include <zephyr/net/capture.h>
+#include <zephyr/net/bt.h>
 #include <6lo.h>
 
-#include <bluetooth/bluetooth.h>
-#include <bluetooth/hci.h>
-#include <bluetooth/conn.h>
-#include <bluetooth/uuid.h>
-#include <bluetooth/l2cap.h>
+#include <zephyr/bluetooth/bluetooth.h>
+#include <zephyr/bluetooth/hci.h>
+#include <zephyr/bluetooth/conn.h>
+#include <zephyr/bluetooth/uuid.h>
+#include <zephyr/bluetooth/l2cap.h>
 
 #include "net_private.h"
 #include "ipv6.h"
@@ -48,6 +49,12 @@ extern int net_bt_shell_init(void);
 #else
 #define net_bt_shell_init(...)
 #endif
+
+#if defined(CONFIG_NET_BUF_FIXED_DATA_SIZE)
+#define IPSP_FRAG_LEN CONFIG_NET_BUF_DATA_SIZE
+#else
+#define IPSP_FRAG_LEN L2CAP_IPSP_MTU
+#endif /* CONFIG_NET_BUF_FIXED_DATA_SIZE */
 
 struct bt_if_conn {
 	struct net_if *iface;
@@ -74,7 +81,7 @@ static enum net_verdict net_bt_recv(struct net_if *iface, struct net_pkt *pkt)
 
 static struct bt_if_conn *net_bt_get_conn(struct net_if *iface)
 {
-	struct bt_context *ctxt = net_if_get_device(iface)->driver_data;
+	struct bt_context *ctxt = net_if_get_device(iface)->data;
 	int i;
 
 	for (i = 0; i < CONFIG_BT_MAX_CONN; i++) {
@@ -108,12 +115,17 @@ static int net_bt_send(struct net_if *iface, struct net_pkt *pkt)
 
 	length = net_pkt_get_len(pkt);
 
-	/* Dettach data fragments for packet */
+	net_capture_pkt(iface, pkt);
+
+	/* Detach data fragments for packet */
 	buffer = pkt->buffer;
 	pkt->buffer = NULL;
 
 	ret = bt_l2cap_chan_send(&conn->ipsp_chan.chan, buffer);
 	if (ret < 0) {
+		NET_ERR("Unable to send packet: %d", ret);
+		bt_l2cap_chan_disconnect(&conn->ipsp_chan.chan);
+		net_buf_unref(buffer);
 		return ret;
 	}
 
@@ -124,20 +136,17 @@ static int net_bt_send(struct net_if *iface, struct net_pkt *pkt)
 
 static int net_bt_enable(struct net_if *iface, bool state)
 {
-	struct bt_if_conn *conn = net_bt_get_conn(iface);
-
 	NET_DBG("iface %p %s", iface, state ? "up" : "down");
-
-	if (state && conn->ipsp_chan.chan.state != BT_L2CAP_CONNECTED) {
-		return -ENETDOWN;
-	}
 
 	return 0;
 }
 
 static enum net_l2_flags net_bt_flags(struct net_if *iface)
 {
-	return NET_L2_MULTICAST | NET_L2_MULTICAST_SKIP_JOIN_SOLICIT_NODE;
+	/* TODO: add NET_L2_MULTICAST_SKIP_JOIN_SOLICIT_NODE once the stack
+	 * supports Address Registration Option for neighbor discovery.
+	 */
+	return NET_L2_MULTICAST;
 }
 
 NET_L2_INIT(BLUETOOTH_L2, net_bt_recv, net_bt_send,
@@ -164,7 +173,7 @@ static void ipsp_connected(struct bt_l2cap_chan *chan)
 		bt_addr_le_to_str(info.le.dst, dst, sizeof(dst));
 
 		NET_DBG("Channel %p Source %s connected to Destination %s",
-			chan, log_strdup(src), log_strdup(dst));
+			chan, src, dst);
 	}
 
 	/* Swap bytes since net APIs expect big endian address */
@@ -186,8 +195,8 @@ static void ipsp_connected(struct bt_l2cap_chan *chan)
 	net_ipv6_nbr_add(conn->iface, &in6, &ll, false,
 			 NET_IPV6_NBR_STATE_STATIC);
 
-	/* Set iface up */
-	net_if_up(conn->iface);
+	/* Leave dormant state (iface goes up if set to admin up) */
+	net_if_dormant_off(conn->iface);
 }
 
 static void ipsp_disconnected(struct bt_l2cap_chan *chan)
@@ -196,8 +205,8 @@ static void ipsp_disconnected(struct bt_l2cap_chan *chan)
 
 	NET_DBG("Channel %p disconnected", chan);
 
-	/* Set iface down */
-	net_if_carrier_down(conn->iface);
+	/* Enter dormant state (iface goes down) */
+	net_if_dormant_on(conn->iface);
 
 #if defined(CONFIG_NET_L2_BT_MGMT)
 	if (chan->conn != default_conn) {
@@ -250,10 +259,10 @@ static struct net_buf *ipsp_alloc_buf(struct bt_l2cap_chan *chan)
 {
 	NET_DBG("Channel %p requires buffer", chan);
 
-	return net_pkt_get_reserve_rx_data(K_FOREVER);
+	return net_pkt_get_reserve_rx_data(IPSP_FRAG_LEN, BUF_TIMEOUT);
 }
 
-static struct bt_l2cap_chan_ops ipsp_ops = {
+static const struct bt_l2cap_chan_ops ipsp_ops = {
 	.alloc_buf	= ipsp_alloc_buf,
 	.recv		= ipsp_recv,
 	.connected	= ipsp_connected,
@@ -270,7 +279,7 @@ static struct bt_context bt_context_data = {
 
 static void bt_iface_init(struct net_if *iface)
 {
-	struct bt_context *ctxt = net_if_get_device(iface)->driver_data;
+	struct bt_context *ctxt = net_if_get_device(iface)->data;
 	struct bt_if_conn *conn = NULL;
 	int i;
 
@@ -292,7 +301,7 @@ static void bt_iface_init(struct net_if *iface)
 
 	conn->iface = iface;
 
-	net_if_flag_set(iface, NET_IF_NO_AUTO_START);
+	net_if_dormant_on(iface);
 
 #if defined(CONFIG_NET_L2_BT_ZEP1656)
 	/* Workaround Linux bug, see:
@@ -311,7 +320,7 @@ static int ipsp_accept(struct bt_conn *conn, struct bt_l2cap_chan **chan)
 	struct bt_if_conn *if_conn = NULL;
 	int i;
 
-	NET_DBG("Incoming conn %p", conn);
+	NET_DBG("Incoming conn %p", (void *)conn);
 
 	/* Find unused slot to store the iface */
 	for (i = 0; i < CONFIG_BT_MAX_CONN; i++) {
@@ -346,14 +355,14 @@ static struct bt_l2cap_server server = {
 
 static const struct bt_data ad[] = {
 	BT_DATA_BYTES(BT_DATA_FLAGS, (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
-	BT_DATA_BYTES(BT_DATA_UUID16_ALL, 0x20, 0x18),
+	BT_DATA_BYTES(BT_DATA_UUID16_ALL, BT_UUID_16_ENCODE(BT_UUID_IPSS_VAL)),
 };
 
 static const struct bt_data sd[] = {
 	BT_DATA(BT_DATA_NAME_COMPLETE, DEVICE_NAME, DEVICE_NAME_LEN),
 };
 
-static int bt_advertise(u32_t mgmt_request, struct net_if *iface, void *data,
+static int bt_advertise(uint32_t mgmt_request, struct net_if *iface, void *data,
 		      size_t len)
 {
 	if (!strcmp(data, "on")) {
@@ -368,7 +377,7 @@ static int bt_advertise(u32_t mgmt_request, struct net_if *iface, void *data,
 	return 0;
 }
 
-static int bt_connect(u32_t mgmt_request, struct net_if *iface, void *data,
+static int bt_connect(uint32_t mgmt_request, struct net_if *iface, void *data,
 		      size_t len)
 {
 	struct bt_if_conn *conn = net_bt_get_conn(iface);
@@ -390,12 +399,11 @@ static int bt_connect(u32_t mgmt_request, struct net_if *iface, void *data,
 					     L2CAP_IPSP_PSM);
 	}
 
-	default_conn = bt_conn_create_le(addr, BT_LE_CONN_PARAM_DEFAULT);
-
-	return 0;
+	return bt_conn_le_create(addr, BT_CONN_LE_CREATE_CONN,
+				 BT_LE_CONN_PARAM_DEFAULT, &default_conn);
 }
 
-static bool eir_found(u8_t type, const u8_t *data, u8_t data_len,
+static bool eir_found(uint8_t type, const uint8_t *data, uint8_t data_len,
 		      void *user_data)
 {
 	int i;
@@ -404,14 +412,14 @@ static bool eir_found(u8_t type, const u8_t *data, u8_t data_len,
 		return false;
 	}
 
-	if (data_len % sizeof(u16_t) != 0U) {
+	if (data_len % sizeof(uint16_t) != 0U) {
 		NET_ERR("AD malformed\n");
 		return false;
 	}
 
-	for (i = 0; i < data_len; i += sizeof(u16_t)) {
+	for (i = 0; i < data_len; i += sizeof(uint16_t)) {
 		struct bt_uuid *uuid;
-		u16_t u16;
+		uint16_t u16;
 
 		memcpy(&u16, &data[i], sizeof(u16));
 		uuid = BT_UUID_DECLARE_16(sys_le16_to_cpu(u16));
@@ -424,7 +432,7 @@ static bool eir_found(u8_t type, const u8_t *data, u8_t data_len,
 			char dev[BT_ADDR_LE_STR_LEN];
 
 			bt_addr_le_to_str(addr, dev, sizeof(dev));
-			NET_DBG("[DEVICE]: %s", log_strdup(dev));
+			NET_DBG("[DEVICE]: %s", dev);
 		}
 
 		/* TODO: Notify device address found */
@@ -438,13 +446,13 @@ static bool eir_found(u8_t type, const u8_t *data, u8_t data_len,
 }
 
 static bool ad_parse(struct net_buf_simple *ad,
-		     bool (*func)(u8_t type, const u8_t *data,
-				  u8_t data_len, void *user_data),
+		     bool (*func)(uint8_t type, const uint8_t *data,
+				  uint8_t data_len, void *user_data),
 		     void *user_data)
 {
 	while (ad->len > 1) {
-		u8_t len = net_buf_simple_pull_u8(ad);
-		u8_t type;
+		uint8_t len = net_buf_simple_pull_u8(ad);
+		uint8_t type;
 
 		/* Check for early termination */
 		if (len == 0U) {
@@ -468,11 +476,12 @@ static bool ad_parse(struct net_buf_simple *ad,
 	return false;
 }
 
-static void device_found(const bt_addr_le_t *addr, s8_t rssi, u8_t type,
+static void device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type,
 			 struct net_buf_simple *ad)
 {
 	/* We're only interested in connectable events */
-	if (type == BT_LE_ADV_IND || type == BT_LE_ADV_DIRECT_IND) {
+	if (type == BT_GAP_ADV_TYPE_ADV_IND ||
+	    type == BT_GAP_ADV_TYPE_ADV_DIRECT_IND) {
 		ad_parse(ad, eir_found, (void *)addr);
 	}
 }
@@ -507,7 +516,7 @@ static void bt_scan_off(void)
 	}
 }
 
-static int bt_scan(u32_t mgmt_request, struct net_if *iface, void *data,
+static int bt_scan(uint32_t mgmt_request, struct net_if *iface, void *data,
 		   size_t len)
 {
 	if (!strcmp(data, "on") || !strcmp(data, "active")) {
@@ -523,7 +532,7 @@ static int bt_scan(u32_t mgmt_request, struct net_if *iface, void *data,
 	return 0;
 }
 
-static int bt_disconnect(u32_t mgmt_request, struct net_if *iface,
+static int bt_disconnect(uint32_t mgmt_request, struct net_if *iface,
 			 void *data, size_t len)
 {
 	struct bt_if_conn *conn = net_bt_get_conn(iface);
@@ -542,7 +551,7 @@ static int bt_disconnect(u32_t mgmt_request, struct net_if *iface,
 	return bt_l2cap_chan_disconnect(&conn->ipsp_chan.chan);
 }
 
-static void connected(struct bt_conn *conn, u8_t err)
+static void connected(struct bt_conn *conn, uint8_t err)
 {
 	int i;
 
@@ -554,7 +563,7 @@ static void connected(struct bt_conn *conn, u8_t err)
 					  sizeof(addr));
 
 			NET_ERR("Failed to connect to %s (%u)\n",
-				log_strdup(addr), err);
+				addr, err);
 		}
 
 		return;
@@ -575,7 +584,7 @@ static void connected(struct bt_conn *conn, u8_t err)
 	}
 }
 
-static void disconnected(struct bt_conn *conn, u8_t reason)
+static void disconnected(struct bt_conn *conn, uint8_t reason)
 {
 	if (conn != default_conn) {
 		return;
@@ -587,27 +596,29 @@ static void disconnected(struct bt_conn *conn, u8_t reason)
 		bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
 
 		NET_DBG("Disconnected: %s (reason 0x%02x)\n",
-			log_strdup(addr), reason);
+			addr, reason);
 	}
 
 	bt_conn_unref(default_conn);
 	default_conn = NULL;
 }
 
-static struct bt_conn_cb conn_callbacks = {
+BT_CONN_CB_DEFINE(conn_callbacks) = {
 	.connected = connected,
 	.disconnected = disconnected,
 };
 #endif /* CONFIG_NET_L2_BT_MGMT */
 
-static int net_bt_init(struct device *dev)
+static int net_bt_init(const struct device *dev)
 {
-	NET_DBG("dev %p driver_data %p", dev, dev->driver_data);
+	int err;
 
-#if defined(CONFIG_NET_L2_BT_MGMT)
-	bt_conn_cb_register(&conn_callbacks);
-#endif
-	bt_l2cap_server_register(&server);
+	NET_DBG("dev %p driver_data %p", dev, dev->data);
+
+	err = bt_l2cap_server_register(&server);
+	if (err) {
+		return err;
+	}
 
 	net_bt_shell_init();
 
@@ -621,8 +632,7 @@ NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_BT_SCAN, bt_scan);
 NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_BT_DISCONNECT, bt_disconnect);
 #endif
 
-DEVICE_AND_API_INIT(net_bt, "net_bt", net_bt_init, &bt_context_data, NULL,
-		    POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT,
-		    &bt_if_api);
+DEVICE_DEFINE(net_bt, "net_bt", net_bt_init, NULL, &bt_context_data, NULL,
+	      POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT, &bt_if_api);
 NET_L2_DATA_INIT(net_bt, 0, NET_L2_GET_CTX_TYPE(BLUETOOTH_L2));
 NET_IF_INIT(net_bt, 0, BLUETOOTH_L2, L2CAP_IPSP_MTU, CONFIG_BT_MAX_CONN);

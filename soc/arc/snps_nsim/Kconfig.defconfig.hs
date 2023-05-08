@@ -1,10 +1,10 @@
-#
 # Copyright (c) 2019 Synopsys, Inc. All rights reserved.
-#
 # SPDX-License-Identifier: Apache-2.0
-#
 
 if SOC_NSIM_HS
+
+config CPU_HS3X
+	default y
 
 config NUM_IRQ_PRIO_LEVELS
 	# This processor supports 16 priority levels:
@@ -13,7 +13,7 @@ config NUM_IRQ_PRIO_LEVELS
 
 config NUM_IRQS
 	# must be > the highest interrupt number used
-	default 20
+	default 30
 
 config RGF_NUM_BANKS
 	default 2
@@ -27,7 +27,10 @@ config HARVARD
 config ARC_FIRQ
 	default y
 
-config CACHE_FLUSHING
+config CACHE_MANAGEMENT
 	default y
 
-endif #SOC_NSIM_HS
+config ARC_MPU_VER
+	default 3
+
+endif # SOC_NSIM_HS

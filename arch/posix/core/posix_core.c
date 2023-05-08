@@ -44,9 +44,9 @@
 
 #include "posix_core.h"
 #include "posix_arch_internal.h"
-#include "posix_soc_if.h"
+#include <zephyr/arch/posix/posix_soc_if.h>
 #include "kernel_internal.h"
-#include "kernel_structs.h"
+#include <zephyr/kernel_structs.h>
 #include "ksched.h"
 #include "kswap.h"
 
@@ -187,7 +187,7 @@ static void posix_preexit_cleanup(void)
 /**
  * Let the ready thread run and block this thread until it is allowed again
  *
- * called from __swap() which does the picking from the kernel structures
+ * called from arch_swap() which does the picking from the kernel structures
  */
 void posix_swap(int next_allowed_thread_nbr, int this_th_nbr)
 {
@@ -207,7 +207,7 @@ void posix_swap(int next_allowed_thread_nbr, int this_th_nbr)
 /**
  * Let the ready thread (main) run, and exit this thread (init)
  *
- * Called from z_arch_switch_to_main_thread() which does the picking from the
+ * Called from arch_switch_to_main_thread() which does the picking from the
  * kernel structures
  *
  * Note that we could have just done a swap(), but that would have left the
@@ -256,7 +256,7 @@ static void posix_cleanup_handler(void *arg)
 
 /**
  * Helper function to start a Zephyr thread as a POSIX thread:
- *  It will block the thread until a __swap() is called for it
+ *  It will block the thread until a arch_swap() is called for it
  *
  * Spawned from posix_new_thread() below
  */
@@ -361,10 +361,10 @@ static int ttable_get_empty_slot(void)
 }
 
 /**
- * Called from z_new_thread(),
+ * Called from arch_new_thread(),
  * Create a new POSIX thread for the new Zephyr thread.
- * z_new_thread() picks from the kernel structures what it is that we need to
- * call with what parameters
+ * arch_new_thread() picks from the kernel structures what it is that we need
+ * to call with what parameters
  */
 void posix_new_thread(posix_thread_status_t *ptr)
 {
@@ -477,9 +477,6 @@ void posix_abort_thread(int thread_idx)
 
 
 #if defined(CONFIG_ARCH_HAS_THREAD_ABORT)
-
-extern void z_thread_single_abort(struct k_thread *thread);
-
 void z_impl_k_thread_abort(k_tid_t thread)
 {
 	unsigned int key;
@@ -492,12 +489,6 @@ void z_impl_k_thread_abort(k_tid_t thread)
 	thread_idx = tstatus->thread_idx;
 
 	key = irq_lock();
-
-	__ASSERT(!(thread->base.user_options & K_ESSENTIAL),
-		 "essential thread aborted");
-
-	z_thread_single_abort(thread);
-	z_thread_monitor_exit(thread);
 
 	if (_current == thread) {
 		if (tstatus->aborted == 0) { /* LCOV_EXCL_BR_LINE */
@@ -515,10 +506,9 @@ void z_impl_k_thread_abort(k_tid_t thread)
 			threads_table[thread_idx].thead_cnt,
 			thread_idx,
 			__func__);
-
-		(void)z_swap_irqlock(key);
-		CODE_UNREACHABLE; /* LCOV_EXCL_LINE */
 	}
+
+	z_thread_abort(thread);
 
 	if (tstatus->aborted == 0) {
 		PC_DEBUG("%s aborting now [%i] %i\n",

@@ -4,29 +4,40 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <device.h>
-#include <drivers/gpio.h>
-
-#define LED_PORT	DT_ALIAS_LED0_GPIOS_CONTROLLER
-#define LED		DT_ALIAS_LED0_GPIOS_PIN
+#include <zephyr/kernel.h>
+#include <zephyr/drivers/gpio.h>
 
 /* 1000 msec = 1 sec */
-#define SLEEP_TIME	1000
+#define SLEEP_TIME_MS   1000
 
-void main(void)
+/* The devicetree node identifier for the "led0" alias. */
+#define LED0_NODE DT_ALIAS(led0)
+
+/*
+ * A build error on this line means your board is unsupported.
+ * See the sample documentation for information on how to fix this.
+ */
+static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(LED0_NODE, gpios);
+
+int main(void)
 {
-	u32_t cnt = 0;
-	struct device *dev;
+	int ret;
 
-	dev = device_get_binding(LED_PORT);
-	/* Set LED pin as output */
-	gpio_pin_configure(dev, LED, GPIO_DIR_OUT);
+	if (!gpio_is_ready_dt(&led)) {
+		return 0;
+	}
+
+	ret = gpio_pin_configure_dt(&led, GPIO_OUTPUT_ACTIVE);
+	if (ret < 0) {
+		return 0;
+	}
 
 	while (1) {
-		/* Set pin to HIGH/LOW every 1 second */
-		gpio_pin_write(dev, LED, cnt % 2);
-		cnt++;
-		k_sleep(SLEEP_TIME);
+		ret = gpio_pin_toggle_dt(&led);
+		if (ret < 0) {
+			return 0;
+		}
+		k_msleep(SLEEP_TIME_MS);
 	}
+	return 0;
 }

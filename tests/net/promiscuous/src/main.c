@@ -8,7 +8,7 @@
 
 #define NET_LOG_LEVEL CONFIG_NET_IF_LOG_LEVEL
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_test, NET_LOG_LEVEL);
 
 #include <zephyr/types.h>
@@ -16,14 +16,14 @@ LOG_MODULE_REGISTER(net_test, NET_LOG_LEVEL);
 #include <stddef.h>
 #include <string.h>
 #include <errno.h>
-#include <sys/printk.h>
+#include <zephyr/sys/printk.h>
 
-#include <ztest.h>
+#include <zephyr/ztest.h>
 
-#include <net/ethernet.h>
-#include <net/net_ip.h>
-#include <net/net_if.h>
-#include <net/promiscuous.h>
+#include <zephyr/net/ethernet.h>
+#include <zephyr/net/net_ip.h>
+#include <zephyr/net/net_if.h>
+#include <zephyr/net/promiscuous.h>
 
 #define NET_LOG_ENABLED 1
 #include "net_private.h"
@@ -60,14 +60,14 @@ static struct net_if *iface2;
 #define WAIT_TIME 250
 
 struct net_if_test {
-	u8_t idx;
-	u8_t mac_addr[sizeof(struct net_eth_addr)];
+	uint8_t idx;
+	uint8_t mac_addr[sizeof(struct net_eth_addr)];
 	struct net_linkaddr ll_addr;
 };
 
 struct eth_fake_context {
 	struct net_if *iface;
-	u8_t mac_address[6];
+	uint8_t mac_address[6];
 	bool promisc_mode;
 };
 
@@ -76,8 +76,8 @@ static struct eth_fake_context eth_fake_data2;
 
 static void eth_fake_iface_init(struct net_if *iface)
 {
-	struct device *dev = net_if_get_device(iface);
-	struct eth_fake_context *ctx = dev->driver_data;
+	const struct device *dev = net_if_get_device(iface);
+	struct eth_fake_context *ctx = dev->data;
 
 	ctx->iface = iface;
 
@@ -88,7 +88,7 @@ static void eth_fake_iface_init(struct net_if *iface)
 	ethernet_init(iface);
 }
 
-static int eth_fake_send(struct device *dev,
+static int eth_fake_send(const struct device *dev,
 			 struct net_pkt *pkt)
 {
 	ARG_UNUSED(dev);
@@ -97,16 +97,16 @@ static int eth_fake_send(struct device *dev,
 	return 0;
 }
 
-static enum ethernet_hw_caps eth_fake_get_capabilities(struct device *dev)
+static enum ethernet_hw_caps eth_fake_get_capabilities(const struct device *dev)
 {
 	return ETHERNET_PROMISC_MODE;
 }
 
-static int eth_fake_set_config(struct device *dev,
+static int eth_fake_set_config(const struct device *dev,
 			       enum ethernet_config_type type,
 			       const struct ethernet_config *config)
 {
-	struct eth_fake_context *ctx = dev->driver_data;
+	struct eth_fake_context *ctx = dev->data;
 
 	switch (type) {
 	case ETHERNET_CONFIG_TYPE_PROMISC_MODE:
@@ -133,22 +133,24 @@ static struct ethernet_api eth_fake_api_funcs = {
 	.send = eth_fake_send,
 };
 
-static int eth_fake_init(struct device *dev)
+static int eth_fake_init(const struct device *dev)
 {
-	struct eth_fake_context *ctx = dev->driver_data;
+	struct eth_fake_context *ctx = dev->data;
 
 	ctx->promisc_mode = false;
 
 	return 0;
 }
 
-ETH_NET_DEVICE_INIT(eth_fake1, "eth_fake1", eth_fake_init, &eth_fake_data1,
-		    NULL, CONFIG_ETH_INIT_PRIORITY, &eth_fake_api_funcs,
-		    NET_ETH_MTU);
+ETH_NET_DEVICE_INIT(eth_fake1, "eth_fake1",
+		    eth_fake_init, NULL,
+		    &eth_fake_data1, NULL, CONFIG_ETH_INIT_PRIORITY,
+		    &eth_fake_api_funcs, NET_ETH_MTU);
 
-ETH_NET_DEVICE_INIT(eth_fake2, "eth_fake2", eth_fake_init, &eth_fake_data2,
-		    NULL, CONFIG_ETH_INIT_PRIORITY, &eth_fake_api_funcs,
-		    NET_ETH_MTU);
+ETH_NET_DEVICE_INIT(eth_fake2, "eth_fake2",
+		    eth_fake_init, NULL,
+		    &eth_fake_data2, NULL, CONFIG_ETH_INIT_PRIORITY,
+		    &eth_fake_api_funcs, NET_ETH_MTU);
 
 #if NET_LOG_LEVEL >= LOG_LEVEL_DBG
 static const char *iface2str(struct net_if *iface)
@@ -174,7 +176,7 @@ static void iface_cb(struct net_if *iface, void *user_data)
 
 	if (net_if_l2(iface) == &NET_L2_GET_NAME(ETHERNET)) {
 		const struct ethernet_api *api =
-			net_if_get_device(iface)->driver_api;
+			net_if_get_device(iface)->api;
 
 		/* As native_posix board will introduce another ethernet
 		 * interface, make sure that we only use our own in this test.
@@ -195,7 +197,7 @@ static void iface_cb(struct net_if *iface, void *user_data)
 	}
 }
 
-static void iface_setup(void)
+static void test_iface_setup(void)
 {
 	struct net_if_mcast_addr *maddr;
 	struct net_if_addr *ifaddr;
@@ -205,11 +207,11 @@ static void iface_setup(void)
 
 	idx = net_if_get_by_iface(iface1);
 	((struct net_if_test *)
-	 net_if_get_device(iface1)->driver_data)->idx = idx;
+	 net_if_get_device(iface1)->data)->idx = idx;
 
 	idx = net_if_get_by_iface(iface2);
 	((struct net_if_test *)
-	 net_if_get_device(iface2)->driver_data)->idx = idx;
+	 net_if_get_device(iface2)->data)->idx = idx;
 
 	zassert_not_null(iface1, "Interface 1");
 	zassert_not_null(iface2, "Interface 2");
@@ -226,7 +228,7 @@ static void iface_setup(void)
 		zassert_not_null(ifaddr, "addr1");
 	}
 
-	/* For testing purposes we need to set the adddresses preferred */
+	/* For testing purposes we need to set the addresses preferred */
 	ifaddr->addr_state = NET_ADDR_PREFERRED;
 
 	ifaddr = net_if_ipv6_addr_add(iface1, &ll_addr,
@@ -318,25 +320,25 @@ static void _set_promisc_mode_off(struct net_if *iface)
 		      iface);
 }
 
-static void set_promisc_mode_on_again(void)
+static void test_set_promisc_mode_on_again(void)
 {
 	_set_promisc_mode_on_again(iface1);
 	_set_promisc_mode_on_again(iface2);
 }
 
-static void set_promisc_mode_on(void)
+static void test_set_promisc_mode_on(void)
 {
 	_set_promisc_mode_on(iface1);
 	_set_promisc_mode_on(iface2);
 }
 
-static void set_promisc_mode_off_again(void)
+static void test_set_promisc_mode_off_again(void)
 {
 	_set_promisc_mode_off_again(iface1);
 	_set_promisc_mode_off_again(iface2);
 }
 
-static void set_promisc_mode_off(void)
+static void test_set_promisc_mode_off(void)
 {
 	_set_promisc_mode_off(iface1);
 	_set_promisc_mode_off(iface2);
@@ -344,7 +346,7 @@ static void set_promisc_mode_off(void)
 
 static void _recv_data(struct net_if *iface, struct net_pkt **pkt)
 {
-	static u8_t data[] = { 't', 'e', 's', 't', '\0' };
+	static uint8_t data[] = { 't', 'e', 's', 't', '\0' };
 	int ret;
 
 	*pkt = net_pkt_rx_alloc_with_buffer(iface, sizeof(data),
@@ -359,13 +361,13 @@ static void _recv_data(struct net_if *iface, struct net_pkt **pkt)
 static struct net_pkt *pkt1;
 static struct net_pkt *pkt2;
 
-static void recv_data(void)
+static void test_recv_data(void)
 {
 	_recv_data(iface1, &pkt1);
 	_recv_data(iface2, &pkt2);
 }
 
-static void verify_data(void)
+static void test_verify_data(void)
 {
 	struct net_pkt *pkt;
 
@@ -378,16 +380,15 @@ static void verify_data(void)
 	net_pkt_unref(pkt);
 }
 
-void test_main(void)
+ZTEST(net_promisc_test_suite, test_net_promisc)
 {
-	ztest_test_suite(net_promisc_test,
-			 ztest_unit_test(iface_setup),
-			 ztest_unit_test(set_promisc_mode_on),
-			 ztest_unit_test(set_promisc_mode_on_again),
-			 ztest_unit_test(recv_data),
-			 ztest_unit_test(verify_data),
-			 ztest_unit_test(set_promisc_mode_off),
-			 ztest_unit_test(set_promisc_mode_off_again));
-
-	ztest_run_test_suite(net_promisc_test);
+	test_iface_setup();
+	test_set_promisc_mode_on();
+	test_set_promisc_mode_on_again();
+	test_recv_data();
+	test_verify_data();
+	test_set_promisc_mode_off();
+	test_set_promisc_mode_off_again();
 }
+
+ZTEST_SUITE(net_promisc_test_suite, NULL, NULL, NULL, NULL, NULL);

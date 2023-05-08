@@ -4,41 +4,24 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <device.h>
-#include <drivers/i2c.h>
-#include <sys/byteorder.h>
-#include <sys/util.h>
-#include <kernel.h>
-#include <drivers/sensor.h>
-#include <sys/__assert.h>
-#include <logging/log.h>
+#define DT_DRV_COMPAT ti_tmp112
 
-#define LOG_LEVEL CONFIG_SENSOR_LOG_LEVEL
-LOG_MODULE_REGISTER(TMP112);
+#include <zephyr/device.h>
+#include <zephyr/drivers/i2c.h>
+#include <zephyr/sys/byteorder.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/kernel.h>
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/sys/__assert.h>
+#include <zephyr/logging/log.h>
+#include "tmp112.h"
 
-#define TMP112_I2C_ADDRESS		CONFIG_TMP112_I2C_ADDR
+LOG_MODULE_REGISTER(TMP112, CONFIG_SENSOR_LOG_LEVEL);
 
-#define TMP112_REG_TEMPERATURE		0x00
-#define TMP112_D0_BIT			BIT(0)
-
-#define TMP112_REG_CONFIG		0x01
-#define TMP112_EM_BIT			BIT(4)
-#define TMP112_CR0_BIT			BIT(6)
-#define TMP112_CR1_BIT			BIT(7)
-
-/* scale in micro degrees Celsius */
-#define TMP112_TEMP_SCALE		62500
-
-struct tmp112_data {
-	struct device *i2c;
-	s16_t sample;
-};
-
-static int tmp112_reg_read(struct tmp112_data *drv_data,
-			   u8_t reg, u16_t *val)
+static int tmp112_reg_read(const struct tmp112_config *cfg,
+			   uint8_t reg, uint16_t *val)
 {
-	if (i2c_burst_read(drv_data->i2c, TMP112_I2C_ADDRESS,
-			   reg, (u8_t *) val, 2) < 0) {
+	if (i2c_burst_read_dt(&cfg->bus, reg, (uint8_t *)val, sizeof(*val)) < 0) {
 		return -EIO;
 	}
 
@@ -47,65 +30,71 @@ static int tmp112_reg_read(struct tmp112_data *drv_data,
 	return 0;
 }
 
-static int tmp112_reg_write(struct tmp112_data *drv_data,
-			    u8_t reg, u16_t val)
+static int tmp112_reg_write(const struct tmp112_config *cfg,
+			    uint8_t reg, uint16_t val)
 {
-	u16_t val_be = sys_cpu_to_be16(val);
+	uint8_t buf[3];
 
-	return i2c_burst_write(drv_data->i2c, TMP112_I2C_ADDRESS,
-			       reg, (u8_t *)&val_be, 2);
+	buf[0] = reg;
+	sys_put_be16(val, &buf[1]);
+
+	return i2c_write_dt(&cfg->bus, buf, sizeof(buf));
 }
 
-static int tmp112_reg_update(struct tmp112_data *drv_data, u8_t reg,
-			     u16_t mask, u16_t val)
+static uint16_t set_config_flags(struct tmp112_data *data, uint16_t mask,
+				 uint16_t value)
 {
-	u16_t old_val = 0U;
-	u16_t new_val;
+	return (data->config_reg & ~mask) | (value & mask);
+}
 
-	if (tmp112_reg_read(drv_data, reg, &old_val) < 0) {
-		return -EIO;
+static int tmp112_update_config(const struct device *dev, uint16_t mask,
+				uint16_t val)
+{
+	int rc;
+	struct tmp112_data *data = dev->data;
+	const uint16_t new_val = set_config_flags(data, mask, val);
+
+	rc = tmp112_reg_write(dev->config, TMP112_REG_CONFIG, new_val);
+	if (rc == 0) {
+		data->config_reg = new_val;
 	}
 
-	new_val = old_val & ~mask;
-	new_val |= val & mask;
-
-	return tmp112_reg_write(drv_data, reg, new_val);
+	return rc;
 }
 
-static int tmp112_attr_set(struct device *dev,
+static int tmp112_attr_set(const struct device *dev,
 			   enum sensor_channel chan,
 			   enum sensor_attribute attr,
 			   const struct sensor_value *val)
 {
-	struct tmp112_data *drv_data = dev->driver_data;
-	s64_t value;
-	u16_t cr;
+	uint16_t value;
+	uint16_t cr;
 
 	if (chan != SENSOR_CHAN_AMBIENT_TEMP) {
 		return -ENOTSUP;
 	}
 
 	switch (attr) {
+#if CONFIG_TMP112_FULL_SCALE_RUNTIME
 	case SENSOR_ATTR_FULL_SCALE:
 		/* the sensor supports two ranges -55 to 128 and -55 to 150 */
 		/* the value contains the upper limit */
 		if (val->val1 == 128) {
 			value = 0x0000;
 		} else if (val->val1 == 150) {
-			value = TMP112_EM_BIT;
+			value = TMP112_CONFIG_EM;
 		} else {
 			return -ENOTSUP;
 		}
 
-		if (tmp112_reg_update(drv_data, TMP112_REG_CONFIG,
-				      TMP112_EM_BIT, value) < 0) {
+		if (tmp112_update_config(dev, TMP112_CONFIG_EM, value) < 0) {
 			LOG_DBG("Failed to set attribute!");
 			return -EIO;
 		}
-
-		return 0;
-
+		break;
+#endif
 	case SENSOR_ATTR_SAMPLING_FREQUENCY:
+#if CONFIG_TMP112_SAMPLING_FREQUENCY_RUNTIME
 		/* conversion rate in mHz */
 		cr = val->val1 * 1000 + val->val2 / 1000;
 
@@ -113,33 +102,32 @@ static int tmp112_attr_set(struct device *dev,
 		/* conversion rate */
 		switch (cr) {
 		case 250:
-			value = 0x0000;
+			value = TMP112_CONV_RATE(TMP112_CONV_RATE_025);
 			break;
 
 		case 1000:
-			value = TMP112_CR0_BIT;
+			value = TMP112_CONV_RATE(TMP112_CONV_RATE_1000);
 			break;
 
 		case 4000:
-			value = TMP112_CR1_BIT;
+			value = TMP112_CONV_RATE(TMP112_CONV_RATE_4);
 			break;
 
 		case 8000:
-			value = TMP112_CR0_BIT | TMP112_CR1_BIT;
+			value = TMP112_CONV_RATE(TMP112_CONV_RATE_8);
 			break;
 
 		default:
 			return -ENOTSUP;
 		}
 
-		if (tmp112_reg_update(drv_data, TMP112_REG_CONFIG,
-				      TMP112_CR0_BIT | TMP112_CR1_BIT,
-				      value) < 0) {
+		if (tmp112_update_config(dev, TMP112_CONV_RATE_MASK, value) < 0) {
 			LOG_DBG("Failed to set attribute!");
 			return -EIO;
 		}
 
-		return 0;
+		break;
+#endif
 
 	default:
 		return -ENOTSUP;
@@ -148,38 +136,42 @@ static int tmp112_attr_set(struct device *dev,
 	return 0;
 }
 
-static int tmp112_sample_fetch(struct device *dev, enum sensor_channel chan)
+static int tmp112_sample_fetch(const struct device *dev,
+			       enum sensor_channel chan)
 {
-	struct tmp112_data *drv_data = dev->driver_data;
-	u16_t val;
+	struct tmp112_data *drv_data = dev->data;
+	const struct tmp112_config *cfg = dev->config;
+	uint16_t val;
 
 	__ASSERT_NO_MSG(chan == SENSOR_CHAN_ALL || chan == SENSOR_CHAN_AMBIENT_TEMP);
 
-	if (tmp112_reg_read(drv_data, TMP112_REG_TEMPERATURE, &val) < 0) {
+	if (tmp112_reg_read(cfg, TMP112_REG_TEMPERATURE, &val) < 0) {
 		return -EIO;
 	}
 
-	if (val & TMP112_D0_BIT) {
-		drv_data->sample = arithmetic_shift_right((s16_t)val, 3);
+	if (val & TMP112_DATA_EXTENDED) {
+		drv_data->sample = arithmetic_shift_right((int16_t)val,
+							  TMP112_DATA_EXTENDED_SHIFT);
 	} else {
-		drv_data->sample = arithmetic_shift_right((s16_t)val, 4);
+		drv_data->sample = arithmetic_shift_right((int16_t)val,
+							  TMP112_DATA_NORMAL_SHIFT);
 	}
 
 	return 0;
 }
 
-static int tmp112_channel_get(struct device *dev,
-		enum sensor_channel chan,
-		struct sensor_value *val)
+static int tmp112_channel_get(const struct device *dev,
+			      enum sensor_channel chan,
+			      struct sensor_value *val)
 {
-	struct tmp112_data *drv_data = dev->driver_data;
-	s32_t uval;
+	struct tmp112_data *drv_data = dev->data;
+	int32_t uval;
 
 	if (chan != SENSOR_CHAN_AMBIENT_TEMP) {
 		return -ENOTSUP;
 	}
 
-	uval = (s32_t)drv_data->sample * TMP112_TEMP_SCALE;
+	uval = (int32_t)drv_data->sample * TMP112_TEMP_SCALE;
 	val->val1 = uval / 1000000;
 	val->val2 = uval % 1000000;
 
@@ -192,21 +184,33 @@ static const struct sensor_driver_api tmp112_driver_api = {
 	.channel_get = tmp112_channel_get,
 };
 
-int tmp112_init(struct device *dev)
+int tmp112_init(const struct device *dev)
 {
-	struct tmp112_data *drv_data = dev->driver_data;
+	const struct tmp112_config *cfg = dev->config;
+	struct tmp112_data *data = dev->data;
 
-	drv_data->i2c = device_get_binding(CONFIG_TMP112_I2C_MASTER_DEV_NAME);
-	if (drv_data->i2c == NULL) {
-		LOG_DBG("Failed to get pointer to %s device!",
-			    CONFIG_TMP112_I2C_MASTER_DEV_NAME);
+	if (!device_is_ready(cfg->bus.bus)) {
+		LOG_ERR("I2C dev %s not ready", cfg->bus.bus->name);
 		return -EINVAL;
 	}
 
-	return 0;
+	data->config_reg = TMP112_CONV_RATE(cfg->cr) | TMP112_CONV_RES_MASK
+			   | (cfg->extended_mode ? TMP112_CONFIG_EM : 0);
+
+	return tmp112_update_config(dev, 0, 0);
 }
 
-static struct tmp112_data tmp112_driver;
 
-DEVICE_AND_API_INIT(tmp112, CONFIG_TMP112_NAME, tmp112_init, &tmp112_driver,
-	    NULL, POST_KERNEL, CONFIG_SENSOR_INIT_PRIORITY, &tmp112_driver_api);
+#define TMP112_INST(inst)						    \
+	static struct tmp112_data tmp112_data_##inst;			    \
+	static const struct tmp112_config tmp112_config_##inst = {	    \
+		.bus = I2C_DT_SPEC_INST_GET(inst),			    \
+		.cr = DT_INST_ENUM_IDX(inst, conversion_rate),		    \
+		.extended_mode = DT_INST_PROP(inst, extended_mode),	    \
+	};								    \
+									    \
+	SENSOR_DEVICE_DT_INST_DEFINE(inst, tmp112_init, NULL, &tmp112_data_##inst, \
+			      &tmp112_config_##inst, POST_KERNEL,	    \
+			      CONFIG_SENSOR_INIT_PRIORITY, &tmp112_driver_api);
+
+DT_INST_FOREACH_STATUS_OKAY(TMP112_INST)

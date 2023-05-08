@@ -4,25 +4,21 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#define DT_DRV_COMPAT nxp_pca9633
+
 /**
  * @file
  * @brief LED driver for the PCA9633 I2C LED driver (7-bit slave address 0x62)
  */
 
-#include <drivers/i2c.h>
-#include <drivers/led.h>
-#include <sys/util.h>
-#include <zephyr.h>
+#include <zephyr/drivers/i2c.h>
+#include <zephyr/drivers/led.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/kernel.h>
 
 #define LOG_LEVEL CONFIG_LED_LOG_LEVEL
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(pca9633);
-
-#ifdef CONFIG_HAS_DTS_I2C
-#define CONFIG_PCA9633_DEV_NAME                 DT_INST_0_NXP_PCA9633_LABEL
-#define CONFIG_PCA9633_I2C_ADDRESS              DT_INST_0_NXP_PCA9633_BASE_ADDRESS
-#define CONFIG_PCA9633_I2C_MASTER_DEV_NAME      DT_INST_0_NXP_PCA9633_BUS_NAME
-#endif
 
 #include "led_context.h"
 
@@ -35,28 +31,34 @@ LOG_MODULE_REGISTER(pca9633);
 /* PCA9633 control register */
 #define PCA9633_MODE1           0x00
 #define PCA9633_MODE2           0x01
-#define PCA9633_PWM_BASE        0x02
+#define PCA9633_PWM_BASE        0x02	/* Reg 0x02-0x05 for brightness control LED01-04 */
 #define PCA9633_GRPPWM          0x06
 #define PCA9633_GRPFREQ         0x07
 #define PCA9633_LEDOUT          0x08
 
+/* PCA9633 mode register 1 */
+#define PCA9633_MODE1_SLEEP     0x10    /* Sleep Mode */
 /* PCA9633 mode register 2 */
 #define PCA9633_MODE2_DMBLNK    0x20    /* Enable blinking */
 
 #define PCA9633_MASK            0x03
 
+struct pca9633_config {
+	struct i2c_dt_spec i2c;
+};
+
 struct pca9633_data {
-	struct device *i2c;
 	struct led_data dev_data;
 };
 
-static int pca9633_led_blink(struct device *dev, u32_t led,
-			     u32_t delay_on, u32_t delay_off)
+static int pca9633_led_blink(const struct device *dev, uint32_t led,
+			     uint32_t delay_on, uint32_t delay_off)
 {
-	struct pca9633_data *data = dev->driver_data;
+	struct pca9633_data *data = dev->data;
+	const struct pca9633_config *config = dev->config;
 	struct led_data *dev_data = &data->dev_data;
-	u8_t gdc, gfrq;
-	u32_t period;
+	uint8_t gdc, gfrq;
+	uint32_t period;
 
 	period = delay_on + delay_off;
 
@@ -71,7 +73,7 @@ static int pca9633_led_blink(struct device *dev, u32_t led,
 	 *		GDC = ((time_on * 256) / period)
 	 */
 	gdc = delay_on * 256U / period;
-	if (i2c_reg_write_byte(data->i2c, CONFIG_PCA9633_I2C_ADDRESS,
+	if (i2c_reg_write_byte_dt(&config->i2c,
 			       PCA9633_GRPPWM,
 			       gdc)) {
 		LOG_ERR("LED reg write failed");
@@ -85,7 +87,7 @@ static int pca9633_led_blink(struct device *dev, u32_t led,
 	 *		GFRQ = ((period * 24 / 1000) - 1)
 	 */
 	gfrq = (period * 24U / 1000) - 1;
-	if (i2c_reg_write_byte(data->i2c, CONFIG_PCA9633_I2C_ADDRESS,
+	if (i2c_reg_write_byte_dt(&config->i2c,
 			       PCA9633_GRPFREQ,
 			       gfrq)) {
 		LOG_ERR("LED reg write failed");
@@ -93,7 +95,7 @@ static int pca9633_led_blink(struct device *dev, u32_t led,
 	}
 
 	/* Enable blinking mode */
-	if (i2c_reg_update_byte(data->i2c, CONFIG_PCA9633_I2C_ADDRESS,
+	if (i2c_reg_update_byte_dt(&config->i2c,
 				PCA9633_MODE2,
 				PCA9633_MODE2_DMBLNK,
 				PCA9633_MODE2_DMBLNK)) {
@@ -101,8 +103,8 @@ static int pca9633_led_blink(struct device *dev, u32_t led,
 		return -EIO;
 	}
 
-	/* Select the GRPPWM source to drive the LED outpout */
-	if (i2c_reg_update_byte(data->i2c, CONFIG_PCA9633_I2C_ADDRESS,
+	/* Select the GRPPWM source to drive the LED output */
+	if (i2c_reg_update_byte_dt(&config->i2c,
 				PCA9633_LEDOUT,
 				PCA9633_MASK << (led << 1),
 				PCA9633_LED_GRP_PWM << (led << 1))) {
@@ -113,12 +115,13 @@ static int pca9633_led_blink(struct device *dev, u32_t led,
 	return 0;
 }
 
-static int pca9633_led_set_brightness(struct device *dev, u32_t led,
-				      u8_t value)
+static int pca9633_led_set_brightness(const struct device *dev, uint32_t led,
+				      uint8_t value)
 {
-	struct pca9633_data *data = dev->driver_data;
+	const struct pca9633_config *config = dev->config;
+	struct pca9633_data *data = dev->data;
 	struct led_data *dev_data = &data->dev_data;
-	u8_t val;
+	uint8_t val;
 
 	if (value < dev_data->min_brightness ||
 	    value > dev_data->max_brightness) {
@@ -127,7 +130,7 @@ static int pca9633_led_set_brightness(struct device *dev, u32_t led,
 
 	/* Set the LED brightness value */
 	val = (value * 255U) / dev_data->max_brightness;
-	if (i2c_reg_write_byte(data->i2c, CONFIG_PCA9633_I2C_ADDRESS,
+	if (i2c_reg_write_byte_dt(&config->i2c,
 			       PCA9633_PWM_BASE + led,
 			       val)) {
 		LOG_ERR("LED reg write failed");
@@ -135,7 +138,7 @@ static int pca9633_led_set_brightness(struct device *dev, u32_t led,
 	}
 
 	/* Set the LED driver to be controlled through its PWMx register. */
-	if (i2c_reg_update_byte(data->i2c, CONFIG_PCA9633_I2C_ADDRESS,
+	if (i2c_reg_update_byte_dt(&config->i2c,
 				PCA9633_LEDOUT,
 				PCA9633_MASK << (led << 1),
 				PCA9633_LED_PWM << (led << 1))) {
@@ -146,12 +149,12 @@ static int pca9633_led_set_brightness(struct device *dev, u32_t led,
 	return 0;
 }
 
-static inline int pca9633_led_on(struct device *dev, u32_t led)
+static inline int pca9633_led_on(const struct device *dev, uint32_t led)
 {
-	struct pca9633_data *data = dev->driver_data;
+	const struct pca9633_config *config = dev->config;
 
 	/* Set LED state to ON */
-	if (i2c_reg_update_byte(data->i2c, CONFIG_PCA9633_I2C_ADDRESS,
+	if (i2c_reg_update_byte_dt(&config->i2c,
 				PCA9633_LEDOUT,
 				PCA9633_MASK << (led << 1),
 				PCA9633_LED_ON << (led << 1))) {
@@ -162,12 +165,12 @@ static inline int pca9633_led_on(struct device *dev, u32_t led)
 	return 0;
 }
 
-static inline int pca9633_led_off(struct device *dev, u32_t led)
+static inline int pca9633_led_off(const struct device *dev, uint32_t led)
 {
-	struct pca9633_data *data = dev->driver_data;
+	const struct pca9633_config *config = dev->config;
 
 	/* Set LED state to OFF */
-	if (i2c_reg_update_byte(data->i2c, CONFIG_PCA9633_I2C_ADDRESS,
+	if (i2c_reg_update_byte_dt(&config->i2c,
 				PCA9633_LEDOUT,
 				PCA9633_MASK << (led << 1),
 				PCA9633_LED_OFF)) {
@@ -178,17 +181,25 @@ static inline int pca9633_led_off(struct device *dev, u32_t led)
 	return 0;
 }
 
-static int pca9633_led_init(struct device *dev)
+static int pca9633_led_init(const struct device *dev)
 {
-	struct pca9633_data *data = dev->driver_data;
+	const struct pca9633_config *config = dev->config;
+	struct pca9633_data *data = dev->data;
 	struct led_data *dev_data = &data->dev_data;
 
-	data->i2c = device_get_binding(CONFIG_PCA9633_I2C_MASTER_DEV_NAME);
-	if (data->i2c == NULL) {
-		LOG_DBG("Failed to get I2C device");
-		return -EINVAL;
+	if (!device_is_ready(config->i2c.bus)) {
+		LOG_ERR("I2C bus is not ready");
+		return -ENODEV;
 	}
 
+	/* Take the LED driver out from Sleep mode. */
+	if (i2c_reg_update_byte_dt(&config->i2c,
+				PCA9633_MODE1,
+				PCA9633_MODE1_SLEEP,
+				~PCA9633_MODE1_SLEEP)) {
+		LOG_ERR("LED reg update failed");
+		return -EIO;
+	}
 	/* Hardware specific limits */
 	dev_data->min_period = 41U;
 	dev_data->max_period = 10667U;
@@ -198,8 +209,6 @@ static int pca9633_led_init(struct device *dev)
 	return 0;
 }
 
-static struct pca9633_data pca9633_led_data;
-
 static const struct led_driver_api pca9633_led_api = {
 	.blink = pca9633_led_blink,
 	.set_brightness = pca9633_led_set_brightness,
@@ -207,7 +216,16 @@ static const struct led_driver_api pca9633_led_api = {
 	.off = pca9633_led_off,
 };
 
-DEVICE_AND_API_INIT(pca9633_led, CONFIG_PCA9633_DEV_NAME,
-		    &pca9633_led_init, &pca9633_led_data,
-		    NULL, POST_KERNEL, CONFIG_LED_INIT_PRIORITY,
-		    &pca9633_led_api);
+#define PCA9633_DEVICE(id)						\
+	static const struct pca9633_config pca9633_##id##_cfg = {	\
+		.i2c = I2C_DT_SPEC_INST_GET(id)				\
+	};								\
+	static struct pca9633_data pca9633_##id##_data;			\
+									\
+	DEVICE_DT_INST_DEFINE(id, &pca9633_led_init, NULL,		\
+			&pca9633_##id##_data,				\
+			&pca9633_##id##_cfg, POST_KERNEL,		\
+			CONFIG_LED_INIT_PRIORITY,			\
+			&pca9633_led_api);
+
+DT_INST_FOREACH_STATUS_OKAY(PCA9633_DEVICE)

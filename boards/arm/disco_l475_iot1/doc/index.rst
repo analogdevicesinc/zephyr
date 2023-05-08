@@ -37,9 +37,7 @@ This kit provides:
 
 
 .. image:: img/disco_l475_iot1.jpg
-     :width: 531px
      :align: center
-     :height: 354px
      :alt: Disco L475 IoT1
 
 More information about the board can be found at the `Disco L475 IoT1 website`_.
@@ -115,6 +113,8 @@ The Zephyr Disco L475 IoT board configuration supports the following hardware fe
 +-----------+------------+-------------------------------------+
 | GPIO      | on-chip    | gpio                                |
 +-----------+------------+-------------------------------------+
+| FLASH     | on-chip    | flash memory                        |
++-----------+------------+-------------------------------------+
 | I2C       | on-chip    | i2c                                 |
 +-----------+------------+-------------------------------------+
 | SPI       | on-chip    | spi                                 |
@@ -122,6 +122,14 @@ The Zephyr Disco L475 IoT board configuration supports the following hardware fe
 | PWM       | on-chip    | pwm                                 |
 +-----------+------------+-------------------------------------+
 | WATCHDOG  | on-chip    | independent watchdog                |
++-----------+------------+-------------------------------------+
+| DAC       | on-chip    | DAC Controller                      |
++-----------+------------+-------------------------------------+
+| ADC       | on-chip    | adc                                 |
++-----------+------------+-------------------------------------+
+| QSPI NOR  | on-chip    | off-chip flash                      |
++-----------+------------+-------------------------------------+
+| die-temp  | on-chip    | die temperature sensor              |
 +-----------+------------+-------------------------------------+
 
 Other hardware features are not yet supported on this Zephyr port.
@@ -150,11 +158,17 @@ Default Zephyr Peripheral Mapping:
 - I2C1 SCL/SDA : PB8/PB9 (Arduino I2C)
 - I2C2 SCL/SDA : PB10/PB11 (Sensor I2C bus)
 - I2C3 SCL/SDA : PC0/PC1
-- SPI1 SCK/MISO/MOSI : PA5/PA6/PA7 (Arduino SPI)
+- SPI1 NSS/SCK/MISO/MOSI : PA2/PA5/PA6/PA7 (Arduino SPI)
 - SPI3 SCK/MISO/MOSI : PC10/PC11/PC12 (BT SPI bus)
 - PWM_2_CH1 : PA15
 - USER_PB : PC13
 - LD2 : PA5
+- ADC12_IN5 : PA0
+- ADC123_IN3 : PC2
+- ADC123_IN4 : PC3
+- ADC12_IN13 : PC4
+- ADC12_IN14 : PC5
+- DAC1_OUT1 : PA4
 
 System Clock
 ------------

@@ -1,101 +1,36 @@
-# Kconfig.defconfig.series - ST Microelectronics STM32 all MCU lines
-#
+# ST Microelectronics STM32 all MCU lines
+
 # Copyright (c) 2017, I-SENSE group of ICCS
-#
 # SPDX-License-Identifier: Apache-2.0
-#
 
 # Here are set all the Kconfig symbols common to the whole STM32 family
 
 if SOC_FAMILY_STM32
 
-if SERIAL
+config CORTEX_M_SYSTICK
+	default n if STM32_LPTIM_TIMER
 
-config UART_STM32
+DT_STM32_RCC_PATH := $(dt_nodelabel_path,rcc)
+DT_STM32_RCC_CLOCK_FREQ := $(dt_node_int_prop_int,$(DT_STM32_RCC_PATH),clock-frequency)
+
+config SYS_CLOCK_HW_CYCLES_PER_SEC
+	default "$(DT_STM32_RCC_CLOCK_FREQ)" if "$(dt_nodelabel_enabled,rcc)"
+
+# set the tick per sec as a divider of the LPTIM clock source
+config SYS_CLOCK_TICKS_PER_SEC
+	default 4096 if STM32_LPTIM_TIMER && STM32_LPTIM_CLOCK_LSE
+	default 4000 if STM32_LPTIM_TIMER && STM32_LPTIM_CLOCK_LSI
+
+config CLOCK_CONTROL_STM32_CUBE
 	default y
+	depends on CLOCK_CONTROL
 
-endif #SERIAL
+config CLOCK_CONTROL_INIT_PRIORITY
+	default 1
+	depends on CLOCK_CONTROL
 
-if GPIO
-
-config GPIO_STM32
+config MEMC_STM32
 	default y
-
-config GPIO_STM32_PORTA
-	default y
-
-config GPIO_STM32_PORTB
-	default y
-
-config GPIO_STM32_PORTC
-	default y
-
-endif #GPIO
-
-if PINMUX
-
-config PINMUX_STM32
-	default y
-
-endif #PINMUX
-
-if WATCHDOG
-
-config IWDG_STM32
-	default y
-
-config WWDG_STM32
-	default n
-
-endif # WATCHDOG
-
-if PWM
-
-config PWM_STM32
-	default y
-
-endif # PWM
-
-if SPI
-
-config SPI_STM32
-	default y
-
-endif # SPI
-
-if I2C
-
-config I2C_STM32
-	default y
-
-endif
-
-if USB
-
-config USB_DC_STM32
-	default y
-
-endif # USB
-
-if COUNTER
-
-config COUNTER_RTC_STM32
-	default y
-
-endif # COUNTER
-
-if CAN
-
-config CAN_STM32
-	default y
-
-endif
-
-if ADC
-
-config ADC_STM32
-	default y
-
-endif # ADC
+	depends on MEMC
 
 endif # SOC_FAMILY_STM32

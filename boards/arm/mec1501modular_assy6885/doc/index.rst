@@ -1,46 +1,53 @@
 .. _mec1501modular_assy6885:
 
-MEC1501 Modular card ASSY6885
-#############################
+Microchip MEC1501 Modular card ASSY6885
+#######################################
 
 Overview
 ********
 
 The MEC1501 Modular card ASSY6885 is a development board to evaluate the Microchip
-MEC15XX series microcontrollers. This board can work standalone or be mated with
+MEC152X series microcontrollers. This board can work standalone or be mated with
 any platform that complies with MECC specification.
 
-.. image:: ./mec1501modular_assy6885.png
-     :width: 600px
+.. image:: mec1501modular_assy6885.jpg
      :align: center
      :alt: MEC1501 Modular ASSY 6885
 
 Hardware
 ********
 
-- MEC1501HB0SZ ARM Cortex-M4 Processor
+- MEC1521HA0SZ ARM Cortex-M4 Processor
 - 256 KB RAM and 64 KB boot ROM
 - GPIO headers
 - UART1 using microUSB
-- UART0 and UART2 exposed in headers
-- FAN0, FAN1, FAN2 headers
-- FAN PWM interface
-- JTAG/SWD, ETM and MCHP Trace ports
 - PECI interface 3.0
-- I2C voltage translator
-- 10 SMBUS headers
-- 4 SGPIO headers
+- 10 SMBUS instances
+- FAN, PMW and TACHO pins
 - VCI interface
-- 5 independent Hardware Driven PS/2 Ports
-- eSPI header
-- 3 Breathing/Blinking LEDs
-- 2 Sockets for SPI NOR chips
-- One reset and VCC_PWRDGD pushbuttons
-- One external PCA9555 I/O port with jumper selectable I2C address.
-- One external LTC2489 delta-sigma ADC with jumper selectable I2C address.
-- Board power jumper selectable from +5V 2.1mm/5.5mm barrel connector or USB Micro A connector.
+- Independent Hardware Driven PS/2 Ports
 
-For more information about the SOC please see the `MEC1501 Reference Manual`_
+At difference from MEC15xx evaluation board, modular MEC1521 exposes the pins
+in 2 different ways:
+
+1) Standalone mode via headers
+
+   - GPIOs
+   - PWM5
+   - JTAG/SWD, ETM and MCHP Trace ports
+   - eSPI bus
+   - SMB0
+
+2) Mated mode with another platform that has a high density MECC connector.
+
+   - FAN0, PWM0, SMB0, SMB1, SMB4 and SMB5
+   - eSPI bus
+   - Breathing/Blinking LEDs
+
+The board is powered through the +5V USB Micro A connector or from the MECC connector.
+
+
+For more information about the SOC please see the `MEC152x Reference Manual`_
 
 Supported Features
 ==================
@@ -65,11 +72,23 @@ features:
 +-----------+------------+-------------------------------------+
 | PINMUX    | on-chip    | pinmux                              |
 +-----------+------------+-------------------------------------+
+| RTOS      | on-chip    | timer                               |
++-----------+------------+-------------------------------------+
+| TIMER     | on-chip    | counter                             |
++-----------+------------+-------------------------------------+
+| PWM       | on-chip    | pwm                                 |
++-----------+------------+-------------------------------------+
+| ADC       | on-chip    | adc                                 |
++-----------+------------+-------------------------------------+
+| WATCHDOG  | on-chip    | watchdog                            |
++-----------+------------+-------------------------------------+
+| PS2       | on-chip    | ps2                                 |
++-----------+------------+-------------------------------------+
 
 Other hardware features are not currently supported by Zephyr (at the moment)
 
 The default configuration can be found in the
-:zephyr_file:`boards/arm/mec1501modular_assy6885/mec1501modular_assy6885`
+:zephyr_file:`boards/arm/mec1501modular_assy6885/mec1501modular_assy6885_defconfig`
 Kconfig file.
 
 Connections and IOs
@@ -110,29 +129,32 @@ set the jumper to ``JP35 3-4``.
 
 .. note:: A single jumper is required in JP35.
 
-+------+------+------+------+------+------+------+
-| JP30 | JP31 | JP32 | JP33 | JP34 | JP40 | JP21 |
-+======+======+======+======+======+======+======+
-| 1-2  | 1-2  | 1-2  | 1-2  |  1-2 | 1-2  | 1-2  |
-+------+------+------+------+------+------+------+
++------+---------+---------+------+------+------+----------+
+| JP30 | JP31    | JP32    | JP33 | JP34 | JP40 | JP21     |
+| VTR3 | VTR_PLL | VTR_REG | VTR1 | VTR2 | 3.3V | VREF_ADC |
++======+=========+=========+======+======+======+==========+
+| 1-2  |   1-2   |   1-2   | 1-2  |  1-2 | 1-2  |   1-2    |
++------+---------+---------+------+------+------+----------+
 
-+------+------+------+------+------+
-| JP6  | JP21 | JP36 | JP27 | JP4  |
-+======+======+======+======+======+
-| 2-3  | 1-2  | 1-2  | 2-3  | open |
-+------+------+------+------+------+
+
++------+------------+------+----------+
+| JP6  | JP36       | JP27 | JP4      |
+| VBAT | VTR_ANALOG | PECI | VREF_VTT |
++======+============+======+==========+
+| 2-3  |    1-2     | 2-3  |   open   |
++------+------------+------+----------+
 
 These jumpers configure nRESETI and JTAG_STRAP respectively.
 
-+-----------+--------------+
-| JP22      | JP29         |
-| (nRESETI) | (JTAG_STRAP) |
-+===========+==============+
-| 11-12     | 1-2          |
-+-----------+--------------+
++-----------+---------------+
+| JP22      | JP29          |
+| (nRESETI) | (JTAG_STRAP)  |
++===========+===============+
+| 11-12     | 1-2           |
++-----------+---------------+
 
-Boot-ROM Straps.
-----------------
+Boot-ROM Straps
+---------------
 
 These jumpers configure MEC1501 Boot-ROM straps.
 
@@ -146,7 +168,7 @@ These jumpers configure MEC1501 Boot-ROM straps.
 
 ``JP23 3-4`` pulls SHD SPI CS0# up to VTR2. MEC1501 Boot-ROM samples
 SHD SPI CS0# and if high, it loads code from SHD SPI.
-This is the recomended setup.
+This is the recommended setup.
 
 +-------------+------------+----------------------------+
 |  CR_STRAP   | BSS_STRAP  |         SOURCE             |
@@ -158,9 +180,22 @@ This is the recomended setup.
 |             |     1      |  Use 3.3V Shared channel(R)|
 +-------------+------------+----------------------------+
 
+Power management
+----------------
+``JP20 2-3`` is required so all GPIOs powered by VTR3 rail worked at 1.8V.
 
-Jumper location map.
---------------------
+.. note:: External 1.8V needs to be connected to JP13.1
+
++-------------------+-----------------+
+| JP20              | JP13            |
+| (VTR3 selection)  | (1.8V source)   |
++===================+=================+
+|   2-3             | 1.8V to pin 1   |
++-------------------+-----------------+
+
+
+Jumper location map
+-------------------
 
 .. code-block:: none
 
@@ -186,9 +221,9 @@ Jumper location map.
    |    J45+---------------+  JP33 TP57      JP25            +-------------+ J4       J49 |
    |                                                                                      |
    | ++                                           TP4   +----------+   ++                 |
-   | ++     +    +      +    +    +     +  TP61         +----------+   ++                 |
-   | JP28   +    +      +    +    +     +  TP60            J51        JP35                |
-   |      TP58 JP16   JP11 JP13 JP15  JP10                                                |
+   | ++     +    +      +    +    +       +  TP61         +----------+   ++               |
+   | JP28   +    +      +    +    +  TP65 +  TP60            J51        JP35              |
+   |      TP58 JP16   JP11 JP13 JP15     JP10                                             |
    | TP5                                                                                  |
    | TP6                                        TP1                                       |
    +--------------------------------------------------------------------------------------+
@@ -197,12 +232,37 @@ Jumper location map.
 Programming and Debugging
 *************************
 
+Setup
+=====
+
+#. Clone the `MEC152x SPI Image Gen`_ repository or download the files within
+   that directory. For the pre-production MEC150x use the `MEC150x SPI Image Gen`_
+   repository.
+
+#. Make the image generation available for Zephyr, by making the tool
+   searchable by path, or by setting an environment variable
+   ``EVERGLADES_SPI_GEN``, for example:
+
+   .. code-block:: console
+
+      export EVERGLADES_SPI_GEN=<path to tool>/everglades_spi_gen_RomE
+
+   Note that the tools for Linux and Windows have different file names.
+   For the pre-production MEC1501 SOC use everglades_spi_gen_lin64.
+
+#. If needed, a custom SPI image configuration file can be specified
+   to override the default one.
+
+   .. code-block:: console
+
+      export EVERGLADES_SPI_CFG=custom_spi_cfg.txt
+
+
 Building
 ==========
-
 #. Build :ref:`hello_world` application as you would normally do.
 
-#. Once you have ``zephyr.bin``, use the `SPI Image Gen`_ microchip tool
+#. Once you have ``zephyr.bin``, use the `MEC152x SPI Image Gen`_ microchip tool
    to create the final binary. You need the output from this tool to flash
    in the SHD SPI memory.
 
@@ -249,11 +309,13 @@ References
 **********
 .. target-notes::
 
-.. _MEC1501 Preliminary Data Sheet:
-    https://github.com/MicrochipTech/CPGZephyrDocs/blob/master/MEC1501/MEC1501_Datasheet.pdf
-.. _MEC1501 Reference Manual:
-    https://github.com/MicrochipTech/CPGZephyrDocs/blob/master/MEC1501/MEC1501_Datasheet.pdf
+.. _MEC152x Preliminary Data Sheet:
+    https://github.com/MicrochipTech/CPGZephyrDocs/blob/master/MEC152x/MEC152x_Datasheet.pdf
+.. _MEC152x Reference Manual:
+    https://github.com/MicrochipTech/CPGZephyrDocs/blob/master/MEC152x/MEC152x_Datasheet.pdf
 .. _MEC1501 Modular EC Card - Assy_6885 Rev A0p1:
     https://github.com/MicrochipTech/CPGZephyrDocs/blob/master/MEC1501/MEC1501%20Modular%20EC%20Card%20-%20Assy_6885%20Rev%20A0p1%20-%20SCH.pdf
-.. _SPI Image Gen:
+.. _MEC152x SPI Image Gen:
+    https://github.com/MicrochipTech/CPGZephyrDocs/tree/master/MEC152x/SPI_image_gen
+.. _MEC150x SPI Image Gen:
     https://github.com/MicrochipTech/CPGZephyrDocs/tree/master/MEC1501/SPI_image_gen

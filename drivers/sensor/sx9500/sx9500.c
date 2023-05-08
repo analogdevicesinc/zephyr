@@ -6,22 +6,23 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#define DT_DRV_COMPAT semtech_sx9500
+
 #include <errno.h>
 
-#include <kernel.h>
-#include <drivers/i2c.h>
-#include <drivers/sensor.h>
-#include <init.h>
-#include <drivers/gpio.h>
-#include <sys/__assert.h>
-#include <logging/log.h>
+#include <zephyr/kernel.h>
+#include <zephyr/drivers/i2c.h>
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/init.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/sys/__assert.h>
+#include <zephyr/logging/log.h>
 
 #include "sx9500.h"
 
-#define LOG_LEVEL CONFIG_SENSOR_LOG_LEVEL
-LOG_MODULE_REGISTER(SX9500);
+LOG_MODULE_REGISTER(SX9500, CONFIG_SENSOR_LOG_LEVEL);
 
-static u8_t sx9500_reg_defaults[] = {
+static uint8_t sx9500_reg_defaults[] = {
 	/*
 	 * First number is register address to write to.  The chip
 	 * auto-increments the address for subsequent values in a single
@@ -44,21 +45,22 @@ static u8_t sx9500_reg_defaults[] = {
 	0x00,	/* No stuck timeout, no periodic compensation. */
 };
 
-static int sx9500_sample_fetch(struct device *dev, enum sensor_channel chan)
+static int sx9500_sample_fetch(const struct device *dev,
+			       enum sensor_channel chan)
 {
-	struct sx9500_data *data = (struct sx9500_data *) dev->driver_data;
+	struct sx9500_data *data = dev->data;
+	const struct sx9500_config *cfg = dev->config;
 
 	__ASSERT_NO_MSG(chan == SENSOR_CHAN_ALL || chan == SENSOR_CHAN_PROX);
 
-	return i2c_reg_read_byte(data->i2c_master, data->i2c_slave_addr,
-				 SX9500_REG_STAT, &data->prox_stat);
+	return i2c_reg_read_byte_dt(&cfg->i2c, SX9500_REG_STAT, &data->prox_stat);
 }
 
-static int sx9500_channel_get(struct device *dev,
+static int sx9500_channel_get(const struct device *dev,
 			      enum sensor_channel chan,
 			      struct sensor_value *val)
 {
-	struct sx9500_data *data = (struct sx9500_data *) dev->driver_data;
+	struct sx9500_data *data = (struct sx9500_data *) dev->data;
 
 	__ASSERT_NO_MSG(chan == SENSOR_CHAN_PROX);
 
@@ -77,13 +79,13 @@ static const struct sensor_driver_api sx9500_api_funcs = {
 #endif
 };
 
-static int sx9500_init_chip(struct device *dev)
+static int sx9500_init_chip(const struct device *dev)
 {
-	struct sx9500_data *data = (struct sx9500_data *) dev->driver_data;
-	u8_t val;
+	const struct sx9500_config *cfg = dev->config;
+	uint8_t val;
 
-	if (i2c_write(data->i2c_master, sx9500_reg_defaults,
-		      sizeof(sx9500_reg_defaults), data->i2c_slave_addr)
+	if (i2c_write_dt(&cfg->i2c, sx9500_reg_defaults,
+		      sizeof(sx9500_reg_defaults))
 		      < 0) {
 		return -EIO;
 	}
@@ -91,50 +93,56 @@ static int sx9500_init_chip(struct device *dev)
 	/* No interrupts active.  We only activate them when an
 	 * application registers a trigger.
 	 */
-	if (i2c_reg_write_byte(data->i2c_master, data->i2c_slave_addr,
-			       SX9500_REG_IRQ_MSK, 0) < 0) {
+	if (i2c_reg_write_byte_dt(&cfg->i2c, SX9500_REG_IRQ_MSK, 0) < 0) {
 		return -EIO;
 	}
 
 	/* Read irq source reg to clear reset status. */
-	if (i2c_reg_read_byte(data->i2c_master, data->i2c_slave_addr,
-			      SX9500_REG_IRQ_SRC, &val) < 0) {
+	if (i2c_reg_read_byte_dt(&cfg->i2c, SX9500_REG_IRQ_SRC, &val) < 0) {
 		return -EIO;
 	}
 
-	return i2c_reg_write_byte(data->i2c_master, data->i2c_slave_addr,
-				  SX9500_REG_PROX_CTRL0,
-				  1 << CONFIG_SX9500_PROX_CHANNEL);
+	return i2c_reg_write_byte_dt(&cfg->i2c, SX9500_REG_PROX_CTRL0,
+				     1 << CONFIG_SX9500_PROX_CHANNEL);
 }
 
-int sx9500_init(struct device *dev)
+int sx9500_init(const struct device *dev)
 {
-	struct sx9500_data *data = dev->driver_data;
+	const struct sx9500_config *cfg = dev->config;
 
-	data->i2c_master = device_get_binding(CONFIG_SX9500_I2C_DEV_NAME);
-	if (!data->i2c_master) {
-		LOG_DBG("sx9500: i2c master not found: %s",
-		    CONFIG_SX9500_I2C_DEV_NAME);
-		return -EINVAL;
+	if (!device_is_ready(cfg->i2c.bus)) {
+		LOG_ERR("Bus device is not ready");
+		return -ENODEV;
 	}
-
-	data->i2c_slave_addr = CONFIG_SX9500_I2C_ADDR;
 
 	if (sx9500_init_chip(dev) < 0) {
 		LOG_DBG("sx9500: failed to initialize chip");
 		return -EINVAL;
 	}
 
-	if (sx9500_setup_interrupt(dev) < 0) {
-		LOG_DBG("sx9500: failed to setup interrupt");
-		return -EINVAL;
+#ifdef CONFIG_SX9500_TRIGGER
+	if (cfg->int_gpio.port) {
+		if (sx9500_setup_interrupt(dev) < 0) {
+			LOG_DBG("sx9500: failed to setup interrupt");
+			return -EINVAL;
+		}
 	}
+#endif
 
 	return 0;
 }
 
-struct sx9500_data sx9500_data;
+#define SX9500_DEFINE(inst)									\
+	struct sx9500_data sx9500_data_##inst;							\
+												\
+	static const struct sx9500_config sx9500_config_##inst = {				\
+		.i2c = I2C_DT_SPEC_INST_GET(inst),						\
+		IF_ENABLED(CONFIG_SX9500_TRIGGER,						\
+			   (.int_gpio = GPIO_DT_SPEC_INST_GET_OR(inst, int_gpios, { 0 }),))	\
+	};											\
+												\
+	SENSOR_DEVICE_DT_INST_DEFINE(inst, sx9500_init, NULL,					\
+			      &sx9500_data_##inst, &sx9500_config_##inst, POST_KERNEL,		\
+			      CONFIG_SENSOR_INIT_PRIORITY, &sx9500_api_funcs);			\
 
-DEVICE_AND_API_INIT(sx9500, CONFIG_SX9500_DEV_NAME, sx9500_init, &sx9500_data,
-		    NULL, POST_KERNEL, CONFIG_SENSOR_INIT_PRIORITY,
-		    &sx9500_api_funcs);
+DT_INST_FOREACH_STATUS_OKAY(SX9500_DEFINE)

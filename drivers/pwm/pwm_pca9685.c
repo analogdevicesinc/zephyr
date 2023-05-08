@@ -1,171 +1,290 @@
 /*
- * Copyright (c) 2015 Intel Corporation.
+ * Copyright (c) 2022 Nick Ward <nix.ward@gmail.com>
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/**
- * @file Driver for PCA9685 I2C-based PWM driver.
- */
+#define DT_DRV_COMPAT nxp_pca9685_pwm
 
-#include <errno.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/i2c.h>
+#include <zephyr/drivers/pwm.h>
+#include <zephyr/sys/util_macro.h>
+#include <zephyr/kernel.h>
 
-#include <kernel.h>
+#include <zephyr/logging/log.h>
+LOG_MODULE_REGISTER(pwm_pca9685, CONFIG_PWM_LOG_LEVEL);
 
-#include <drivers/i2c.h>
-#include <drivers/pwm.h>
+#define OSC_CLOCK_MAX	  50000000
+#define CHANNEL_CNT	  16
 
-#include "pwm_pca9685.h"
+#define ADDR_MODE1	  0x00
+#define SLEEP		  BIT(4)
+#define AUTO_INC	  BIT(5)
+#define RESTART		  BIT(7)
 
-#define REG_MODE1		0x00
-#define REG_MODE2		0x01
+#define ADDR_MODE2	  0x01
+#define OUTDRV_TOTEM_POLE BIT(2)
+#define OCH_ON_ACK	  BIT(3)
 
-#define REG_LED_ON_L(n)		((4 * n) + 0x06)
-#define	REG_LED_ON_H(n)		((4 * n) + 0x07)
-#define REG_LED_OFF_L(n)	((4 * n) + 0x08)
-#define REG_LED_OFF_H(n)	((4 * n) + 0x09)
+#define ADDR_LED0_ON_L	  0x06
+#define ADDR_LED_ON_L(n)  (ADDR_LED0_ON_L + (4 * n))
+#define LED_FULL_ON	  BIT(4)
+#define LED_FULL_OFF	  BIT(4)
+#define BYTE_N(word, n)	  ((word >> (8 * n)) & 0xFF)
 
-#define REG_ALL_LED_ON_L	0xFA
-#define REG_ALL_LED_ON_H	0xFB
-#define REG_ALL_LED_OFF_L	0xFC
-#define REG_ALL_LED_OFF_H	0xFD
-#define REG_PRE_SCALE		0xFE
+#define ADDR_PRE_SCALE	  0xFE
 
-/* Maximum PWM outputs */
-#define MAX_PWM_OUT		16
 
-/* How many ticks per one period */
-#define PWM_ONE_PERIOD_TICKS	4096
+/* See PCA9585 datasheet Rev. 4 - 16 April 2015 section 7.3.5 */
+#define OSC_CLOCK_INTERNAL 25000000
 
-/**
- * @brief Check to see if a I2C master is identified for communication.
- *
- * @param dev Device struct.
- * @return 1 if I2C master is identified, 0 if not.
- */
-static inline int has_i2c_master(struct device *dev)
-{
-	struct pwm_pca9685_drv_data * const drv_data =
-		(struct pwm_pca9685_drv_data * const)dev->driver_data;
-	struct device * const i2c_master = drv_data->i2c_master;
+#define PWM_STEPS 4096
 
-	if (i2c_master) {
-		return 1;
-	} else {
-		return 0;
-	}
-}
+#define PRE_SCALE_MIN 0x03
+#define PRE_SCALE_MAX 0xFF
+
+#define PRE_SCALE_DEFAULT 0x1E
+
+#define PWM_PERIOD_COUNT_PS(pre_scale) (PWM_STEPS * (pre_scale + 1))
 
 /*
- * period_count is always taken as 4095. To control the on period send
- * value to pulse_count
+ * When using the internal oscillator this corresponds to an
+ * update rate of 1526 Hz
  */
-static int pwm_pca9685_pin_set_cycles(struct device *dev, u32_t pwm,
-				      u32_t period_count, u32_t pulse_count)
-{
-	const struct pwm_pca9685_config * const config =
-		dev->config->config_info;
-	struct pwm_pca9685_drv_data * const drv_data =
-		(struct pwm_pca9685_drv_data * const)dev->driver_data;
-	struct device * const i2c_master = drv_data->i2c_master;
-	u16_t i2c_addr = config->i2c_slave_addr;
-	u8_t buf[] = { 0, 0, 0, 0, 0};
+#define PWM_PERIOD_COUNT_MIN PWM_PERIOD_COUNT_PS(PRE_SCALE_MIN)
 
-	ARG_UNUSED(period_count);
-	if (!has_i2c_master(dev)) {
-		return -EINVAL;
-	}
+/*
+ * When using the internal oscillator this corresponds to an
+ * update rate of 24 Hz
+ */
+#define PWM_PERIOD_COUNT_MAX PWM_PERIOD_COUNT_PS(PRE_SCALE_MAX)
 
-	if (pwm > MAX_PWM_OUT) {
-		return -EINVAL;
-	}
-	buf[0] = REG_LED_ON_L(pwm);
-
-	/* If either pulse_count > max ticks, treat PWM as 100%.
-	 * If pulse_count value == 0, treat it as 0%.
-	 * Otherwise, populate registers accordingly.
-	 */
-	if (pulse_count >= PWM_ONE_PERIOD_TICKS) {
-		buf[1] = 0x0;
-		buf[2] = (1 << 4);
-		buf[3] = 0x0;
-		buf[4] = 0x0;
-	} else if (pulse_count == 0U) {
-		buf[1] = 0x0;
-		buf[2] = 0x0;
-		buf[3] = 0x0;
-		buf[4] = (1 << 4);
-	} else {
-		/* No start delay given. When the count is 0 the
-		 * pwm will be high .
-		 */
-		buf[0] = 0x0;
-		buf[1] = 0x0;
-		buf[2] = (pulse_count & 0xFF);
-		buf[3] = ((pulse_count >> 8) & 0x0F);
-	}
-
-	return i2c_write(i2c_master, buf, sizeof(buf), i2c_addr);
-}
+/*
+ * When using the internal oscillator this corresponds to an
+ * update rate of 200 Hz
+ */
+#define PWM_PERIOD_COUNT_DEFAULT PWM_PERIOD_COUNT_PS(PRE_SCALE_DEFAULT)
 
 
-static const struct pwm_driver_api pwm_pca9685_drv_api_funcs = {
-	.pin_set =  pwm_pca9685_pin_set_cycles
+/*
+ * Time allowed for the oscillator to stabilize after the PCA9685's
+ * RESTART mode is used to wake the chip from SLEEP.
+ * See PCA9685 datasheet section 7.3.1.1
+ */
+#define OSCILLATOR_STABILIZE K_USEC(500)
+
+struct pca9685_config {
+	struct i2c_dt_spec i2c;
+	bool outdrv_open_drain;
+	bool och_on_ack;
+	bool invrt;
 };
 
-/**
- * @brief Initialization function of PCA9685
- *
- * @param dev Device struct
- * @return 0 if successful, failed otherwise.
- */
-int pwm_pca9685_init(struct device *dev)
+struct pca9685_data {
+	struct k_mutex mutex;
+	uint8_t pre_scale;
+};
+
+static int set_reg(const struct device *dev, uint8_t addr, uint8_t value)
 {
-	const struct pwm_pca9685_config * const config =
-		dev->config->config_info;
-	struct pwm_pca9685_drv_data * const drv_data =
-		(struct pwm_pca9685_drv_data * const)dev->driver_data;
-	struct device *i2c_master;
-	u8_t buf[] = {0, 0};
+	const struct pca9685_config *config = dev->config;
+	uint8_t buf[] = {addr, value};
 	int ret;
 
-	/* Find out the device struct of the I2C master */
-	i2c_master = device_get_binding((char *)config->i2c_master_dev_name);
-	if (!i2c_master) {
+	ret = i2c_write_dt(&config->i2c, buf, sizeof(buf));
+	if (ret != 0) {
+		LOG_ERR("I2C write [0x%02X]=0x%02X: %d", addr, value, ret);
+	} else {
+		LOG_DBG("[0x%02X]=0x%02X", addr, value);
+	}
+	return ret;
+}
+
+static int get_reg(const struct device *dev, uint8_t addr, uint8_t *value)
+{
+	const struct pca9685_config *config = dev->config;
+	int ret;
+
+	ret = i2c_write_read_dt(&config->i2c, &addr, sizeof(addr), value,
+				sizeof(*value));
+	if (ret != 0) {
+		LOG_ERR("I2C write [0x%02X]=0x%02X: %d", addr, *value, ret);
+	}
+	return ret;
+}
+
+static int set_pre_scale(const struct device *dev, uint8_t value)
+{
+	struct pca9685_data *data = dev->data;
+	uint8_t mode1;
+	int ret;
+
+	k_mutex_lock(&data->mutex, K_FOREVER);
+
+	/* Unblock write to PRE_SCALE by setting SLEEP bit to logic 1 */
+	ret = set_reg(dev, ADDR_MODE1, AUTO_INC | SLEEP);
+	if (ret != 0) {
+		goto out;
+	}
+
+	ret = get_reg(dev, ADDR_MODE1, &mode1);
+	if (ret != 0) {
+		goto out;
+	}
+
+	if ((mode1 & RESTART) == 0x00) {
+		LOG_ERR("RESTART bit should be set");
+		ret = -EIO;
+		goto out;
+	}
+
+	ret = set_reg(dev, ADDR_PRE_SCALE, value);
+	if (ret != 0) {
+		goto out;
+	}
+
+	/* Clear SLEEP bit - See datasheet section 7.3.1.1 */
+	ret = set_reg(dev, ADDR_MODE1, AUTO_INC);
+	if (ret != 0) {
+		goto out;
+	}
+
+	k_sleep(OSCILLATOR_STABILIZE);
+
+	ret = set_reg(dev, ADDR_MODE1, AUTO_INC | RESTART);
+	if (ret != 0) {
+		goto out;
+	}
+
+out:
+	k_mutex_unlock(&data->mutex);
+
+	return ret;
+}
+
+static int pca9685_set_cycles(const struct device *dev,
+			      uint32_t channel, uint32_t period_count,
+			      uint32_t pulse_count, pwm_flags_t flags)
+{
+	const struct pca9685_config *config = dev->config;
+	struct pca9685_data *data = dev->data;
+	uint8_t buf[5] = { 0 };
+	uint32_t led_off_count;
+	int32_t pre_scale;
+	int ret;
+
+	ARG_UNUSED(flags);
+
+	if (channel >= CHANNEL_CNT) {
+		LOG_WRN("channel out of range: %u", channel);
 		return -EINVAL;
 	}
-	drv_data->i2c_master = i2c_master;
 
-	/* MODE1 register */
+	pre_scale = DIV_ROUND_UP((int64_t)period_count, PWM_STEPS) - 1;
 
-	buf[0] = REG_MODE1;
-	buf[1] = (1 << 5); /* register addr auto increment */
+	if (pre_scale < PRE_SCALE_MIN) {
+		LOG_ERR("period_count %u < %u (min)", period_count,
+			PWM_PERIOD_COUNT_MIN);
+		return -ENOTSUP;
+	} else if (pre_scale > PRE_SCALE_MAX) {
+		LOG_ERR("period_count %u > %u (max)", period_count,
+			PWM_PERIOD_COUNT_MAX);
+		return -ENOTSUP;
+	}
 
-	ret = i2c_write(i2c_master, buf, 2, config->i2c_slave_addr);
+	/* Only one output frequency - simple conversion to equivalent PWM */
+	if (pre_scale != data->pre_scale) {
+		data->pre_scale = pre_scale;
+		ret = set_pre_scale(dev, pre_scale);
+		if (ret != 0) {
+			return ret;
+		}
+	}
+
+	/* Adjust PWM output for the resolution of the PCA9685 */
+	led_off_count = DIV_ROUND_UP(pulse_count * PWM_STEPS, period_count);
+
+	buf[0] = ADDR_LED_ON_L(channel);
+	if (led_off_count == 0) {
+		buf[4] = LED_FULL_OFF;
+	} else if (led_off_count < PWM_STEPS) {
+		/* LED turns on at count 0 */
+		buf[3] = BYTE_N(led_off_count, 0);
+		buf[4] = BYTE_N(led_off_count, 1);
+	} else {
+		buf[2] = LED_FULL_ON;
+	}
+
+	return i2c_write_dt(&config->i2c, buf, sizeof(buf));
+}
+
+static int pca9685_get_cycles_per_sec(const struct device *dev,
+				      uint32_t channel, uint64_t *cycles)
+{
+	ARG_UNUSED(dev);
+	ARG_UNUSED(channel);
+
+	*cycles = OSC_CLOCK_INTERNAL;
+
+	return 0;
+}
+
+static const struct pwm_driver_api pca9685_api = {
+	.set_cycles = pca9685_set_cycles,
+	.get_cycles_per_sec = pca9685_get_cycles_per_sec,
+};
+
+static int pca9685_init(const struct device *dev)
+{
+	const struct pca9685_config *config = dev->config;
+	struct pca9685_data *data = dev->data;
+	uint8_t value;
+	int ret;
+
+	(void)k_mutex_init(&data->mutex);
+
+	if (!i2c_is_ready_dt(&config->i2c)) {
+		LOG_ERR("I2C device not ready");
+		return -ENODEV;
+	}
+
+	ret = set_reg(dev, ADDR_MODE1, AUTO_INC);
 	if (ret != 0) {
-		return -EPERM;
+		LOG_ERR("set_reg MODE1: %d", ret);
+		return ret;
+	}
+
+	value = 0x00;
+	if (!config->outdrv_open_drain) {
+		value |= OUTDRV_TOTEM_POLE;
+	}
+	if (config->och_on_ack) {
+		value |= OCH_ON_ACK;
+	}
+	ret = set_reg(dev, ADDR_MODE2, value);
+	if (ret != 0) {
+		LOG_ERR("set_reg MODE2: %d", ret);
+		return ret;
 	}
 
 	return 0;
 }
 
-/* Initialization for PWM_PCA9685_0 */
-#ifdef CONFIG_PWM_PCA9685_0
-#include <device.h>
-#include <init.h>
+#define PCA9685_INIT(inst)                                              \
+	static const struct pca9685_config pca9685_##inst##_config = {  \
+		.i2c = I2C_DT_SPEC_INST_GET(inst),                      \
+		.outdrv_open_drain = DT_INST_PROP(inst, open_drain),    \
+		.och_on_ack = DT_INST_PROP(inst, och_on_ack),           \
+		.invrt = DT_INST_PROP(inst, invert),                    \
+	};                                                              \
+                                                                        \
+	static struct pca9685_data pca9685_##inst##_data;               \
+                                                                        \
+	DEVICE_DT_INST_DEFINE(inst, pca9685_init, NULL,                 \
+			      &pca9685_##inst##_data,                   \
+			      &pca9685_##inst##_config, POST_KERNEL,    \
+			      CONFIG_PWM_INIT_PRIORITY,                 \
+			      &pca9685_api);
 
-static const struct pwm_pca9685_config pwm_pca9685_0_cfg = {
-	.i2c_master_dev_name = CONFIG_PWM_PCA9685_0_I2C_MASTER_DEV_NAME,
-	.i2c_slave_addr = CONFIG_PWM_PCA9685_0_I2C_ADDR,
-};
-
-static struct pwm_pca9685_drv_data pwm_pca9685_0_drvdata;
-
-/* This has to init after I2C master */
-DEVICE_AND_API_INIT(pwm_pca9685_0, CONFIG_PWM_PCA9685_0_DEV_NAME,
-			pwm_pca9685_init,
-			&pwm_pca9685_0_drvdata, &pwm_pca9685_0_cfg,
-			POST_KERNEL, CONFIG_PWM_PCA9685_INIT_PRIORITY,
-			&pwm_pca9685_drv_api_funcs);
-
-#endif /* CONFIG_PWM_PCA9685_0 */
+DT_INST_FOREACH_STATUS_OKAY(PCA9685_INIT);

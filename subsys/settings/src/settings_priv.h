@@ -9,9 +9,9 @@
 #define __SETTINGS_PRIV_H_
 
 #include <sys/types.h>
-#include <sys/slist.h>
+#include <zephyr/sys/slist.h>
 #include <errno.h>
-#include <settings/settings.h>
+#include <zephyr/settings/settings.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -29,7 +29,7 @@ void settings_line_io_init(int (*read_cb)(void *ctx, off_t off, char *buf,
 			   int (*write_cb)(void *ctx, off_t off,
 					   char const *buf, size_t len),
 			   size_t (*get_len_cb)(void *ctx),
-			   u8_t io_rwbs);
+			   uint8_t io_rwbs);
 
 int settings_line_write(const char *name, const char *value, size_t val_len,
 			off_t w_loc, void *cb_arg);
@@ -77,7 +77,7 @@ int settings_next_line_ctx(struct line_entry_ctx *entry_ctx);
  * @param[in] len_req size of <p>out</p> buffer
  * @param[out] len_read length of read name
  * @param[in] cb_arg settings line storage context expected by the
- * <p>read_cb</p> implementatio
+ * <p>read_cb</p> implementation
  *
  * @retval 0 on success,
  * -ERCODE on storage errors
@@ -118,7 +118,7 @@ void settings_line_io_init(int (*read_cb)(void *ctx, off_t off, char *buf,
 			  int (*write_cb)(void *ctx, off_t off, char const *buf,
 					  size_t len),
 			  size_t (*get_len_cb)(void *ctx),
-			  u8_t io_rwbs);
+			  uint8_t io_rwbs);
 
 
 extern sys_slist_t settings_load_srcs;

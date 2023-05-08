@@ -1,8 +1,5 @@
-#
 # Copyright (c) 2016 Intel Corporation
-#
 # SPDX-License-Identifier: Apache-2.0
-#
 
 menu "Nios II Options"
 	depends on NIOS2
@@ -17,16 +14,13 @@ config CPU_NIOS2_GEN2
 	bool
 	default y
 	select BUILD_OUTPUT_HEX
+	select ARCH_HAS_EXTRA_EXCEPTION_INFO
 	help
 	  This option signifies the use of a Nios II Gen 2 CPU
 
 endmenu
 
 menu "Nios II Family Options"
-
-config XIP
-	bool
-	default y
 
 config GEN_ISR_TABLES
 	default y
@@ -66,8 +60,8 @@ config EXTRA_EXCEPTION_INFO
 	  describing what that cause code means.
 
 choice
-prompt "Global Pointer options"
-default GP_GLOBAL
+	prompt "Global Pointer options"
+	default GP_GLOBAL
 
 config GP_NONE
 	bool "No global pointer"

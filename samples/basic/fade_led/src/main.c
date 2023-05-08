@@ -1,74 +1,62 @@
 /*
  * Copyright (c) 2016 Intel Corporation
+ * Copyright (c) 2020 Nordic Semiconductor ASA
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 /**
- * @file Sample app to demonstrate PWM.
- *
- * This app uses PWM[0].
+ * @file Sample app to demonstrate PWM-based LED fade
  */
 
-#include <zephyr.h>
-#include <sys/printk.h>
-#include <device.h>
-#include <drivers/pwm.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/pwm.h>
 
-#if defined(DT_ALIAS_PWM_LED0_PWMS_CONTROLLER) && defined(DT_ALIAS_PWM_LED0_PWMS_CHANNEL)
-/* get the defines from dt (based on alias 'pwm-led0') */
-#define PWM_DRIVER	DT_ALIAS_PWM_LED0_PWMS_CONTROLLER
-#define PWM_CHANNEL	DT_ALIAS_PWM_LED0_PWMS_CHANNEL
-#else
-#error "Choose supported PWM driver"
-#endif
+static const struct pwm_dt_spec pwm_led0 = PWM_DT_SPEC_GET(DT_ALIAS(pwm_led0));
 
-/*
- * 50 is flicker fusion threshold. Modulated light will be perceived
- * as steady by our eyes when blinking rate is at least 50.
- */
-#define PERIOD (USEC_PER_SEC / 50U)
+#define NUM_STEPS	50U
+#define SLEEP_MSEC	25U
 
-/* in micro second */
-#define FADESTEP	2000
-
-void main(void)
+int main(void)
 {
-	struct device *pwm_dev;
-	u32_t pulse_width = 0U;
-	u8_t dir = 0U;
+	uint32_t pulse_width = 0U;
+	uint32_t step = pwm_led0.period / NUM_STEPS;
+	uint8_t dir = 1U;
+	int ret;
 
-	printk("PWM demo app-fade LED\n");
+	printk("PWM-based LED fade\n");
 
-	pwm_dev = device_get_binding(PWM_DRIVER);
-	if (!pwm_dev) {
-		printk("Cannot find %s!\n", PWM_DRIVER);
-		return;
+	if (!device_is_ready(pwm_led0.dev)) {
+		printk("Error: PWM device %s is not ready\n",
+		       pwm_led0.dev->name);
+		return 0;
 	}
 
 	while (1) {
-		if (pwm_pin_set_usec(pwm_dev, PWM_CHANNEL,
-					PERIOD, pulse_width)) {
-			printk("pwm pin set fails\n");
-			return;
+		ret = pwm_set_pulse_dt(&pwm_led0, pulse_width);
+		if (ret) {
+			printk("Error %d: failed to set pulse width\n", ret);
+			return 0;
 		}
 
 		if (dir) {
-			if (pulse_width < FADESTEP) {
+			pulse_width += step;
+			if (pulse_width >= pwm_led0.period) {
+				pulse_width = pwm_led0.period - step;
 				dir = 0U;
-				pulse_width = 0U;
-			} else {
-				pulse_width -= FADESTEP;
 			}
 		} else {
-			pulse_width += FADESTEP;
-
-			if (pulse_width >= PERIOD) {
+			if (pulse_width >= step) {
+				pulse_width -= step;
+			} else {
+				pulse_width = step;
 				dir = 1U;
-				pulse_width = PERIOD;
 			}
 		}
 
-		k_sleep(MSEC_PER_SEC);
+		k_sleep(K_MSEC(SLEEP_MSEC));
 	}
+	return 0;
 }

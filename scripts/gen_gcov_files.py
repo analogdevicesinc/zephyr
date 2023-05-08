@@ -4,14 +4,15 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-# This script will parse the serial console log file and create the required
-# gcda files.
-# Usage python3 ${ZEPHYR_BASE}/scripts/gen_gcov_files.py -i console_output.log
-# Add -v for verbose
+
+"""This script will parse the serial console log file and create the required
+gcda files.
+"""
 
 import argparse
 import os
 import re
+
 
 def retrieve_data(input_file):
     extracted_coverage_info = {}
@@ -33,11 +34,12 @@ def retrieve_data(input_file):
             file_name = line.split("<")[0][1:]
             # Remove the trailing new line char
             hex_dump = line.split("<")[1][:-1]
-            extracted_coverage_info.update({file_name:hex_dump})
+            extracted_coverage_info.update({file_name: hex_dump})
 
     if not reached_end:
-        print("incomplete data captured from %s" %input_file)
+        print("incomplete data captured from %s" % input_file)
     return extracted_coverage_info
+
 
 def create_gcda_files(extracted_coverage_info):
     if args.verbose:
@@ -63,13 +65,12 @@ def parse_args():
     global args
     parser = argparse.ArgumentParser(
         description=__doc__,
-        formatter_class=argparse.RawDescriptionHelpFormatter)
+        formatter_class=argparse.RawDescriptionHelpFormatter, allow_abbrev=False)
     parser.add_argument("-i", "--input", required=True,
                         help="Input dump data")
     parser.add_argument("-v", "--verbose", action="count", default=0,
                         help="Verbose Output")
     args = parser.parse_args()
-
 
 
 def main():

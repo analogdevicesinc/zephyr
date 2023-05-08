@@ -11,6 +11,9 @@ arch: riscv32
 toolchain:
   - zephyr
 ram: 262144
+supported:
+  - spi
+  - i2s
 testing:
   ignore_tags:
     - bluetooth

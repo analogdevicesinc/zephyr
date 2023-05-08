@@ -1,15 +1,59 @@
 /*
  * Copyright (c) 2018 Bosch Sensortec GmbH
+ * Copyright (c) 2022, Leonard Pollak
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef __SENSOR_BME680_H__
-#define __SENSOR_BME680_H__
+#ifndef __ZEPHYR_DRIVERS_SENSOR_BME680_H__
+#define __ZEPHYR_DRIVERS_SENSOR_BME680_H__
 
-#include <device.h>
 #include <zephyr/types.h>
+#include <zephyr/device.h>
+#include <zephyr/devicetree.h>
+#include <zephyr/drivers/spi.h>
+#include <zephyr/drivers/i2c.h>
 
+#define DT_DRV_COMPAT bosch_bme680
+
+#define BME680_BUS_SPI DT_ANY_INST_ON_BUS_STATUS_OKAY(spi)
+#define BME680_BUS_I2C DT_ANY_INST_ON_BUS_STATUS_OKAY(i2c)
+
+union bme680_bus {
+#if BME680_BUS_SPI
+	struct spi_dt_spec spi;
+#endif
+#if BME680_BUS_I2C
+	struct i2c_dt_spec i2c;
+#endif
+};
+
+typedef int (*bme680_bus_check_fn)(const union bme680_bus *bus);
+typedef int (*bme680_reg_read_fn)(const struct device *dev,
+				  uint8_t start, uint8_t *buf, int size);
+typedef int (*bme680_reg_write_fn)(const struct device *dev,
+				   uint8_t reg, uint8_t val);
+
+struct bme680_bus_io {
+	bme680_bus_check_fn check;
+	bme680_reg_read_fn read;
+	bme680_reg_write_fn write;
+};
+
+#if BME680_BUS_SPI
+#define BME680_SPI_OPERATION (SPI_WORD_SET(8) | SPI_TRANSFER_MSB | SPI_MODE_CPOL \
+		| SPI_MODE_CPHA | SPI_OP_MODE_MASTER)
+extern const struct bme680_bus_io bme680_bus_io_spi;
+#endif
+
+#if BME680_BUS_I2C
+extern const struct bme680_bus_io bme680_bus_io_i2c;
+#endif
+
+struct bme680_config {
+	union bme680_bus bus;
+	const struct bme680_bus_io *bus_io;
+};
 
 #define BME680_CHIP_ID                  0x61
 
@@ -30,18 +74,23 @@
 #define BME680_REG_CTRL_HUM             0x72
 #define BME680_REG_CTRL_MEAS            0x74
 #define BME680_REG_CONFIG               0x75
-#define BME680_REG_MEM_PAGE             0xf3
+#define BME680_REG_STATUS               0x73
 #define BME680_REG_UNIQUE_ID            0x83
 #define BME680_REG_COEFF1               0x8a
-#define BME680_REG_CHIP_ID              0xd0
-#define BME680_REG_SOFT_RESET           0xe0
 #define BME680_REG_COEFF2               0xe1
+#define BME680_REG_CHIP_ID		0xd0
+#define BME680_REG_SOFT_RESET           0xe0
 
 #define BME680_MSK_NEW_DATA             0x80
 #define BME680_MSK_GAS_RANGE            0x0f
 #define BME680_MSK_RH_RANGE             0x30
 #define BME680_MSK_RANGE_SW_ERR         0xf0
 #define BME680_MSK_HEATR_STAB           0x10
+
+#define BME680_SPI_MEM_PAGE_MSK         0x10
+#define BME680_SPI_MEM_PAGE_POS         4
+#define BME680_SPI_READ_BIT             0x80
+#define BME680_SPI_WRITE_MSK            0x7f
 
 #if defined CONFIG_BME680_TEMP_OVER_1X
 #define BME680_TEMP_OVER                (1 << 5)
@@ -117,54 +166,55 @@
 #define BME680_CONFIG_VAL               BME680_FILTER
 #define BME680_CTRL_GAS_1_VAL   0x10
 
-#define BME680_CONCAT_BYTES(msb, lsb) (((u16_t)msb << 8) | (u16_t)lsb)
+#define BME680_CONCAT_BYTES(msb, lsb) (((uint16_t)msb << 8) | (uint16_t)lsb)
 
 struct bme680_data {
-	struct device *i2c_master;
-	u16_t i2c_slave_addr;
-
 	/* Compensation parameters. */
-	u16_t par_h1;
-	u16_t par_h2;
-	s8_t par_h3;
-	s8_t par_h4;
-	s8_t par_h5;
-	u8_t par_h6;
-	s8_t par_h7;
-	s8_t par_gh1;
-	s16_t par_gh2;
-	s8_t par_gh3;
-	u16_t par_t1;
-	s16_t par_t2;
-	s8_t par_t3;
-	u16_t par_p1;
-	s16_t par_p2;
-	s8_t par_p3;
-	s16_t par_p4;
-	s16_t par_p5;
-	s8_t par_p6;
-	s8_t par_p7;
-	s16_t par_p8;
-	s16_t par_p9;
-	u8_t par_p10;
-	u8_t res_heat_range;
-	s8_t res_heat_val;
-	s8_t range_sw_err;
+	uint16_t par_h1;
+	uint16_t par_h2;
+	int8_t par_h3;
+	int8_t par_h4;
+	int8_t par_h5;
+	uint8_t par_h6;
+	int8_t par_h7;
+	int8_t par_gh1;
+	int16_t par_gh2;
+	int8_t par_gh3;
+	uint16_t par_t1;
+	int16_t par_t2;
+	int8_t par_t3;
+	uint16_t par_p1;
+	int16_t par_p2;
+	int8_t par_p3;
+	int16_t par_p4;
+	int16_t par_p5;
+	int8_t par_p6;
+	int8_t par_p7;
+	int16_t par_p8;
+	int16_t par_p9;
+	uint8_t par_p10;
+	uint8_t res_heat_range;
+	int8_t res_heat_val;
+	int8_t range_sw_err;
 
 	/* Calculated sensor values. */
-	s32_t calc_temp;
-	u32_t calc_press;
-	u32_t calc_humidity;
-	u32_t calc_gas_resistance;
+	int32_t calc_temp;
+	uint32_t calc_press;
+	uint32_t calc_humidity;
+	uint32_t calc_gas_resistance;
 
 	/* Additional information */
-	u8_t new_data;
-	u8_t heatr_stab;
+	uint8_t new_data;
+	uint8_t heatr_stab;
 
 	/* Carryover between temperature and pressure/humidity compensation. */
-	s32_t t_fine;
+	int32_t t_fine;
 
-	u8_t chip_id;
+	uint8_t chip_id;
+
+#if BME680_BUS_SPI
+	uint8_t mem_page;
+#endif
 };
 
-#endif /* __SENSOR_BME680_H__ */
+#endif /* __ZEPHYR_DRIVERS_SENSOR_BME680_H__ */

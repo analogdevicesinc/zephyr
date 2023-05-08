@@ -11,8 +11,7 @@ high-performance feature set in low-cost LQFP packages, further simplifying
 board design and layout for customers. The i.MX RT1015 runs on the Arm®
 Cortex®-M7 core at 500 MHz.
 
-.. image:: ./mimxrt1015_evk.jpg
-   :width: 720px
+.. image:: mimxrt1015_evk.jpg
    :align: center
    :alt: MIMXRT1015-EVK
 
@@ -55,8 +54,12 @@ these references:
 Supported Features
 ==================
 
-The mimxrt1015_evk board configuration supports the following hardware
-features:
+The mimxrt1015_evk board configuration supports the hardware features listed
+below.  For additional features not yet supported, please also refer to the
+:ref:`mimxrt1064_evk` , which is the superset board in NXP's i.MX RT10xx family.
+NXP prioritizes enabling the superset board with NXP's Full Platform Support for
+Zephyr.  Therefore, the mimxrt1064_evk board may have additional features
+already supported, which can also be re-used on this mimxrt1015_evk board:
 
 +-----------+------------+-------------------------------------+
 | Interface | Controller | Driver/Component                    |
@@ -69,8 +72,18 @@ features:
 +-----------+------------+-------------------------------------+
 | I2C       | on-chip    | i2c                                 |
 +-----------+------------+-------------------------------------+
+| SPI       | on-chip    | spi                                 |
++-----------+------------+-------------------------------------+
 | UART      | on-chip    | serial port-polling;                |
 |           |            | serial port-interrupt               |
++-----------+------------+-------------------------------------+
+| USB       | on-chip    | USB device                          |
++-----------+------------+-------------------------------------+
+| ADC       | on-chip    | ADC                                 |
++-----------+------------+-------------------------------------+
+| GPT       | on-chip    | gpt                                 |
++-----------+------------+-------------------------------------+
+| TRNG      | on-chip    | entropy                             |
 +-----------+------------+-------------------------------------+
 
 The default configuration can be found in the defconfig file:
@@ -102,12 +115,29 @@ The MIMXRT1015 SoC has five pairs of pinmux/gpio controllers.
 +---------------+-----------------+---------------------------+
 | GPIO_AD_B1_14 | LPI2C1_CLK      | I2C SCL                   |
 +---------------+-----------------+---------------------------+
+| GPIO_AD_B0_10 | LPSPI1_SCK      | SPI                       |
++---------------+-----------------+---------------------------+
+| GPIO_AD_B0_11 | LPSPI1_PCS0     | SPI                       |
++---------------+-----------------+---------------------------+
+| GPIO_AD_B0_12 | LPSPI1_SDO      | SPI                       |
++---------------+-----------------+---------------------------+
+| GPIO_AD_B0_13 | LPSPI1_SDI      | SPI                       |
++---------------+-----------------+---------------------------+
+| GPIO_AD_B0_14 | ADC             | ADC1 Channel 1            |
++---------------+-----------------+---------------------------+
+| GPIO_AD_B1_13 | ADC             | ADC1 Channel 13           |
++---------------+-----------------+---------------------------+
 
 System Clock
 ============
 
-The MIMXRT1015 SoC is configured to use the 24 MHz external oscillator on the
-board with the on-chip PLL to generate a 500 MHz core clock.
+The MIMXRT1015 SoC is configured to use SysTick as the system clock source,
+running at 500MHz.
+
+When power management is enabled, the 32 KHz low frequency
+oscillator on the board will be used as a source for the GPT timer to
+generate a system clock. This clock enables lower power states, at the
+cost of reduced resolution
 
 Serial Port
 ===========
@@ -181,7 +211,7 @@ see the following message in the terminal:
    https://www.nxp.com/support/developer-resources/run-time-software/i.mx-developer-resources/i.mx-rt1015-evaluation-kit:MIMXRT1015-EVK
 
 .. _MIMXRT1015-EVK Quick Reference Guide:
-   https://www.nxp.com/docs/en/quick-reference-guide/IMXRT1015QSG.pdf
+   https://www.nxp.com/webapp/Download?colCode=IMXRT1015QSG
 
 .. _MIMXRT1015-EVK Design Files:
    https://www.nxp.com/webapp/Download?colCode=MIMXRT1015-EVK-REVB-DS
@@ -193,5 +223,4 @@ see the following message in the terminal:
    https://www.nxp.com/docs/en/data-sheet/IMXRT1015CEC.pdf
 
 .. _i.MX RT1015 Reference Manual:
-   https://www.nxp.com/docs/en/reference-manual/IMXRT1015RM.pdf
-
+   https://www.nxp.com/webapp/Download?colCode=IMXRT1015RM

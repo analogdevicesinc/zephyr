@@ -36,9 +36,7 @@ Zephyr OS is ported to run on the Cortex®-M4 core.
     - 1x Yellow WiFi LED
 
 .. image:: img/96b_meerkat96.jpg
-   :width: 4538px
    :align: center
-   :height: 3025px
    :alt: 96Boards Meerkat96
 
 More information about the board can be found at the
@@ -151,7 +149,7 @@ the remaining are not used/tested.
 Programming and Debugging
 *************************
 
-The 96Boards Meerakat96 board doesn't have QSPI flash for the M4 and it needs
+The 96Boards Meerkat96 board doesn't have QSPI flash for the M4 and it needs
 to be started by the A7 core. The A7 core is responsible to load the M4 binary
 application into the RAM, put the M4 in reset, set the M4 Program Counter and
 Stack Pointer, and get the M4 out of reset. The A7 can perform these steps at

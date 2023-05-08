@@ -5,18 +5,15 @@
 
 include: base.yaml
 
-child-bus: i2c
+bus: i2c
 
 properties:
-    "#address-cells":
-      required: true
-      const: 1
-    "#size-cells":
-      required: true
-      const: 0
-    clock-frequency :
-      type: int
-      required: false
-      description: Initial clock frequency in Hz
-    label:
-      required: true
+  "#address-cells":
+    required: true
+    const: 1
+  "#size-cells":
+    required: true
+    const: 0
+  clock-frequency:
+    type: int
+    description: Initial clock frequency in Hz

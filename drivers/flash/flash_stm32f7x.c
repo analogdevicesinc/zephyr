@@ -5,18 +5,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <kernel.h>
-#include <device.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
 #include <string.h>
-#include <drivers/flash.h>
-#include <init.h>
+#include <zephyr/drivers/flash.h>
+#include <zephyr/init.h>
 #include <soc.h>
 
 #include "flash_stm32.h"
 
-#define STM32F7X_SECTOR_MASK		((u32_t) 0xFFFFFF07)
-
-bool flash_stm32_valid_range(struct device *dev, off_t offset, u32_t len,
+bool flash_stm32_valid_range(const struct device *dev, off_t offset,
+			     uint32_t len,
 			     bool write)
 {
 	ARG_UNUSED(write);
@@ -24,13 +23,27 @@ bool flash_stm32_valid_range(struct device *dev, off_t offset, u32_t len,
 	return flash_stm32_range_exists(dev, offset, len);
 }
 
-static int write_byte(struct device *dev, off_t offset, u8_t val)
+static inline void flush_cache(FLASH_TypeDef *regs)
 {
-	struct stm32f7x_flash *regs = FLASH_STM32_REGS(dev);
+	if (regs->ACR & FLASH_ACR_ARTEN) {
+		regs->ACR &= ~FLASH_ACR_ARTEN;
+		/* Reference manual:
+		 * The ART cache can be flushed only if the ART accelerator
+		 * is disabled (ARTEN = 0).
+		 */
+		regs->ACR |= FLASH_ACR_ARTRST;
+		regs->ACR &= ~FLASH_ACR_ARTRST;
+		regs->ACR |= FLASH_ACR_ARTEN;
+	}
+}
+
+static int write_byte(const struct device *dev, off_t offset, uint8_t val)
+{
+	FLASH_TypeDef *regs = FLASH_STM32_REGS(dev);
 	int rc;
 
 	/* if the control register is locked, do not fail silently */
-	if (regs->cr & FLASH_CR_LOCK) {
+	if (regs->CR & FLASH_CR_LOCK) {
 		return -EIO;
 	}
 
@@ -40,29 +53,29 @@ static int write_byte(struct device *dev, off_t offset, u8_t val)
 	}
 
 	/* prepare to write a single byte */
-	regs->cr = (regs->cr & CR_PSIZE_MASK) |
+	regs->CR = (regs->CR & CR_PSIZE_MASK) |
 		   FLASH_PSIZE_BYTE | FLASH_CR_PG;
 	/* flush the register write */
 	__DSB();
 
 	/* write the data */
-	*((u8_t *) offset + CONFIG_FLASH_BASE_ADDRESS) = val;
+	*((uint8_t *) offset + CONFIG_FLASH_BASE_ADDRESS) = val;
 	/* flush the register write */
 	__DSB();
 
 	rc = flash_stm32_wait_flash_idle(dev);
-	regs->cr &= (~FLASH_CR_PG);
+	regs->CR &= (~FLASH_CR_PG);
 
 	return rc;
 }
 
-static int erase_sector(struct device *dev, u32_t sector)
+static int erase_sector(const struct device *dev, uint32_t sector)
 {
-	struct stm32f7x_flash *regs = FLASH_STM32_REGS(dev);
+	FLASH_TypeDef *regs = FLASH_STM32_REGS(dev);
 	int rc;
 
 	/* if the control register is locked, do not fail silently */
-	if (regs->cr & FLASH_CR_LOCK) {
+	if (regs->CR & FLASH_CR_LOCK) {
 		return -EIO;
 	}
 
@@ -86,7 +99,7 @@ static int erase_sector(struct device *dev, u32_t sector)
 #endif /* CONFIG_FLASH_SIZE */
 #endif /* defined(FLASH_OPTCR_nDBANK) && FLASH_SECTOR_TOTAL == 24 */
 
-	regs->cr = (regs->cr & (CR_PSIZE_MASK | STM32F7X_SECTOR_MASK)) |
+	regs->CR = (regs->CR & ~(FLASH_CR_PSIZE | FLASH_CR_SNB)) |
 		   FLASH_PSIZE_BYTE |
 		   FLASH_CR_SER |
 		   (sector << FLASH_CR_SNB_Pos) |
@@ -95,17 +108,18 @@ static int erase_sector(struct device *dev, u32_t sector)
 	__DSB();
 
 	rc = flash_stm32_wait_flash_idle(dev);
-	regs->cr &= ~(FLASH_CR_SER | FLASH_CR_SNB);
+	regs->CR &= ~(FLASH_CR_SER | FLASH_CR_SNB);
 
 	return rc;
 }
 
-int flash_stm32_block_erase_loop(struct device *dev, unsigned int offset,
+int flash_stm32_block_erase_loop(const struct device *dev,
+				 unsigned int offset,
 				 unsigned int len)
 {
 	struct flash_pages_info info;
-	u32_t start_sector, end_sector;
-	u32_t i;
+	uint32_t start_sector, end_sector;
+	uint32_t i;
 	int rc = 0;
 
 	rc = flash_get_page_info_by_offs(dev, offset, &info);
@@ -129,13 +143,13 @@ int flash_stm32_block_erase_loop(struct device *dev, unsigned int offset,
 	return rc;
 }
 
-int flash_stm32_write_range(struct device *dev, unsigned int offset,
+int flash_stm32_write_range(const struct device *dev, unsigned int offset,
 			    const void *data, unsigned int len)
 {
 	int i, rc = 0;
 
 	for (i = 0; i < len; i++, offset++) {
-		rc = write_byte(dev, offset, ((const u8_t *) data)[i]);
+		rc = write_byte(dev, offset, ((const uint8_t *) data)[i]);
 		if (rc < 0) {
 			return rc;
 		}
@@ -205,12 +219,12 @@ static const struct flash_pages_layout stm32f7_flash_layout_dual_bank[] = {
 #error "Unknown flash layout"
 #endif/* !defined(FLASH_SECTOR_TOTAL) */
 
-void flash_stm32_page_layout(struct device *dev,
+void flash_stm32_page_layout(const struct device *dev,
 			     const struct flash_pages_layout **layout,
 			     size_t *layout_size)
 {
 #if FLASH_OPTCR_nDBANK
-	if (FLASH_STM32_REGS(dev)->optcr & FLASH_OPTCR_nDBANK) {
+	if (FLASH_STM32_REGS(dev)->OPTCR & FLASH_OPTCR_nDBANK) {
 		*layout = stm32f7_flash_layout_single_bank;
 		*layout_size = ARRAY_SIZE(stm32f7_flash_layout_single_bank);
 	} else {

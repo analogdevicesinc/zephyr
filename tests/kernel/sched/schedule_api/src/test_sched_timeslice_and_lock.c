@@ -6,7 +6,7 @@
 
 #include "test_sched.h"
 #define THREADS_NUM     3
-#define DURATION	1
+#define DURATION	K_MSEC(1)
 
 BUILD_ASSERT(THREADS_NUM <= MAX_NUM_THREAD);
 
@@ -25,7 +25,7 @@ static void thread_entry(void *p1, void *p2, void *p3)
 	int sleep_ms = POINTER_TO_INT(p2);
 
 	if (sleep_ms > 0) {
-		k_sleep(sleep_ms);
+		k_msleep(sleep_ms);
 	}
 
 	int tnum = POINTER_TO_INT(p1);
@@ -59,7 +59,8 @@ static void spawn_threads(int sleep_sec)
 					       STACK_SIZE, thread_entry,
 					       INT_TO_POINTER(i),
 					       INT_TO_POINTER(sleep_sec),
-					       NULL, tdata[i].priority, 0, 0);
+					       NULL, tdata[i].priority, 0,
+					       K_NO_WAIT);
 	}
 }
 
@@ -80,10 +81,10 @@ static void timer_handler(struct k_timer *timer)
 static void thread_handler(void *p1, void *p2, void *p3)
 {
 	k_timer_init(&timer, timer_handler, NULL);
-	k_timer_start(&timer, DURATION, 0);
+	k_timer_start(&timer, DURATION, K_NO_WAIT);
 }
 
-/*test cases*/
+/* test cases */
 
 /**
  * @brief Validate the behavior of cooperative thread
@@ -95,7 +96,7 @@ static void thread_handler(void *p1, void *p2, void *p3)
  * Yield the main thread which is cooperative. Check
  * if all the threads gets executed.
  */
-void test_yield_cooperative(void)
+ZTEST(threads_scheduling, test_yield_cooperative)
 {
 
 	/* set current thread to a cooperative priority */
@@ -105,10 +106,10 @@ void test_yield_cooperative(void)
 	spawn_threads(0);
 	/* checkpoint: only higher priority thread get executed when yield */
 	k_yield();
-	zassert_true(tdata[0].executed == 1, NULL);
-	zassert_true(tdata[1].executed == 1, NULL);
+	zassert_true(tdata[0].executed == 1);
+	zassert_true(tdata[1].executed == 1);
 	for (int i = 2; i < THREADS_NUM; i++) {
-		zassert_true(tdata[i].executed == 0, NULL);
+		zassert_true(tdata[i].executed == 0);
 	}
 	/* restore environment */
 	teardown_threads();
@@ -122,7 +123,7 @@ void test_yield_cooperative(void)
  *
  * @ingroup kernel_sched_tests
  */
-void test_sleep_cooperative(void)
+ZTEST(threads_scheduling, test_sleep_cooperative)
 {
 	/* set current thread to a cooperative priority */
 	init_prio = -1;
@@ -130,18 +131,18 @@ void test_sleep_cooperative(void)
 
 	spawn_threads(0);
 	/* checkpoint: all ready threads get executed when k_sleep */
-	k_sleep(100);
+	k_sleep(K_MSEC(100));
 	for (int i = 0; i < THREADS_NUM; i++) {
-		zassert_true(tdata[i].executed == 1, NULL);
+		zassert_true(tdata[i].executed == 1);
 	}
 
 	/* restore environment */
 	teardown_threads();
 }
 
-void test_busy_wait_cooperative(void)
+ZTEST(threads_scheduling, test_busy_wait_cooperative)
 {
-	/* set current thread to a preemptible priority */
+	/* set current thread to a cooperative priority */
 	init_prio = -1;
 	setup_threads();
 
@@ -149,7 +150,7 @@ void test_busy_wait_cooperative(void)
 	k_busy_wait(100000); /* 100 ms */
 	/* checkpoint: No other threads get executed */
 	for (int i = 0; i < THREADS_NUM; i++) {
-		zassert_true(tdata[i].executed == 0, NULL);
+		zassert_true(tdata[i].executed == 0);
 	}
 	/* restore environment */
 	teardown_threads();
@@ -168,7 +169,7 @@ void test_busy_wait_cooperative(void)
  *
  * @ingroup kernel_sched_tests
  */
-void test_sleep_wakeup_preemptible(void)
+ZTEST(threads_scheduling, test_sleep_wakeup_preemptible)
 {
 	/* set current thread to a preemptible priority */
 	init_prio = 0;
@@ -177,10 +178,10 @@ void test_sleep_wakeup_preemptible(void)
 	spawn_threads(10 * 1000); /* 10 second */
 	/* checkpoint: lower threads not executed, high threads are in sleep */
 	for (int i = 0; i < THREADS_NUM; i++) {
-		zassert_true(tdata[i].executed == 0, NULL);
+		zassert_true(tdata[i].executed == 0);
 	}
 	k_wakeup(tdata[0].tid);
-	zassert_true(tdata[0].executed == 1, NULL);
+	zassert_true(tdata[0].executed == 1);
 	/* restore environment */
 	teardown_threads();
 }
@@ -188,7 +189,7 @@ void test_sleep_wakeup_preemptible(void)
 static int executed;
 static void coop_thread(void *p1, void *p2, void *p3)
 {
-	k_sem_take(&pend_sema, 100);
+	k_sem_take(&pend_sema, K_MSEC(100));
 	executed = 1;
 }
 
@@ -203,7 +204,7 @@ static void coop_thread(void *p1, void *p2, void *p3)
  *
  * @ingroup kernel_sched_tests
  */
-void test_pending_thread_wakeup(void)
+ZTEST(threads_scheduling, test_pending_thread_wakeup)
 {
 	/* Make current thread preemptible */
 	k_thread_priority_set(k_current_get(), K_PRIO_PREEMPT(1));
@@ -212,7 +213,7 @@ void test_pending_thread_wakeup(void)
 	k_tid_t tid = k_thread_create(&t, tstack, STACK_SIZE,
 				      (k_thread_entry_t)coop_thread,
 				      NULL, NULL, NULL,
-				      K_PRIO_COOP(1), 0, 0);
+				      K_PRIO_COOP(1), 0, K_NO_WAIT);
 
 	zassert_false(executed == 1, "The thread didn't wait"
 		      " for semaphore acquisition");
@@ -238,7 +239,7 @@ void test_pending_thread_wakeup(void)
  *
  * @ingroup kernel_sched_tests
  */
-void test_time_slicing_preemptible(void)
+ZTEST(threads_scheduling, test_time_slicing_preemptible)
 {
 #ifdef CONFIG_TIMESLICING
 	/* set current thread to a preemptible priority */
@@ -248,12 +249,12 @@ void test_time_slicing_preemptible(void)
 	k_sched_time_slice_set(200, 0); /* 200 ms */
 	spawn_threads(0);
 	/* checkpoint: higher priority threads get executed immediately */
-	zassert_true(tdata[0].executed == 1, NULL);
+	zassert_true(tdata[0].executed == 1);
 	k_busy_wait(500000); /* 500 ms */
 	/* checkpoint: equal priority threads get executed every time slice */
-	zassert_true(tdata[1].executed == 1, NULL);
+	zassert_true(tdata[1].executed == 1);
 	for (int i = 2; i < THREADS_NUM; i++) {
-		zassert_true(tdata[i].executed == 0, NULL);
+		zassert_true(tdata[i].executed == 0);
 	}
 
 	/* restore environment */
@@ -277,7 +278,7 @@ void test_time_slicing_preemptible(void)
  *
  * @ingroup kernel_sched_tests
  */
-void test_time_slicing_disable_preemptible(void)
+ZTEST(threads_scheduling, test_time_slicing_disable_preemptible)
 {
 #ifdef CONFIG_TIMESLICING
 	/* set current thread to a preemptible priority */
@@ -286,12 +287,12 @@ void test_time_slicing_disable_preemptible(void)
 
 	spawn_threads(0);
 	/* checkpoint: higher priority threads get executed immediately */
-	zassert_true(tdata[0].executed == 1, NULL);
+	zassert_true(tdata[0].executed == 1);
 	k_busy_wait(500000); /* 500 ms */
 	/* checkpoint: equal priority threads get executed every time slice */
-	zassert_true(tdata[1].executed == 0, NULL);
+	zassert_true(tdata[1].executed == 0);
 	for (int i = 2; i < THREADS_NUM; i++) {
-		zassert_true(tdata[i].executed == 0, NULL);
+		zassert_true(tdata[i].executed == 0);
 	}
 	/* restore environment */
 	teardown_threads();
@@ -309,7 +310,7 @@ void test_time_slicing_disable_preemptible(void)
  *
  * @ingroup kernel_sched_tests
  */
-void test_lock_preemptible(void)
+ZTEST(threads_scheduling, test_lock_preemptible)
 {
 	/* set current thread to a preemptible priority */
 	init_prio = 0;
@@ -321,13 +322,13 @@ void test_lock_preemptible(void)
 	k_busy_wait(100000);
 	/* checkpoint: all other threads not been executed */
 	for (int i = 0; i < THREADS_NUM; i++) {
-		zassert_true(tdata[i].executed == 0, NULL);
+		zassert_true(tdata[i].executed == 0);
 	}
 	/* make current thread unready */
-	k_sleep(100);
+	k_sleep(K_MSEC(100));
 	/* checkpoint: all other threads get executed */
 	for (int i = 0; i < THREADS_NUM; i++) {
-		zassert_true(tdata[i].executed == 1, NULL);
+		zassert_true(tdata[i].executed == 1);
 	}
 	/* restore environment */
 	teardown_threads();
@@ -344,7 +345,7 @@ void test_lock_preemptible(void)
  *
  * @ingroup kernel_sched_tests
  */
-void test_unlock_preemptible(void)
+ZTEST(threads_scheduling, test_unlock_preemptible)
 {
 	/* set current thread to a preemptible priority */
 	init_prio = 0;
@@ -356,11 +357,15 @@ void test_unlock_preemptible(void)
 	k_busy_wait(100000);
 
 	k_sched_unlock();
-	/* checkpoint: higher threads get executed */
-	zassert_true(tdata[0].executed == 1, NULL);
-	for (int i = 1; i < THREADS_NUM; i++) {
-		zassert_true(tdata[i].executed == 0, NULL);
-	}
+
+	/* ensure threads of equal priority can run */
+	k_yield();
+
+	/* checkpoint: higher and equal threads get executed */
+	zassert_true(tdata[0].executed == 1);
+	zassert_true(tdata[1].executed == 1);
+	zassert_true(tdata[2].executed == 0);
+
 	/* restore environment */
 	teardown_threads();
 }
@@ -377,7 +382,7 @@ void test_unlock_preemptible(void)
  *
  * @ingroup kernel_sched_tests
  */
-void test_unlock_nested_sched_lock(void)
+ZTEST(threads_scheduling, test_unlock_nested_sched_lock)
 {
 	/* set current thread to a preemptible priority */
 	init_prio = 0;
@@ -398,17 +403,19 @@ void test_unlock_nested_sched_lock(void)
 
 	/* checkpoint: no threads get executed */
 	for (int i = 0; i < THREADS_NUM; i++) {
-		zassert_true(tdata[i].executed == 0, NULL);
+		zassert_true(tdata[i].executed == 0);
 	}
 
 	/* unlock another; this let the higher thread to run */
 	k_sched_unlock();
 
+	/* Ensure threads of equal priority run */
+	k_yield();
+
 	/* checkpoint: higher threads NOT get executed */
-	zassert_true(tdata[0].executed == 1, NULL);
-	for (int i = 1; i < THREADS_NUM; i++) {
-		zassert_true(tdata[i].executed == 0, NULL);
-	}
+	zassert_true(tdata[0].executed == 1);
+	zassert_true(tdata[1].executed == 1);
+	zassert_true(tdata[2].executed == 0);
 
 	/* restore environment */
 	teardown_threads();
@@ -424,11 +431,11 @@ void test_unlock_nested_sched_lock(void)
  *
  * @ingroup kernel_sched_tests
  */
-void test_wakeup_expired_timer_thread(void)
+ZTEST(threads_scheduling, test_wakeup_expired_timer_thread)
 {
 	k_tid_t tid = k_thread_create(&tthread[0], tstack, STACK_SIZE,
 					thread_handler, NULL, NULL, NULL,
-					K_PRIO_PREEMPT(0), 0, 0);
+					K_PRIO_PREEMPT(0), 0, K_NO_WAIT);
 	k_sem_take(&timer_sema, K_FOREVER);
 	/* wakeup a thread if the timer is expired */
 	k_wakeup(tid);

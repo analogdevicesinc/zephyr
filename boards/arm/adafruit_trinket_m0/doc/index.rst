@@ -10,8 +10,7 @@ The Adafruit Trinket M0 is a tiny (27 mm x 15 mm) ARM development
 board with an onboard RGB LED, USB port, and range of I/O broken out
 onto 5 pins.
 
-.. image:: img/adafruit_trinket_m0.png
-     :width: 500px
+.. image:: img/adafruit_trinket_m0.jpg
      :align: center
      :alt: Adafruit Trinket M0
 
@@ -32,25 +31,27 @@ Supported Features
 The adafruit_trinket_m0 board configuration supports the following hardware
 features:
 
-+-----------+------------+--------------------------------------+
-| Interface | Controller | Driver/Component                     |
-+===========+============+======================================+
-| NVIC      | on-chip    | nested vector interrupt controller   |
-+-----------+------------+--------------------------------------+
-| Flash     | on-chip    | Can be used with NFFS to store files |
-+-----------+------------+--------------------------------------+
-| SYSTICK   | on-chip    | systick                              |
-+-----------+------------+--------------------------------------+
-| WDT       | on-chip    | Watchdog                             |
-+-----------+------------+--------------------------------------+
-| GPIO      | on-chip    | I/O ports                            |
-+-----------+------------+--------------------------------------+
-| USART     | on-chip    | Serial ports                         |
-+-----------+------------+--------------------------------------+
-| SPI       | on-chip    | Serial Peripheral Interface ports    |
-+-----------+------------+--------------------------------------+
-| USB       | on-chip    | USB device                           |
-+-----------+------------+--------------------------------------+
++-----------+------------+------------------------------------------+
+| Interface | Controller | Driver/Component                         |
++===========+============+==========================================+
+| NVIC      | on-chip    | nested vector interrupt controller       |
++-----------+------------+------------------------------------------+
+| Flash     | on-chip    | Can be used with LittleFS to store files |
++-----------+------------+------------------------------------------+
+| SYSTICK   | on-chip    | systick                                  |
++-----------+------------+------------------------------------------+
+| WDT       | on-chip    | Watchdog                                 |
++-----------+------------+------------------------------------------+
+| GPIO      | on-chip    | I/O ports                                |
++-----------+------------+------------------------------------------+
+| PWM       | on-chip    | Pulse Width Modulation                   |
++-----------+------------+------------------------------------------+
+| USART     | on-chip    | Serial ports                             |
++-----------+------------+------------------------------------------+
+| SPI       | on-chip    | Serial Peripheral Interface ports        |
++-----------+------------+------------------------------------------+
+| USB       | on-chip    | USB device                               |
++-----------+------------+------------------------------------------+
 
 Other hardware features are not currently supported by Zephyr.
 
@@ -78,6 +79,13 @@ The SAMD21 MCU has 6 SERCOM based USARTs.  On the Trinket, SERCOM0 is
 the Zephyr console and is available on pins 3 (RX) and 4 (TX).
 SERCOM2 is available on pins 2 (RX) and 0 (TX).
 
+PWM
+===
+
+The SAMD21 MCU has 3 TCC based PWM units with up to 4 outputs each and a period
+of 24 bits or 16 bits.  If :code:`CONFIG_PWM_SAM0_TCC` is enabled then LED0 is
+driven by TCC0 instead of by GPIO.
+
 SPI Port
 ========
 
@@ -99,6 +107,9 @@ Programming and Debugging
 
 The Trinket M0 ships the BOSSA compatible UF2 bootloader.  The
 bootloader can be entered by quickly tapping the reset button twice.
+
+Additionally, if :code:`CONFIG_USB_CDC_ACM` is enabled then the bootloader
+will be entered automatically when you run :code:`west flash`.
 
 Flashing
 ========
@@ -142,7 +153,7 @@ Flashing
       :goals: flash
       :compact:
 
-   You should see "Hello World! arm" in your terminal.
+   You should see "Hello World! adafruit_trinket_m0" in your terminal.
 
 References
 **********

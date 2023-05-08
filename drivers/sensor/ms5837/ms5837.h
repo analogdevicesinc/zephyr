@@ -8,8 +8,8 @@
 #define __SENSOR_MS5837_H__
 
 #include <zephyr/types.h>
-#include <device.h>
-#include <drivers/i2c.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/i2c.h>
 
 #define MS5837_CMD_RESET 0x1E
 
@@ -44,35 +44,43 @@
 #define MS5837_ADC_READ_DELAY_4086 10
 #define MS5837_ADC_READ_DELAY_8129 20
 
+enum ms5837_type {
+	MS5837_02BA01 = 0x00,
+	MS5837_02BA21 = 0x15,
+	MS5837_30BA26 = 0x1A
+};
+
+typedef void (*ms5837_compensate_func)(const struct device *dev,
+				       const int32_t adc_temperature,
+				       const int32_t adc_pressure);
+
 struct ms5837_data {
-
-	struct device *i2c_master;
-
 	/* Calibration values */
-	u16_t sens_t1;
-	u16_t off_t1;
-	u16_t tcs;
-	u16_t tco;
-	u16_t t_ref;
-	u16_t tempsens;
+	uint16_t factory;
+	uint16_t sens_t1;
+	uint16_t off_t1;
+	uint16_t tcs;
+	uint16_t tco;
+	uint16_t t_ref;
+	uint16_t tempsens;
 
 	/* Measured values */
-	s32_t pressure;
-	s32_t temperature;
+	int32_t pressure;
+	int32_t temperature;
 
 	/* Conversion commands */
-	u8_t presure_conv_cmd;
-	u8_t temperature_conv_cmd;
+	uint8_t presure_conv_cmd;
+	uint8_t temperature_conv_cmd;
 
 	/* Conversion delay in ms*/
-	u8_t presure_conv_delay;
-	u8_t temperature_conv_delay;
+	uint8_t presure_conv_delay;
+	uint8_t temperature_conv_delay;
 
+	ms5837_compensate_func comp_func;
 };
 
 struct ms5837_config {
-	const char *i2c_name;
-	u8_t i2c_address;
+	struct i2c_dt_spec i2c;
 };
 
 #endif /* __SENSOR_MS5837_H__ */

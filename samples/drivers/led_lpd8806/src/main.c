@@ -8,21 +8,20 @@
 #include <string.h>
 
 #define LOG_LEVEL CONFIG_LOG_DEFAULT_LEVEL
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(main);
 
-#include <zephyr.h>
-#include <drivers/led_strip.h>
-#include <device.h>
-#include <drivers/spi.h>
-#include <sys/util.h>
+#include <zephyr/kernel.h>
+#include <zephyr/drivers/led_strip.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/spi.h>
+#include <zephyr/sys/util.h>
 
 /*
  * Number of RGB LEDs in the LED strip, adjust as needed.
  */
 #define STRIP_NUM_LEDS 32
 
-#define STRIP_DEV_NAME DT_INST_0_COLORWAY_LPD8806_LABEL
 #define DELAY_TIME K_MSEC(40)
 
 static const struct led_rgb colors[] = {
@@ -39,6 +38,8 @@ static const struct led_rgb black = {
 
 struct led_rgb strip_colors[STRIP_NUM_LEDS];
 
+static const struct device *const strip = DEVICE_DT_GET_ANY(greeled_lpd8806);
+
 const struct led_rgb *color_at(size_t time, size_t i)
 {
 	size_t rgb_start = time % STRIP_NUM_LEDS;
@@ -50,18 +51,18 @@ const struct led_rgb *color_at(size_t time, size_t i)
 	}
 }
 
-void main(void)
+int main(void)
 {
-	struct device *strip;
 	size_t i, time;
 
-	strip = device_get_binding(STRIP_DEV_NAME);
-	if (strip) {
-		LOG_INF("Found LED strip device %s", STRIP_DEV_NAME);
-	} else {
-		LOG_ERR("LED strip device %s not found", STRIP_DEV_NAME);
-		return;
+	if (!strip) {
+		LOG_ERR("LED strip device not found");
+		return 0;
+	} else if (!device_is_ready(strip)) {
+		LOG_INF("LED strip device %s is not ready", strip->name);
+		return 0;
 	}
+	LOG_INF("Found LED strip device %s", strip->name);
 
 	/*
 	 * Display a pattern that "walks" the three primary colors
@@ -79,4 +80,5 @@ void main(void)
 		k_sleep(DELAY_TIME);
 		time++;
 	}
+	return 0;
 }

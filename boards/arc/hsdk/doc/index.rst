@@ -8,14 +8,13 @@ Overview
 
 The DesignWare(R) ARC(R) HS Development Kit is a ready-to-use platform for
 rapid software development on the ARC HS3x family of processors. It supports
-single- and multi-core ARC HS34, HS36 and HS38 processors and offers a wide
+single-core and multi-core ARC HS34, HS36 and HS38 processors and offers a wide
 range of interfaces including Ethernet, WiFi, Bluetooth, USB, SDIO, I2C, SPI,
 UART, I2S, ADC, PWM and GPIO. A Vivante GPU is also contained in the ARC
 Development System SoC. This allows developers to build and debug complex
 software on a comprehensive hardware platform
 
-.. image:: ./hsdk.jpg
-   :width: 442px
+.. image:: hsdk.jpg
    :align: center
    :alt: DesignWare(R) ARC(R) HS Development Kit (synopsys.com)
 
@@ -110,8 +109,7 @@ The functionality of the Pmod connectors is programmable and includes GPIO, UART
 The location of the pins on the Pmod connectors is shown in Figure below. Detailed pin descriptions
 depending on the pin multiplexer settings are provided in the subsequent sections.
 
-.. image:: ./pinout_diagram_of_the_pmod.jpg
-   :width: 442px
+.. image:: pinout_diagram_of_the_pmod.jpg
    :align: center
    :alt: Pinout Diagram of the Pmod
 
@@ -211,8 +209,7 @@ Mikrobus
 The ARC HSDK features a set of MikroBUS headers. Figure below shows the relevant function assignments,
 fully compatible with the MikroBUS standard. Table below shows the pin assignment on the I/O Multiplexer.
 
-.. image:: ./mikrobus_header.jpg
-   :width: 442px
+.. image:: mikrobus_header.jpg
    :align: center
    :alt: mikrobus header
 
@@ -246,8 +243,7 @@ the ARC HSDK board is fixed to 3V3. Note that the ICSP header is also not availa
 shields do not require this ICSP header as the SPI master interface on this ICSP header
 is also available on the IO10 to IO13 pins.
 
-.. image:: ./arduino_shield_interface.jpg
-   :width: 442px
+.. image:: arduino_shield_interface.jpg
    :align: center
    :alt: arduino shield interface
 
@@ -298,6 +294,56 @@ using the CREG_GPIO_MUX register (see Pinmux ). After a reset, all ports are con
 | IO13  | gpio[15]   | -               | spi2_clk   |
 +-------+------------+-----------------+------------+
 
+I/O expander
+============
+
+The ARC HSDK board includes a CY8C9520A I/O expander from `Cypress CY8C9520A
+<https://www.cypress.com/file/37971/download>`__. The I/O
+expander offers additional GPIO signals and board control signals and can be accessed
+through the on-board I2C bus, we have implemented a basic driver for it.
+Tables below shows an overview of relevant I/O signals.
+
++------------+---------------------------------------------+
+| Pins       | Usage                                       |
++------------+---------------------------------------------+
+| port0_bit0 | RS9113 Bluetooth I2S RX enable (active low) |
++------------+---------------------------------------------+
+| port0_bit1 | mikroBUS Reset (active low)                 |
++------------+---------------------------------------------+
+| port0_bit2 | GPIO for Arduino AD0                        |
++------------+---------------------------------------------+
+| port0_bit3 | GPIO for Arduino AD1                        |
++------------+---------------------------------------------+
+| port0_bit4 | GPIO for Arduino AD2                        |
++------------+---------------------------------------------+
+| port0_bit5 | GPIO for Arduino AD3                        |
++------------+---------------------------------------------+
+| port1_bit4 | On-board user LED0                          |
++------------+---------------------------------------------+
+| port1_bit5 | On-board user LED1                          |
++------------+---------------------------------------------+
+| port1_bit6 | On-board user LED2                          |
++------------+---------------------------------------------+
+| port1_bit7 | On-board user LED3                          |
++------------+---------------------------------------------+
+
+On-board user LEDS
+==================
+
+The ARC HSDK includes 4 user LEDs(active high), which can be controlled through the I/O expander pins.
+
++-------+-----------------+
+| LEDs  | PINs            |
++-------+-----------------+
+| LED0  | GPX_port1_bit4  |
++-------+-----------------+
+| LED1  | GPX_port1_bit5  |
++-------+-----------------+
+| LED2  | GPX_port1_bit6  |
++-------+-----------------+
+| LED3  | GPX_port1_bit7  |
++-------+-----------------+
+
 For hardware feature details, refer to : `Designware HS Development Kit website
 <https://www.synopsys.com/dw/ipdir.php?ds=arc-hs-development-kit>`__.
 
@@ -316,7 +362,7 @@ additional pieces of hardware are required.
 * A universal switching power adaptor (110-240V
   AC to 12V DC), provided in the package, provides power to the board.
 
-* :ref:`The Zephyr SDK <zephyr_sdk>`
+* :ref:`The Zephyr SDK <toolchain_zephyr_sdk>`
 
 * Terminal emulator software for use with the USB-UART. Suggestion:
   `Putty Website`_.
@@ -479,4 +525,3 @@ References
 .. _Digilent Pmod Modules: http://store.digilentinc.com/pmod-modules
 
 .. _Putty website: http://www.putty.org
-

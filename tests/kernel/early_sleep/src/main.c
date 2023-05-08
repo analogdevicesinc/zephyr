@@ -24,14 +24,14 @@
  * @}
  */
 
-#include <init.h>
-#include <arch/cpu.h>
-#include <sys_clock.h>
+#include <zephyr/init.h>
+#include <zephyr/arch/cpu.h>
+#include <zephyr/sys_clock.h>
 #include <stdbool.h>
-#include <tc_util.h>
-#include <ztest.h>
+#include <zephyr/tc_util.h>
+#include <zephyr/ztest.h>
 
-#define THREAD_STACK		(384 + CONFIG_TEST_EXTRA_STACKSIZE)
+#define THREAD_STACK		(384 + CONFIG_TEST_EXTRA_STACK_SIZE)
 
 #define TEST_TICKS_TO_SLEEP	(CONFIG_SYS_CLOCK_TICKS_PER_SEC / 2)
 
@@ -54,20 +54,19 @@ static void helper_thread(void *p1, void *p2, void *p3)
 
 static int ticks_to_sleep(int ticks)
 {
-	u32_t start_time;
-	u32_t stop_time;
+	uint32_t start_time;
+	uint32_t stop_time;
 
 	start_time = k_cycle_get_32();
-	k_sleep(__ticks_to_ms(ticks));
+	k_sleep(K_MSEC(k_ticks_to_ms_floor64(ticks)));
 	stop_time = k_cycle_get_32();
 
-	return (stop_time - start_time) / sys_clock_hw_cycles_per_tick();
+	return (stop_time - start_time) / k_ticks_to_cyc_floor32(1);
 }
 
 
-static int test_early_sleep_post_kernel(struct device *unused)
+static int test_early_sleep_post_kernel(void)
 {
-	ARG_UNUSED(unused);
 	actual_post_kernel_sleep_ticks = ticks_to_sleep(TEST_TICKS_TO_SLEEP);
 	return 0;
 }
@@ -75,9 +74,8 @@ static int test_early_sleep_post_kernel(struct device *unused)
 SYS_INIT(test_early_sleep_post_kernel,
 		POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE);
 
-static int test_early_sleep_app(struct device *unused)
+static int test_early_sleep_app(void)
 {
-	ARG_UNUSED(unused);
 	actual_app_sleep_ticks = ticks_to_sleep(TEST_TICKS_TO_SLEEP);
 	return 0;
 }
@@ -91,7 +89,7 @@ SYS_INIT(test_early_sleep_app, APPLICATION, CONFIG_KERNEL_INIT_PRIORITY_DEVICE);
  *
  * @see k_sleep()
  */
-static void test_early_sleep(void)
+ZTEST(earlysleep, test_early_sleep)
 {
 	TC_PRINT("Testing early sleeping\n");
 
@@ -102,9 +100,9 @@ static void test_early_sleep(void)
 	 */
 	k_thread_priority_set(k_current_get(), 0);
 
-	TC_PRINT("msec per tick: %lld.%03lld, ticks to sleep: %d\n",
-			__ticks_to_ms(1000) / 1000U,
-			__ticks_to_ms(1000) % 1000,
+	TC_PRINT("msec per tick: %" PRId64 ".%03" PRId64 ", ticks to sleep: %d\n",
+			k_ticks_to_ms_floor64(1000) / 1000U,
+			k_ticks_to_ms_floor64(1000) % 1000,
 			TEST_TICKS_TO_SLEEP);
 
 	/* Create a lower priority thread */
@@ -112,7 +110,7 @@ static void test_early_sleep(void)
 				   helper_tstack, THREAD_STACK,
 				   helper_thread, NULL, NULL, NULL,
 				   k_thread_priority_get(k_current_get()) + 1,
-				   K_INHERIT_PERMS, 0);
+				   K_INHERIT_PERMS, K_NO_WAIT);
 
 	TC_PRINT("k_sleep() ticks at POST_KERNEL level: %d\n",
 					actual_post_kernel_sleep_ticks);
@@ -133,10 +131,5 @@ static void test_early_sleep(void)
 	zassert_false(test_failure, "Lower priority thread not ran!!");
 }
 
-/*test case main entry*/
-void test_main(void)
-{
-	ztest_test_suite(test_earlysleep,
-			ztest_unit_test(test_early_sleep));
-	ztest_run_test_suite(test_earlysleep);
-}
+ZTEST_SUITE(earlysleep, NULL, NULL,
+		ztest_simple_1cpu_before, ztest_simple_1cpu_after, NULL);

@@ -14,6 +14,7 @@ This sample application supports the following mcumgr transports by default:
 
     * Shell
     * Bluetooth
+    * UDP
 
 ``smp_svr`` enables support for the following command groups:
 
@@ -21,15 +22,10 @@ This sample application supports the following mcumgr transports by default:
     * ``img_mgmt``
     * ``os_mgmt``
     * ``stat_mgmt``
+    * ``shell_mgmt``
 
 Caveats
 *******
-
-* The Zephyr port of ``smp_svr`` is configured to run on a Nordic nRF52x MCU. The
-  application should build and run for other platforms without modification, but
-  the file system management commands will not work.  To enable file system
-  management for a different platform, adjust the
-  :option:`CONFIG_FS_NFFS_FLASH_DEV_NAME` setting in :file:`prj.conf` accordingly.
 
 * The MCUboot bootloader is required for ``img_mgmt`` to function
   properly. More information about the Device Firmware Upgrade subsystem and
@@ -39,8 +35,18 @@ Caveats
   on Linux and macOS. On Windows there is no support for Device Firmware
   Upgrade over BLE yet.
 
-Building a BLE Controller (optional)
-************************************
+Prerequisites
+*************
+
+Installing the mcumgr cli
+=========================
+
+To interact remotely with the management subsystem on a device, we need to have the
+:file:`mcumgr` installed. Follow the instructions in the :ref:`mcumgr_cli` section
+of the Management subsystem documentation.
+
+Building a BLE Controller
+=========================
 
 .. note::
    This section is only relevant for Linux users
@@ -50,175 +56,253 @@ Bluetooth Low Energy (BLE) and do not have a built-in or pluggable BLE radio,
 you can build one and use it following the instructions in
 :ref:`bluetooth-hci-uart-bluez`.
 
-Building and Running
-********************
+Building and flashing MCUboot
+*****************************
+
+The below steps describe how to build and run the MCUboot bootloader.
+Detailed instructions can be found in the :ref:`mcuboot` documentation page.
+
+The Zephyr port of MCUboot is essentially a normal Zephyr application, which means that
+we can build and flash it like normal using ``west``, like so:
+
+.. code-block:: console
+
+   west build -b <board> -d build_mcuboot bootloader/mcuboot/boot/zephyr
+   west flash -d build_mcuboot
+
+Substitute <board> for one of the boards supported by the sample, see
+:file:`sample.yaml`.
+
+.. _smp_svr_sample_build:
+
+Building the sample application
+*******************************
 
 The below steps describe how to build and run the ``smp_svr`` sample in
-Zephyr. Where examples are given, they assume the sample is being built for
-the Nordic nRF52 Development Kit (``BOARD=nrf52_pca10040``).
+Zephyr. The ``smp_svr`` sample comes in different flavours.
 
-If you would like to use a more constrained platform, such as the nRF51 DK, you
-should use the :file:`prj_tiny.conf` configuration file rather than the default
-:file:`prj.conf`.
+.. tabs::
 
-Step 1: Build MCUboot
-=====================
+   .. group-tab:: Bluetooth
 
-Build MCUboot by following the instructions in the :ref:`mcuboot`
-documentation page.
+      To build the bluetooth sample:
 
-Step 2: Flash MCUboot
-======================
+      .. code-block:: console
 
-Flash the resulting image file to address 0x0 of flash memory.
-This can be done in multiple ways.
+         west build \
+            -b nrf52dk_nrf52832 \
+            samples/subsys/mgmt/mcumgr/smp_svr \
+            -- \
+            -DOVERLAY_CONFIG=overlay-bt.conf
 
-Using make or ninja:
+   .. group-tab:: Serial
 
-.. code-block:: console
+      To build the serial sample with file-system and shell management support:
 
-   make flash
-   # or
-   ninja flash
+      .. code-block:: console
 
-Using GDB:
+         west build \
+            -b frdm_k64f \
+            samples/subsys/mgmt/mcumgr/smp_svr \
+            -- \
+            -DOVERLAY_CONFIG='overlay-serial.conf;overlay-fs.conf;overlay-shell-mgmt.conf'
 
-.. code-block:: console
+   .. group-tab:: USB CDC_ACM
 
-   restore <path-to-mcuboot-zephyr.bin> binary 0
+      To build the serial sample with USB CDC_ACM backend:
 
-Step 3: Build smp_svr
-=====================
+      .. code-block:: console
 
-``smp_svr`` can be built for the nRF52 as follows:
+         west build \
+            -b nrf52840dk_nrf52840 \
+            samples/subsys/mgmt/mcumgr/smp_svr \
+            -- \
+            -DOVERLAY_CONFIG=overlay-cdc.conf \
+            -DDTC_OVERLAY_FILE=usb.overlay
 
-.. zephyr-app-commands::
-    :zephyr-app: samples/subsys/mgmt/mcumgr/smp_svr
-    :board: nrf52_pca10040
-    :build-dir: nrf52_pca10040
-    :goals: build
+   .. group-tab:: Shell
+
+      To build the shell sample:
+
+      .. code-block:: console
+
+         west build \
+            -b frdm_k64f \
+            samples/subsys/mgmt/mcumgr/smp_svr \
+            -- \
+            -DOVERLAY_CONFIG='overlay-shell.conf'
+
+   .. group-tab:: UDP
+
+      The UDP transport for SMP supports both IPv4 and IPv6.
+      In the sample, both IPv4 and IPv6 are enabled, but they can be
+      enabled and disabled separately.
+
+      To build the UDP sample:
+
+      .. code-block:: console
+
+         west build \
+            -b frdm_k64f \
+            samples/subsys/mgmt/mcumgr/smp_svr \
+            -- \
+            -DOVERLAY_CONFIG=overlay-udp.conf
 
 .. _smp_svr_sample_sign:
 
-Step 4: Sign the image
-======================
+Signing the sample image
+************************
 
-.. note::
-   From this section onwards you can use either a binary (``.bin``) or an
-   Intel Hex (``.hex``) image format. This is written as ``(bin|hex)`` in this
-   document.
+A key feature of MCUboot is that images must be signed before they can be successfully
+uploaded and run on a target. To sign images, the MCUboot tool :file:`imgtool` can be used.
 
-Using MCUboot's :file:`imgtool.py` script, sign the :file:`zephyr.(bin|hex)`
-file you built in Step 3. In the below example, the MCUboot repo is located at
-:file:`~/src/mcuboot`.
+To sign the sample image we built in a previous step:
 
 .. code-block:: console
 
-   ~/src/mcuboot/scripts/imgtool.py sign \
-        --key ~/src/mcuboot/root-rsa-2048.pem \
-        --header-size 0x200 \
-        --align 8 \
-        --version 1.0 \
-        --slot-size <image-slot-size> \
-        <path-to-zephyr.(bin|hex)> signed.(bin|hex)
+    west sign -t imgtool -- --key bootloader/mcuboot/root-rsa-2048.pem
 
-The above command creates an image file called :file:`signed.(bin|hex)` in the
-current directory.
+The above command creates an image file called :file:`zephyr.signed.bin` in the
+build directory.
 
-Step 5: Flash the smp_svr image
-===============================
+For more information on image signing and ``west sign``, see the :ref:`west-sign`
+documentation.
 
-Upload the :file:`signed.(bin|hex)` file from Step 4 to image slot-0 of your
-board.  The location of image slot-0 varies by board, as described in
-:ref:`mcuboot_partitions`.  For the nRF52 DK, slot-0 is located at address
-``0xc000``.
+Flashing the sample image
+*************************
 
-Using :file:`nrfjprog` you don't need to specify the slot-0 starting address,
-since :file:`.hex` files already contain that information:
+Upload the :file:`zephyr.signed.bin` file from the previous to image slot-0 of your
+board.  See :ref:`flash_map_api` for details on flash partitioning.
+
+To upload the initial image file to an empty slot-0, we simply use ``west flash``
+like normal. ``west flash`` will automatically detect slot-0 address and confirm
+the image.
 
 .. code-block:: console
 
-    nrfjprog --program <path-to-signed.hex>
+    west flash --bin-file build/zephyr/zephyr.signed.bin
 
-Using GDB:
+We need to explicitly specify the *signed* image file, otherwise the non-signed version
+will be used and the image won't be runnable.
 
-.. code-block:: console
-
-    restore <path-to-signed.bin> binary 0xc000
-
-Step 6: Run it!
-===============
-
-.. note::
-   If you haven't installed :file:`mcumgr` yet, then do so by following the
-   instructions in the :ref:`mcumgr_cli` section of the Management subsystem
-   documentation.
-
-.. note::
-   The :file:`mcumgr` command-line tool requires a connection string in order
-   to identify the remote target device. In this sample we use a BLE-based
-   connection string, and you might need to modify it depending on the
-   BLE controller you are using.
-
+Sample image: hello world!
+==========================
 
 The ``smp_svr`` app is ready to run.  Just reset your board and test the app
 with the :file:`mcumgr` command-line tool's ``echo`` functionality, which will
 send a string to the remote target device and have it echo it back:
 
-.. code-block:: console
+.. tabs::
 
-   sudo mcumgr --conntype ble --connstring ctlr_name=hci0,peer_name='Zephyr' echo hello
-   hello
+   .. group-tab:: Bluetooth
 
+      .. code-block:: console
 
-Step 7: Device Firmware Upgrade
-===============================
+         sudo mcumgr --conntype ble --connstring ctlr_name=hci0,peer_name='Zephyr' echo hello
+         hello
+
+   .. group-tab:: Shell
+
+      .. code-block:: console
+
+         mcumgr --conntype serial --connstring "/dev/ttyACM0,baud=115200" echo hello
+         hello
+
+   .. group-tab:: UDP
+
+      Using IPv4:
+
+      .. code-block:: console
+
+         mcumgr --conntype udp --connstring=[192.168.1.1]:1337 echo hello
+         hello
+
+      And using IPv6
+
+      .. code-block:: console
+
+         mcumgr --conntype udp --connstring=[2001:db8::1]:1337 echo hello
+         hello
+
+.. note::
+   The :file:`mcumgr` command-line tool requires a connection string in order
+   to identify the remote target device. In the BT sample we use a BLE-based
+   connection string, and you might need to modify it depending on the
+   BLE controller you are using.
+
+.. note::
+   In the following sections, examples will use ``<connection string>`` to represent
+   the ``--conntype <type>`` and ``--connstring=<string>`` :file:`mcumgr` parameters.
+
+J-Link Virtual MSD Interaction Note
+***********************************
+
+On boards where a J-Link OB is present which has both CDC and MSC (virtual Mass
+Storage Device, also known as drag-and-drop) support, the MSD functionality can
+prevent mcumgr commands over the CDC UART port from working due to how USB
+endpoints are configured in the J-Link firmware (for example on the Nordic
+``nrf52840dk``) because of limiting the maximum packet size (most likely to occur
+when using image management commands for updating firmware). This issue can be
+resolved by disabling MSD functionality on the J-Link device, follow the
+instructions on :ref:`nordic_segger_msd` to disable MSD support.
+
+Device Firmware Upgrade (DFU)
+*****************************
 
 Now that the SMP server is running on your board and you are able to communicate
 with it using :file:`mcumgr`, you might want to test what is commonly called
-"OTA DFU", or Over-The-Air Device Firmware Upgrade.
+"OTA DFU", or Over-The-Air Device Firmware Upgrade. This works for both BT and UDP.
 
-To do this, build a second sample (following the steps below) to verify
-it is sent over the air and properly flashed into slot-1, and then
-swapped into slot-0 by MCUboot.
+The general sequence of a DFU process is as follows:
 
-Build a second sample
----------------------
+* Build an MCUboot enabled application, see :ref:`smp_svr_sample_build`
+* Sign the application image, see :ref:`smp_svr_sample_sign`
+* Upload the signed image using :file:`mcumgr`
+* Listing the images on the device using :file:`mcumgr`
+* Mark the uploaded image for testing using :file:`mcumgr`
+* Reset the device remotely using :file:`mcumgr`
+* Confirm the uploaded image using :file:`mcumgr` (optional)
 
-Perhaps the easiest sample to test with is the :zephyr_file:`samples/hello_world`
-sample provided by Zephyr, documented in the :ref:`hello_world` section.
+Direct image upload and Image mapping to MCUboot slot
+=====================================================
 
-Edit :zephyr_file:`samples/hello_world/prj.conf` and enable the required MCUboot
-Kconfig option as described in :ref:`mcuboot` by adding the following line to
-it:
+Currently the mcumgr supports, for direct upload, 4 target images, of which first two are mapped
+into MCUboot primary (slot-0) and secondary (slot-1) respectively.
+
+The mcumgr ``image upload`` command may be provided optional ``-e -n <image>`` parameter that will
+select target image for upload; when parameter is no provided, 0 is assumed, which means "default
+behaviour", and it performs upload to the "image-1", the MCUboot secondary slot.
+
+For clarity, here is DTS label to slot to ``<image>`` translation table:
+
+    +-----------+--------+------------+
+    | DTS label | Slot   | -n <image> |
+    +===========+========+============+
+    | "image-0" | slot-0 |     1      |
+    +-----------+--------+------------+
+    | "image-1" | slot-1 |     0, 1   |
+    +-----------+--------+------------+
+    | "image-2" |        |     2      |
+    +-----------+--------+------------+
+    | "image-3" |        |     3      |
+    +-----------+--------+------------+
+
+.. note::
+
+   The ``-e`` option actually means "no erase", and is provided to the mcumgr
+   to prevent it from sending erase command to target, before updating image.
+   The options is always needed when ``-n`` is used for image selection,
+   as the erase command is hardcoded to erase slot-1 ("image-1"),
+   regardless of which slot is uploaded at the time.
+
+Upload the signed image
+=======================
+
+To upload the signed image, use the following command:
 
 .. code-block:: console
 
-   CONFIG_BOOTLOADER_MCUBOOT=y
-
-Then build the sample as usual (see :ref:`hello_world`).
-
-Sign the second sample
-----------------------
-
-Next you will need to sign the sample just like you did for :file:`smp_svr`,
-since it needs to be loaded by MCUboot.
-Follow the same instructions described in :ref:`smp_svr_sample_sign`,
-but this time you must use a :file:`.bin` image, since :file:`mcumgr` does not
-yet support :file:`.hex` files.
-
-Upload the image over BLE
--------------------------
-
-Now we are ready to send or upload the image over BLE to the target remote
-device.
-
-.. code-block:: console
-
-   sudo mcumgr --conntype ble --connstring ctlr_name=hci0,peer_name='Zephyr' image upload signed.bin
-
-If all goes well the image will now be stored in slot-1, ready to be swapped
-into slot-0 and executed.
+   sudo mcumgr <connection string> image upload build/zephyr/zephyr.signed.bin
 
 .. note::
 
@@ -229,56 +313,68 @@ into slot-0 and executed.
    ``mcumgr`` command line tool if this occurs.
 
 List the images
----------------
+===============
 
 We can now obtain a list of images (slot-0 and slot-1) present in the remote
 target device by issuing the following command:
 
 .. code-block:: console
 
-   sudo mcumgr --conntype ble --connstring ctlr_name=hci0,peer_name='Zephyr' image list
+   sudo mcumgr <connection string> image list
 
 This should print the status and hash values of each of the images present.
 
 Test the image
---------------
+==============
 
 In order to instruct MCUboot to swap the images we need to test the image first,
 making sure it boots:
 
 .. code-block:: console
 
-   sudo mcumgr --conntype ble --connstring ctlr_name=hci0,peer_name='Zephyr' image test <hash of slot-1 image>
+   sudo mcumgr <connection string> image test <hash of slot-1 image>
 
 Now MCUBoot will swap the image on the next reset.
 
+.. note::
+   There is not yet any way of getting the image hash without actually uploading the
+   image and getting the hash by using the ``image list`` command of :file:`mcumgr`.
+
 Reset remotely
---------------
+==============
 
 We can reset the device remotely to observe (use the console output) how
 MCUboot swaps the images:
 
 .. code-block:: console
 
-   sudo mcumgr --conntype ble --connstring ctlr_name=hci0,peer_name='Zephyr' reset
+   sudo mcumgr <connection string> reset
 
 Upon reset MCUboot will swap slot-0 and slot-1.
 
-The new image is the basic ``hello_world`` sample that does not contain
-SMP or BLE functionality, so we cannot communicate with it using
-:file:`mcumgr`. Instead simply reset the board manually to force MCUboot
-to revert (i.e. swap back the images) due to the fact that the new image has
-not been confirmed.
+Confirm new image
+=================
 
-If you had instead built and uploaded a new image based on ``smp_svr``
-(or another BLE and SMP enabled sample), you could confirm the
-new image and make the swap permanent by using this command:
+The new image is now loaded into slot-0, but it will be swapped back into slot-1
+on the next reset unless the image is confirmed. To confirm the new image:
 
 .. code-block:: console
 
-   sudo mcumgr --conntype ble --connstring ctlr_name=hci0,peer_name='Zephyr' image confirm
+   sudo mcumgr <connection string> image confirm
 
 Note that if you try to send the very same image that is already flashed in
 slot-0 then the procedure will not complete successfully since the hash values
 for both slots will be identical.
 
+Download file from File System
+******************************
+
+SMP server supports downloading files from File System on device via
+:file:`mcumgr`. This is useful with FS log backend, when files are stored in
+non-volatile memory. Build and flash both MCUboot and smp_svr applications and
+then use :file:`mcumgr` with :file:`download` command, e.g.:
+
+.. code-block:: console
+
+   mcumgr --conntype serial --connstring='dev=/dev/ttyACM0,baud=115200' \
+   fs download /lfs/log.0000 ~/log.txt

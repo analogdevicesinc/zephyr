@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <ztest.h>
+#include <zephyr/ztest.h>
 #include "test_mslab.h"
 
 #define THREAD_NUM 3
-#define STACK_SIZE (512 + CONFIG_TEST_EXTRA_STACKSIZE)
+#define STACK_SIZE (512 + CONFIG_TEST_EXTRA_STACK_SIZE)
 
 K_MEM_SLAB_DEFINE(mslab1, BLK_SIZE, BLK_NUM, BLK_ALIGN);
 
@@ -29,7 +29,7 @@ void tmslab_alloc_wait_timeout(void *p1, void *p2, void *p3)
 
 void tmslab_alloc_wait_ok(void *p1, void *p2, void *p3)
 {
-	zassert_true(k_mem_slab_alloc(&mslab1, &block_ok, TIMEOUT) == 0, NULL);
+	zassert_true(k_mem_slab_alloc(&mslab1, &block_ok, TIMEOUT) == 0);
 	k_sem_give(&sync_sema);
 }
 
@@ -48,7 +48,7 @@ void tmslab_alloc_wait_ok(void *p1, void *p2, void *p3)
  * @see k_mem_slab_alloc()
  * @see k_mem_slab_free()
  */
-void test_mslab_alloc_wait_prio(void)
+ZTEST(mslab_concept, test_mslab_alloc_wait_prio)
 {
 	void *block[BLK_NUM];
 	k_tid_t tid[THREAD_NUM];
@@ -72,17 +72,17 @@ void test_mslab_alloc_wait_prio(void)
 	/*the low-priority thread*/
 	tid[0] = k_thread_create(&tdata[0], tstack[0], STACK_SIZE,
 				 tmslab_alloc_wait_timeout, NULL, NULL, NULL,
-				 K_PRIO_PREEMPT(1), 0, 0);
+				 K_PRIO_PREEMPT(1), 0, K_NO_WAIT);
 	/*the highest-priority thread that has waited the longest*/
 	tid[1] = k_thread_create(&tdata[1], tstack[1], STACK_SIZE,
 				 tmslab_alloc_wait_ok, NULL, NULL, NULL,
-				 K_PRIO_PREEMPT(0), 0, 10);
+				 K_PRIO_PREEMPT(0), 0, K_MSEC(10));
 	/*the highest-priority thread that has waited shorter*/
 	tid[2] = k_thread_create(&tdata[2], tstack[2], STACK_SIZE,
 				 tmslab_alloc_wait_timeout, NULL, NULL, NULL,
-				 K_PRIO_PREEMPT(0), 0, 20);
+				 K_PRIO_PREEMPT(0), 0, K_MSEC(20));
 	/*relinquish CPU for above threads to start */
-	k_sleep(30);
+	k_msleep(30);
 	/*free one block, expected to unblock thread "tid[1]"*/
 	k_mem_slab_free(&mslab1, &block[0]);
 	/*wait for all threads exit*/

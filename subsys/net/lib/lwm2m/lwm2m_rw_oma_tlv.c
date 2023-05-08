@@ -60,18 +60,16 @@
 #define LOG_MODULE_NAME net_lwm2m_oma_tlv
 #define LOG_LEVEL CONFIG_LWM2M_LOG_LEVEL
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
 #include <string.h>
 #include <stdint.h>
-#include <sys/byteorder.h>
+#include <zephyr/sys/byteorder.h>
 
 #include "lwm2m_rw_oma_tlv.h"
 #include "lwm2m_engine.h"
-#ifdef CONFIG_LWM2M_RD_CLIENT_SUPPORT
 #include "lwm2m_rd_client.h"
-#endif
 #include "lwm2m_util.h"
 
 enum {
@@ -82,20 +80,12 @@ enum {
 };
 
 struct oma_tlv {
-	u8_t  type;
-	u16_t id; /* can be 8-bit or 16-bit when serialized */
-	u32_t length;
+	uint8_t  type;
+	uint16_t id; /* can be 8-bit or 16-bit when serialized */
+	uint32_t length;
 };
 
-struct tlv_out_formatter_data {
-	/* offset position storage */
-	u16_t mark_pos;
-	u16_t mark_pos_oi;
-	u16_t mark_pos_ri;
-	u8_t writer_flags;
-};
-
-static u8_t get_len_type(const struct oma_tlv *tlv)
+static uint8_t get_len_type(const struct oma_tlv *tlv)
 {
 	if (tlv->length < 8) {
 		return 0;
@@ -108,20 +98,20 @@ static u8_t get_len_type(const struct oma_tlv *tlv)
 	return 3;
 }
 
-static u8_t tlv_calc_type(u8_t flags)
+static uint8_t tlv_calc_type(uint8_t flags)
 {
 	return flags & WRITER_RESOURCE_INSTANCE ?
 			OMA_TLV_TYPE_RESOURCE_INSTANCE : OMA_TLV_TYPE_RESOURCE;
 }
 
-static u16_t tlv_calc_id(u8_t flags, struct lwm2m_obj_path *path)
+static uint16_t tlv_calc_id(uint8_t flags, struct lwm2m_obj_path *path)
 {
 	return flags & WRITER_RESOURCE_INSTANCE ?
 			path->res_inst_id : path->res_id;
 }
 
-static void tlv_setup(struct oma_tlv *tlv, u8_t type, u16_t id,
-		      u32_t buflen)
+static void tlv_setup(struct oma_tlv *tlv, uint8_t type, uint16_t id,
+		      uint32_t buflen)
 {
 	if (tlv) {
 		tlv->type = type;
@@ -131,7 +121,7 @@ static void tlv_setup(struct oma_tlv *tlv, u8_t type, u16_t id,
 }
 
 static int oma_tlv_put_u8(struct lwm2m_output_context *out,
-			  u8_t value, bool insert)
+			  uint8_t value, bool insert)
 {
 	struct tlv_out_formatter_data *fd;
 	int ret;
@@ -139,7 +129,7 @@ static int oma_tlv_put_u8(struct lwm2m_output_context *out,
 	if (insert) {
 		fd = engine_get_out_user_data(out);
 		if (!fd) {
-			return 0;
+			return -EINVAL;
 		}
 
 		ret = buf_insert(CPKT_BUF_WRITE(out->out_cpkt),
@@ -159,13 +149,13 @@ static int oma_tlv_put_u8(struct lwm2m_output_context *out,
 	return 0;
 }
 
-static size_t oma_tlv_put(const struct oma_tlv *tlv,
-			  struct lwm2m_output_context *out,
-			  u8_t *value, bool insert)
+static int oma_tlv_put(const struct oma_tlv *tlv,
+		       struct lwm2m_output_context *out, uint8_t *value,
+		       bool insert)
 {
 	size_t pos;
 	int ret, i;
-	u8_t len_type, tmp;
+	uint8_t len_type, tmp;
 
 	/* len_type is the same as number of bytes required for length */
 	len_type = get_len_type(tlv);
@@ -178,8 +168,7 @@ static size_t oma_tlv_put(const struct oma_tlv *tlv,
 
 	ret = oma_tlv_put_u8(out, tmp, insert);
 	if (ret < 0) {
-		/* TODO: Generate error? */
-		return 0;
+		return ret;
 	}
 
 	pos = 1;
@@ -188,8 +177,7 @@ static size_t oma_tlv_put(const struct oma_tlv *tlv,
 	if (tlv->id > 255) {
 		ret = oma_tlv_put_u8(out, (tlv->id >> 8) & 0xff, insert);
 		if (ret < 0) {
-			/* TODO: Generate error? */
-			return 0;
+			return ret;
 		}
 
 		pos++;
@@ -197,8 +185,7 @@ static size_t oma_tlv_put(const struct oma_tlv *tlv,
 
 	ret = oma_tlv_put_u8(out, tlv->id & 0xff, insert);
 	if (ret < 0) {
-		/* TODO: Generate error? */
-		return 0;
+		return ret;
 	}
 
 	pos++;
@@ -209,8 +196,7 @@ static size_t oma_tlv_put(const struct oma_tlv *tlv,
 					     (tlv->length >> (i * 8)) & 0xff,
 					     insert);
 			if (ret < 0) {
-				/* TODO: Generate error? */
-				return 0;
+				return ret;
 			}
 
 			pos++;
@@ -219,28 +205,29 @@ static size_t oma_tlv_put(const struct oma_tlv *tlv,
 
 	/* finally add the value */
 	if (value != NULL && tlv->length > 0 && !insert) {
-		if (buf_append(CPKT_BUF_WRITE(out->out_cpkt),
-			       value, tlv->length) < 0) {
-			/* TODO: Generate error? */
-			return 0;
+		ret = buf_append(CPKT_BUF_WRITE(out->out_cpkt),
+				 value, tlv->length);
+		if (ret < 0) {
+			return ret;
 		}
 	}
 
 	return pos + tlv->length;
 }
 
-static size_t oma_tlv_get(struct oma_tlv *tlv,
-			  struct lwm2m_input_context *in,
-			  bool dont_advance)
+static int oma_tlv_get(struct oma_tlv *tlv, struct lwm2m_input_context *in,
+		       bool dont_advance)
 {
-	u8_t len_type;
-	u8_t len_pos = 1U;
+	uint8_t len_type;
+	uint8_t len_pos = 1U;
 	size_t tlv_len;
-	u16_t tmp_offset;
-	u8_t buf[2];
+	uint16_t tmp_offset;
+	uint8_t buf[2];
+	int ret;
 
 	tmp_offset = in->offset;
-	if (buf_read_u8(&buf[0], CPKT_BUF_READ(in->in_cpkt), &tmp_offset) < 0) {
+	ret = buf_read_u8(&buf[0], CPKT_BUF_READ(in->in_cpkt), &tmp_offset);
+	if (ret < 0) {
 		goto error;
 	}
 
@@ -248,16 +235,18 @@ static size_t oma_tlv_get(struct oma_tlv *tlv,
 	len_type = (buf[0] >> 3) & 3;
 	len_pos = 1 + (((buf[0] & (1 << 5)) != 0U) ? 2 : 1);
 
-	if (buf_read_u8(&buf[1], CPKT_BUF_READ(in->in_cpkt), &tmp_offset) < 0) {
-		return 0;
+	ret = buf_read_u8(&buf[1], CPKT_BUF_READ(in->in_cpkt), &tmp_offset);
+	if (ret < 0) {
+		goto error;
 	}
 
 	tlv->id = buf[1];
 
 	/* if len_pos > 2 it means that there are more ID to read */
 	if (len_pos > 2) {
-		if (buf_read_u8(&buf[1], CPKT_BUF_READ(in->in_cpkt),
-				&tmp_offset) < 0) {
+		ret = buf_read_u8(&buf[1], CPKT_BUF_READ(in->in_cpkt),
+				  &tmp_offset);
+		if (ret < 0) {
 			goto error;
 		}
 
@@ -270,8 +259,9 @@ static size_t oma_tlv_get(struct oma_tlv *tlv,
 		/* read the length */
 		tlv_len = 0;
 		while (len_type > 0) {
-			if (buf_read_u8(&buf[1], CPKT_BUF_READ(in->in_cpkt),
-					&tmp_offset) < 0) {
+			ret = buf_read_u8(&buf[1], CPKT_BUF_READ(in->in_cpkt),
+					  &tmp_offset);
+			if (ret < 0) {
 				goto error;
 			}
 
@@ -291,16 +281,15 @@ static size_t oma_tlv_get(struct oma_tlv *tlv,
 	return len_pos + tlv_len;
 
 error:
-	/* TODO: Generate error? */
 	if (!dont_advance) {
 		in->offset = tmp_offset;
 	}
 
-	return 0;
+	return ret;
 }
 
-static size_t put_begin_tlv(struct lwm2m_output_context *out, u16_t *mark_pos,
-			    u8_t *writer_flags, int writer_flag)
+static int put_begin_tlv(struct lwm2m_output_context *out, uint16_t *mark_pos,
+			 uint8_t *writer_flags, int writer_flag)
 {
 	/* set flags */
 	*writer_flags |= writer_flag;
@@ -313,17 +302,17 @@ static size_t put_begin_tlv(struct lwm2m_output_context *out, u16_t *mark_pos,
 	return 0;
 }
 
-static size_t put_end_tlv(struct lwm2m_output_context *out, u16_t mark_pos,
-			  u8_t *writer_flags, u8_t writer_flag,
-			  int tlv_type, int tlv_id)
+static int put_end_tlv(struct lwm2m_output_context *out, uint16_t mark_pos,
+		       uint8_t *writer_flags, uint8_t writer_flag, int tlv_type,
+		       int tlv_id)
 {
 	struct tlv_out_formatter_data *fd;
 	struct oma_tlv tlv;
-	u32_t len = 0U;
+	int len;
 
 	fd = engine_get_out_user_data(out);
 	if (!fd) {
-		return 0;
+		return -EINVAL;
 	}
 
 	*writer_flags &= ~writer_flag;
@@ -337,57 +326,72 @@ static size_t put_end_tlv(struct lwm2m_output_context *out, u16_t mark_pos,
 	tlv_setup(&tlv, tlv_type, tlv_id, len);
 	len = oma_tlv_put(&tlv, out, NULL, true) - tlv.length;
 
-	return 0;
+	return len;
 }
 
-static size_t put_begin_oi(struct lwm2m_output_context *out,
-			   struct lwm2m_obj_path *path)
+static int put_begin_oi(struct lwm2m_output_context *out,
+			struct lwm2m_obj_path *path)
 {
 	struct tlv_out_formatter_data *fd;
 
+	/* No need for oi level TLV constructs */
+	if (path->level > LWM2M_PATH_LEVEL_OBJECT) {
+		return 0;
+	}
+
 	fd = engine_get_out_user_data(out);
 	if (!fd) {
-		return 0;
+		return -EINVAL;
 	}
 
 	return put_begin_tlv(out, &fd->mark_pos_oi, &fd->writer_flags, 0);
 }
 
-static size_t put_end_oi(struct lwm2m_output_context *out,
-			 struct lwm2m_obj_path *path)
+static int put_end_oi(struct lwm2m_output_context *out,
+		      struct lwm2m_obj_path *path)
 {
 	struct tlv_out_formatter_data *fd;
 
+	if (path->level > LWM2M_PATH_LEVEL_OBJECT) {
+		return 0;
+	}
+
 	fd = engine_get_out_user_data(out);
 	if (!fd) {
-		return 0;
+		return -EINVAL;
 	}
 
 	return put_end_tlv(out, fd->mark_pos_oi, &fd->writer_flags, 0,
 			   OMA_TLV_TYPE_OBJECT_INSTANCE, path->obj_inst_id);
 }
 
-static size_t put_begin_ri(struct lwm2m_output_context *out,
-			   struct lwm2m_obj_path *path)
+static int put_begin_ri(struct lwm2m_output_context *out,
+			struct lwm2m_obj_path *path)
 {
 	struct tlv_out_formatter_data *fd;
 
 	fd = engine_get_out_user_data(out);
 	if (!fd) {
-		return 0;
+		return -EINVAL;
 	}
 
 	return put_begin_tlv(out, &fd->mark_pos_ri, &fd->writer_flags,
 			     WRITER_RESOURCE_INSTANCE);
 }
 
-static size_t put_end_ri(struct lwm2m_output_context *out,
-			 struct lwm2m_obj_path *path)
+static int put_end_ri(struct lwm2m_output_context *out,
+		      struct lwm2m_obj_path *path)
 {
 	struct tlv_out_formatter_data *fd;
 
 	fd = engine_get_out_user_data(out);
 	if (!fd) {
+		return -EINVAL;
+	}
+
+	/* Skip writing Multiple Resource TLV if path level is 4 */
+	if (IS_ENABLED(CONFIG_LWM2M_VERSION_1_1) &&
+		path->level == LWM2M_PATH_LEVEL_RESOURCE_INST) {
 		return 0;
 	}
 
@@ -396,153 +400,143 @@ static size_t put_end_ri(struct lwm2m_output_context *out,
 			   OMA_TLV_TYPE_MULTI_RESOURCE, path->res_id);
 }
 
-static size_t put_s8(struct lwm2m_output_context *out,
-		     struct lwm2m_obj_path *path, s8_t value)
+static int put_s8(struct lwm2m_output_context *out, struct lwm2m_obj_path *path,
+		  int8_t value)
 {
 	struct tlv_out_formatter_data *fd;
-	size_t len;
+	int len;
 	struct oma_tlv tlv;
 
 	fd = engine_get_out_user_data(out);
 	if (!fd) {
-		return 0;
+		return -EINVAL;
 	}
 
 	tlv_setup(&tlv, tlv_calc_type(fd->writer_flags),
 		  tlv_calc_id(fd->writer_flags, path), sizeof(value));
 
-	len = oma_tlv_put(&tlv, out, (u8_t *)&value, false);
+	len = oma_tlv_put(&tlv, out, (uint8_t *)&value, false);
 	return len;
 }
 
-static size_t put_s16(struct lwm2m_output_context *out,
-		      struct lwm2m_obj_path *path, s16_t value)
+static int put_s16(struct lwm2m_output_context *out,
+		   struct lwm2m_obj_path *path, int16_t value)
 {
 	struct tlv_out_formatter_data *fd;
-	size_t len;
+	int len;
 	struct oma_tlv tlv;
-	s16_t net_value;
+	int16_t net_value;
+
+	if (INT8_MIN <= value && value <= INT8_MAX) {
+		return put_s8(out, path, (int8_t)value);
+	}
 
 	fd = engine_get_out_user_data(out);
 	if (!fd) {
-		return 0;
+		return -EINVAL;
 	}
 
 	net_value = sys_cpu_to_be16(value);
 	tlv_setup(&tlv, tlv_calc_type(fd->writer_flags),
 		  tlv_calc_id(fd->writer_flags, path), sizeof(net_value));
 
-	len = oma_tlv_put(&tlv, out, (u8_t *)&net_value, false);
+	len = oma_tlv_put(&tlv, out, (uint8_t *)&net_value, false);
 	return len;
 }
 
-static size_t put_s32(struct lwm2m_output_context *out,
-			struct lwm2m_obj_path *path, s32_t value)
+static int put_s32(struct lwm2m_output_context *out,
+		   struct lwm2m_obj_path *path, int32_t value)
 {
 	struct tlv_out_formatter_data *fd;
-	size_t len;
+	int len;
 	struct oma_tlv tlv;
-	s32_t net_value;
+	int32_t net_value;
+
+	if (INT16_MIN <= value && value <= INT16_MAX) {
+		return put_s16(out, path, (int16_t)value);
+	}
 
 	fd = engine_get_out_user_data(out);
 	if (!fd) {
-		return 0;
+		return -EINVAL;
 	}
 
 	net_value = sys_cpu_to_be32(value);
 	tlv_setup(&tlv, tlv_calc_type(fd->writer_flags),
 		  tlv_calc_id(fd->writer_flags, path), sizeof(net_value));
 
-	len = oma_tlv_put(&tlv, out, (u8_t *)&net_value, false);
+	len = oma_tlv_put(&tlv, out, (uint8_t *)&net_value, false);
+
 	return len;
 }
 
-static size_t put_s64(struct lwm2m_output_context *out,
-			struct lwm2m_obj_path *path, s64_t value)
+static int put_s64(struct lwm2m_output_context *out,
+		   struct lwm2m_obj_path *path, int64_t value)
 {
 	struct tlv_out_formatter_data *fd;
-	size_t len;
+	int len;
 	struct oma_tlv tlv;
-	s64_t net_value;
+	int64_t net_value;
+
+	if (INT32_MIN <= value && value <= INT32_MAX) {
+		return put_s32(out, path, (int32_t)value);
+	}
 
 	fd = engine_get_out_user_data(out);
 	if (!fd) {
-		return 0;
+		return -EINVAL;
 	}
 
 	net_value = sys_cpu_to_be64(value);
 	tlv_setup(&tlv, tlv_calc_type(fd->writer_flags),
 		  tlv_calc_id(fd->writer_flags, path), sizeof(net_value));
 
-	len = oma_tlv_put(&tlv, out, (u8_t *)&net_value, false);
+	len = oma_tlv_put(&tlv, out, (uint8_t *)&net_value, false);
 	return len;
 }
 
-static size_t put_string(struct lwm2m_output_context *out,
-			 struct lwm2m_obj_path *path,
-			 char *buf, size_t buflen)
+
+static int put_time(struct lwm2m_output_context *out, struct lwm2m_obj_path *path, time_t value)
+{
+	return put_s64(out, path, (int64_t)value);
+}
+
+static int put_string(struct lwm2m_output_context *out,
+		      struct lwm2m_obj_path *path, char *buf, size_t buflen)
 {
 	struct tlv_out_formatter_data *fd;
-	size_t len;
+	int len;
 	struct oma_tlv tlv;
 
 	fd = engine_get_out_user_data(out);
 	if (!fd) {
-		return 0;
+		return -EINVAL;
 	}
 
 	tlv_setup(&tlv, tlv_calc_type(fd->writer_flags),
-		  tlv_calc_id(fd->writer_flags, path), (u32_t)buflen);
-	len = oma_tlv_put(&tlv, out, (u8_t *)buf, false);
+		  tlv_calc_id(fd->writer_flags, path), (uint32_t)buflen);
+	len = oma_tlv_put(&tlv, out, (uint8_t *)buf, false);
 	return len;
 }
 
-static size_t put_float32fix(struct lwm2m_output_context *out,
-			     struct lwm2m_obj_path *path,
-			     float32_value_t *value)
+static int put_float(struct lwm2m_output_context *out,
+		     struct lwm2m_obj_path *path, double *value)
 {
 	struct tlv_out_formatter_data *fd;
-	size_t len;
+	int len;
 	struct oma_tlv tlv;
 	int ret;
-	u8_t b32[4];
+	uint8_t b64[8];
 
 	fd = engine_get_out_user_data(out);
 	if (!fd) {
-		return 0;
+		return -EINVAL;
 	}
 
-	ret = lwm2m_f32_to_b32(value, b32, sizeof(b32));
+	ret = lwm2m_float_to_b64(value, b64, sizeof(b64));
 	if (ret < 0) {
 		LOG_ERR("float32 conversion error: %d", ret);
-		return 0;
-	}
-
-	tlv_setup(&tlv, tlv_calc_type(fd->writer_flags),
-		  tlv_calc_id(fd->writer_flags, path), sizeof(b32));
-	len = oma_tlv_put(&tlv, out, b32, false);
-	return len;
-}
-
-static size_t put_float64fix(struct lwm2m_output_context *out,
-			     struct lwm2m_obj_path *path,
-			     float64_value_t *value)
-{
-	struct tlv_out_formatter_data *fd;
-	size_t len;
-	struct oma_tlv tlv;
-	u8_t b64[8];
-	int ret;
-
-	fd = engine_get_out_user_data(out);
-	if (!fd) {
-		return 0;
-	}
-
-	ret = lwm2m_f64_to_b64(value, b64, sizeof(b64));
-	if (ret < 0) {
-		LOG_ERR("float64 conversion error: %d", ret);
-		return 0;
+		return ret;
 	}
 
 	tlv_setup(&tlv, tlv_calc_type(fd->writer_flags),
@@ -551,204 +545,235 @@ static size_t put_float64fix(struct lwm2m_output_context *out,
 	return len;
 }
 
-static size_t put_bool(struct lwm2m_output_context *out,
-		       struct lwm2m_obj_path *path, bool value)
+static int put_bool(struct lwm2m_output_context *out,
+		    struct lwm2m_obj_path *path, bool value)
 {
-	s8_t value_s8 = (value != 0 ? 1 : 0);
+	int8_t value_s8 = (value != 0 ? 1 : 0);
 
 	return put_s8(out, path, value_s8);
 }
 
-static size_t get_number(struct lwm2m_input_context *in, s64_t *value,
-			 u8_t max_len)
+static int put_opaque(struct lwm2m_output_context *out,
+		      struct lwm2m_obj_path *path, char *buf, size_t buflen)
+{
+	return put_string(out, path, buf, buflen);
+}
+
+static int put_objlnk(struct lwm2m_output_context *out,
+		      struct lwm2m_obj_path *path, struct lwm2m_objlnk *value)
+{
+	struct tlv_out_formatter_data *fd;
+	struct oma_tlv tlv;
+	int32_t net_value = sys_cpu_to_be32(
+				((value->obj_id) << 16) | value->obj_inst);
+
+	fd = engine_get_out_user_data(out);
+	if (!fd) {
+		return -EINVAL;
+	}
+
+	tlv_setup(&tlv, tlv_calc_type(fd->writer_flags),
+		  tlv_calc_id(fd->writer_flags, path), sizeof(net_value));
+
+	return oma_tlv_put(&tlv, out, (uint8_t *)&net_value, false);
+}
+
+static int get_number(struct lwm2m_input_context *in, int64_t *value,
+		      uint8_t max_len)
 {
 	struct oma_tlv tlv;
-	size_t size = oma_tlv_get(&tlv, in, false);
-	s64_t temp;
+	int size;
+	int64_t temp;
+	int ret;
 
-	*value = 0;
-	if (size > 0) {
-		if (tlv.length > max_len) {
-			LOG_ERR("invalid length: %u", tlv.length);
-			return 0;
-		}
+	size = oma_tlv_get(&tlv, in, false);
+	if (size < 0) {
+		return size;
+	}
 
-		if (buf_read((u8_t *)&temp, tlv.length,
-			     CPKT_BUF_READ(in->in_cpkt), &in->offset) < 0) {
-			/* TODO: Generate error? */
-			return 0;
-		}
+	if (tlv.length > max_len) {
+		LOG_ERR("invalid length: %u", tlv.length);
+		return -ENOMEM;
+	}
 
-		switch (tlv.length) {
-		case 1:
-			*value = (s8_t)temp;
-			break;
-		case 2:
-			*value = sys_cpu_to_be16((s16_t)temp);
-			break;
-		case 4:
-			*value = sys_cpu_to_be32((s32_t)temp);
-			break;
-		case 8:
-			*value = sys_cpu_to_be64(temp);
-			break;
-		default:
-			LOG_ERR("invalid length: %u", tlv.length);
-			return 0;
-		}
+	ret = buf_read((uint8_t *)&temp, tlv.length,
+		       CPKT_BUF_READ(in->in_cpkt), &in->offset);
+	if (ret < 0) {
+		return ret;
+	}
+
+	switch (tlv.length) {
+	case 1:
+		*value = (int8_t)temp;
+		break;
+	case 2:
+		*value = sys_cpu_to_be16((int16_t)temp);
+		break;
+	case 4:
+		*value = sys_cpu_to_be32((int32_t)temp);
+		break;
+	case 8:
+		*value = sys_cpu_to_be64(temp);
+		break;
+	default:
+		LOG_ERR("invalid length: %u", tlv.length);
+		return -EBADMSG;
 	}
 
 	return size;
 }
 
-static size_t get_s64(struct lwm2m_input_context *in, s64_t *value)
+static int get_s64(struct lwm2m_input_context *in, int64_t *value)
 {
 	return get_number(in, value, 8);
 }
 
-static size_t get_s32(struct lwm2m_input_context *in, s32_t *value)
+static int get_time(struct lwm2m_input_context *in, time_t *value)
 {
-	s64_t temp;
-	size_t size;
+	int64_t temp64;
+	int ret;
 
-	*value = 0;
+	ret = get_number(in, &temp64, 8);
+	*value = (time_t)temp64;
+
+	return ret;
+}
+
+static int get_s32(struct lwm2m_input_context *in, int32_t *value)
+{
+	int64_t temp;
+	int size;
+
 	size = get_number(in, &temp, 4);
-	if (size > 0) {
-		*value = (s32_t)temp;
+	if (size < 0) {
+		return size;
 	}
+
+	*value = (int32_t)temp;
 
 	return size;
 }
 
-static size_t get_string(struct lwm2m_input_context *in,
-			 u8_t *buf, size_t buflen)
+static int get_string(struct lwm2m_input_context *in, uint8_t *buf,
+		      size_t buflen)
 {
 	struct oma_tlv tlv;
-	size_t size = oma_tlv_get(&tlv, in, false);
+	int size;
+	int ret;
 
-	if (size > 0) {
-		if (buflen <= tlv.length) {
-			/* TODO: Generate error? */
-			return 0;
-		}
-
-		if (buf_read(buf, tlv.length, CPKT_BUF_READ(in->in_cpkt),
-			     &in->offset) < 0) {
-			/* TODO: Generate error? */
-			return 0;
-		}
-
-		buf[tlv.length] = '\0';
+	size = oma_tlv_get(&tlv, in, false);
+	if (size < 0) {
+		return size;
 	}
+
+	if (buflen <= tlv.length) {
+		return -ENOMEM;
+	}
+
+	ret = buf_read(buf, tlv.length, CPKT_BUF_READ(in->in_cpkt),
+		       &in->offset);
+	if (ret < 0) {
+		return ret;
+	}
+
+	buf[tlv.length] = '\0';
 
 	return size;
 }
 
 /* convert float to fixpoint */
-static size_t get_float32fix(struct lwm2m_input_context *in,
-			     float32_value_t *value)
+static int get_float(struct lwm2m_input_context *in, double *value)
 {
 	struct oma_tlv tlv;
-	size_t size = oma_tlv_get(&tlv, in, false);
-	u8_t b32[4];
+	int size;
+	uint8_t buf[8];
 	int ret;
 
-	if (size > 0) {
-		if (tlv.length != 4U) {
-			LOG_ERR("Invalid float32 length: %d", tlv.length);
+	size = oma_tlv_get(&tlv, in, false);
+	if (size < 0) {
+		return size;
+	}
 
-			/* dummy read */
-			while (tlv.length--) {
-				if (buf_read_u8(b32,
-						CPKT_BUF_READ(in->in_cpkt),
-						&in->offset) < 0) {
-					break;
-				}
-			}
+	if (tlv.length != 4U && tlv.length != 8U) {
+		LOG_ERR("Invalid float length: %d", tlv.length);
+		return -EBADMSG;
+	}
 
-			return 0;
-		}
+	/* read float in network byte order */
+	ret = buf_read(buf, tlv.length, CPKT_BUF_READ(in->in_cpkt),
+		       &in->offset);
+	if (ret < 0) {
+		return ret;
+	}
 
-		/* read b32 in network byte order */
-		if (buf_read(b32, tlv.length, CPKT_BUF_READ(in->in_cpkt),
-			     &in->offset) < 0) {
-			/* TODO: Generate error? */
-			return 0;
-		}
+	if (tlv.length == 4U) {
+		ret = lwm2m_b32_to_float(buf, 4, value);
+	} else {
+		ret = lwm2m_b64_to_float(buf, 8, value);
+	}
 
-		ret = lwm2m_b32_to_f32(b32, sizeof(b32), value);
-		if (ret < 0) {
-			LOG_ERR("binary32 conversion error: %d", ret);
-			return 0;
-		}
+	if (ret < 0) {
+		LOG_ERR("binary%s conversion error: %d",
+			tlv.length == 4U ? "32" : "64", ret);
+		return ret;
 	}
 
 	return size;
 }
 
-static size_t get_float64fix(struct lwm2m_input_context *in,
-			     float64_value_t *value)
+static int get_bool(struct lwm2m_input_context *in, bool *value)
 {
-	struct oma_tlv tlv;
-	size_t size = oma_tlv_get(&tlv, in, false);
-	u8_t b64[8];
-	int ret;
+	int64_t temp;
+	int size;
 
-	if (size > 0) {
-		if (tlv.length != 8U) {
-			LOG_ERR("invalid float64 length: %d", tlv.length);
-
-			/* dummy read */
-			while (tlv.length--) {
-				if (buf_read_u8(b64,
-						CPKT_BUF_READ(in->in_cpkt),
-						&in->offset) < 0) {
-					break;
-				}
-			}
-
-			return 0;
-		}
-
-		/* read b64 in network byte order */
-		if (buf_read(b64, tlv.length, CPKT_BUF_READ(in->in_cpkt),
-			     &in->offset) < 0) {
-			/* TODO: Generate error? */
-			return 0;
-		}
-
-		ret = lwm2m_b64_to_f64(b64, sizeof(b64), value);
-		if (ret < 0) {
-			LOG_ERR("binary64 conversion error: %d", ret);
-			return 0;
-		}
-	}
-
-	return size;
-}
-
-static size_t get_bool(struct lwm2m_input_context *in, bool *value)
-{
-	s64_t temp;
-	size_t size;
-
-	*value = 0;
 	size = get_number(in, &temp, 2);
-	if (size > 0) {
-		*value = (temp != 0);
+	if (size < 0) {
+		return size;
+
 	}
+
+	*value = (temp != 0);
 
 	return size;
 }
 
-static size_t get_opaque(struct lwm2m_input_context *in,
-			 u8_t *value, size_t buflen, bool *last_block)
+static int get_opaque(struct lwm2m_input_context *in, uint8_t *value,
+		      size_t buflen, struct lwm2m_opaque_context *opaque,
+		      bool *last_block)
 {
 	struct oma_tlv tlv;
+	int size;
 
-	oma_tlv_get(&tlv, in, false);
-	in->opaque_len = tlv.length;
-	return lwm2m_engine_get_opaque_more(in, value, buflen, last_block);
+	/* Get the TLV header only on first read. */
+	if (opaque->remaining == 0) {
+		size = oma_tlv_get(&tlv, in, false);
+		if (size < 0) {
+			return size;
+		}
+
+		opaque->len = tlv.length;
+		opaque->remaining = tlv.length;
+	}
+
+	return lwm2m_engine_get_opaque_more(in, value, buflen,
+					    opaque, last_block);
+}
+
+static int get_objlnk(struct lwm2m_input_context *in,
+		      struct lwm2m_objlnk *value)
+{
+	int32_t value_s32;
+	int size;
+
+	size = get_s32(in, &value_s32);
+	if (size < 0) {
+		return size;
+	}
+
+	value->obj_id = (value_s32 >> 16) & 0xFFFF;
+	value->obj_inst = value_s32 & 0xFFFF;
+
+	return size;
 }
 
 const struct lwm2m_writer oma_tlv_writer = {
@@ -761,19 +786,22 @@ const struct lwm2m_writer oma_tlv_writer = {
 	.put_s32 = put_s32,
 	.put_s64 = put_s64,
 	.put_string = put_string,
-	.put_float32fix = put_float32fix,
-	.put_float64fix = put_float64fix,
+	.put_float = put_float,
+	.put_time = put_time,
 	.put_bool = put_bool,
+	.put_opaque = put_opaque,
+	.put_objlnk = put_objlnk,
 };
 
 const struct lwm2m_reader oma_tlv_reader = {
 	.get_s32 = get_s32,
 	.get_s64 = get_s64,
 	.get_string = get_string,
-	.get_float32fix = get_float32fix,
-	.get_float64fix = get_float64fix,
+	.get_time = get_time,
+	.get_float = get_float,
 	.get_bool = get_bool,
 	.get_opaque = get_opaque,
+	.get_objlnk = get_objlnk,
 };
 
 int do_read_op_tlv(struct lwm2m_message *msg, int content_format)
@@ -791,7 +819,7 @@ int do_read_op_tlv(struct lwm2m_message *msg, int content_format)
 static int do_write_op_tlv_dummy_read(struct lwm2m_message *msg)
 {
 	struct oma_tlv tlv;
-	u8_t read_char;
+	uint8_t read_char;
 
 	oma_tlv_get(&tlv, &msg->in, false);
 	while (tlv.length--) {
@@ -810,49 +838,22 @@ static int do_write_op_tlv_item(struct lwm2m_message *msg)
 	struct lwm2m_engine_res *res = NULL;
 	struct lwm2m_engine_res_inst *res_inst = NULL;
 	struct lwm2m_engine_obj_field *obj_field = NULL;
-	u8_t created = 0U;
-	int ret, i;
+	uint8_t created = 0U;
+	int ret;
 
 	ret = lwm2m_get_or_create_engine_obj(msg, &obj_inst, &created);
 	if (ret < 0) {
 		goto error;
 	}
 
-	obj_field = lwm2m_get_engine_obj_field(obj_inst->obj,
-					       msg->path.res_id);
-	if (!obj_field) {
-		ret = -ENOENT;
+	ret = lwm2m_engine_validate_write_access(msg, obj_inst, &obj_field);
+	if (ret < 0) {
 		goto error;
 	}
 
-	if (!LWM2M_HAS_PERM(obj_field, LWM2M_PERM_W)) {
-		ret = -EPERM;
-		goto error;
-	}
+	ret = lwm2m_engine_get_create_res_inst(&msg->path, &res, &res_inst);
 
-	if (!obj_inst->resources || obj_inst->resource_count == 0U) {
-		ret = -EINVAL;
-		goto error;
-	}
-
-	for (i = 0; i < obj_inst->resource_count; i++) {
-		if (obj_inst->resources[i].res_id == msg->path.res_id) {
-			res = &obj_inst->resources[i];
-			break;
-		}
-	}
-
-	if (res) {
-		for (i = 0; i < res->res_inst_count; i++) {
-			if (res->res_instances[i].res_inst_id ==
-			    msg->path.res_inst_id) {
-				res_inst = &res->res_instances[i];
-				break;
-			}
-		}
-	}
-
-	if (!res || !res_inst) {
+	if (ret < 0) {
 		/* if OPTIONAL and BOOTSTRAP-WRITE or CREATE use ENOTSUP */
 		if ((msg->ctx->bootstrap_mode ||
 		     msg->operation == LWM2M_OP_CREATE) &&
@@ -879,12 +880,99 @@ error:
 	return ret;
 }
 
+static int write_tlv_resource(struct lwm2m_message *msg, struct oma_tlv *tlv)
+{
+	int ret;
+
+	if (msg->in.block_ctx) {
+		msg->in.block_ctx->path.res_id = tlv->id;
+	}
+
+	msg->path.res_id = tlv->id;
+	msg->path.level = 3U;
+	ret = do_write_op_tlv_item(msg);
+
+	/*
+	 * ignore errors for CREATE op
+	 * for OP_CREATE and BOOTSTRAP WRITE: errors on
+	 * optional resources are ignored (ENOTSUP)
+	 */
+	if (ret < 0 &&
+	    !((ret == -ENOTSUP) &&
+	      (msg->ctx->bootstrap_mode ||
+	       msg->operation == LWM2M_OP_CREATE))) {
+		return ret;
+	}
+
+	return 0;
+}
+
+static int lwm2m_multi_resource_tlv_parse(struct lwm2m_message *msg,
+					  struct oma_tlv *multi_resource_tlv)
+{
+	struct oma_tlv tlv_resource_instance;
+	int len2;
+	int pos = 0;
+	int ret;
+
+	if (msg->in.block_ctx) {
+		msg->in.block_ctx->path.res_id = multi_resource_tlv->id;
+	}
+
+	if (multi_resource_tlv->length == 0U) {
+		/* No data for resource instances, so create only a resource */
+		return write_tlv_resource(msg, multi_resource_tlv);
+	}
+
+	while (pos < multi_resource_tlv->length &&
+	       (len2 = oma_tlv_get(&tlv_resource_instance, &msg->in, true))) {
+		if (tlv_resource_instance.type != OMA_TLV_TYPE_RESOURCE_INSTANCE) {
+			LOG_ERR("Multi resource id not supported %u %d", tlv_resource_instance.id,
+				tlv_resource_instance.length);
+			return -ENOTSUP;
+		}
+
+		msg->path.res_id = multi_resource_tlv->id;
+		msg->path.res_inst_id = tlv_resource_instance.id;
+		msg->path.level = LWM2M_PATH_LEVEL_RESOURCE_INST;
+		ret = do_write_op_tlv_item(msg);
+
+		/*
+		 * Ignore errors on optional resources when doing
+		 * BOOTSTRAP WRITE or CREATE operation.
+		 */
+		if (ret < 0 && !((ret == -ENOTSUP) &&
+				 (msg->ctx->bootstrap_mode || msg->operation == LWM2M_OP_CREATE))) {
+			return ret;
+		}
+
+		pos += len2;
+	}
+
+	return 0;
+}
+
 int do_write_op_tlv(struct lwm2m_message *msg)
 {
 	struct lwm2m_engine_obj_inst *obj_inst = NULL;
-	size_t len;
+	int len;
 	struct oma_tlv tlv;
 	int ret;
+
+	/* In case of block transfer go directly to the
+	 * message processing - consecutive blocks will not carry the TLV
+	 * header.
+	 */
+	if (msg->in.block_ctx != NULL && msg->in.block_ctx->ctx.current > 0) {
+		msg->path.res_id = msg->in.block_ctx->path.res_id;
+		msg->path.level = 3U;
+		ret = do_write_op_tlv_item(msg);
+		if (ret < 0) {
+			return ret;
+		}
+
+		return 0;
+	}
 
 	while (true) {
 		/*
@@ -892,7 +980,7 @@ int do_write_op_tlv(struct lwm2m_message *msg)
 		 * We need tlv.type to determine how to proceed.
 		 */
 		len = oma_tlv_get(&tlv, &msg->in, true);
-		if (len == 0) {
+		if (len < 0) {
 			break;
 		}
 
@@ -913,52 +1001,50 @@ int do_write_op_tlv(struct lwm2m_message *msg)
 					return ret;
 				}
 
-#ifdef CONFIG_LWM2M_RD_CLIENT_SUPPORT
 				if (!msg->ctx->bootstrap_mode) {
-					engine_trigger_update();
+					engine_trigger_update(true);
 				}
-#endif
 			}
 
 			while (pos < tlv.length &&
 			       (len2 = oma_tlv_get(&tlv2, &msg->in, true))) {
-				if (tlv2.type != OMA_TLV_TYPE_RESOURCE) {
-					pos += len2;
-					continue;
-				}
-
-				msg->path.res_id = tlv2.id;
-				msg->path.level = 3U;
-				ret = do_write_op_tlv_item(msg);
-				/*
-				 * ignore errors for CREATE op
-				 * for OP_CREATE and BOOTSTRAP WRITE: errors on
-				 * optional resources are ignored (ENOTSUP)
-				 */
-				if (ret < 0 &&
-				    !((ret == -ENOTSUP) &&
-				      (msg->ctx->bootstrap_mode ||
-				       msg->operation == LWM2M_OP_CREATE))) {
-					return ret;
+				if (tlv2.type == OMA_TLV_TYPE_RESOURCE) {
+					ret = write_tlv_resource(msg, &tlv2);
+					if (ret) {
+						return ret;
+					}
+				} else if (tlv2.type == OMA_TLV_TYPE_MULTI_RESOURCE) {
+					oma_tlv_get(&tlv2, &msg->in, false);
+					ret = lwm2m_multi_resource_tlv_parse(msg, &tlv2);
+					if (ret) {
+						return ret;
+					}
+				} else {
+					/* Skip Unsupported TLV type */
+					return -ENOTSUP;
 				}
 
 				pos += len2;
 			}
 		} else if (tlv.type == OMA_TLV_TYPE_RESOURCE) {
-			msg->path.res_id = tlv.id;
-			msg->path.level = 3U;
-			ret = do_write_op_tlv_item(msg);
-			/*
-			 * ignore errors for CREATE op
-			 * for OP_CREATE and BOOTSTRAP WRITE: errors on optional
-			 * resources are ignored (ENOTSUP)
-			 */
-			if (ret < 0 &&
-			    !((ret == -ENOTSUP) &&
-			      (msg->ctx->bootstrap_mode ||
-			       msg->operation == LWM2M_OP_CREATE))) {
+			if (msg->path.level < LWM2M_PATH_LEVEL_OBJECT_INST) {
+				return -ENOTSUP;
+			}
+			ret = write_tlv_resource(msg, &tlv);
+			if (ret) {
 				return ret;
 			}
+		} else if (tlv.type == OMA_TLV_TYPE_MULTI_RESOURCE) {
+			if (msg->path.level < LWM2M_PATH_LEVEL_OBJECT_INST) {
+				return -ENOTSUP;
+			}
+			oma_tlv_get(&tlv, &msg->in, false);
+			ret = lwm2m_multi_resource_tlv_parse(msg, &tlv);
+			if (ret) {
+				return ret;
+			}
+		} else {
+			return -ENOTSUP;
 		}
 	}
 

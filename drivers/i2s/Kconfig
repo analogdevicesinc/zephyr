@@ -1,14 +1,13 @@
-# Kconfig - I2S (Inter-IC Sound) driver configuration options
-#
+# I2S (Inter-IC Sound) driver configuration options
+
 # Copyright (c) 2017 Piotr Mienkowski
 # SPDX-License-Identifier: Apache-2.0
-#
 
 #
 # I2S Drivers
 #
 menuconfig I2S
-	bool "I2S bus drivers"
+	bool "Inter-IC Sound (I2S) bus drivers"
 	help
 	  Enable support for the I2S (Inter-IC Sound) hardware bus.
 
@@ -16,7 +15,7 @@ if I2S
 
 config I2S_INIT_PRIORITY
 	int "Init priority"
-	default 70
+	default KERNEL_INIT_PRIORITY_DEVICE
 	help
 	  Device driver initialization priority.
 

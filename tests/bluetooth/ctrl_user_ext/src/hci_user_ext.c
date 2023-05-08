@@ -6,11 +6,14 @@
 
 #if defined(CONFIG_BT_CTLR_USER_EXT)
 
-#include <toolchain.h>
+#include <zephyr/toolchain.h>
 #include <zephyr/types.h>
-#include <net/buf.h>
+#include <zephyr/net/buf.h>
 
 #include "util/memq.h"
+
+#include "ll_sw/pdu_df.h"
+#include "lll/pdu_vendor.h"
 #include "ll_sw/pdu.h"
 #include "ll_sw/lll.h"
 #include "hci/hci_user_ext.h"
@@ -21,7 +24,7 @@
  * in this file are simple stubs without functional behavior.
  */
 
-s8_t hci_user_ext_get_class(struct node_rx_pdu *node_rx)
+int8_t hci_user_ext_get_class(struct node_rx_pdu *node_rx)
 {
 	return 0;
 }

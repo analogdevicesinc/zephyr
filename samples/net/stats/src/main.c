@@ -4,17 +4,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_stats_sample, LOG_LEVEL_DBG);
 
-#include <zephyr.h>
+#include <zephyr/kernel.h>
 #include <errno.h>
 
-#include <net/net_core.h>
-#include <net/net_if.h>
-#include <net/net_stats.h>
+#include <zephyr/net/net_core.h>
+#include <zephyr/net/net_if.h>
+#include <zephyr/net/net_stats.h>
 
-static struct k_delayed_work stats_timer;
+static struct k_work_delayable stats_timer;
 
 #if defined(CONFIG_NET_STATISTICS_PER_INTERFACE)
 #define GET_STAT(iface, s) (iface ? iface->stats.s : data->s)
@@ -177,18 +177,19 @@ static void stats(struct k_work *work)
 	net_if_foreach(eth_iface_cb, &data);
 #endif
 
-	k_delayed_work_submit(&stats_timer, K_SECONDS(CONFIG_SAMPLE_PERIOD));
+	k_work_reschedule(&stats_timer, K_SECONDS(CONFIG_SAMPLE_PERIOD));
 }
 
 static void init_app(void)
 {
-	k_delayed_work_init(&stats_timer, stats);
-	k_delayed_work_submit(&stats_timer, K_SECONDS(CONFIG_SAMPLE_PERIOD));
+	k_work_init_delayable(&stats_timer, stats);
+	k_work_reschedule(&stats_timer, K_SECONDS(CONFIG_SAMPLE_PERIOD));
 }
 
-void main(void)
+int main(void)
 {
 	/* Register a timer that will collect statistics after every n seconds.
 	 */
 	init_app();
+	return 0;
 }

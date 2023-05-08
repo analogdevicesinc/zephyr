@@ -1,37 +1,10 @@
-# Kconfig - XTENSA architecture configuration options
-#
+# XTENSA architecture configuration options
+
 # Copyright (c) 2016 Cadence Design Systems, Inc.
 # SPDX-License-Identifier: Apache-2.0
 
 menu "XTENSA Options"
 	depends on XTENSA
-
-menu "Specific core configuration"
-
-config IRQ_OFFLOAD_INTNUM
-	int "IRQ offload SW interrupt index"
-	help
-	  The index of the software interrupt to be used for IRQ offload.
-
-	  Please note that in order for IRQ offload to work correctly the selected
-	  interrupt shall have its priority shall not exceed XCHAL_EXCM_LEVEL.
-
-config XTENSA_OMIT_HIGH_INTERRUPTS
-	bool "Skip generation of vectors for high priority interrupts"
-	help
-	  Setting this to y causes the interrupt vectors for "high
-	  priority" Xtensa interrupts (those not masked by the EXCM bit
-	  in PS) to be left ungenerated, so they can be handled by
-	  application code instead.  Note that high priority interrupts
-	  cannot safely be handled by C code anyway (they will interrupt
-	  register window exceptions, which cannot be made reentrant, so
-	  the code under the handler must not emit them), though some
-	  devices might still want to use built-in handling for things
-	  like watchdogs which do not need to return into interrupted
-	  code.  Default is "n" for legacy compatibility. Consider
-	  changing to "y" in the future.
-
-endmenu
 
 config ARCH
 	default "xtensa"
@@ -42,7 +15,7 @@ config SIMULATOR_XTENSA
 	  Specify if the board configuration should be treated as a simulator.
 
 config SYS_CLOCK_HW_CYCLES_PER_SEC
-	int "Hardware clock cycles per second, 2000000 for ISS"
+	prompt "Hardware clock cycles per second, 2000000 for ISS"
 	default 2000000
 	range 1000000 1000000000
 	help
@@ -52,17 +25,8 @@ config XTENSA_NO_IPC
 	bool "Core has no IPC support"
 	select ATOMIC_OPERATIONS_C
 	help
-	  Uncheck this if you core does not implement "SCOMPARE1" register and "s32c1i"
+	  Uncheck this if your core does not implement "SCOMPARE1" register and "s32c1i"
 	  instruction.
-
-config SW_ISR_TABLE
-	bool "Enable software interrupt handler table"
-	default y
-	help
-	  Enable an interrupt handler table implemented in software. This
-	  table, unlike ISRs connected directly in the vector table, allow
-	  a parameter to be passed to the interrupt handlers. Also, invoking
-	  the exception/interrupt exit stub is automatically done.
 
 config XTENSA_RESET_VECTOR
 	bool "Build reset vector code"
@@ -79,11 +43,64 @@ config XTENSA_USE_CORE_CRT1
 	  SoC or boards might define their own __start by setting this setting
 	  to false.
 
-config XTENSA_KERNEL_CPU_PTR_SR
-	string
-	default "MISC0"
+config XTENSA_ENABLE_BACKTRACE
+	bool "Backtrace on panic exception"
+	default y
+	depends on SOC_ESP32 || SOC_FAMILY_INTEL_ADSP
 	help
-	  Specify which special register to store the pointer to
-	  _kernel.cpus[] for the current CPU.
+	  Enable this config option to print backtrace on panic exception
+
+config XTENSA_CPU_IDLE_SPIN
+	bool "Use busy loop for k_cpu_idle"
+	help
+	  Use a spin loop instead of WAITI for the CPU idle state.
+
+config XTENSA_WAITI_BUG
+	bool "Workaround sequence for WAITI bug on LX6"
+	help
+	  SOF traditionally contains this workaround on its ADSP
+	  platforms which prefixes a WAITI entry with 128 NOP
+	  instructions followed by an ISYNC and EXTW.
+
+config XTENSA_SMALL_VECTOR_TABLE_ENTRY
+	bool "Workaround for small vector table entries"
+	help
+	  This option enables a small indirection to bypass the size
+	  constraint of the vector table entry and moved the default
+	  handlers to the end of vector table, renaming them to
+	  _Level\LVL\()VectorHelper.
+
+config XTENSA_RPO_CACHE
+	bool "Cached/uncached RPO mapping"
+	help
+	  Support Cached/uncached RPO mapping.
+
+	  A design trick on multi-core hardware is to map memory twice
+	  so that it can be seen in both (incoherent) cached mappings
+	  and a coherent "shared" area.
+
+if XTENSA_RPO_CACHE
+config XTENSA_CACHED_REGION
+	int "Cached RPO mapping"
+	range 0 7
+	help
+	  This specifies which 512M region (0-7, as defined by the Xtensa
+	  Region Protection Option) contains the "cached" mapping.
+
+config XTENSA_UNCACHED_REGION
+	int "Uncached RPO mapping"
+	range 0 7
+	help
+	  As for XTENSA_CACHED_REGION, this specifies which 512M
+	  region (0-7) contains the "uncached" mapping.
+
+endif
+
+config XTENSA_CCOUNT_HZ
+	int "CCOUNT cycle rate"
+	default 1000000
+	help
+	  Rate in HZ of the Xtensa core as measured by the value of
+	  the CCOUNT register.
 
 endmenu

@@ -5,35 +5,45 @@
  */
 
 #define LOG_LEVEL CONFIG_USB_DEVICE_LOG_LEVEL
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(wpanusb);
 
-#include <usb/usb_device.h>
-#include <usb/usb_common.h>
+#include <zephyr/usb/usb_device.h>
 #include <usb_descriptor.h>
 
-#include <net/buf.h>
-#include <net/ieee802154_radio.h>
+#include <zephyr/net/buf.h>
+#include <zephyr/net/ieee802154_radio.h>
 #include <ieee802154/ieee802154_frame.h>
 #include <net_private.h>
 
 #include "wpanusb.h"
 
+#if defined(CONFIG_NET_TC_THREAD_COOPERATIVE)
+#define THREAD_PRIORITY K_PRIO_COOP(CONFIG_NUM_COOP_PRIORITIES - 1)
+#else
+#define THREAD_PRIORITY K_PRIO_PREEMPT(8)
+#endif
+
 #define WPANUSB_SUBCLASS	0
 #define WPANUSB_PROTOCOL	0
 
 /* Max packet size for endpoints */
+#if defined(CONFIG_USB_DC_HAS_HS_SUPPORT)
+#define WPANUSB_BULK_EP_MPS		512
+#else
 #define WPANUSB_BULK_EP_MPS		64
+#endif
 
 #define WPANUSB_IN_EP_IDX		0
 
 static struct ieee802154_radio_api *radio_api;
-static struct device *ieee802154_dev;
+static const struct device *const ieee802154_dev =
+	DEVICE_DT_GET(DT_CHOSEN(zephyr_ieee802154));
 
 static struct k_fifo tx_queue;
 
 /* IEEE802.15.4 frame + 1 byte len + 1 byte LQI */
-u8_t tx_buf[IEEE802154_MTU + 1 + 1];
+uint8_t tx_buf[IEEE802154_MAX_PHY_PACKET_SIZE + 1 + 1];
 
 /**
  * Stack for the tx thread.
@@ -44,7 +54,7 @@ static struct k_thread tx_thread_data;
 #define INITIALIZER_IF(num_ep, iface_class)				\
 	{								\
 		.bLength = sizeof(struct usb_if_descriptor),		\
-		.bDescriptorType = USB_INTERFACE_DESC,			\
+		.bDescriptorType = USB_DESC_INTERFACE,			\
 		.bInterfaceNumber = 0,					\
 		.bAlternateSetting = 0,					\
 		.bNumEndpoints = num_ep,				\
@@ -57,7 +67,7 @@ static struct k_thread tx_thread_data;
 #define INITIALIZER_IF_EP(addr, attr, mps, interval)			\
 	{								\
 		.bLength = sizeof(struct usb_ep_descriptor),		\
-		.bDescriptorType = USB_ENDPOINT_DESC,			\
+		.bDescriptorType = USB_DESC_ENDPOINT,			\
 		.bEndpointAddress = addr,				\
 		.bmAttributes = attr,					\
 		.wMaxPacketSize = sys_cpu_to_le16(mps),			\
@@ -68,7 +78,7 @@ USBD_CLASS_DESCR_DEFINE(primary, 0) struct {
 	struct usb_if_descriptor if0;
 	struct usb_ep_descriptor if0_in_ep;
 } __packed wpanusb_desc = {
-	.if0 = INITIALIZER_IF(1, CUSTOM_CLASS),
+	.if0 = INITIALIZER_IF(1, USB_BCC_VENDOR),
 	.if0_in_ep = INITIALIZER_IF_EP(AUTO_EP_IN, USB_DC_EP_BULK,
 				       WPANUSB_BULK_EP_MPS, 0),
 };
@@ -83,7 +93,7 @@ static struct usb_ep_cfg_data wpanusb_ep[] = {
 
 static void wpanusb_status_cb(struct usb_cfg_data *cfg,
 			      enum usb_dc_status_code status,
-			      const u8_t *param)
+			      const uint8_t *param)
 {
 	ARG_UNUSED(param);
 	ARG_UNUSED(cfg);
@@ -123,9 +133,13 @@ static void wpanusb_status_cb(struct usb_cfg_data *cfg,
  * later processing
  */
 static int wpanusb_vendor_handler(struct usb_setup_packet *setup,
-				  s32_t *len, u8_t **data)
+				  int32_t *len, uint8_t **data)
 {
 	struct net_pkt *pkt;
+
+	if (usb_reqtype_is_to_host(setup)) {
+		return -ENOTSUP;
+	}
 
 	/* Maximum 2 bytes are added to the len */
 	pkt = net_pkt_alloc_with_buffer(NULL, *len + 2, AF_UNSPEC, 0,
@@ -150,7 +164,7 @@ static int wpanusb_vendor_handler(struct usb_setup_packet *setup,
 	return 0;
 }
 
-USBD_CFG_DATA_DEFINE(primary, wpanusb) struct usb_cfg_data wpanusb_config = {
+USBD_DEFINE_CFG_DATA(wpanusb_config) = {
 	.usb_device_description = NULL,
 	.interface_descriptor = &wpanusb_desc.if0,
 	.cb_usb_status = wpanusb_status_cb,
@@ -184,7 +198,7 @@ static int set_ieee_addr(void *data, int len)
 	    radio_api->get_capabilities(ieee802154_dev)) {
 		struct ieee802154_filter filter;
 
-		filter.ieee_addr = (u8_t *)&req->ieee_addr;
+		filter.ieee_addr = (uint8_t *)&req->ieee_addr;
 
 		return radio_api->filter(ieee802154_dev, true,
 					 IEEE802154_FILTER_TYPE_IEEE_ADDR,
@@ -251,16 +265,17 @@ static int stop(void)
 
 static int tx(struct net_pkt *pkt)
 {
-	u8_t ep = wpanusb_config.endpoint[WPANUSB_IN_EP_IDX].ep_addr;
+	uint8_t ep = wpanusb_config.endpoint[WPANUSB_IN_EP_IDX].ep_addr;
 	struct net_buf *buf = net_buf_frag_last(pkt->buffer);
-	u8_t seq = net_buf_pull_u8(buf);
+	uint8_t seq = net_buf_pull_u8(buf);
 	int retries = 3;
 	int ret;
 
 	LOG_DBG("len %d seq %u", buf->len, seq);
 
 	do {
-		ret = radio_api->tx(ieee802154_dev, pkt, buf);
+		ret = radio_api->tx(ieee802154_dev, IEEE802154_TX_MODE_DIRECT,
+				    pkt, buf);
 	} while (ret && retries--);
 
 	if (ret) {
@@ -285,7 +300,7 @@ static void tx_thread(void)
 	LOG_DBG("Tx thread started");
 
 	while (1) {
-		u8_t cmd;
+		uint8_t cmd;
 		struct net_pkt *pkt;
 		struct net_buf *buf;
 
@@ -339,7 +354,7 @@ static void init_tx_queue(void)
 	k_thread_create(&tx_thread_data, tx_stack,
 			K_THREAD_STACK_SIZEOF(tx_stack),
 			(k_thread_entry_t)tx_thread,
-			NULL, NULL, NULL, K_PRIO_COOP(8), 0, K_NO_WAIT);
+			NULL, NULL, NULL, THREAD_PRIORITY, 0, K_NO_WAIT);
 }
 
 /**
@@ -349,9 +364,9 @@ static void init_tx_queue(void)
 int net_recv_data(struct net_if *iface, struct net_pkt *pkt)
 {
 	size_t len = net_pkt_get_len(pkt);
-	u8_t *p = tx_buf;
+	uint8_t *p = tx_buf;
 	int ret;
-	u8_t ep;
+	uint8_t ep;
 
 	LOG_DBG("Got data, pkt %p, len %d", pkt, len);
 
@@ -366,7 +381,7 @@ int net_recv_data(struct net_if *iface, struct net_pkt *pkt)
 	/**
 	 * Add length 1 byte
 	 */
-	*p++ = (u8_t)len;
+	*p++ = (uint8_t)len;
 
 	/* This is needed to work with pkt */
 	net_pkt_cursor_init(pkt);
@@ -399,14 +414,19 @@ out:
 	return ret;
 }
 
-void main(void)
+enum net_verdict ieee802154_radio_handle_ack(struct net_if *iface, struct net_pkt *pkt)
 {
+	return NET_CONTINUE;
+}
+
+int main(void)
+{
+	int ret;
 	LOG_INF("Starting wpanusb");
 
-	ieee802154_dev = device_get_binding(CONFIG_NET_CONFIG_IEEE802154_DEV_NAME);
-	if (!ieee802154_dev) {
-		LOG_ERR("Cannot get IEEE802.15.4 device");
-		return;
+	if (!device_is_ready(ieee802154_dev)) {
+		LOG_ERR("IEEE802.15.4 device not ready");
+		return 0;
 	}
 
 	/* Initialize net_pkt */
@@ -415,9 +435,15 @@ void main(void)
 	/* Initialize transmit queue */
 	init_tx_queue();
 
-	radio_api = (struct ieee802154_radio_api *)ieee802154_dev->driver_api;
+	radio_api = (struct ieee802154_radio_api *)ieee802154_dev->api;
 
+	ret = usb_enable(NULL);
+	if (ret != 0) {
+		LOG_ERR("Failed to enable USB");
+		return 0;
+	}
 	/* TODO: Initialize more */
 
 	LOG_DBG("radio_api %p initialized", radio_api);
+	return 0;
 }

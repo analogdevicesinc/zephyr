@@ -1,12 +1,9 @@
-#
 # Copyright (c) 2017 Linaro Limited
-#
 # SPDX-License-Identifier: Apache-2.0
-#
 
 menuconfig SNTP
-	bool "SNTP"
-	select NET_SOCKETS
+	bool "SNTP (Simple Network Time Protocol)"
+	depends on NET_SOCKETS
 	help
 	  Enable SNTP client library
 

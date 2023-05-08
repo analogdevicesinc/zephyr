@@ -41,10 +41,8 @@ core. Zephyr OS is ported to run on the Cortex®-M4 core.
     - 1x Yellow WiFi LED
     - 1x Red power supply LED
 
-.. image:: img/96b_avenger96.png
-     :width: 1027px
+.. image:: img/96b_avenger96.jpg
      :align: center
-     :height: 1217px
      :alt: 96Boards Avenger96
 
 More information about the board can be found at the
@@ -195,7 +193,7 @@ Serial Port
 by default to the RAM console to be dumped by the Linux Remoteproc Framework
 on Cortex®-A7 core. Alternatively, Zephyr console output can be assigned to
 UART7 which is disabled by default. UART console can be enabled through
-board's device tree and 96b_avenger96_defconfig board file (or prj.conf
+board's devicetree and 96b_avenger96_defconfig board file (or prj.conf
 project files), and will disable existing RAM console output. Default UART
 console settings are 115200 8N1.
 

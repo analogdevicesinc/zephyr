@@ -5,7 +5,7 @@
  */
 
 #include "soc.h"
-#include "kernel.h"
+#include <zephyr/kernel.h>
 #include "posix_board_if.h"
 
 /**
@@ -62,8 +62,9 @@ NATIVE_TASK(test_hook5, ON_EXIT, 20);
 NATIVE_TASK(test_hook6, ON_EXIT, 1);
 NATIVE_TASK(test_hook7, ON_EXIT, 310);
 
-void main(void)
+int main(void)
 {
-	k_sleep(100);
+	k_sleep(K_MSEC(100));
 	posix_exit(0);
+	return 0;
 }

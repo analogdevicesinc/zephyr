@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019 Vestas Wind Systems A/S
+ * Copyright (c) 2019-2021 Vestas Wind Systems A/S
  *
  * Based on clock_control_mcux_sim.c, which is:
  * Copyright (c) 2017, NXP
@@ -7,32 +7,38 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <drivers/clock_control.h>
-#include <dt-bindings/clock/kinetis_scg.h>
+#define DT_DRV_COMPAT nxp_kinetis_scg
+
+#include <zephyr/drivers/clock_control.h>
+#include <zephyr/dt-bindings/clock/kinetis_scg.h>
 #include <soc.h>
 #include <fsl_clock.h>
 
 #define LOG_LEVEL CONFIG_CLOCK_CONTROL_LOG_LEVEL
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(clock_control_scg);
 
-static int mcux_scg_on(struct device *dev, clock_control_subsys_t sub_system)
+#define MCUX_SCG_CLOCK_NODE(name) DT_INST_CHILD(0, name)
+
+static int mcux_scg_on(const struct device *dev,
+		       clock_control_subsys_t sub_system)
 {
 	return 0;
 }
 
-static int mcux_scg_off(struct device *dev, clock_control_subsys_t sub_system)
+static int mcux_scg_off(const struct device *dev,
+			clock_control_subsys_t sub_system)
 {
 	return 0;
 }
 
-static int mcux_scg_get_rate(struct device *dev,
+static int mcux_scg_get_rate(const struct device *dev,
 			     clock_control_subsys_t sub_system,
-			     u32_t *rate)
+			     uint32_t *rate)
 {
 	clock_name_t clock_name;
 
-	switch ((u32_t) sub_system) {
+	switch ((uint32_t) sub_system) {
 	case KINETIS_SCG_CORESYS_CLK:
 		clock_name = kCLOCK_CoreSysClk;
 		break;
@@ -90,11 +96,23 @@ static int mcux_scg_get_rate(struct device *dev,
 	return 0;
 }
 
-static int mcux_scg_init(struct device *dev)
+static int mcux_scg_init(const struct device *dev)
 {
-#ifdef DT_INST_0_NXP_KINETIS_SCG_CLKOUT_SOURCE
-	CLOCK_SetClkOutSel(DT_INST_0_NXP_KINETIS_SCG_CLKOUT_SOURCE);
+#if DT_NODE_HAS_STATUS(MCUX_SCG_CLOCK_NODE(clkout_clk), okay)
+#if DT_SAME_NODE(DT_CLOCKS_CTLR(MCUX_SCG_CLOCK_NODE(clkout_clk)), MCUX_SCG_CLOCK_NODE(slow_clk))
+	CLOCK_SetClkOutSel(kClockClkoutSelScgSlow);
+#elif DT_SAME_NODE(DT_CLOCKS_CTLR(MCUX_SCG_CLOCK_NODE(clkout_clk)), MCUX_SCG_CLOCK_NODE(sosc_clk))
+	CLOCK_SetClkOutSel(kClockClkoutSelSysOsc);
+#elif DT_SAME_NODE(DT_CLOCKS_CTLR(MCUX_SCG_CLOCK_NODE(clkout_clk)), MCUX_SCG_CLOCK_NODE(sirc_clk))
+	CLOCK_SetClkOutSel(kClockClkoutSelSirc);
+#elif DT_SAME_NODE(DT_CLOCKS_CTLR(MCUX_SCG_CLOCK_NODE(clkout_clk)), MCUX_SCG_CLOCK_NODE(firc_clk))
+	CLOCK_SetClkOutSel(kClockClkoutSelFirc);
+#elif DT_SAME_NODE(DT_CLOCKS_CTLR(MCUX_SCG_CLOCK_NODE(clkout_clk)), MCUX_SCG_CLOCK_NODE(spll_clk))
+	CLOCK_SetClkOutSel(kClockClkoutSelSysPll);
+#else
+#error Unsupported SCG clkout clock source
 #endif
+#endif /* DT_NODE_HAS_STATUS(MCUX_SCG_CLOCK_NODE(clkout_clk), okay) */
 
 	return 0;
 }
@@ -105,8 +123,9 @@ static const struct clock_control_driver_api mcux_scg_driver_api = {
 	.get_rate = mcux_scg_get_rate,
 };
 
-DEVICE_AND_API_INIT(mcux_scg, DT_INST_0_NXP_KINETIS_SCG_LABEL,
+DEVICE_DT_INST_DEFINE(0,
 		    &mcux_scg_init,
+		    NULL,
 		    NULL, NULL,
-		    PRE_KERNEL_1, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
+		    PRE_KERNEL_1, CONFIG_CLOCK_CONTROL_INIT_PRIORITY,
 		    &mcux_scg_driver_api);

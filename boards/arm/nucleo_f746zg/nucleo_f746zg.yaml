@@ -1,5 +1,5 @@
 identifier: nucleo_f746zg
-name: NUCLEO-F746ZG
+name: ST Nucleo F746ZG
 type: mcu
 arch: arm
 toolchain:
@@ -10,6 +10,8 @@ ram: 256
 flash: 1024
 supported:
   - arduino_i2c
+  - arduino_gpio
+  - arduino_spi
   - uart
   - gpio
   - netif:eth
@@ -21,3 +23,6 @@ supported:
   - counter
   - can
   - adc
+  - dac
+  - dma
+  - backup_sram

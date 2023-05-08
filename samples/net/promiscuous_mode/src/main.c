@@ -4,17 +4,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_promisc_sample, LOG_LEVEL_INF);
 
-#include <zephyr.h>
+#include <zephyr/kernel.h>
 #include <errno.h>
 #include <stdlib.h>
-#include <shell/shell.h>
+#include <zephyr/shell/shell.h>
 
-#include <net/net_core.h>
-#include <net/promiscuous.h>
-#include <net/udp.h>
+#include <zephyr/net/net_core.h>
+#include <zephyr/net/promiscuous.h>
+#include <zephyr/net/udp.h>
 
 static void net_pkt_hexdump(struct net_pkt *pkt, const char *str)
 {
@@ -40,7 +40,7 @@ static void iface_cb(struct net_if *iface, void *user_data)
 	LOG_INF("Promiscuous mode enabled for interface %p", iface);
 }
 
-static int get_ports(struct net_pkt *pkt, u16_t *src, u16_t *dst)
+static int get_ports(struct net_pkt *pkt, uint16_t *src, uint16_t *dst)
 {
 	struct net_udp_hdr hdr, *udp_hdr;
 
@@ -59,10 +59,10 @@ static void print_info(struct net_pkt *pkt)
 {
 	char src_addr_buf[NET_IPV6_ADDR_LEN], *src_addr;
 	char dst_addr_buf[NET_IPV6_ADDR_LEN], *dst_addr;
-	u16_t dst_port = 0U, src_port = 0U;
+	uint16_t dst_port = 0U, src_port = 0U;
 	sa_family_t family = AF_UNSPEC;
 	void *dst, *src;
-	u8_t next_hdr;
+	uint8_t next_hdr;
 	const char *proto;
 	size_t len;
 	int ret;
@@ -131,28 +131,28 @@ static void print_info(struct net_pkt *pkt)
 		if (next_hdr == IPPROTO_TCP || next_hdr == IPPROTO_UDP) {
 			LOG_INF("%s %s (%zd) %s:%u -> %s:%u",
 				"IPv4", proto, len,
-				log_strdup(src_addr), src_port,
-				log_strdup(dst_addr), dst_port);
+				src_addr, src_port,
+				dst_addr, dst_port);
 		} else {
 			LOG_INF("%s %s (%zd) %s -> %s", "IPv4", proto,
-				len, log_strdup(src_addr),
-				log_strdup(dst_addr));
+				len, src_addr,
+				dst_addr);
 		}
 	} else {
 		if (next_hdr == IPPROTO_TCP || next_hdr == IPPROTO_UDP) {
 			LOG_INF("%s %s (%zd) [%s]:%u -> [%s]:%u",
 				"IPv6", proto, len,
-				log_strdup(src_addr), src_port,
-				log_strdup(dst_addr), dst_port);
+				src_addr, src_port,
+				dst_addr, dst_port);
 		} else {
 			LOG_INF("%s %s (%zd) %s -> %s", "IPv6", proto,
-				len, log_strdup(src_addr),
-				log_strdup(dst_addr));
+				len, src_addr,
+				dst_addr);
 		}
 	}
 }
 
-static int set_promisc_mode(const struct shell *shell,
+static int set_promisc_mode(const struct shell *sh,
 			    size_t argc, char *argv[], bool enable)
 {
 	struct net_if *iface;
@@ -160,7 +160,7 @@ static int set_promisc_mode(const struct shell *shell,
 	int idx, ret;
 
 	if (argc < 2) {
-		shell_fprintf(shell, SHELL_ERROR, "Invalid arguments.\n");
+		shell_fprintf(sh, SHELL_ERROR, "Invalid arguments.\n");
 		return -ENOEXEC;
 	}
 
@@ -168,13 +168,13 @@ static int set_promisc_mode(const struct shell *shell,
 
 	iface = net_if_get_by_index(idx);
 	if (!iface) {
-		shell_fprintf(shell, SHELL_ERROR,
+		shell_fprintf(sh, SHELL_ERROR,
 			      "Cannot find network interface for index %d\n",
 			      idx);
 		return -ENOEXEC;
 	}
 
-	shell_fprintf(shell, SHELL_INFO, "Promiscuous mode %s...\n",
+	shell_fprintf(sh, SHELL_INFO, "Promiscuous mode %s...\n",
 		      enable ? "ON" : "OFF");
 
 	if (enable) {
@@ -185,11 +185,11 @@ static int set_promisc_mode(const struct shell *shell,
 
 	if (ret < 0) {
 		if (ret == -EALREADY) {
-			shell_fprintf(shell, SHELL_INFO,
+			shell_fprintf(sh, SHELL_INFO,
 				      "Promiscuous mode already %s\n",
 				      enable ? "enabled" : "disabled");
 		} else {
-			shell_fprintf(shell, SHELL_ERROR,
+			shell_fprintf(sh, SHELL_ERROR,
 				      "Cannot %s promiscuous mode for "
 				      "interface %p (%d)\n",
 				      enable ? "set" : "unset", iface, ret);
@@ -201,16 +201,16 @@ static int set_promisc_mode(const struct shell *shell,
 	return 0;
 }
 
-static int cmd_promisc_on(const struct shell *shell,
+static int cmd_promisc_on(const struct shell *sh,
 			  size_t argc, char *argv[])
 {
-	return set_promisc_mode(shell, argc, argv, true);
+	return set_promisc_mode(sh, argc, argv, true);
 }
 
-static int cmd_promisc_off(const struct shell *shell,
+static int cmd_promisc_off(const struct shell *sh,
 			   size_t argc, char *argv[])
 {
-	return set_promisc_mode(shell, argc, argv, false);
+	return set_promisc_mode(sh, argc, argv, false);
 }
 
 SHELL_STATIC_SUBCMD_SET_CREATE(promisc_commands,
@@ -229,7 +229,7 @@ SHELL_STATIC_SUBCMD_SET_CREATE(promisc_commands,
 SHELL_CMD_REGISTER(promisc, &promisc_commands,
 		   "Promiscuous mode commands", NULL);
 
-void main(void)
+int main(void)
 {
 	struct net_pkt *pkt;
 
@@ -243,4 +243,5 @@ void main(void)
 
 		net_pkt_unref(pkt);
 	}
+	return 0;
 }

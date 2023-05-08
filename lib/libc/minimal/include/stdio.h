@@ -9,9 +9,8 @@
 #ifndef ZEPHYR_LIB_LIBC_MINIMAL_INCLUDE_STDIO_H_
 #define ZEPHYR_LIB_LIBC_MINIMAL_INCLUDE_STDIO_H_
 
-#include <toolchain.h>
+#include <zephyr/toolchain.h>
 #include <stdarg.h>     /* Needed to get definition of va_list */
-#include <bits/restrict.h>
 #include <stddef.h>
 
 #ifdef __cplusplus
@@ -31,36 +30,38 @@ typedef int  FILE;
 #define stdout ((FILE *) 2)
 #define stderr ((FILE *) 3)
 
-/*
- * NOTE: This libc implementation does not define the routines
- * declared below.
- */
+#define SEEK_SET	0	/* Seek from beginning of file.  */
+#define SEEK_CUR	1	/* Seek from current position.  */
+#define SEEK_END	2	/* Seek from end of file.  */
 
-int __printf_like(1, 2) printf(const char *_MLIBC_RESTRICT fmt, ...);
-int __printf_like(3, 4) snprintf(char *_MLIBC_RESTRICT s, size_t len,
-				 const char *_MLIBC_RESTRICT fmt, ...);
-int __printf_like(2, 3) sprintf(char *_MLIBC_RESTRICT s,
-				const char *_MLIBC_RESTRICT fmt, ...);
-int __printf_like(2, 3) fprintf(FILE * _MLIBC_RESTRICT stream,
-				const char *_MLIBC_RESTRICT format, ...);
+int __printf_like(1, 2) printf(const char *ZRESTRICT format, ...);
+int __printf_like(3, 4) snprintf(char *ZRESTRICT str, size_t len,
+				 const char *ZRESTRICT format, ...);
+int __printf_like(2, 3) sprintf(char *ZRESTRICT str,
+				const char *ZRESTRICT format, ...);
+int __printf_like(2, 3) fprintf(FILE *ZRESTRICT stream,
+				const char *ZRESTRICT format, ...);
 
 
-int __printf_like(1, 0) vprintf(const char *_MLIBC_RESTRICT fmt, va_list list);
-int __printf_like(3, 0) vsnprintf(char *_MLIBC_RESTRICT s, size_t len,
-				  const char *_MLIBC_RESTRICT fmt,
+int __printf_like(1, 0) vprintf(const char *ZRESTRICT format, va_list list);
+int __printf_like(3, 0) vsnprintf(char *ZRESTRICT str, size_t len,
+				  const char *ZRESTRICT format,
 				  va_list list);
-int __printf_like(2, 0) vsprintf(char *_MLIBC_RESTRICT s,
-				 const char *_MLIBC_RESTRICT fmt, va_list list);
-int __printf_like(2, 0) vfprintf(FILE * _MLIBC_RESTRICT stream,
-				 const char *_MLIBC_RESTRICT format,
+int __printf_like(2, 0) vsprintf(char *ZRESTRICT str,
+				 const char *ZRESTRICT format, va_list list);
+int __printf_like(2, 0) vfprintf(FILE *ZRESTRICT stream,
+				 const char *ZRESTRICT format,
 				 va_list ap);
 
+void perror(const char *s);
 int puts(const char *s);
 
 int fputc(int c, FILE *stream);
-int fputs(const char *_MLIBC_RESTRICT s, FILE *_MLIBC_RESTRICT stream);
-size_t fwrite(const void *_MLIBC_RESTRICT ptr, size_t size, size_t nitems,
-	      FILE *_MLIBC_RESTRICT stream);
+int fputs(const char *ZRESTRICT s, FILE *ZRESTRICT stream);
+size_t fwrite(const void *ZRESTRICT ptr, size_t size, size_t nitems,
+	      FILE *ZRESTRICT stream);
+#define putc(c, stream) fputc(c, stream)
+#define putchar(c) putc(c, stdout)
 
 #ifdef __cplusplus
 }

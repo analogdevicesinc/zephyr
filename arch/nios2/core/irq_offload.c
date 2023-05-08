@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <kernel.h>
-#include <kernel_structs.h>
-#include <irq_offload.h>
+#include <zephyr/kernel.h>
+#include <zephyr/kernel_structs.h>
+#include <zephyr/irq_offload.h>
 
 volatile irq_offload_routine_t _offload_routine;
-static volatile void *offload_param;
+static volatile const void *offload_param;
 
 /* Called by _enter_irq if it was passed 0 for ipending.
  * Just in case the offload routine itself generates an unhandled
@@ -26,10 +26,10 @@ void z_irq_do_offload(void)
 	tmp = _offload_routine;
 	_offload_routine = NULL;
 
-	tmp((void *)offload_param);
+	tmp((const void *)offload_param);
 }
 
-void irq_offload(irq_offload_routine_t routine, void *parameter)
+void arch_irq_offload(irq_offload_routine_t routine, const void *parameter)
 {
 	unsigned int key;
 
@@ -41,4 +41,3 @@ void irq_offload(irq_offload_routine_t routine, void *parameter)
 
 	irq_unlock(key);
 }
-

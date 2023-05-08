@@ -10,3 +10,5 @@ flash: 128
 supported:
   - gpio
   - i2c
+  - eeprom
+  - lora

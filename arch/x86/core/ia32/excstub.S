@@ -14,9 +14,8 @@
  * and exiting a C exception handler.
  */
 
-#include <kernel_structs.h>
-#include <arch/x86/ia32/asm.h>
-#include <arch/x86/ia32/arch.h> /* For MK_ISR_NAME */
+#include <zephyr/arch/x86/ia32/asm.h>
+#include <zephyr/arch/x86/ia32/arch.h> /* For MK_ISR_NAME */
 #include <offsets_short.h>
 
 
@@ -26,7 +25,7 @@
 	GTEXT(_kernel_oops_handler)
 
 	/* externs (internal APIs) */
-	GTEXT(z_do_kernel_oops)
+	GTEXT(z_x86_do_kernel_oops)
 
 /**
  *
@@ -46,15 +45,13 @@
  * created by this routine to determine the locations of volatile registers.
  * These tools must be updated to reflect any changes to the stack frame.
  *
- * @return N/A
- *
  * C function prototype:
  *
- * void _exception_enter(u32_t error_code, void *handler)
+ * void _exception_enter(uint32_t error_code, void *handler)
  *
  */
 
-SECTION_FUNC(TEXT, _exception_enter)
+SECTION_FUNC(PINNED_TEXT, _exception_enter)
 
 	/*
 	 * The gen_idt tool creates an interrupt-gate descriptor for
@@ -123,9 +120,17 @@ SECTION_FUNC(TEXT, _exception_enter)
 #ifdef CONFIG_USERSPACE
 2:
 #endif
+
+#ifdef CONFIG_GDBSTUB
+	pushl %ds
+	pushl %es
+	pushl %fs
+	pushl %gs
+	pushl %ss
+#endif
 	/* ESP is pointing to the ESF at this point */
 
-#if defined(CONFIG_LAZY_FP_SHARING)
+#if defined(CONFIG_LAZY_FPU_SHARING)
 
 	movl	_kernel + _kernel_offset_to_current, %edx
 
@@ -142,7 +147,7 @@ SECTION_FUNC(TEXT, _exception_enter)
 
 	orb	$X86_THREAD_FLAG_EXC, _thread_offset_to_flags(%edx)
 
-#endif /* CONFIG_LAZY_FP_SHARING */
+#endif /* CONFIG_LAZY_FPU_SHARING */
 
 	/*
 	 * restore interrupt enable state, then call the handler
@@ -162,10 +167,10 @@ SECTION_FUNC(TEXT, _exception_enter)
 
 allDone:
 	pushl	%esp			/* push z_arch_esf_t * parameter */
-	INDIRECT_CALL(%ecx)		/* call exception handler */
+	call	*%ecx			/* call exception handler */
 	addl	$0x4, %esp
 
-#if defined(CONFIG_LAZY_FP_SHARING)
+#if defined(CONFIG_LAZY_FPU_SHARING)
 
 	movl	_kernel + _kernel_offset_to_current, %ecx
 
@@ -195,8 +200,15 @@ allDone:
 	andb	$~X86_THREAD_FLAG_EXC, _thread_offset_to_flags(%ecx)
 
 nestedException:
-#endif /* CONFIG_LAZY_FP_SHARING */
+#endif /* CONFIG_LAZY_FPU_SHARING */
 
+#ifdef CONFIG_GDBSTUB
+	popl %ss
+	popl %gs
+	popl %fs
+	popl %es
+	popl %ds
+#endif
 	/*
 	 * Pop the non-volatile registers from the stack.
 	 * Note that debug tools may have altered the saved register values while
@@ -220,9 +232,7 @@ nestedException:
 	/* Pop of EFLAGS will re-enable interrupts and restore direction flag */
 	KPTI_IRET
 
-#if CONFIG_X86_KERNEL_OOPS
-SECTION_FUNC(TEXT, _kernel_oops_handler)
+SECTION_FUNC(PINNED_TEXT, _kernel_oops_handler)
 	push $0 /* dummy error code */
-	push $z_do_kernel_oops
+	push $z_x86_do_kernel_oops
 	jmp _exception_enter
-#endif

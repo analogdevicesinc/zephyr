@@ -7,7 +7,7 @@
  * @file Extra definitions provided by the board to soc.h
  *
  * Background:
- * The POSIC ARCH/SOC/board layering is different than in normal archs
+ * The POSIX ARCH/SOC/board layering is different than in normal archs
  * The "SOC" does not provide almost any of the typical SOC functionality
  * but that is left for the "board" to define it
  * Device code may rely on the soc.h defining some things (like the interrupts
@@ -25,6 +25,7 @@ extern "C" {
 
 #define TIMER_TICK_IRQ 0
 #define OFFLOAD_SW_IRQ 1
+#define COUNTER_EVENT_IRQ 2
 
 /*
  * This interrupt will awake the CPU if IRQs are not locked,

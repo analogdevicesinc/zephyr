@@ -4,48 +4,22 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <ztest.h>
-#include <tc_util.h>
+#include <zephyr/ztest.h>
+#include <zephyr/tc_util.h>
 
-#include <sys/byteorder.h>
-#include <usb/usb_device.h>
-#include <usb/usb_common.h>
+#include <zephyr/sys/byteorder.h>
+#include <zephyr/usb/usb_device.h>
 
-#include <usb/bos.h>
+#include <zephyr/usb/bos.h>
 
-/* Helpers */
-static void hexdump(const u8_t *data, size_t len)
-{
-	int n = 0;
-
-	while (len--) {
-		if (n % 16 == 0) {
-			printk("%08X ", n);
-		}
-
-		printk("%02X ", *data++);
-
-		n++;
-		if (n % 8 == 0) {
-			if (n % 16 == 0) {
-				printk("\n");
-			} else {
-				printk(" ");
-			}
-		}
-	}
-
-	if (n % 16) {
-		printk("\n");
-	}
-}
+#include <zephyr/logging/log.h>
+LOG_MODULE_REGISTER(test_main, LOG_LEVEL_DBG);
 
 /*
  * Compare old style USB BOS definition with section aligned
  */
 
-static const u8_t dummy_descriptor[] = {
+static const uint8_t dummy_descriptor[] = {
 	0x00, 0x01, 0x02
 };
 
@@ -58,7 +32,7 @@ static struct webusb_bos_desc {
 } __packed webusb_bos_descriptor = {
 	.bos = {
 		.bLength = sizeof(struct usb_bos_descriptor),
-		.bDescriptorType = USB_BINARY_OBJECT_STORE_DESC,
+		.bDescriptorType = USB_DESC_BOS,
 		.wTotalLength = sizeof(struct webusb_bos_desc),
 		.bNumDeviceCaps = 2,
 	},
@@ -68,7 +42,7 @@ static struct webusb_bos_desc {
 	.platform_webusb = {
 		.bLength = sizeof(struct usb_bos_platform_descriptor)
 			+ sizeof(struct usb_bos_capability_webusb),
-		.bDescriptorType = USB_DEVICE_CAPABILITY_DESC,
+		.bDescriptorType = USB_DESC_DEVICE_CAPABILITY,
 		.bDevCapabilityType = USB_BOS_CAPABILITY_PLATFORM,
 		.bReserved = 0,
 		/* WebUSB Platform Capability UUID
@@ -97,7 +71,7 @@ static struct webusb_bos_desc {
 	.platform_msos = {
 		.bLength = sizeof(struct usb_bos_platform_descriptor)
 			+ sizeof(struct usb_bos_capability_msos),
-		.bDescriptorType = USB_DEVICE_CAPABILITY_DESC,
+		.bDescriptorType = USB_DESC_DEVICE_CAPABILITY,
 		.bDevCapabilityType = USB_BOS_CAPABILITY_PLATFORM,
 		.bReserved = 0,
 		.PlatformCapabilityUUID = {
@@ -138,7 +112,7 @@ USB_DEVICE_BOS_DESC_DEFINE_CAP struct usb_bos_webusb {
 	.platform = {
 		.bLength = sizeof(struct usb_bos_platform_descriptor) +
 			sizeof(struct usb_bos_capability_webusb),
-		.bDescriptorType = USB_DEVICE_CAPABILITY_DESC,
+		.bDescriptorType = USB_DESC_DEVICE_CAPABILITY,
 		.bDevCapabilityType = USB_BOS_CAPABILITY_PLATFORM,
 		.bReserved = 0,
 		/* WebUSB Platform Capability UUID
@@ -166,7 +140,7 @@ USB_DEVICE_BOS_DESC_DEFINE_CAP struct usb_bos_msosv2 {
 	.platform = {
 		.bLength = sizeof(struct usb_bos_platform_descriptor)
 			+ sizeof(struct usb_bos_capability_msos),
-		.bDescriptorType = USB_DEVICE_CAPABILITY_DESC,
+		.bDescriptorType = USB_DESC_DEVICE_CAPABILITY,
 		.bDevCapabilityType = USB_BOS_CAPABILITY_PLATFORM,
 		.bReserved = 0,
 		.PlatformCapabilityUUID = {
@@ -203,9 +177,11 @@ static void test_usb_bos_macros(void)
 
 	/* usb_bos_fix_total_length(); corrected with register */
 
-	hexdump((void *)hdr, len);
-	hexdump((void *)&webusb_bos_descriptor, sizeof(cap_webusb));
-	hexdump((void *)&webusb_bos_descriptor_2, sizeof(cap_msosv2));
+	LOG_HEXDUMP_DBG((void *)hdr, len, "Header");
+	LOG_HEXDUMP_DBG((void *)&webusb_bos_descriptor, sizeof(cap_webusb),
+			"webusb cap");
+	LOG_HEXDUMP_DBG((void *)&webusb_bos_descriptor_2, sizeof(cap_msosv2),
+			"webusb cap msos v2");
 
 	zassert_true(len ==
 		     sizeof(struct usb_bos_descriptor) +
@@ -220,13 +196,13 @@ static void test_usb_bos_macros(void)
 static void test_usb_bos(void)
 {
 	struct usb_setup_packet setup;
-	s32_t len = 0;
-	u8_t *data = NULL;
+	int32_t len = 0;
+	uint8_t *data = NULL;
 	int ret;
 
 	/* Already registered due to previous test */
 
-	setup.wValue = (DESCRIPTOR_TYPE_BOS & 0xFF) << 8;
+	setup.wValue = (USB_DESC_BOS & 0xFF) << 8;
 
 	ret = usb_handle_bos(&setup, &len, &data);
 
@@ -239,8 +215,8 @@ static void test_usb_bos(void)
 		     "Wrong data");
 }
 
-/*test case main entry*/
-void test_main(void)
+/* test case main entry */
+ZTEST(osdesc_bos, test_osdesc)
 {
 	/* Prepare webusb_bos_descriptor_2 */
 	memcpy(&webusb_bos_descriptor_2.bos,
@@ -261,8 +237,7 @@ void test_main(void)
 	       &webusb_bos_descriptor.capability_data_webusb,
 	       sizeof(struct usb_bos_capability_webusb));
 
-	ztest_test_suite(test_osdesc,
-			 ztest_unit_test(test_usb_bos_macros),
-			 ztest_unit_test(test_usb_bos));
-	ztest_run_test_suite(test_osdesc);
+	test_usb_bos_macros();
+	test_usb_bos();
 }
+ZTEST_SUITE(osdesc_bos, NULL, NULL, NULL, NULL, NULL);

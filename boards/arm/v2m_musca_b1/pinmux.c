@@ -4,15 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <device.h>
-#include <init.h>
-#include <kernel.h>
-#include <drivers/pinmux.h>
+#include <zephyr/device.h>
+#include <zephyr/init.h>
+#include <zephyr/kernel.h>
 #include <soc.h>
-#include <sys/sys_io.h>
-#include <gpio/gpio_cmsdk_ahb.h>
-
-#include "pinmux/pinmux.h"
+#include <zephyr/sys/sys_io.h>
 
 #define IOMUX_MAIN_INSEL	(0x68 >> 2)
 #define IOMUX_MAIN_OUTSEL	(0x70 >> 2)
@@ -37,14 +33,14 @@ static void arm_musca_b1_pinmux_defaults(void)
  */
 static void arm_musca_b1_pinmux_defaults(void)
 {
-	volatile u32_t *scc = (u32_t *)DT_ARM_SCC_BASE_ADDRESS;
+	volatile uint32_t *scc = (uint32_t *)DT_REG_ADDR(DT_INST(0, arm_scc));
 
 	/* there is only altfunc1, so steer all alt funcs to use 1 */
 	scc[IOMUX_ALTF1_INSEL] = 0xffff;
 	scc[IOMUX_ALTF1_OUTSEL] = 0xffff;
 	scc[IOMUX_ALTF1_OENSEL] = 0xffff;
 
-#if defined(CONFIG_UART_PL011_PORT0)
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(uart0), okay)
 	/* clear bit 0/1 for GPIO0/1 to steer from ALTF1 */
 	scc[IOMUX_MAIN_INSEL] &= ~(BIT(0) | BIT(1));
 	scc[IOMUX_MAIN_OUTSEL] &= ~(BIT(0) | BIT(1));
@@ -59,9 +55,8 @@ static void arm_musca_b1_pinmux_defaults(void)
 }
 #endif
 
-static int arm_musca_pinmux_init(struct device *port)
+static int arm_musca_pinmux_init(void)
 {
-	ARG_UNUSED(port);
 
 	arm_musca_b1_pinmux_defaults();
 

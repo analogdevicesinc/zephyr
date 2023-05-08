@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2016 Intel Corporation
+ * Copyright (c) 2020 Intel Corporation
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -14,14 +15,19 @@
 #ifndef __TEST_UART_H__
 #define __TEST_UART_H__
 
-#include <drivers/uart.h>
-#include <ztest.h>
+#include <zephyr/drivers/uart.h>
+#include <zephyr/ztest.h>
 
-#define UART_DEVICE_NAME CONFIG_UART_CONSOLE_ON_DEV_NAME
-
+#if CONFIG_SHELL
+void test_uart_configure(void);
+void test_uart_config_get(void);
 void test_uart_poll_out(void);
+void test_uart_poll_in(void);
+#if CONFIG_UART_INTERRUPT_DRIVEN
 void test_uart_fifo_fill(void);
 void test_uart_fifo_read(void);
-void test_uart_poll_in(void);
+void test_uart_pending(void);
+#endif
+#endif
 
 #endif /* __TEST_UART_H__ */

@@ -15,7 +15,7 @@ This kit provides:
 
         - Embedded ultra-low-power STM32L072CZ Series MCUs, based on
           Arm* Cortex* -M0+ core, with 192 Kbytes of Flash
-          memory, 20 Kbytes of RAM, 20 Kbytes of EEPROM
+          memory, 20 Kbytes of RAM, 6 Kbytes of EEPROM
         - Frequency range: 860 MHz - 930 MHz
         - USB 2.0 FS
         - 4-channel,12-bit ADC, 2xDAC
@@ -53,10 +53,8 @@ This kit provides:
         - 2 push-buttons (user and reset)
 - Arduino* Uno V3 connectors
 
-.. image:: img/b_l072z_lrwan1.png
-     :width: 500px
+.. image:: img/b_l072z_lrwan1.jpg
      :align: center
-     :height: 325px
      :alt: B-L072Z-LRWAN1
 
 More information about the board can be found at the `B-L072Z-LRWAN1 website`_.
@@ -99,7 +97,7 @@ The STM32L072CZ SoC provides the following hardware IPs:
         - 2x ultra-low-power comparators
 - 11x communication interfaces
 
-        - USB OTG 2.0 full-speed, LPM and BCD
+        - USB 2.0 full-speed device, LPM and BCD
         - 3x I2C FM+(1 Mbit/s), SMBus/PMBus
         - 4x USARTs (ISO 7816, LIN, IrDA, modem)
         - 6x SPIs (4x SPIs with the Quad SPI)
@@ -133,6 +131,18 @@ The Zephyr B-L072Z-LRWAN1 Discovery board configuration supports the following h
 +-----------+------------+-------------------------------------+
 | GPIO      | on-chip    | gpio                                |
 +-----------+------------+-------------------------------------+
+| RTC       | on-chip    | counter                             |
++-----------+------------+-------------------------------------+
+| TRNG      | on-chip    | true random number generator        |
++-----------+------------+-------------------------------------+
+| EEPROM    | on-chip    | eeprom                              |
++-----------+------------+-------------------------------------+
+| USB       | on-chip    | usb                                 |
++-----------+------------+-------------------------------------+
+| FLASH     | on-chip    | flash                               |
++-----------+------------+-------------------------------------+
+| LoRa      | on-module  | sx1276                              |
++-----------+------------+-------------------------------------+
 
 Other hardware features are not yet supported on this Zephyr port.
 
@@ -156,7 +166,7 @@ Default Zephyr Peripheral Mapping:
 
 - UART_1_TX/RX: PA9/PA10 (Arduino Serial)
 - UART_2_TX/RX: PA2/PA3 (ST-Link Virtual COM Port)
-- SPI1 NSS/SCK/MISO/MOSI: PA4/PA5/PA6/PA7 (Semtech SX1276 LoRa* Transceiver)
+- SPI1 NSS/SCK/MISO/MOSI: PA15/PB3/PA6/PA7 (Semtech SX1276 LoRa* Transceiver)
 - SPI2 NSS/SCK/MISO/MOSI: PB12/PB13/PB14/PB15 (Arduino SPI)
 - I2C1 SCL/SDA : PB8/PB9 (Arduino I2C)
 
@@ -170,6 +180,13 @@ Serial Port
 
 B-L072Z-LRWAN1 Discovery board has 2 U(S)ARTs. The Zephyr console output is assigned to UART2.
 Default settings are 115200 8N1.
+
+USB device
+----------
+
+B-L072Z-LRWAN1 Discovery board has 1 USB device controller. However,
+the USB data lines are not connected to the MCU by default. To connect
+the USB data lines to the MCU, short solder bridges SB15 and SB16.
 
 Programming and Debugging
 *************************

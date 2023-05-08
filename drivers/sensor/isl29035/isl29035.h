@@ -9,12 +9,11 @@
 #ifndef ZEPHYR_DRIVERS_SENSOR_ISL29035_ISL29035_H_
 #define ZEPHYR_DRIVERS_SENSOR_ISL29035_ISL29035_H_
 
-#include <device.h>
-#include <kernel.h>
-#include <drivers/sensor.h>
-#include <drivers/gpio.h>
-
-#define ISL29035_I2C_ADDRESS		0x44
+#include <zephyr/device.h>
+#include <zephyr/kernel.h>
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/drivers/i2c.h>
+#include <zephyr/drivers/gpio.h>
 
 #define ISL29035_COMMAND_I_REG		0x00
 #define ISL29035_OPMODE_SHIFT		5
@@ -111,39 +110,44 @@
 	(ISL29035_INT_PRST_IDX << ISL29035_INT_PRST_SHIFT)
 
 struct isl29035_driver_data {
-	struct device *i2c;
-	u16_t data_sample;
+	uint16_t data_sample;
 
 #if CONFIG_ISL29035_TRIGGER
-	struct device *gpio;
+	const struct device *dev;
 	struct gpio_callback gpio_cb;
 
-	struct sensor_trigger th_trigger;
+	const struct sensor_trigger *th_trigger;
 	sensor_trigger_handler_t th_handler;
 
 #if defined(CONFIG_ISL29035_TRIGGER_OWN_THREAD)
-	K_THREAD_STACK_MEMBER(thread_stack, CONFIG_ISL29035_THREAD_STACK_SIZE);
+	K_KERNEL_STACK_MEMBER(thread_stack, CONFIG_ISL29035_THREAD_STACK_SIZE);
 	struct k_thread thread;
 	struct k_sem gpio_sem;
 #elif defined(CONFIG_ISL29035_TRIGGER_GLOBAL_THREAD)
 	struct k_work work;
-	struct device *dev;
 #endif
 
 #endif /* CONFIG_ISL29035_TRIGGER */
 };
 
+struct isl29035_config {
+	struct i2c_dt_spec i2c;
+#if CONFIG_ISL29035_TRIGGER
+	struct gpio_dt_spec int_gpio;
+#endif
+};
+
 #ifdef CONFIG_ISL29035_TRIGGER
-int isl29035_attr_set(struct device *dev,
+int isl29035_attr_set(const struct device *dev,
 		      enum sensor_channel chan,
 		      enum sensor_attribute attr,
 		      const struct sensor_value *val);
 
-int isl29035_trigger_set(struct device *dev,
+int isl29035_trigger_set(const struct device *dev,
 			 const struct sensor_trigger *trig,
 			 sensor_trigger_handler_t handler);
 
-int isl29035_init_interrupt(struct device *dev);
+int isl29035_init_interrupt(const struct device *dev);
 #endif
 
 #endif /* ZEPHYR_DRIVERS_SENSOR_ISL29035_ISL29035_H_ */

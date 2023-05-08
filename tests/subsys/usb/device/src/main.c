@@ -4,16 +4,18 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <ztest.h>
-#include <tc_util.h>
+#include <zephyr/ztest.h>
+#include <zephyr/tc_util.h>
 
-#include <sys/byteorder.h>
-#include <usb/usb_device.h>
-#include <usb/usb_common.h>
+#include <zephyr/sys/byteorder.h>
+#include <zephyr/usb/usb_device.h>
 
 /* Max packet size for endpoints */
+#if defined(CONFIG_USB_DC_HAS_HS_SUPPORT)
+#define BULK_EP_MPS		512
+#else
 #define BULK_EP_MPS		64
+#endif
 
 #define ENDP_BULK_IN		0x81
 
@@ -28,11 +30,11 @@ struct usb_device_desc {
 #define INITIALIZER_IF							\
 	{								\
 		.bLength = sizeof(struct usb_if_descriptor),		\
-		.bDescriptorType = USB_INTERFACE_DESC,			\
+		.bDescriptorType = USB_DESC_INTERFACE,			\
 		.bInterfaceNumber = 0,					\
 		.bAlternateSetting = 0,					\
 		.bNumEndpoints = 1,					\
-		.bInterfaceClass = CUSTOM_CLASS,			\
+		.bInterfaceClass = USB_BCC_VENDOR,			\
 		.bInterfaceSubClass = 0,				\
 		.bInterfaceProtocol = 0,				\
 		.iInterface = 0,					\
@@ -41,7 +43,7 @@ struct usb_device_desc {
 #define INITIALIZER_IF_EP(addr, attr, mps, interval)			\
 	{								\
 		.bLength = sizeof(struct usb_ep_descriptor),		\
-		.bDescriptorType = USB_ENDPOINT_DESC,			\
+		.bDescriptorType = USB_DESC_ENDPOINT,			\
 		.bEndpointAddress = addr,				\
 		.bmAttributes = attr,					\
 		.wMaxPacketSize = sys_cpu_to_le16(mps),			\
@@ -56,7 +58,7 @@ USBD_CLASS_DESCR_DEFINE(primary, 0) struct usb_device_desc dev_desc = {
 
 static void status_cb(struct usb_cfg_data *cfg,
 		      enum usb_dc_status_code status,
-		      const u8_t *param)
+		      const uint8_t *param)
 {
 	ARG_UNUSED(cfg);
 	ARG_UNUSED(status);
@@ -64,7 +66,7 @@ static void status_cb(struct usb_cfg_data *cfg,
 }
 
 /* EP Bulk IN handler, used to send data to the Host */
-static void bulk_in(u8_t ep, enum usb_dc_ep_cb_status_code ep_status)
+static void bulk_in(uint8_t ep, enum usb_dc_ep_cb_status_code ep_status)
 {
 }
 
@@ -76,7 +78,7 @@ static struct usb_ep_cfg_data device_ep[] = {
 	},
 };
 
-USBD_CFG_DATA_DEFINE(primary, device) struct usb_cfg_data device_config = {
+USBD_DEFINE_CFG_DATA(device_config) = {
 	.usb_device_description = NULL,
 	.interface_descriptor = &dev_desc.if0,
 	.cb_usb_status = status_cb,
@@ -89,20 +91,20 @@ USBD_CFG_DATA_DEFINE(primary, device) struct usb_cfg_data device_config = {
 	.endpoint = device_ep,
 };
 
-static void test_usb_disable(void)
+ZTEST(device_usb, test_usb_disable)
 {
 	zassert_equal(usb_disable(), TC_PASS, "usb_disable() failed");
 }
 
-static void test_usb_deconfig(void)
+ZTEST(device_usb, test_usb_deconfig)
 {
 	zassert_equal(usb_deconfig(), TC_PASS, "usb_deconfig() failed");
 }
 
-/* Test USB Device Cotnroller API */
-static void test_usb_dc_api(void)
+/* Test USB Device Controller API */
+ZTEST(device_usb, test_usb_dc_api)
 {
-	/* Control endpoins are configured */
+	/* Control endpoints are configured */
 	zassert_equal(usb_dc_ep_mps(0x0), 64,
 		      "usb_dc_ep_mps(0x00) failed");
 	zassert_equal(usb_dc_ep_mps(0x80), 64,
@@ -113,11 +115,11 @@ static void test_usb_dc_api(void)
 		      "usb_dc_ep_mps(ENDP_BULK_IN) not configured");
 }
 
-/* Test USB Device Cotnroller API for invalid parameters */
-static void test_usb_dc_api_invalid(void)
+/* Test USB Device Controller API for invalid parameters */
+ZTEST(device_usb, test_usb_dc_api_invalid)
 {
-	u32_t size;
-	u8_t byte;
+	uint32_t size;
+	uint8_t byte;
 
 	/* Set stall to invalid EP */
 	zassert_not_equal(usb_dc_ep_set_stall(INVALID_EP), TC_PASS,
@@ -173,10 +175,10 @@ static void test_usb_dc_api_invalid(void)
 			  "usb_dc_ep_mps(INVALID_EP)");
 }
 
-static void test_usb_dc_api_read_write(void)
+ZTEST(device_usb, test_usb_dc_api_read_write)
 {
-	u32_t size;
-	u8_t byte;
+	uint32_t size;
+	uint8_t byte;
 
 	/* Read invalid EP */
 	zassert_not_equal(usb_read(INVALID_EP, &byte, sizeof(byte), &size),
@@ -187,17 +189,17 @@ static void test_usb_dc_api_read_write(void)
 			  TC_PASS, "usb_write(INVALID_EP)");
 }
 
-/*test case main entry*/
-void test_main(void)
+/* test case main entry */
+static void *device_usb_setup(void)
 {
-	ztest_test_suite(test_device,
-			 /* Test API for not USB attached state */
-			 ztest_unit_test(test_usb_dc_api_invalid),
-			 ztest_unit_test(test_usb_dc_api),
-			 ztest_unit_test(test_usb_dc_api_read_write),
-			 ztest_unit_test(test_usb_dc_api_invalid),
-			 ztest_unit_test(test_usb_deconfig),
-			 ztest_unit_test(test_usb_disable));
+	int ret;
 
-	ztest_run_test_suite(test_device);
+	ret = usb_enable(NULL);
+	zassert_true(ret == 0, "Failed to enable USB");
+	/*
+	 *Judge failure whether is due to failing to enable USB.
+	 */
+
+	return NULL;
 }
+ZTEST_SUITE(device_usb, NULL, device_usb_setup, NULL, NULL, NULL);

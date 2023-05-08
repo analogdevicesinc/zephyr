@@ -12,27 +12,18 @@
 #define LOG_MODULE_NAME net_ipso_timer
 #define LOG_LEVEL CONFIG_LWM2M_LOG_LEVEL
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
 #include <stdint.h>
-#include <init.h>
+#include <zephyr/init.h>
 
 #include "lwm2m_object.h"
 #include "lwm2m_engine.h"
+#include "lwm2m_resource_ids.h"
 
-/* Server resource IDs */
-#define TIMER_DELAY_DURATION_ID		5521
-#define TIMER_REMAINING_TIME_ID		5538
-#define TIMER_MINIMUM_OFF_TIME_ID	5525
-#define TIMER_TRIGGER_ID		5523
-#define TIMER_ON_OFF_ID			5850
-#define TIMER_DIGITAL_INPUT_COUNTER_ID	5501
-#define TIMER_CUMULATIVE_TIME_ID	5544
-#define TIMER_DIGITAL_STATE_ID		5543
-#define TIMER_COUNTER_ID		5534
-#define TIMER_MODE_ID			5526
-#define TIMER_APPLICATION_TYPE_ID	5750
+#define TIMER_VERSION_MAJOR 1
+#define TIMER_VERSION_MINOR 0
 
 #define TIMER_MAX_ID		11
 
@@ -55,19 +46,19 @@ enum ipso_timer_mode {
 
 /* resource state */
 struct ipso_timer_data {
-	float64_value_t delay_duration;
-	float64_value_t remaining_time;
-	float64_value_t min_off_time;
-	float64_value_t cumulative_time;
+	double delay_duration;
+	double remaining_time;
+	double min_off_time;
+	double cumulative_time;
 
-	u64_t trigger_offset;
-	u32_t trigger_counter;
-	u32_t cumulative_time_ms;
+	uint64_t trigger_offset;
+	uint32_t trigger_counter;
+	uint32_t cumulative_time_ms;
 
-	struct k_delayed_work timer_work;
+	struct k_work_delayable timer_work;
 
-	u16_t obj_inst_id;
-	u8_t timer_mode;
+	uint16_t obj_inst_id;
+	uint8_t timer_mode;
 	bool enabled;
 	bool active;
 };
@@ -76,17 +67,17 @@ static struct ipso_timer_data timer_data[MAX_INSTANCE_COUNT];
 
 static struct lwm2m_engine_obj timer;
 static struct lwm2m_engine_obj_field fields[] = {
-	OBJ_FIELD_DATA(TIMER_DELAY_DURATION_ID, RW, FLOAT64),
-	OBJ_FIELD_DATA(TIMER_REMAINING_TIME_ID, R_OPT, FLOAT64),
-	OBJ_FIELD_DATA(TIMER_MINIMUM_OFF_TIME_ID, RW_OPT, FLOAT64),
-	OBJ_FIELD_EXECUTE_OPT(TIMER_TRIGGER_ID),
-	OBJ_FIELD_DATA(TIMER_ON_OFF_ID, RW_OPT, BOOL),
-	OBJ_FIELD_DATA(TIMER_DIGITAL_INPUT_COUNTER_ID, RW_OPT, U32), /* TODO */
-	OBJ_FIELD_DATA(TIMER_CUMULATIVE_TIME_ID, RW_OPT, FLOAT64),
-	OBJ_FIELD_DATA(TIMER_DIGITAL_STATE_ID, R_OPT, BOOL),
-	OBJ_FIELD_DATA(TIMER_COUNTER_ID, R_OPT, U32),
-	OBJ_FIELD_DATA(TIMER_MODE_ID, RW_OPT, U8),
-	OBJ_FIELD_DATA(TIMER_APPLICATION_TYPE_ID, RW_OPT, STRING),
+	OBJ_FIELD_DATA(DELAY_DURATION_RID, RW, FLOAT),
+	OBJ_FIELD_DATA(REMAINING_TIME_RID, R_OPT, FLOAT),
+	OBJ_FIELD_DATA(MINIMUM_OFF_TIME_RID, RW_OPT, FLOAT),
+	OBJ_FIELD_EXECUTE_OPT(TRIGGER_RID),
+	OBJ_FIELD_DATA(ON_OFF_RID, RW_OPT, BOOL),
+	OBJ_FIELD_DATA(DIGITAL_INPUT_COUNTER_RID, RW_OPT, U32), /* TODO */
+	OBJ_FIELD_DATA(CUMULATIVE_TIME_RID, RW_OPT, FLOAT),
+	OBJ_FIELD_DATA(DIGITAL_STATE_RID, R_OPT, BOOL),
+	OBJ_FIELD_DATA(COUNTER_RID, R_OPT, U32),
+	OBJ_FIELD_DATA(TIMER_MODE_RID, RW_OPT, U8),
+	OBJ_FIELD_DATA(APPLICATION_TYPE_RID, RW_OPT, STRING),
 };
 
 static struct lwm2m_engine_obj_inst inst[MAX_INSTANCE_COUNT];
@@ -94,23 +85,7 @@ static struct lwm2m_engine_res res[MAX_INSTANCE_COUNT][TIMER_MAX_ID];
 static struct lwm2m_engine_res_inst
 		res_inst[MAX_INSTANCE_COUNT][RESOURCE_INSTANCE_COUNT];
 
-static int ms2float(u32_t ms, float64_value_t *f)
-{
-	f->val1 = ms / MSEC_PER_SEC;
-	f->val2 = (ms % MSEC_PER_SEC) * (LWM2M_FLOAT64_DEC_MAX / MSEC_PER_SEC);
-
-	return 0;
-}
-
-static int float2ms(float64_value_t *f, u32_t *ms)
-{
-	*ms = f->val1 * MSEC_PER_SEC;
-	*ms += f->val2 / (LWM2M_FLOAT64_DEC_MAX / MSEC_PER_SEC);
-
-	return 0;
-}
-
-static int get_timer_index(u16_t obj_inst_id)
+static int get_timer_index(uint16_t obj_inst_id)
 {
 	int i, ret = -ENOENT;
 
@@ -128,8 +103,9 @@ static int get_timer_index(u16_t obj_inst_id)
 
 static int start_timer(struct ipso_timer_data *timer)
 {
-	u32_t temp = 0U;
-	char path[MAX_RESOURCE_LEN];
+	uint32_t temp = 0U;
+	struct lwm2m_obj_path path = LWM2M_OBJ(IPSO_OBJECT_TIMER_ID, timer->obj_inst_id,
+					       DIGITAL_STATE_RID);
 
 	/* make sure timer is enabled and not already active */
 	if (timer->timer_mode == TIMER_MODE_OFF || timer->active ||
@@ -138,7 +114,7 @@ static int start_timer(struct ipso_timer_data *timer)
 	}
 
 	/* check min off time from last trigger_offset */
-	float2ms(&timer->min_off_time, &temp);
+	temp = timer->min_off_time * MSEC_PER_SEC;
 	if (k_uptime_get() < timer->trigger_offset + temp) {
 		return -EINVAL;
 	}
@@ -148,19 +124,18 @@ static int start_timer(struct ipso_timer_data *timer)
 	timer->trigger_offset = k_uptime_get();
 	timer->trigger_counter += 1U;
 
-	snprintk(path, MAX_RESOURCE_LEN, "%d/%u/%d", IPSO_OBJECT_TIMER_ID,
-		 timer->obj_inst_id, TIMER_DIGITAL_STATE_ID);
-	lwm2m_engine_set_bool(path, true);
+	lwm2m_set_bool(&path, true);
 
-	float2ms(&timer->delay_duration, &temp);
-	k_delayed_work_submit(&timer->timer_work, temp);
+	temp = timer->delay_duration * MSEC_PER_SEC;
+	k_work_reschedule(&timer->timer_work, K_MSEC(temp));
 
 	return 0;
 }
 
 static int stop_timer(struct ipso_timer_data *timer, bool cancel)
 {
-	char path[MAX_RESOURCE_LEN];
+	struct lwm2m_obj_path path = LWM2M_OBJ(IPSO_OBJECT_TIMER_ID, timer->obj_inst_id,
+					       DIGITAL_STATE_RID);
 
 	/* make sure timer is active */
 	if (!timer->active) {
@@ -168,22 +143,20 @@ static int stop_timer(struct ipso_timer_data *timer, bool cancel)
 	}
 
 	timer->cumulative_time_ms += k_uptime_get() - timer->trigger_offset;
-	snprintk(path, MAX_RESOURCE_LEN, "%d/%u/%d", IPSO_OBJECT_TIMER_ID,
-		 timer->obj_inst_id, TIMER_DIGITAL_STATE_ID);
-	lwm2m_engine_set_bool(path, false);
+	lwm2m_set_bool(&path, false);
 
 	if (cancel) {
-		k_delayed_work_cancel(&timer->timer_work);
+		k_work_cancel_delayable(&timer->timer_work);
 	}
 
 	return 0;
 }
 
-static void *remaining_time_read_cb(u16_t obj_inst_id,
-				    u16_t res_id, u16_t res_inst_id,
+static void *remaining_time_read_cb(uint16_t obj_inst_id,
+				    uint16_t res_id, uint16_t res_inst_id,
 				    size_t *data_len)
 {
-	u32_t temp = 0U;
+	uint32_t temp = 0U;
 	int i;
 
 	i = get_timer_index(obj_inst_id);
@@ -192,24 +165,23 @@ static void *remaining_time_read_cb(u16_t obj_inst_id,
 	}
 
 	if (timer_data[i].active) {
-		float2ms(&timer_data[i].delay_duration, &temp);
+		temp = timer_data[i].delay_duration * MSEC_PER_SEC;
 		temp -= (k_uptime_get() - timer_data[i].trigger_offset);
-		ms2float(temp, &timer_data[i].remaining_time);
+		timer_data[i].remaining_time = (double)temp / MSEC_PER_SEC;
 	} else {
-		timer_data[i].remaining_time.val1 = 0;
-		timer_data[i].remaining_time.val2 = 0;
+		timer_data[i].remaining_time = 0;
 	}
 
 	*data_len = sizeof(timer_data[i].remaining_time);
 	return &timer_data[i].remaining_time;
 }
 
-static void *cumulative_time_read_cb(u16_t obj_inst_id,
-				     u16_t res_id, u16_t res_inst_id,
+static void *cumulative_time_read_cb(uint16_t obj_inst_id,
+				     uint16_t res_id, uint16_t res_inst_id,
 				     size_t *data_len)
 {
 	int i;
-	u32_t temp;
+	uint32_t temp;
 
 	i = get_timer_index(obj_inst_id);
 	if (i < 0) {
@@ -221,15 +193,15 @@ static void *cumulative_time_read_cb(u16_t obj_inst_id,
 		temp += k_uptime_get() - timer_data[i].trigger_offset;
 	}
 
-	ms2float(temp, &timer_data[i].cumulative_time);
+	timer_data[i].cumulative_time = (double)temp / MSEC_PER_SEC;
 
 	*data_len = sizeof(timer_data[i].cumulative_time);
 	return &timer_data[i].cumulative_time;
 }
 
-static int cumulative_time_post_write_cb(u16_t obj_inst_id,
-					 u16_t res_id, u16_t res_inst_id,
-					 u8_t *data, u16_t data_len,
+static int cumulative_time_post_write_cb(uint16_t obj_inst_id,
+					 uint16_t res_id, uint16_t res_inst_id,
+					 uint8_t *data, uint16_t data_len,
 					 bool last_block, size_t total_size)
 {
 	int i;
@@ -243,9 +215,9 @@ static int cumulative_time_post_write_cb(u16_t obj_inst_id,
 	return 0;
 }
 
-static int enabled_post_write_cb(u16_t obj_inst_id,
-				 u16_t res_id, u16_t res_inst_id,
-				 u8_t *data, u16_t data_len,
+static int enabled_post_write_cb(uint16_t obj_inst_id,
+				 uint16_t res_id, uint16_t res_inst_id,
+				 uint8_t *data, uint16_t data_len,
 				 bool last_block, size_t total_size)
 {
 	int i;
@@ -263,9 +235,9 @@ static int enabled_post_write_cb(u16_t obj_inst_id,
 	return 0;
 }
 
-static int trigger_counter_post_write_cb(u16_t obj_inst_id,
-					 u16_t res_id, u16_t res_inst_id,
-					 u8_t *data, u16_t data_len,
+static int trigger_counter_post_write_cb(uint16_t obj_inst_id,
+					 uint16_t res_id, uint16_t res_inst_id,
+					 uint8_t *data, uint16_t data_len,
 					 bool last_block, size_t total_size)
 {
 	int i;
@@ -281,13 +253,15 @@ static int trigger_counter_post_write_cb(u16_t obj_inst_id,
 
 static void timer_work_cb(struct k_work *work)
 {
-	struct ipso_timer_data *timer = CONTAINER_OF(work,
+	struct k_work_delayable *dwork = k_work_delayable_from_work(work);
+	struct ipso_timer_data *timer = CONTAINER_OF(dwork,
 						     struct ipso_timer_data,
 						     timer_work);
 	stop_timer(timer, false);
 }
 
-static int timer_trigger_cb(u16_t obj_inst_id)
+static int timer_trigger_cb(uint16_t obj_inst_id,
+			    uint8_t *args, uint16_t args_len)
 {
 	int i;
 
@@ -299,7 +273,7 @@ static int timer_trigger_cb(u16_t obj_inst_id)
 	return start_timer(&timer_data[i]);
 }
 
-static struct lwm2m_engine_obj_inst *timer_create(u16_t obj_inst_id)
+static struct lwm2m_engine_obj_inst *timer_inst_create(uint16_t obj_inst_id)
 {
 	int index, avail = -1, i = 0, j = 0;
 
@@ -325,8 +299,8 @@ static struct lwm2m_engine_obj_inst *timer_create(u16_t obj_inst_id)
 
 	/* Set default values */
 	(void)memset(&timer_data[avail], 0, sizeof(timer_data[avail]));
-	k_delayed_work_init(&timer_data[avail].timer_work, timer_work_cb);
-	timer_data[avail].delay_duration.val1 = 5; /* 5 seconds */
+	k_work_init_delayable(&timer_data[avail].timer_work, timer_work_cb);
+	timer_data[avail].delay_duration = 5; /* 5 seconds */
 	timer_data[avail].enabled = true;
 	timer_data[avail].timer_mode = TIMER_MODE_ONE_SHOT;
 	timer_data[avail].obj_inst_id = obj_inst_id;
@@ -336,42 +310,37 @@ static struct lwm2m_engine_obj_inst *timer_create(u16_t obj_inst_id)
 	init_res_instance(res_inst[avail], ARRAY_SIZE(res_inst[avail]));
 
 	/* initialize instance resource data */
-	INIT_OBJ_RES_DATA(TIMER_DELAY_DURATION_ID, res[avail], i,
+	INIT_OBJ_RES_DATA(DELAY_DURATION_RID, res[avail], i,
 			  res_inst[avail], j, &timer_data[avail].delay_duration,
 			  sizeof(timer_data[avail].delay_duration));
-	INIT_OBJ_RES(TIMER_REMAINING_TIME_ID, res[avail], i,
-		     res_inst[avail], j, 1, true,
-		     &timer_data[avail].remaining_time,
+	INIT_OBJ_RES(REMAINING_TIME_RID, res[avail], i, res_inst[avail], j, 1,
+		     false, true, &timer_data[avail].remaining_time,
 		     sizeof(timer_data[avail].remaining_time),
-		     remaining_time_read_cb, NULL, NULL, NULL);
-	INIT_OBJ_RES_DATA(TIMER_MINIMUM_OFF_TIME_ID, res[avail], i,
+		     remaining_time_read_cb, NULL, NULL, NULL, NULL);
+	INIT_OBJ_RES_DATA(MINIMUM_OFF_TIME_RID, res[avail], i,
 			  res_inst[avail], j, &timer_data[avail].min_off_time,
 			  sizeof(timer_data[avail].min_off_time));
-	INIT_OBJ_RES_EXECUTE(TIMER_TRIGGER_ID, res[avail], i,
-			     timer_trigger_cb);
-	INIT_OBJ_RES(TIMER_ON_OFF_ID, res[avail], i,
-		     res_inst[avail], j, 1, true,
-		     &timer_data[avail].enabled,
+	INIT_OBJ_RES_EXECUTE(TRIGGER_RID, res[avail], i, timer_trigger_cb);
+	INIT_OBJ_RES(ON_OFF_RID, res[avail], i, res_inst[avail], j, 1, false,
+		     true, &timer_data[avail].enabled,
 		     sizeof(timer_data[avail].enabled),
-		     NULL, NULL, enabled_post_write_cb, NULL);
-	INIT_OBJ_RES(TIMER_CUMULATIVE_TIME_ID, res[avail], i,
-		     res_inst[avail], j, 1, true,
-		     &timer_data[avail].cumulative_time,
+		     NULL, NULL, NULL, enabled_post_write_cb, NULL);
+	INIT_OBJ_RES(CUMULATIVE_TIME_RID, res[avail], i, res_inst[avail], j, 1,
+		     false, true, &timer_data[avail].cumulative_time,
 		     sizeof(timer_data[avail].cumulative_time),
-		     cumulative_time_read_cb, NULL,
+		     cumulative_time_read_cb, NULL, NULL,
 		     cumulative_time_post_write_cb, NULL);
-	INIT_OBJ_RES_DATA(TIMER_DIGITAL_STATE_ID, res[avail], i,
+	INIT_OBJ_RES_DATA(DIGITAL_STATE_RID, res[avail], i,
 			  res_inst[avail], j, &timer_data[avail].active,
 			  sizeof(timer_data[avail].active));
-	INIT_OBJ_RES(TIMER_COUNTER_ID, res[avail], i,
-		     res_inst[avail], j, 1, true,
-		     &timer_data[avail].trigger_counter,
+	INIT_OBJ_RES(COUNTER_RID, res[avail], i, res_inst[avail], j, 1, false,
+		     true, &timer_data[avail].trigger_counter,
 		     sizeof(timer_data[avail].trigger_counter),
-		     NULL, NULL, trigger_counter_post_write_cb, NULL);
-	INIT_OBJ_RES_DATA(TIMER_MODE_ID, res[avail], i, res_inst[avail], j,
+		     NULL, NULL, NULL, trigger_counter_post_write_cb, NULL);
+	INIT_OBJ_RES_DATA(TIMER_MODE_RID, res[avail], i, res_inst[avail], j,
 			  &timer_data[avail].timer_mode,
 			  sizeof(timer_data[avail].timer_mode));
-	INIT_OBJ_RES_OPTDATA(TIMER_APPLICATION_TYPE_ID, res[avail], i,
+	INIT_OBJ_RES_OPTDATA(APPLICATION_TYPE_RID, res[avail], i,
 			     res_inst[avail], j);
 
 	inst[avail].resources = res[avail];
@@ -382,13 +351,16 @@ static struct lwm2m_engine_obj_inst *timer_create(u16_t obj_inst_id)
 	return &inst[avail];
 }
 
-static int ipso_timer_init(struct device *dev)
+static int ipso_timer_init(void)
 {
 	timer.obj_id = IPSO_OBJECT_TIMER_ID;
+	timer.version_major = TIMER_VERSION_MAJOR;
+	timer.version_minor = TIMER_VERSION_MINOR;
+	timer.is_core = false;
 	timer.fields = fields;
 	timer.field_count = ARRAY_SIZE(fields);
 	timer.max_instance_count = MAX_INSTANCE_COUNT;
-	timer.create_cb = timer_create;
+	timer.create_cb = timer_inst_create;
 	lwm2m_register_obj(&timer);
 
 	return 0;

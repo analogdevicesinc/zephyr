@@ -1,12 +1,55 @@
 /*
- * Copyright (c) 2016-2017 Nordic Semiconductor ASA
+ * Copyright (c) 2016-2020 Nordic Semiconductor ASA
  * Copyright (c) 2016 Vinayak Kariappa Chettimada
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifdef CONFIG_BT_CTLR_DEBUG_PINS
-#if defined(CONFIG_BOARD_NRF52840_PCA10056)
+#if defined(CONFIG_BT_CTLR_DEBUG_PINS) || \
+	defined(CONFIG_BT_CTLR_DEBUG_PINS_CPUAPP)
+#if defined(CONFIG_BOARD_NRF5340DK_NRF5340_CPUAPP) || \
+	defined(CONFIG_BOARD_NRF5340DK_NRF5340_CPUAPP_NS) || \
+	defined(CONFIG_BOARD_NRF5340DK_NRF5340_CPUNET)
+#define DEBUG_PORT       NRF_P1
+#define DEBUG_PIN_IDX0   0
+#define DEBUG_PIN_IDX1   1
+#define DEBUG_PIN_IDX2   4
+#define DEBUG_PIN_IDX3   5
+#define DEBUG_PIN_IDX4   6
+#define DEBUG_PIN_IDX5   7
+#define DEBUG_PIN_IDX6   8
+#define DEBUG_PIN_IDX7   9
+#define DEBUG_PIN_IDX8   10
+#define DEBUG_PIN_IDX9   11
+#define DEBUG_PIN0       BIT(DEBUG_PIN_IDX0)
+#define DEBUG_PIN1       BIT(DEBUG_PIN_IDX1)
+#define DEBUG_PIN2       BIT(DEBUG_PIN_IDX2)
+#define DEBUG_PIN3       BIT(DEBUG_PIN_IDX3)
+#define DEBUG_PIN4       BIT(DEBUG_PIN_IDX4)
+#define DEBUG_PIN5       BIT(DEBUG_PIN_IDX5)
+#define DEBUG_PIN6       BIT(DEBUG_PIN_IDX6)
+#define DEBUG_PIN7       BIT(DEBUG_PIN_IDX7)
+#define DEBUG_PIN8       BIT(DEBUG_PIN_IDX8)
+#define DEBUG_PIN9       BIT(DEBUG_PIN_IDX9)
+#if defined(CONFIG_BOARD_NRF5340DK_NRF5340_CPUAPP) || \
+	(defined(CONFIG_BOARD_NRF5340DK_NRF5340_CPUAPP_NS) && defined(CONFIG_BUILD_WITH_TFM))
+#include <soc_secure.h>
+#define DEBUG_SETUP() \
+	do { \
+		soc_secure_gpio_pin_mcu_select(32 + DEBUG_PIN_IDX0, NRF_GPIO_PIN_SEL_NETWORK); \
+		soc_secure_gpio_pin_mcu_select(32 + DEBUG_PIN_IDX1, NRF_GPIO_PIN_SEL_NETWORK); \
+		soc_secure_gpio_pin_mcu_select(32 + DEBUG_PIN_IDX2, NRF_GPIO_PIN_SEL_NETWORK); \
+		soc_secure_gpio_pin_mcu_select(32 + DEBUG_PIN_IDX3, NRF_GPIO_PIN_SEL_NETWORK); \
+		soc_secure_gpio_pin_mcu_select(32 + DEBUG_PIN_IDX4, NRF_GPIO_PIN_SEL_NETWORK); \
+		soc_secure_gpio_pin_mcu_select(32 + DEBUG_PIN_IDX5, NRF_GPIO_PIN_SEL_NETWORK); \
+		soc_secure_gpio_pin_mcu_select(32 + DEBUG_PIN_IDX6, NRF_GPIO_PIN_SEL_NETWORK); \
+		soc_secure_gpio_pin_mcu_select(32 + DEBUG_PIN_IDX7, NRF_GPIO_PIN_SEL_NETWORK); \
+		soc_secure_gpio_pin_mcu_select(32 + DEBUG_PIN_IDX8, NRF_GPIO_PIN_SEL_NETWORK); \
+		soc_secure_gpio_pin_mcu_select(32 + DEBUG_PIN_IDX9, NRF_GPIO_PIN_SEL_NETWORK); \
+	} while (0)
+#endif /* CONFIG_BOARD_NRF5340DK_NRF5340_CPUAPP */
+#elif defined(CONFIG_BOARD_NRF52840DK_NRF52840) || \
+	defined(CONFIG_BOARD_NRF52833DK_NRF52833)
 #define DEBUG_PORT       NRF_P1
 #define DEBUG_PIN0       BIT(1)
 #define DEBUG_PIN1       BIT(2)
@@ -18,8 +61,8 @@
 #define DEBUG_PIN7       BIT(8)
 #define DEBUG_PIN8       BIT(10)
 #define DEBUG_PIN9       BIT(11)
-#elif defined(CONFIG_BOARD_NRF52_PCA10040) || \
-	defined(CONFIG_BOARD_NRF52810_PCA10040)
+#elif defined(CONFIG_BOARD_NRF52DK_NRF52832) || \
+	defined(CONFIG_BOARD_NRF52DK_NRF52810)
 #define DEBUG_PORT       NRF_GPIO
 #define DEBUG_PIN0       BIT(11)
 #define DEBUG_PIN1       BIT(12)
@@ -31,7 +74,7 @@
 #define DEBUG_PIN7       BIT(18)
 #define DEBUG_PIN8       BIT(19)
 #define DEBUG_PIN9       BIT(20)
-#elif defined(CONFIG_BOARD_NRF51_PCA10028)
+#elif defined(CONFIG_BOARD_NRF51DK_NRF51422)
 #define DEBUG_PORT       NRF_GPIO
 #define DEBUG_PIN0       BIT(12)
 #define DEBUG_PIN1       BIT(13)
@@ -300,4 +343,40 @@
 #define DEBUG_RADIO_PREPARE_M(flag)
 #define DEBUG_RADIO_START_M(flag)
 #define DEBUG_RADIO_CLOSE_M(flag)
+#endif /* CONFIG_BT_CTLR_DEBUG_PINS */
+
+#if defined(CONFIG_BT_CTLR_DEBUG_PINS) || \
+	defined(CONFIG_BT_CTLR_DEBUG_PINS_CPUAPP)
+#define DEBUG_COEX_PORT NRF_P1
+#define DEBUG_COEX_PIN_GRANT BIT(12)
+#define DEBUG_COEX_PIN_IRQ BIT(13)
+#define DEBUG_COEX_PIN_MASK    (DEBUG_COEX_PIN_IRQ | DEBUG_COEX_PIN_GRANT)
+#define DEBUG_COEX_INIT() \
+	do { \
+		DEBUG_COEX_PORT->DIRSET = DEBUG_COEX_PIN_MASK; \
+		DEBUG_COEX_PORT->OUTCLR = DEBUG_COEX_PIN_MASK; \
+	} while (0)
+
+#define DEBUG_COEX_GRANT(flag) \
+	do { \
+		if (flag) { \
+			DEBUG_COEX_PORT->OUTSET = DEBUG_COEX_PIN_GRANT; \
+		} else { \
+			DEBUG_COEX_PORT->OUTCLR = DEBUG_COEX_PIN_GRANT; \
+		} \
+	} while (0)
+
+
+#define DEBUG_COEX_IRQ(flag) \
+	do { \
+		if (flag) { \
+			DEBUG_COEX_PORT->OUTSET = DEBUG_COEX_PIN_IRQ; \
+		} else { \
+			DEBUG_COEX_PORT->OUTCLR = DEBUG_COEX_PIN_IRQ; \
+		} \
+	} while (0)
+#else
+#define DEBUG_COEX_INIT()
+#define DEBUG_COEX_GRANT(flag)
+#define DEBUG_COEX_IRQ(flag)
 #endif /* CONFIG_BT_CTLR_DEBUG_PINS */

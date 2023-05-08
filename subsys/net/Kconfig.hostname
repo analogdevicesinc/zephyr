@@ -1,10 +1,7 @@
-# Kconfig - Hostname config
+# Hostname config
 
-#
 # Copyright (c) 2017 Intel Corporation.
-#
 # SPDX-License-Identifier: Apache-2.0
-#
 
 config NET_HOSTNAME_ENABLE
 	bool "Add hostname to the device"
@@ -26,6 +23,14 @@ config NET_HOSTNAME_UNIQUE
 	  This will append link address to hostname to create a unique
 	  hostname. For example, zephyr00005e005357 could be the hostname
 	  if this setting is enabled.
+
+config NET_HOSTNAME_UNIQUE_UPDATE
+	bool "Update unique hostname"
+	depends on NET_HOSTNAME_UNIQUE
+	help
+	  This will update the unique hostname on link address changes. By
+	  default, this option is disabled, which means the unique hostname
+	  is set once at start-up and is not updated afterwards.
 
 module = NET_HOSTNAME
 module-dep = NET_LOG

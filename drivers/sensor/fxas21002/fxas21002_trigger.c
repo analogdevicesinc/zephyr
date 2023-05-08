@@ -4,26 +4,27 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+#define DT_DRV_COMPAT nxp_fxas21002
+
+#include <zephyr/logging/log.h>
 
 #include "fxas21002.h"
 
-#define LOG_LEVEL CONFIG_SENSOR_LOG_LEVEL
-#include <logging/log.h>
-LOG_MODULE_DECLARE(FXAS21002);
+LOG_MODULE_DECLARE(FXAS21002, CONFIG_SENSOR_LOG_LEVEL);
 
-static void fxas21002_gpio_callback(struct device *dev,
-				   struct gpio_callback *cb,
-				   u32_t pin_mask)
+static void fxas21002_gpio_callback(const struct device *dev,
+				    struct gpio_callback *cb,
+				    uint32_t pin_mask)
 {
 	struct fxas21002_data *data =
 		CONTAINER_OF(cb, struct fxas21002_data, gpio_cb);
+	const struct fxas21002_config *config = data->dev->config;
 
-	if ((pin_mask & BIT(data->gpio_pin)) == 0U) {
+	if ((pin_mask & BIT(config->int_gpio.pin)) == 0U) {
 		return;
 	}
 
-	gpio_pin_disable_callback(dev, data->gpio_pin);
+	gpio_pin_interrupt_configure_dt(&config->int_gpio, GPIO_INT_DISABLE);
 
 #if defined(CONFIG_FXAS21002_TRIGGER_OWN_THREAD)
 	k_sem_give(&data->trig_sem);
@@ -32,34 +33,27 @@ static void fxas21002_gpio_callback(struct device *dev,
 #endif
 }
 
-static int fxas21002_handle_drdy_int(struct device *dev)
+static int fxas21002_handle_drdy_int(const struct device *dev)
 {
-	struct fxas21002_data *data = dev->driver_data;
-
-	struct sensor_trigger drdy_trig = {
-		.type = SENSOR_TRIG_DATA_READY,
-		.chan = SENSOR_CHAN_ALL,
-	};
+	struct fxas21002_data *data = dev->data;
 
 	if (data->drdy_handler) {
-		data->drdy_handler(dev, &drdy_trig);
+		data->drdy_handler(dev, data->drdy_trig);
 	}
 
 	return 0;
 }
 
-static void fxas21002_handle_int(void *arg)
+static void fxas21002_handle_int(const struct device *dev)
 {
-	struct device *dev = (struct device *)arg;
-	const struct fxas21002_config *config = dev->config->config_info;
-	struct fxas21002_data *data = dev->driver_data;
-	u8_t int_source;
+	const struct fxas21002_config *config = dev->config;
+	struct fxas21002_data *data = dev->data;
+	uint8_t int_source;
 
 	k_sem_take(&data->sem, K_FOREVER);
 
-	if (i2c_reg_read_byte(data->i2c, config->i2c_address,
-			      FXAS21002_REG_INT_SOURCE,
-			      &int_source)) {
+	if (config->ops->byte_read(dev, FXAS21002_REG_INT_SOURCE,
+				   &int_source)) {
 		LOG_ERR("Could not read interrupt source");
 		int_source = 0U;
 	}
@@ -70,21 +64,15 @@ static void fxas21002_handle_int(void *arg)
 		fxas21002_handle_drdy_int(dev);
 	}
 
-	gpio_pin_enable_callback(data->gpio, config->gpio_pin);
+	gpio_pin_interrupt_configure_dt(&config->int_gpio, GPIO_INT_EDGE_TO_ACTIVE);
 }
 
 #ifdef CONFIG_FXAS21002_TRIGGER_OWN_THREAD
-static void fxas21002_thread_main(void *arg1, void *unused1, void *unused2)
+static void fxas21002_thread_main(struct fxas21002_data *data)
 {
-	struct device *dev = (struct device *)arg1;
-	struct fxas21002_data *data = dev->driver_data;
-
-	ARG_UNUSED(unused1);
-	ARG_UNUSED(unused2);
-
 	while (true) {
 		k_sem_take(&data->trig_sem, K_FOREVER);
-		fxas21002_handle_int(dev);
+		fxas21002_handle_int(data->dev);
 	}
 }
 #endif
@@ -99,16 +87,20 @@ static void fxas21002_work_handler(struct k_work *work)
 }
 #endif
 
-int fxas21002_trigger_set(struct device *dev,
-			 const struct sensor_trigger *trig,
-			 sensor_trigger_handler_t handler)
+int fxas21002_trigger_set(const struct device *dev,
+			  const struct sensor_trigger *trig,
+			  sensor_trigger_handler_t handler)
 {
-	const struct fxas21002_config *config = dev->config->config_info;
-	struct fxas21002_data *data = dev->driver_data;
+	const struct fxas21002_config *config = dev->config;
+	struct fxas21002_data *data = dev->data;
 	enum fxas21002_power power = FXAS21002_POWER_STANDBY;
-	u32_t transition_time;
-	u8_t mask;
+	uint32_t transition_time;
+	uint8_t mask;
 	int ret = 0;
+
+	if (!config->int_gpio.port) {
+		return -ENOTSUP;
+	}
 
 	k_sem_take(&data->sem, K_FOREVER);
 
@@ -116,6 +108,7 @@ int fxas21002_trigger_set(struct device *dev,
 	case SENSOR_TRIG_DATA_READY:
 		mask = FXAS21002_CTRLREG2_CFG_EN_MASK;
 		data->drdy_handler = handler;
+		data->drdy_trig = trig;
 		break;
 	default:
 		LOG_ERR("Unsupported sensor trigger");
@@ -141,10 +134,8 @@ int fxas21002_trigger_set(struct device *dev,
 	}
 
 	/* Configure the sensor interrupt */
-	if (i2c_reg_update_byte(data->i2c, config->i2c_address,
-				FXAS21002_REG_CTRLREG2,
-				mask,
-				handler ? mask : 0)) {
+	if (config->ops->reg_field_update(dev, FXAS21002_REG_CTRLREG2, mask,
+					  handler ? mask : 0)) {
 		LOG_ERR("Could not configure interrupt");
 		ret = -EIO;
 		goto exit;
@@ -169,21 +160,24 @@ exit:
 	return ret;
 }
 
-int fxas21002_trigger_init(struct device *dev)
+int fxas21002_trigger_init(const struct device *dev)
 {
-	const struct fxas21002_config *config = dev->config->config_info;
-	struct fxas21002_data *data = dev->driver_data;
-	u8_t ctrl_reg2;
+	const struct fxas21002_config *config = dev->config;
+	struct fxas21002_data *data = dev->data;
+	uint8_t ctrl_reg2;
+	int ret;
+
+	data->dev = dev;
 
 #if defined(CONFIG_FXAS21002_TRIGGER_OWN_THREAD)
-	k_sem_init(&data->trig_sem, 0, UINT_MAX);
+	k_sem_init(&data->trig_sem, 0, K_SEM_MAX_LIMIT);
 	k_thread_create(&data->thread, data->thread_stack,
 			CONFIG_FXAS21002_THREAD_STACK_SIZE,
-			fxas21002_thread_main, dev, 0, NULL,
-			K_PRIO_COOP(CONFIG_FXAS21002_THREAD_PRIORITY), 0, K_NO_WAIT);
+			(k_thread_entry_t)fxas21002_thread_main, data, 0, NULL,
+			K_PRIO_COOP(CONFIG_FXAS21002_THREAD_PRIORITY),
+			0, K_NO_WAIT);
 #elif defined(CONFIG_FXAS21002_TRIGGER_GLOBAL_THREAD)
 	data->work.handler = fxas21002_work_handler;
-	data->dev = dev;
 #endif
 
 	/* Route the interrupts to INT1/INT2 pins */
@@ -192,31 +186,34 @@ int fxas21002_trigger_init(struct device *dev)
 	ctrl_reg2 |= FXAS21002_CTRLREG2_CFG_DRDY_MASK;
 #endif
 
-	if (i2c_reg_write_byte(data->i2c, config->i2c_address,
-			       FXAS21002_REG_CTRLREG2, ctrl_reg2)) {
+	if (config->ops->byte_write(dev, FXAS21002_REG_CTRLREG2,
+				    ctrl_reg2)) {
 		LOG_ERR("Could not configure interrupt pin routing");
 		return -EIO;
 	}
 
-	/* Get the GPIO device */
-	data->gpio = device_get_binding(config->gpio_name);
-	if (data->gpio == NULL) {
-		LOG_ERR("Could not find GPIO device");
-		return -EINVAL;
+	if (!device_is_ready(config->int_gpio.port)) {
+		LOG_ERR("GPIO device not ready");
+		return -ENODEV;
 	}
 
-	data->gpio_pin = config->gpio_pin;
-
-	gpio_pin_configure(data->gpio, config->gpio_pin,
-			   GPIO_DIR_IN | GPIO_INT | GPIO_INT_EDGE |
-			   GPIO_INT_ACTIVE_LOW | GPIO_INT_DEBOUNCE);
+	ret = gpio_pin_configure_dt(&config->int_gpio, GPIO_INPUT);
+	if (ret < 0) {
+		return ret;
+	}
 
 	gpio_init_callback(&data->gpio_cb, fxas21002_gpio_callback,
-			   BIT(config->gpio_pin));
+			   BIT(config->int_gpio.pin));
 
-	gpio_add_callback(data->gpio, &data->gpio_cb);
+	ret = gpio_add_callback(config->int_gpio.port, &data->gpio_cb);
+	if (ret < 0) {
+		return ret;
+	}
 
-	gpio_pin_enable_callback(data->gpio, config->gpio_pin);
+	ret = gpio_pin_interrupt_configure_dt(&config->int_gpio, GPIO_INT_EDGE_TO_ACTIVE);
+	if (ret < 0) {
+		return ret;
+	}
 
 	return 0;
 }

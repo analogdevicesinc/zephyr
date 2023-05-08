@@ -15,11 +15,10 @@
  *
  * @brief Semaphore signal speed test
  *
- * @return N/A
  */
 void sema_test(void)
 {
-	u32_t et; /* elapsed Time */
+	uint32_t et; /* elapsed Time */
 	int i;
 
 	PRINT_STRING(dashline, output_file);

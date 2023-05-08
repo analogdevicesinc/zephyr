@@ -14,8 +14,9 @@
 #ifndef ZEPHYR_KERNEL_INCLUDE_KERNEL_INTERNAL_H_
 #define ZEPHYR_KERNEL_INCLUDE_KERNEL_INTERNAL_H_
 
-#include <kernel.h>
-#include <stdbool.h>
+#include <zephyr/kernel.h>
+#include <kernel_arch_interface.h>
+#include <string.h>
 
 #ifndef _ASMLANGUAGE
 
@@ -24,6 +25,9 @@ extern "C" {
 #endif
 
 /* Early boot functions */
+
+void z_early_memset(void *dst, int c, size_t n);
+void z_early_memcpy(void *dst, const void *src, size_t n);
 
 void z_bss_zero(void);
 #ifdef CONFIG_XIP
@@ -34,204 +38,53 @@ static inline void z_data_copy(void)
 	/* Do nothing */
 }
 #endif
+
+#ifdef CONFIG_LINKER_USE_BOOT_SECTION
+void z_bss_zero_boot(void);
+#else
+static inline void z_bss_zero_boot(void)
+{
+	/* Do nothing */
+}
+#endif
+
+#ifdef CONFIG_LINKER_USE_PINNED_SECTION
+void z_bss_zero_pinned(void);
+#else
+static inline void z_bss_zero_pinned(void)
+{
+	/* Do nothing */
+}
+#endif
+
 FUNC_NORETURN void z_cstart(void);
+
+void z_device_state_init(void);
 
 extern FUNC_NORETURN void z_thread_entry(k_thread_entry_t entry,
 			  void *p1, void *p2, void *p3);
 
-/* Implemented by architectures. Only called from z_setup_new_thread. */
-extern void z_new_thread(struct k_thread *thread, k_thread_stack_t *pStack,
-			size_t stackSize, k_thread_entry_t entry,
-			void *p1, void *p2, void *p3,
-			int prio, unsigned int options);
-
-extern void z_setup_new_thread(struct k_thread *new_thread,
-			      k_thread_stack_t *stack, size_t stack_size,
-			      k_thread_entry_t entry,
-			      void *p1, void *p2, void *p3,
-			      int prio, u32_t options, const char *name);
-
-#if defined(CONFIG_FLOAT) && defined(CONFIG_FP_SHARING)
-/**
- * @brief Disable floating point context preservation
- *
- * The function is used to disable the preservation of floating
- * point context information for a particular thread.
- *
- * @note
- * For ARM architecture, disabling floating point preservation
- * - may only be requested for the current thread
- * - cannot be requested in ISRs.
- *
- * @retval 0       On success.
- * @retval -EINVAL If the floating point disabling could not be performed.
- */
-extern int z_arch_float_disable(struct k_thread *thread);
-#endif /* CONFIG_FLOAT && CONFIG_FP_SHARING */
-
-#ifdef CONFIG_USERSPACE
-/**
- * @brief Get the maximum number of partitions for a memory domain
- *
- * @return Max number of partitions, or -1 if there is no limit
- */
-extern int z_arch_mem_domain_max_partitions_get(void);
+extern char *z_setup_new_thread(struct k_thread *new_thread,
+				k_thread_stack_t *stack, size_t stack_size,
+				k_thread_entry_t entry,
+				void *p1, void *p2, void *p3,
+				int prio, uint32_t options, const char *name);
 
 /**
- * @brief Add a thread to a memory domain (arch-specific)
+ * @brief Allocate aligned memory from the current thread's resource pool
  *
- * Architecture-specific hook to manage internal data structures or hardware
- * state when the provided thread has been added to a memory domain.
+ * Threads may be assigned a resource pool, which will be used to allocate
+ * memory on behalf of certain kernel and driver APIs. Memory reserved
+ * in this way should be freed with k_free().
  *
- * The thread's memory domain pointer will be set to the domain to be added
- * to.
+ * If called from an ISR, the k_malloc() system heap will be used if it exists.
  *
- * @param thread Thread which needs to be configured.
+ * @param align Required memory alignment
+ * @param size Memory allocation size
+ * @return A pointer to the allocated memory, or NULL if there is insufficient
+ * RAM in the pool or there is no pool to draw memory from
  */
-extern void z_arch_mem_domain_thread_add(struct k_thread *thread);
-
-/**
- * @brief Remove a thread from a memory domain (arch-specific)
- *
- * Architecture-specific hook to manage internal data structures or hardware
- * state when the provided thread has been removed from a memory domain.
- *
- * The thread's memory domain pointer will be the domain that the thread
- * is being removed from.
- *
- * @param thread Thread being removed from its memory domain
- */
-extern void z_arch_mem_domain_thread_remove(struct k_thread *thread);
-
-/**
- * @brief Remove a partition from the memory domain (arch-specific)
- *
- * Architecture-specific hook to manage internal data structures or hardware
- * state when a memory domain has had a partition removed.
- *
- * The partition index data, and the number of partitions configured, are not
- * respectively cleared and decremented in the domain until after this function
- * runs.
- *
- * @param domain The memory domain structure
- * @param partition_id The partition index that needs to be deleted
- */
-extern void z_arch_mem_domain_partition_remove(struct k_mem_domain *domain,
-					       u32_t partition_id);
-
-/**
- * @brief Add a partition to the memory domain
- *
- * Architecture-specific hook to manage internal data structures or hardware
- * state when a memory domain has a partition added.
- *
- * @param domain The memory domain structure
- * @param partition_id The partition that needs to be added
- */
-extern void z_arch_mem_domain_partition_add(struct k_mem_domain *domain,
-					    u32_t partition_id);
-
-/**
- * @brief Remove the memory domain
- *
- * Architecture-specific hook to manage internal data structures or hardware
- * state when a memory domain has been destroyed.
- *
- * Thread assignments to the memory domain are only cleared after this function
- * runs.
- *
- * @param domain The memory domain structure which needs to be deleted.
- */
-extern void z_arch_mem_domain_destroy(struct k_mem_domain *domain);
-
-/**
- * @brief Check memory region permissions
- *
- * Given a memory region, return whether the current memory management hardware
- * configuration would allow a user thread to read/write that region. Used by
- * system calls to validate buffers coming in from userspace.
- *
- * Notes:
- * The function is guaranteed to never return validation success, if the entire
- * buffer area is not user accessible.
- *
- * The function is guaranteed to correctly validate the permissions of the
- * supplied buffer, if the user access permissions of the entire buffer are
- * enforced by a single, enabled memory management region.
- *
- * In some architectures the validation will always return failure
- * if the supplied memory buffer spans multiple enabled memory management
- * regions (even if all such regions permit user access).
- *
- * @param addr start address of the buffer
- * @param size the size of the buffer
- * @param write If nonzero, additionally check if the area is writable.
- *	  Otherwise, just check if the memory can be read.
- *
- * @return nonzero if the permissions don't match.
- */
-extern int z_arch_buffer_validate(void *addr, size_t size, int write);
-
-/**
- * Perform a one-way transition from supervisor to kernel mode.
- *
- * Implementations of this function must do the following:
- * - Reset the thread's stack pointer to a suitable initial value. We do not
- *   need any prior context since this is a one-way operation.
- * - Set up any kernel stack region for the CPU to use during privilege
- *   elevation
- * - Put the CPU in whatever its equivalent of user mode is
- * - Transfer execution to z_new_thread() passing along all the supplied
- *   arguments, in user mode.
- *
- * @param Entry point to start executing as a user thread
- * @param p1 1st parameter to user thread
- * @param p2 2nd parameter to user thread
- * @param p3 3rd parameter to user thread
- */
-extern FUNC_NORETURN
-void z_arch_user_mode_enter(k_thread_entry_t user_entry, void *p1, void *p2,
-			   void *p3);
-
-
-/**
- * @brief Induce a kernel oops that appears to come from a specific location
- *
- * Normally, k_oops() generates an exception that appears to come from the
- * call site of the k_oops() itself.
- *
- * However, when validating arguments to a system call, if there are problems
- * we want the oops to appear to come from where the system call was invoked
- * and not inside the validation function.
- *
- * @param ssf System call stack frame pointer. This gets passed as an argument
- *            to _k_syscall_handler_t functions and its contents are completely
- *            architecture specific.
- */
-extern FUNC_NORETURN void z_arch_syscall_oops(void *ssf);
-
-/**
- * @brief Safely take the length of a potentially bad string
- *
- * This must not fault, instead the err parameter must have -1 written to it.
- * This function otherwise should work exactly like libc strnlen(). On success
- * *err should be set to 0.
- *
- * @param s String to measure
- * @param maxlen Max length of the string
- * @param err Error value to write
- * @return Length of the string, not counting NULL byte, up to maxsize
- */
-extern size_t z_arch_user_string_nlen(const char *s, size_t maxsize, int *err);
-
-/**
- * @brief Zero out BSS sections for application shared memory
- *
- * This isn't handled by any platform bss zeroing, and is called from
- * z_cstart() if userspace is enabled.
- */
-extern void z_app_shmem_bss_zero(void);
-#endif /* CONFIG_USERSPACE */
+void *z_thread_aligned_alloc(size_t align, size_t size);
 
 /**
  * @brief Allocate some memory from the current thread's resource pool
@@ -240,11 +93,16 @@ extern void z_app_shmem_bss_zero(void);
  * memory on behalf of certain kernel and driver APIs. Memory reserved
  * in this way should be freed with k_free().
  *
+ * If called from an ISR, the k_malloc() system heap will be used if it exists.
+ *
  * @param size Memory allocation size
  * @return A pointer to the allocated memory, or NULL if there is insufficient
- * RAM in the pool or the thread has no resource pool assigned
+ * RAM in the pool or there is no pool to draw memory from
  */
-void *z_thread_malloc(size_t size);
+static inline void *z_thread_malloc(size_t size)
+{
+	return z_thread_aligned_alloc(0, size);
+}
 
 /* set and clear essential thread flag */
 
@@ -261,24 +119,175 @@ extern void z_thread_monitor_exit(struct k_thread *thread);
 	} while (false)
 #endif /* CONFIG_THREAD_MONITOR */
 
+#ifdef CONFIG_USE_SWITCH
+/* This is a arch function traditionally, but when the switch-based
+ * z_swap() is in use it's a simple inline provided by the kernel.
+ */
+static ALWAYS_INLINE void
+arch_thread_return_value_set(struct k_thread *thread, unsigned int value)
+{
+	thread->swap_retval = value;
+}
+#endif
+
+static ALWAYS_INLINE void
+z_thread_return_value_set_with_data(struct k_thread *thread,
+				   unsigned int value,
+				   void *data)
+{
+	arch_thread_return_value_set(thread, value);
+	thread->base.swap_data = data;
+}
+
+#ifdef CONFIG_SMP
 extern void z_smp_init(void);
-
 extern void smp_timer_init(void);
+#endif
 
-extern u32_t z_early_boot_rand32_get(void);
+extern void z_early_boot_rand_get(uint8_t *buf, size_t length);
 
 #if CONFIG_STACK_POINTER_RANDOM
 extern int z_stack_adjust_initialized;
 #endif
 
-#if defined(CONFIG_ARCH_HAS_CUSTOM_BUSY_WAIT)
-extern void z_arch_busy_wait(u32_t usec_to_wait);
+extern struct k_thread z_main_thread;
+
+
+#ifdef CONFIG_MULTITHREADING
+extern struct k_thread z_idle_threads[CONFIG_MP_MAX_NUM_CPUS];
+#endif
+K_KERNEL_PINNED_STACK_ARRAY_DECLARE(z_interrupt_stacks, CONFIG_MP_MAX_NUM_CPUS,
+				    CONFIG_ISR_STACK_SIZE);
+
+#ifdef CONFIG_GEN_PRIV_STACKS
+extern uint8_t *z_priv_stack_find(k_thread_stack_t *stack);
 #endif
 
-/**
- * TODO: document
+/* Calculate stack usage. */
+int z_stack_space_get(const uint8_t *stack_start, size_t size, size_t *unused_ptr);
+
+#ifdef CONFIG_USERSPACE
+bool z_stack_is_user_capable(k_thread_stack_t *stack);
+
+/* Memory domain setup hook, called from z_setup_new_thread() */
+void z_mem_domain_init_thread(struct k_thread *thread);
+
+/* Memory domain teardown hook, called from z_thread_abort() */
+void z_mem_domain_exit_thread(struct k_thread *thread);
+
+/* This spinlock:
+ *
+ * - Protects the full set of active k_mem_domain objects and their contents
+ * - Serializes calls to arch_mem_domain_* APIs
+ *
+ * If architecture code needs to access k_mem_domain structures or the
+ * partitions they contain at any other point, this spinlock should be held.
+ * Uniprocessor systems can get away with just locking interrupts but this is
+ * not recommended.
  */
-extern FUNC_NORETURN void z_arch_system_halt(unsigned int reason);
+extern struct k_spinlock z_mem_domain_lock;
+#endif /* CONFIG_USERSPACE */
+
+#ifdef CONFIG_GDBSTUB
+struct gdb_ctx;
+
+/* Should be called by the arch layer. This is the gdbstub main loop
+ * and synchronously communicate with gdb on host.
+ */
+extern int z_gdb_main_loop(struct gdb_ctx *ctx);
+#endif
+
+#ifdef CONFIG_INSTRUMENT_THREAD_SWITCHING
+void z_thread_mark_switched_in(void);
+void z_thread_mark_switched_out(void);
+#else
+
+/**
+ * @brief Called after a thread has been selected to run
+ */
+#define z_thread_mark_switched_in()
+
+/**
+ * @brief Called before a thread has been selected to run
+ */
+
+#define z_thread_mark_switched_out()
+
+#endif /* CONFIG_INSTRUMENT_THREAD_SWITCHING */
+
+/* Init hook for page frame management, invoked immediately upon entry of
+ * main thread, before POST_KERNEL tasks
+ */
+void z_mem_manage_init(void);
+
+/**
+ * @brief Finalize page frame management at the end of boot process.
+ */
+void z_mem_manage_boot_finish(void);
+
+#define LOCKED(lck) for (k_spinlock_key_t __i = {},			\
+					  __key = k_spin_lock(lck);	\
+			!__i.key;					\
+			k_spin_unlock(lck, __key), __i.key = 1)
+
+#ifdef CONFIG_PM
+
+/* When the kernel is about to go idle, it calls this function to notify the
+ * power management subsystem, that the kernel is ready to enter the idle state.
+ *
+ * At this point, the kernel has disabled interrupts and computed the maximum
+ * time the system can remain idle. The function passes the time that the system
+ * can remain idle. The SOC interface performs power operations that can be done
+ * in the available time. The power management operations must halt execution of
+ * the CPU.
+ *
+ * This function assumes that a wake up event has already been set up by the
+ * application.
+ *
+ * This function is entered with interrupts disabled. It should re-enable
+ * interrupts if it had entered a power state.
+ *
+ * @return True if the system suspended, otherwise return false
+ */
+bool pm_system_suspend(int32_t ticks);
+
+/**
+ * Notify exit from kernel idling after PM operations
+ *
+ * This function would notify exit from kernel idling if a corresponding
+ * pm_system_suspend() notification was handled and did not return
+ * PM_STATE_ACTIVE.
+ *
+ * This function would be called from the ISR context of the event
+ * that caused the exit from kernel idling. This will be called immediately
+ * after interrupts are enabled. This is called to give a chance to do
+ * any operations before the kernel would switch tasks or processes nested
+ * interrupts. This is required for cpu low power states that would require
+ * interrupts to be enabled while entering low power states. e.g. C1 in x86. In
+ * those cases, the ISR would be invoked immediately after the event wakes up
+ * the CPU, before code following the CPU wait, gets a chance to execute. This
+ * can be ignored if no operation needs to be done at the wake event
+ * notification.
+ */
+void pm_system_resume(void);
+
+#endif
+
+#ifdef CONFIG_DEMAND_PAGING_TIMING_HISTOGRAM
+/**
+ * Initialize the timing histograms for demand paging.
+ */
+void z_paging_histogram_init(void);
+
+/**
+ * Increment the counter in the timing histogram.
+ *
+ * @param hist The timing histogram to be updated.
+ * @param cycles Time spent in measured operation.
+ */
+void z_paging_histogram_inc(struct k_mem_paging_histogram_t *hist,
+			    uint32_t cycles);
+#endif /* CONFIG_DEMAND_PAGING_TIMING_HISTOGRAM */
 
 #ifdef __cplusplus
 }

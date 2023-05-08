@@ -22,8 +22,7 @@ capacitive buttons with haptic feedback.
 - Flexibility to let you add the sensors of your choice nearly 200 additional
   sensors through click boards.
 
-.. image:: ./hexiwear_k64.jpg
-   :width: 442px
+.. image:: hexiwear_k64.jpg
    :align: center
    :alt: Hexiwear
 
@@ -89,6 +88,9 @@ The hexiwear_k64 board configuration supports the following hardware features:
 |           |            | fxas21002 trigger;                  |
 |           |            | max30101 polling                    |
 +-----------+------------+-------------------------------------+
+| RNGA      | on-chip    | entropy;                            |
+|           |            | random                              |
++-----------+------------+-------------------------------------+
 
 The default configuration can be found in the defconfig file:
 
@@ -136,6 +138,13 @@ The K64F SoC has five pairs of pinmux/gpio controllers.
 +-------+-----------------+---------------------------+
 | PTE25 | UART4_TX        | UART BT HCI               |
 +-------+-----------------+---------------------------+
+
+.. note::
+
+   To enable battery sensing, you will need to enable the ``en_bat_sens``
+   regulator in Devicetree. Similarly, to enable devices connected to the 1V8
+   or 3V3 power rails (sensors), you will need to enable the ``en_ldo``
+   and ``en_3v3b`` regulators in Devicetree.
 
 System Clock
 ============
@@ -189,13 +198,14 @@ program the `OpenSDA DAPLink Hexiwear Firmware`_. Check that switches SW1 and
 SW2 are **on**, and SW3 and SW4 are **off**  to ensure K64F SWD signals are
 connected to the OpenSDA microcontroller.
 
-Add the argument ``-DOPENSDA_FW=daplink`` when you invoke ``west build`` to
-override the default runner from J-Link to pyOCD:
+Add the arguments ``-DBOARD_FLASH_RUNNER=pyocd`` and
+``-DBOARD_DEBUG_RUNNER=pyocd`` when you invoke ``west build`` to override the
+default runner from J-Link to pyOCD:
 
 .. zephyr-app-commands::
    :zephyr-app: samples/hello_world
    :board: hexiwear_k64
-   :gen-args: -DOPENSDA_FW=daplink
+   :gen-args: -DBOARD_FLASH_RUNNER=pyocd -DBOARD_DEBUG_RUNNER=pyocd
    :goals: build
 
 Configuring a Console
@@ -293,7 +303,7 @@ will then see a plot of the heart rate data that updates once per second.
 
 
 .. _Hexiwear Website:
-   https://www.nxp.com/support/developer-resources/nxp-designs/hexiwear-complete-iot-development-solution:HEXIWEAR?&tid=vanHEXIWEAR
+   https://www.mikroe.com/hexiwear
 
 .. _Hexiwear Fact Sheet:
    https://www.nxp.com/docs/en/fact-sheet/HEXIWEAR-FS.pdf

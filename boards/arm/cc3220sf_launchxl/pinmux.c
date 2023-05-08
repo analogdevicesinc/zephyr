@@ -55,9 +55,7 @@
  * at runtime.
  */
 
-#include <init.h>
-
-#include <drivers/pinmux.h>
+#include <zephyr/init.h>
 
 #include <inc/hw_types.h>
 #include <inc/hw_memmap.h>
@@ -78,7 +76,7 @@
  *  driverlib pin defines.  For example, I2C_CC32XX_PIN_01_I2C_SCL & 0xff = 0,
  *  which equals PIN_01 in driverlib pin.h.  By matching the PIN_xx defines in
  *  driverlib pin.h, we can pass the pin directly to the driverlib functions.
- *  The upper 8 bits of the macro correspond to the pin mux confg mode
+ *  The upper 8 bits of the macro correspond to the pin mux config mode
  *  value for the pin to operate in the I2C mode.  For example, pin 1 is
  *  configured with mode 1 to operate as I2C_SCL.
  */
@@ -91,9 +89,8 @@
 #define I2C_CC32XX_PIN_16_I2C_SCL  0x90F  /*!< PIN 16 is used for I2C_SCL */
 #define I2C_CC32XX_PIN_17_I2C_SDA  0x910  /*!< PIN 17 is used for I2C_SDA */
 
-int pinmux_initialize(struct device *port)
+int pinmux_initialize(void)
 {
-	ARG_UNUSED(port);
 
 #ifdef CONFIG_UART_CC32XX
 	/* Configure PIN_55 for UART0 UART0_TX */
@@ -103,7 +100,6 @@ int pinmux_initialize(struct device *port)
 	MAP_PinTypeUART(PIN_57, PIN_MODE_3);
 #endif
 
-#ifdef CONFIG_GPIO_CC32XX_A1
 	/* Enable Peripheral Clocks */
 	MAP_PRCMPeripheralClkEnable(PRCM_GPIOA1, PRCM_RUN_MODE_CLK);
 
@@ -124,20 +120,14 @@ int pinmux_initialize(struct device *port)
 	/* SW3: Configure PIN_04 (GPIO13) for GPIOInput */
 	MAP_PinTypeGPIO(PIN_04, PIN_MODE_0, false);
 	MAP_GPIODirModeSet(GPIOA1_BASE, 0x20, GPIO_DIR_MODE_IN);
-#endif
 
-#ifdef CONFIG_GPIO_CC32XX_A2
 	MAP_PRCMPeripheralClkEnable(PRCM_GPIOA2, PRCM_RUN_MODE_CLK);
 
 	/* SW2: Configure PIN_15 (GPIO22) for GPIOInput */
 	MAP_PinTypeGPIO(PIN_15, PIN_MODE_0, false);
 	MAP_GPIODirModeSet(GPIOA2_BASE, 0x40, GPIO_DIR_MODE_IN);
-#endif
 
-#ifdef CONFIG_GPIO_CC32XX_A3
 	MAP_PRCMPeripheralClkEnable(PRCM_GPIOA3, PRCM_RUN_MODE_CLK);
-
-#endif
 
 #ifdef CONFIG_I2C_CC32XX
 	{

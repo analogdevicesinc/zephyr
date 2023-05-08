@@ -1,36 +1,17 @@
-# Kconfig - i.MX RT1052
-#
+# i.MX RT1052
+
 # Copyright (c) 2017, NXP
-#
 # SPDX-License-Identifier: Apache-2.0
-#
 
 if SOC_MIMXRT1052
 
 config SOC
-	string
 	default "mimxrt1052"
 
 config NUM_IRQS
 	default 160
 
-config ARM_DIV
-	default 1
-
-config AHB_DIV
-	default 0
-
-config IPG_DIV
-	default 3
-
 config GPIO
 	default y
-
-if NET_L2_ETHERNET
-
-config INIT_ENET_PLL
-	def_bool y
-
-endif # NET_L2_ETHERNET
 
 endif # SOC_MIMXRT1052

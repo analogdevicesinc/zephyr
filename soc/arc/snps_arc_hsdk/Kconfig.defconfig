@@ -1,17 +1,13 @@
-#
 # Copyright (c) 2019 Synopsys, Inc. All rights reserved.
-#
 # SPDX-License-Identifier: Apache-2.0
-#
 
 if SOC_ARC_HSDK
 
 config SOC
-	string
 	default "snps_arc_hsdk"
 
-config CPU_HS38_LINUX
-	def_bool y
+config CPU_HS3X
+	default y
 
 config NUM_IRQ_PRIO_LEVELS
 	# This processor supports 2 priority levels:
@@ -40,24 +36,14 @@ config ARCV2_TIMER_IRQ_PRIORITY
 config ARC_CONNECT
 	default y
 
-config MP_NUM_CPUS
+config MP_MAX_NUM_CPUS
 	default 4
-
-if SERIAL
-
-config UART_NS16550
-	default y
-
-endif # SERIAL
-
-if UART_CONSOLE
-
-config UART_NS16550_PORT_0
-	default y
 
 config UART_NS16550_ACCESS_WORD_ONLY
 	default y
+	depends on UART_NS16550
 
-endif # UART_CONSOLE
+config ARC_HAS_ACCL_REGS
+	default y
 
 endif # ARC_HSDK

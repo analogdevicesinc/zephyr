@@ -15,7 +15,7 @@
 #include <stdint.h>
 #include <string.h>
 
-#include <net/mqtt.h>
+#include <zephyr/net/mqtt.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -25,6 +25,11 @@ extern "C" {
  *        keep the connection alive are governed by this value.
  */
 #define MQTT_KEEPALIVE CONFIG_MQTT_KEEPALIVE
+
+/**@brief Clean session on every connect (1) or keep subscriptions and messages
+ *        between connects (0)
+ */
+#define MQTT_CLEAN_SESSION (IS_ENABLED(CONFIG_MQTT_CLEAN_SESSION) ? 1U : 0U)
 
 /**@brief Minimum mandatory size of fixed header. */
 #define MQTT_FIXED_HEADER_MIN_SIZE 2
@@ -68,7 +73,7 @@ extern "C" {
 #define MQTT_MAX_PAYLOAD_SIZE 0x0FFFFFFF
 
 /**@brief Computes total size needed to pack a UTF8 string. */
-#define GET_UT8STR_BUFFER_SIZE(STR) (sizeof(u16_t) + (STR)->size)
+#define GET_UT8STR_BUFFER_SIZE(STR) (sizeof(uint16_t) + (STR)->size)
 
 /**@brief Computes total size needed to pack a binary stream. */
 #define GET_BINSTR_BUFFER_SIZE(STR) ((STR)->len)
@@ -121,8 +126,8 @@ extern "C" {
 
 /** Buffer context to iterate over buffer. */
 struct buf_ctx {
-	u8_t *cur;
-	u8_t *end;
+	uint8_t *cur;
+	uint8_t *end;
 };
 
 /**@brief MQTT States. */
@@ -140,10 +145,6 @@ enum mqtt_state {
 
 	/** MQTT Connection successful. */
 	MQTT_STATE_CONNECTED            = 0x00000004,
-
-	/** TCP Disconnect has been requested, awaiting result of the request.
-	 */
-	MQTT_STATE_DISCONNECTING        = 0x00000008
 };
 
 /**@brief Notify application about MQTT event.
@@ -299,8 +300,8 @@ int ping_request_encode(struct buf_ctx *buf);
  *
  * @return 0 if the procedure is successful, an error code otherwise.
  */
-int fixed_header_decode(struct buf_ctx *buf, u8_t *type_and_flags,
-			u32_t *length);
+int fixed_header_decode(struct buf_ctx *buf, uint8_t *type_and_flags,
+			uint32_t *length);
 
 /**@brief Decode MQTT Connect Ack packet.
  *
@@ -324,7 +325,7 @@ int connect_ack_decode(const struct mqtt_client *client, struct buf_ctx *buf,
  *
  * @return 0 if the procedure is successful, an error code otherwise.
  */
-int publish_decode(u8_t flags, u32_t var_length, struct buf_ctx *buf,
+int publish_decode(uint8_t flags, uint32_t var_length, struct buf_ctx *buf,
 		   struct mqtt_publish_param *param);
 
 /**@brief Decode MQTT Publish Ack packet.

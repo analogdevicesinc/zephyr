@@ -14,13 +14,11 @@
 	chosen {
 		zephyr,console = &uart0;
 		zephyr,shell-uart = &uart0;
-		zephyr,timer = &timer0;
 		zephyr,sram = &ram0;
 	};
 
 	ram0: memory@40000000 {
 		device_type = "memory";
-		compatible = "mmio-sram";
 		reg = <0x40000000 0x10000000>;
 	};
 };
@@ -39,5 +37,49 @@
 };
 
 &dna0 {
+	status = "okay";
+};
+
+&spi0 {
+	status = "okay";
+};
+
+&prbs0 {
+	status = "okay";
+};
+
+&i2c0 {
+	status = "okay";
+};
+
+&pwm0 {
+	status = "okay";
+};
+
+&gpio_out {
+	status = "okay";
+};
+
+&gpio_in {
+	status = "okay";
+};
+
+&i2s_rx {
+	status = "okay";
+};
+
+&i2s_tx {
+	status = "okay";
+};
+
+&clk0 {
+	status = "okay";
+};
+
+&clk1 {
+	status = "okay";
+};
+
+&clock0 {
 	status = "okay";
 };

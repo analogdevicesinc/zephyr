@@ -1,37 +1,62 @@
-title: nRF SW PWM
-
-description: >
-    This binding gives a base representation of the nRFx S/W PWM
+description: nRFx S/W PWM
 
 compatible: "nordic,nrf-sw-pwm"
 
-include: base.yaml
+include: [pwm-controller.yaml, base.yaml]
 
 properties:
-    label:
-      required: true
+  generator:
+    type: phandle
+    required: true
+    description: |
+      Reference to TIMER or RTC instance for generating PWM output signals
 
-    timer-instance:
-      type: int
-      description: Timer instance to use for generating the PWM output signals
-      required: true
+  clock-prescaler:
+    type: int
+    required: true
+    description: |
+      Clock prescaler for RTC or TIMER used for generating PWM output signals.
 
-    channel-count:
-      type: int
-      description: Number of PWM channels. Limited by timer instance compare registers minus 1.
-      required: true
+      RTC: needs to be set to 0, which gives 32768 Hz base clock for PWM
+      generation.
 
-    clock-prescaler:
-      type: int
-      description: Clock prescaler for timer used for generating the PWM output signals with frequency = 16 MHz / 2^prescaler
-      required: true
+      TIMER: 16 MHz / 2^prescaler base clock is used for PWM generation.
 
-    ppi-base:
-      type: int
-      description: PPI base used for PPI index calculation used for PWM output generation
-      required: true
+  channel-gpios:
+    type: phandle-array
+    required: true
+    description: |
+      An array of GPIOs assigned as outputs for the PWM channels. The number
+      of items in this array determines the number of channels that this PWM
+      will provide. This value is limited by the number of compare registers
+      in the used RTC/TIMER instance minus 1.
 
-    gpiote-base:
-      type: int
-      description: GPIOTE base used for GPIOTE index calculation used for PWM output generation
-      required: true
+      Example:
+
+        sw_pwm: sw-pwm {
+          compatible = "nordic,nrf-sw-pwm";
+          ...
+          channel-gpios = <&gpio0 20 GPIO_ACTIVE_HIGH>,
+                          <&gpio1 12 GPIO_ACTIVE_HIGH>;
+          ...
+        };
+
+      The above will assign P0.20 as the output for channel 0 and P1.12 as
+      the output for channel 1. Both outputs will be initially configured as
+      active high.
+
+      Please note that in the flags cell (the last component of each item
+      of the array) only the GPIO flags that specify the active level are
+      taken into account (any others are ignored), and they are used only
+      when the initial (inactive) state of the outputs is set.
+      After any PWM signal generation is requested for a given channel,
+      the polarity of its output is determined by the flag specified
+      in the request, i.e. PWM_POLARITY_INVERTED or PWM_POLARITY_NORMAL.
+
+  "#pwm-cells":
+    const: 3
+
+pwm-cells:
+  - channel
+  - period
+  - flags

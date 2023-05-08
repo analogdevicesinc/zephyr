@@ -4,23 +4,22 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <device.h>
-#include <drivers/sensor.h>
-#include <sys/printk.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/sys/printk.h>
 
-void main(void)
+int main(void)
 {
-	struct device *dev;
+	const struct device *const dev = DEVICE_DT_GET_ONE(ams_ens210);
 	struct sensor_value temperature, humidity;
 
-	dev = device_get_binding(DT_INST_0_AMS_ENS210_LABEL);
-	if (!dev) {
-		printk("Failed to get device binding");
-		return;
+	if (!device_is_ready(dev)) {
+		printk("Device %s is not ready\n", dev->name);
+		return 0;
 	}
 
-	printk("device is %p, name is %s\n", dev, dev->config->name);
+	printk("device is %p, name is %s\n", dev, dev->name);
 
 	while (1) {
 		sensor_sample_fetch(dev);
@@ -30,6 +29,7 @@ void main(void)
 			temperature.val1, temperature.val2,
 			humidity.val1, humidity.val2);
 
-		k_sleep(1000);
+		k_sleep(K_MSEC(1000));
 	}
+	return 0;
 }

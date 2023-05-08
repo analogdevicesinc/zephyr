@@ -1,5 +1,5 @@
 identifier: nucleo_f103rb
-name: NUCLEO-F103RB
+name: ST Nucleo F103RB
 type: mcu
 arch: arm
 toolchain:
@@ -9,8 +9,14 @@ toolchain:
 ram: 20
 flash: 128
 supported:
+  - arduino_gpio
+  - arduino_spi
+  - arduino_i2c
   - gpio
   - spi
   - pwm
   - watchdog
   - adc
+  - dma
+  - nvs
+  - counter

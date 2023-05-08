@@ -13,7 +13,7 @@
 #include <ctype.h>
 #include <string.h>
 #include <stdarg.h>
-#include <net/buf.h>
+#include <zephyr/net/buf.h>
 
 #include "at.h"
 
@@ -43,14 +43,14 @@ static void skip_space(struct at_client *at)
 	}
 }
 
-int at_get_number(struct at_client *at, u32_t *val)
+int at_get_number(struct at_client *at, uint32_t *val)
 {
-	u32_t i;
+	uint32_t i;
 
 	skip_space(at);
 
 	for (i = 0U, *val = 0U;
-	     isdigit((unsigned char)at->buf[at->pos]);
+	     isdigit((unsigned char)at->buf[at->pos]) != 0;
 	     at->pos++, i++) {
 		*val = *val * 10U + at->buf[at->pos] - '0';
 	}
@@ -93,7 +93,7 @@ static int get_cmd_value(struct at_client *at, struct net_buf *buf,
 			 char stop_byte, enum at_cmd_state cmd_state)
 {
 	int cmd_len = 0;
-	u8_t pos = at->pos;
+	uint8_t pos = at->pos;
 	const char *str = (char *)buf->data;
 
 	while (cmd_len < buf->len && at->pos != at->buf_max_len) {
@@ -123,7 +123,7 @@ static int get_response_string(struct at_client *at, struct net_buf *buf,
 			       char stop_byte, enum at_state state)
 {
 	int cmd_len = 0;
-	u8_t pos = at->pos;
+	uint8_t pos = at->pos;
 	const char *str = (char *)buf->data;
 
 	while (cmd_len < buf->len && at->pos != at->buf_max_len) {
@@ -187,7 +187,7 @@ static int at_state_start_lf(struct at_client *at, struct net_buf *buf)
 	if (at_check_byte(buf, '+') == 0) {
 		at->state = AT_STATE_GET_CMD_STRING;
 		return 0;
-	} else if (isalpha(*buf->data)) {
+	} else if (isalpha(*buf->data) != 0) {
 		at->state = AT_STATE_GET_RESULT_STRING;
 		return 0;
 	}
@@ -269,7 +269,7 @@ static int at_state_process_result(struct at_client *at, struct net_buf *buf)
 int cme_handle(struct at_client *at)
 {
 	enum at_cme cme_err;
-	u32_t val;
+	uint32_t val;
 
 	if (!at_get_number(at, &val) && val <= CME_ERROR_NETWORK_NOT_ALLOWED) {
 		cme_err = val;
@@ -457,7 +457,7 @@ int at_close_list(struct at_client *at)
 	return 0;
 }
 
-int at_list_get_string(struct at_client *at, char *name, u8_t len)
+int at_list_get_string(struct at_client *at, char *name, uint8_t len)
 {
 	int i = 0;
 
@@ -492,9 +492,9 @@ int at_list_get_string(struct at_client *at, char *name, u8_t len)
 	return 0;
 }
 
-int at_list_get_range(struct at_client *at, u32_t *min, u32_t *max)
+int at_list_get_range(struct at_client *at, uint32_t *min, uint32_t *max)
 {
-	u32_t low, high;
+	uint32_t low, high;
 	int ret;
 
 	ret = at_get_number(at, &low);
@@ -507,7 +507,7 @@ int at_list_get_range(struct at_client *at, u32_t *min, u32_t *max)
 		goto out;
 	}
 
-	if (!isdigit((unsigned char)at->buf[at->pos])) {
+	if (isdigit((unsigned char)at->buf[at->pos]) == 0) {
 		return -ENODATA;
 	}
 out:

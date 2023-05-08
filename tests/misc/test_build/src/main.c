@@ -6,8 +6,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <sys/printk.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/printk.h>
 
 /*
  * The hello world demo has two threads that utilize semaphores and sleeping
@@ -43,7 +43,7 @@ void helloLoop(const char *my_name,
 		printk("%s: Hello World from %s!\n", my_name, CONFIG_ARCH);
 
 		/* wait a while, then let other thread have a turn */
-		k_sleep(SLEEPTIME);
+		k_msleep(SLEEPTIME);
 		k_sem_give(other_sem);
 	}
 }
@@ -87,4 +87,4 @@ void threadA(void *dummy1, void *dummy2, void *dummy3)
 }
 
 K_THREAD_DEFINE(threadA_id, STACKSIZE, threadA, NULL, NULL, NULL,
-		PRIORITY, 0, K_NO_WAIT);
+		PRIORITY, 0, 0);

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <shell/shell_history.h>
+#include <zephyr/shell/shell_history.h>
 #include <string.h>
 
 /*
@@ -33,21 +33,25 @@
  * |                 | header     | "history item" |                          |
  * |                 | no padding |                |                          |
  * +-----------------+------------+----------------+--------------------------+
+ *
+ * As an optimization, the added padding is attributed to the preceding item
+ * instead of the current item. This way the padding will be freed one item
+ * sooner.
  */
 struct shell_history_item {
 	sys_dnode_t dnode;
-	u16_t len;
-	u16_t padding;
+	uint16_t len;
+	uint16_t padding;
 	char data[0];
 };
 
-void shell_history_mode_exit(struct shell_history *history)
+void z_shell_history_mode_exit(struct shell_history *history)
 {
 	history->current = NULL;
 }
 
-bool shell_history_get(struct shell_history *history, bool up,
-		       u8_t *dst, u16_t *len)
+bool z_shell_history_get(struct shell_history *history, bool up,
+			 uint8_t *dst, uint16_t *len)
 {
 	struct shell_history_item *h_item; /* history item */
 	sys_dnode_t *l_item; /* list item */
@@ -90,7 +94,7 @@ bool shell_history_get(struct shell_history *history, bool up,
 
 static void add_to_head(struct shell_history *history,
 			struct shell_history_item *item,
-			u8_t *src, size_t len, u16_t padding)
+			uint8_t *src, size_t len, uint16_t padding)
 {
 	item->len = len;
 	item->padding = padding;
@@ -103,7 +107,7 @@ static bool remove_from_tail(struct shell_history *history)
 {
 	sys_dnode_t *l_item; /* list item */
 	struct shell_history_item *h_item;
-	u32_t total_len;
+	uint32_t total_len;
 
 	if (sys_dlist_is_empty(&history->list)) {
 		return false;
@@ -116,25 +120,26 @@ static bool remove_from_tail(struct shell_history *history)
 
 	total_len = offsetof(struct shell_history_item, data) +
 			h_item->len + h_item->padding;
-	ring_buf_get_finish(history->ring_buf, total_len);
+	ring_buf_get(history->ring_buf, NULL, total_len);
 
 	return true;
 }
 
-void shell_history_purge(struct shell_history *history)
+void z_shell_history_purge(struct shell_history *history)
 {
 	while (remove_from_tail(history)) {
 	}
 }
 
-void shell_history_put(struct shell_history *history, u8_t *line, size_t len)
+void z_shell_history_put(struct shell_history *history, uint8_t *line,
+			 size_t len)
 {
 	sys_dnode_t *l_item; /* list item */
-	struct shell_history_item *h_item;
-	u32_t total_len = len + offsetof(struct shell_history_item, data);
-	u32_t claim_len;
-	u32_t claim2_len;
-	u16_t padding = (~total_len + 1) & (sizeof(void *) - 1);
+	struct shell_history_item *h_item, *h_prev_item;
+	uint32_t total_len = len + offsetof(struct shell_history_item, data);
+	uint32_t claim_len;
+	uint32_t claim2_len;
+	uint16_t padding = (~total_len + 1) & (sizeof(void *) - 1);
 
 	/* align to word. */
 	total_len += padding;
@@ -143,36 +148,50 @@ void shell_history_put(struct shell_history *history, u8_t *line, size_t len)
 		return;
 	}
 
-	shell_history_mode_exit(history);
+	z_shell_history_mode_exit(history);
 
 	if (len == 0) {
 		return;
 	}
 
 	l_item = sys_dlist_peek_head(&history->list);
-	h_item = CONTAINER_OF(l_item, struct shell_history_item, dnode);
+	h_prev_item = CONTAINER_OF(l_item, struct shell_history_item, dnode);
 
 	if (l_item &&
-	   (h_item->len == len) &&
-	   (memcmp(h_item->data, line, len) == 0)) {
+	   (h_prev_item->len == len) &&
+	   (memcmp(h_prev_item->data, line, len) == 0)) {
 		/* Same command as before, do not store */
 		return;
 	}
 
 	do {
+		if (ring_buf_is_empty(history->ring_buf)) {
+			/* if history is empty reset ring buffer. Even when
+			 * ring buffer is empty, it is possible that available
+			 * continues memory in worst case equals half of the
+			 * ring buffer capacity. By resetting ring buffer we
+			 * ensure that it is capable to provide continues memory
+			 * of ring buffer capacity length.
+			 */
+			ring_buf_reset(history->ring_buf);
+		}
+
 		claim_len = ring_buf_put_claim(history->ring_buf,
-						(u8_t **)&h_item, total_len);
+						(uint8_t **)&h_item, total_len);
 		/* second allocation may succeed if we were at the end of the
 		 * buffer.
 		 */
 		if (claim_len < total_len) {
 			claim2_len =
 				ring_buf_put_claim(history->ring_buf,
-						   (u8_t **)&h_item, total_len);
+						   (uint8_t **)&h_item, total_len);
 			if (claim2_len == total_len) {
-				ring_buf_put_finish(history->ring_buf,
-						    claim_len);
-				padding += claim_len;
+				/*
+				 * We may get here only if a previous entry
+				 * exists. Stick the excess padding to it.
+				 */
+				h_prev_item->padding += claim_len;
+				total_len += claim_len;
 				claim_len = total_len;
 			}
 		}
@@ -184,21 +203,11 @@ void shell_history_put(struct shell_history *history, u8_t *line, size_t len)
 		}
 
 		ring_buf_put_finish(history->ring_buf, 0);
-		if (remove_from_tail(history) == false) {
-			__ASSERT_NO_MSG(ring_buf_is_empty(history->ring_buf));
-			/* if history is empty reset ring buffer. Even when
-			 * ring buffer is empty, it is possible that available
-			 * continues memory in worst case equals half of the
-			 * ring buffer capacity. By reseting ring buffer we
-			 * ensure that it is capable to provide continues memory
-			 * of ring buffer capacity length.
-			 */
-			ring_buf_reset(history->ring_buf);
-		}
+		remove_from_tail(history);
 	} while (1);
 }
 
-void shell_history_init(struct shell_history *history)
+void z_shell_history_init(struct shell_history *history)
 {
 	sys_dlist_init(&history->list);
 	history->current = NULL;

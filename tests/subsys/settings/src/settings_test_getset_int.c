@@ -7,12 +7,12 @@
 
 #include "settings_test.h"
 
-void test_config_getset_int(void)
+ZTEST(settings_config, test_config_getset_int)
 {
 	char name[80];
 	char tmp[64];
 	int rc;
-	u8_t small_value;
+	uint8_t small_value;
 
 	small_value = 42U;
 	strcpy(name, "myfoo/mybar");

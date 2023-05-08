@@ -36,9 +36,7 @@ and high-speed connectivity features. Important board features include:
 - Ethernet connector compliant with IEEE-802.3-2002
 
 .. image:: img/stm32f746g_disco.jpg
-     :width: 500px
      :align: center
-     :height: 357px
      :alt: STM32F746G-DISCO
 
 More information about the board can be found at the `32F746G-DISCO website`_.
@@ -100,6 +98,8 @@ The Zephyr stm32f746g_disco board configuration supports the following hardware 
 +-----------+------------+-------------------------------------+
 | GPIO      | on-chip    | gpio                                |
 +-----------+------------+-------------------------------------+
+| FLASH     | on-chip    | flash memory                        |
++-----------+------------+-------------------------------------+
 | ETHERNET  | on-chip    | Ethernet                            |
 +-----------+------------+-------------------------------------+
 | PWM       | on-chip    | pwm                                 |
@@ -108,7 +108,15 @@ The Zephyr stm32f746g_disco board configuration supports the following hardware 
 +-----------+------------+-------------------------------------+
 | USB       | on-chip    | usb                                 |
 +-----------+------------+-------------------------------------+
+| SDMMC     | on-chip    | disk access                         |
++-----------+------------+-------------------------------------+
 | SPI       | on-chip    | spi                                 |
++-----------+------------+-------------------------------------+
+| QSPI NOR  | on-chip    | off-chip flash                      |
++-----------+------------+-------------------------------------+
+| FMC       | on-chip    | memc (SDRAM)                        |
++-----------+------------+-------------------------------------+
+| LTDC      | on-chip    | display                             |
 +-----------+------------+-------------------------------------+
 
 Other hardware features are not yet supported on Zephyr porting.
@@ -133,13 +141,30 @@ configured as follows
 - UART_1 TX/RX : PA9/PB7 (ST-Link Virtual Port Com)
 - UART_6 TX/RX : PC6/PC7 (Arduino Serial)
 - I2C1 SCL/SDA : PB8/PB9 (Arduino I2C)
-- SPI2 NSS/SCK/MISO/MOSI : PI0/PI1/PB14/PB15 (Arduino SPI)
+- SDMMC_1 D0/D1/D2/D3/CK/CD/CMD: PC8/PC9/PC10/PC11/PC12/PC13/PD2
+- SPI2 NSS/SCK/MISO/MOSI : PA8/PI1/PB14/PB15 (Arduino SPI)
 - PWM_3_CH1 : PB4
 - ETH : PA1, PA2, PA7, PC1, PC4, PC5, PG11, PG13, PG14
 - USER_PB : PI11
 - LD1 : PI1
 - USB DM : PA11
 - USB DP : PA12
+- FMC SDRAM :
+
+   - D0-D15 : PD14/PD15/PD0/PD1/PE7/PE8/PE9/PE10/PE11/PE12/PE13/PE14/PE15/PD8/PD9/PD10
+   - A0-A11 : PF0/PF1/PF2/PF3/PF4/PF5/PF12/PF13/PF14/PF15/PG0/PG1
+   - A14/A15 : PG4/PG5
+   - SDNRAS/SDNCAS : PF11/PG15
+   - NBL0/NBL1 : PE0/PE1
+   - SDCLK/SDNWE/SDCKE0/SDNE0 : PG8/PH5/PC3/PH3
+
+- LTDC :
+
+   - R0-R7 : PI15/PJ0/PJ1/PJ2/PJ3/PJ4/PJ5/PJ6
+   - G0-G7 : PJ7/PJ8/PJ9/PJ10/PJ11/PK0/PK1/PK2
+   - B0-B7 : PJ12/PK13/PJ14/PJ15/PK3/PK4/PK5/PK6
+   - DE/CLK/HSYNC/VSYNC : PK7/PI14/PI12/PI13
+
 
 System Clock
 ============

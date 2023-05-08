@@ -4,18 +4,23 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <ztest.h>
-#include <app_memory/partitions.h>
+#include <zephyr/ztest.h>
+#include <zephyr/app_memory/partitions.h>
 
 extern void test_mbedtls(void);
 
-/**test case main entry*/
-void test_main(void)
+void *mbedtls_fn_setup(void)
 {
 #ifdef CONFIG_USERSPACE
-	k_mem_domain_add_partition(&ztest_mem_domain, &k_mbedtls_partition);
+	int ret = k_mem_domain_add_partition(&k_mem_domain_default,
+					     &k_mbedtls_partition);
+	if (ret != 0) {
+		printk("Failed to add memory partition (%d)\n", ret);
+		k_oops();
+	}
 #endif
-	ztest_test_suite(test_mbedtls_fn,
-		ztest_user_unit_test(test_mbedtls));
-	ztest_run_test_suite(test_mbedtls_fn);
+
+	return NULL;
 }
+
+ZTEST_SUITE(mbedtls_fn, NULL, mbedtls_fn_setup, NULL, NULL, NULL);

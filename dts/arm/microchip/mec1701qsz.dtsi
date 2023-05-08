@@ -32,8 +32,8 @@
 			compatible = "ns16550";
 			reg = <0x400f2400 0x400>;
 			interrupts = <40 0>;
+			clock-frequency = <1843200>;
 			current-speed = <38400>;
-			label = "UART_0";
 			reg-shift = <0>;
 			status = "disabled";
 		};
@@ -41,8 +41,8 @@
 			compatible = "ns16550";
 			reg = <0x400f2800 0x400>;
 			interrupts = <41 0>;
+			clock-frequency = <1843200>;
 			current-speed = <38400>;
-			label = "UART_1";
 			reg-shift = <0>;
 			status = "disabled";
 		};

@@ -4,26 +4,29 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+#define DT_DRV_COMPAT maxim_max30101
+
+#include <zephyr/logging/log.h>
 
 #include "max30101.h"
 
-#define LOG_LEVEL CONFIG_SENSOR_LOG_LEVEL
-LOG_MODULE_REGISTER(MAX30101);
+LOG_MODULE_REGISTER(MAX30101, CONFIG_SENSOR_LOG_LEVEL);
 
-static int max30101_sample_fetch(struct device *dev, enum sensor_channel chan)
+static int max30101_sample_fetch(const struct device *dev,
+				 enum sensor_channel chan)
 {
-	struct max30101_data *data = dev->driver_data;
-	u8_t buffer[MAX30101_MAX_BYTES_PER_SAMPLE];
-	u32_t fifo_data;
+	struct max30101_data *data = dev->data;
+	const struct max30101_config *config = dev->config;
+	uint8_t buffer[MAX30101_MAX_BYTES_PER_SAMPLE];
+	uint32_t fifo_data;
 	int fifo_chan;
 	int num_bytes;
 	int i;
 
 	/* Read all the active channels for one sample */
 	num_bytes = data->num_channels * MAX30101_BYTES_PER_CHANNEL;
-	if (i2c_burst_read(data->i2c, MAX30101_I2C_ADDRESS,
-			   MAX30101_REG_FIFO_DATA, buffer, num_bytes)) {
+	if (i2c_burst_read_dt(&config->i2c, MAX30101_REG_FIFO_DATA, buffer,
+			      num_bytes)) {
 		LOG_ERR("Could not fetch sample");
 		return -EIO;
 	}
@@ -42,10 +45,11 @@ static int max30101_sample_fetch(struct device *dev, enum sensor_channel chan)
 	return 0;
 }
 
-static int max30101_channel_get(struct device *dev, enum sensor_channel chan,
+static int max30101_channel_get(const struct device *dev,
+				enum sensor_channel chan,
 				struct sensor_value *val)
 {
-	struct max30101_data *data = dev->driver_data;
+	struct max30101_data *data = dev->data;
 	enum max30101_led_channel led_chan;
 	int fifo_chan;
 
@@ -89,25 +93,23 @@ static const struct sensor_driver_api max30101_driver_api = {
 	.channel_get = max30101_channel_get,
 };
 
-static int max30101_init(struct device *dev)
+static int max30101_init(const struct device *dev)
 {
-	const struct max30101_config *config = dev->config->config_info;
-	struct max30101_data *data = dev->driver_data;
-	u8_t part_id;
-	u8_t mode_cfg;
-	u32_t led_chan;
+	const struct max30101_config *config = dev->config;
+	struct max30101_data *data = dev->data;
+	uint8_t part_id;
+	uint8_t mode_cfg;
+	uint32_t led_chan;
 	int fifo_chan;
 
-	/* Get the I2C device */
-	data->i2c = device_get_binding(DT_INST_0_MAX_MAX30101_BUS_NAME);
-	if (!data->i2c) {
-		LOG_ERR("Could not find I2C device");
-		return -EINVAL;
+	if (!device_is_ready(config->i2c.bus)) {
+		LOG_ERR("Bus device is not ready");
+		return -ENODEV;
 	}
 
 	/* Check the part id to make sure this is MAX30101 */
-	if (i2c_reg_read_byte(data->i2c, MAX30101_I2C_ADDRESS,
-			      MAX30101_REG_PART_ID, &part_id)) {
+	if (i2c_reg_read_byte_dt(&config->i2c, MAX30101_REG_PART_ID,
+				 &part_id)) {
 		LOG_ERR("Could not get Part ID");
 		return -EIO;
 	}
@@ -118,66 +120,65 @@ static int max30101_init(struct device *dev)
 	}
 
 	/* Reset the sensor */
-	if (i2c_reg_write_byte(data->i2c, MAX30101_I2C_ADDRESS,
-			       MAX30101_REG_MODE_CFG,
-			       MAX30101_MODE_CFG_RESET_MASK)) {
+	if (i2c_reg_write_byte_dt(&config->i2c, MAX30101_REG_MODE_CFG,
+				  MAX30101_MODE_CFG_RESET_MASK)) {
 		return -EIO;
 	}
 
 	/* Wait for reset to be cleared */
 	do {
-		if (i2c_reg_read_byte(data->i2c, MAX30101_I2C_ADDRESS,
-				      MAX30101_REG_MODE_CFG, &mode_cfg)) {
+		if (i2c_reg_read_byte_dt(&config->i2c, MAX30101_REG_MODE_CFG,
+					 &mode_cfg)) {
 			LOG_ERR("Could read mode cfg after reset");
 			return -EIO;
 		}
 	} while (mode_cfg & MAX30101_MODE_CFG_RESET_MASK);
 
 	/* Write the FIFO configuration register */
-	if (i2c_reg_write_byte(data->i2c, MAX30101_I2C_ADDRESS,
-			       MAX30101_REG_FIFO_CFG, config->fifo)) {
+	if (i2c_reg_write_byte_dt(&config->i2c, MAX30101_REG_FIFO_CFG,
+				  config->fifo)) {
 		return -EIO;
 	}
 
 	/* Write the mode configuration register */
-	if (i2c_reg_write_byte(data->i2c, MAX30101_I2C_ADDRESS,
-			       MAX30101_REG_MODE_CFG, config->mode)) {
+	if (i2c_reg_write_byte_dt(&config->i2c, MAX30101_REG_MODE_CFG,
+				  config->mode)) {
 		return -EIO;
 	}
 
 	/* Write the SpO2 configuration register */
-	if (i2c_reg_write_byte(data->i2c, MAX30101_I2C_ADDRESS,
-			       MAX30101_REG_SPO2_CFG, config->spo2)) {
+	if (i2c_reg_write_byte_dt(&config->i2c, MAX30101_REG_SPO2_CFG,
+				  config->spo2)) {
 		return -EIO;
 	}
 
 	/* Write the LED pulse amplitude registers */
-	if (i2c_reg_write_byte(data->i2c, MAX30101_I2C_ADDRESS,
-			       MAX30101_REG_LED1_PA, config->led_pa[0])) {
+	if (i2c_reg_write_byte_dt(&config->i2c, MAX30101_REG_LED1_PA,
+				  config->led_pa[0])) {
 		return -EIO;
 	}
-	if (i2c_reg_write_byte(data->i2c, MAX30101_I2C_ADDRESS,
-			       MAX30101_REG_LED2_PA, config->led_pa[1])) {
+	if (i2c_reg_write_byte_dt(&config->i2c, MAX30101_REG_LED2_PA,
+				  config->led_pa[1])) {
 		return -EIO;
 	}
-	if (i2c_reg_write_byte(data->i2c, MAX30101_I2C_ADDRESS,
-			       MAX30101_REG_LED3_PA, config->led_pa[2])) {
+	if (i2c_reg_write_byte_dt(&config->i2c, MAX30101_REG_LED3_PA,
+				  config->led_pa[2])) {
 		return -EIO;
 	}
 
 #ifdef CONFIG_MAX30101_MULTI_LED_MODE
-	u8_t multi_led[2];
+	uint8_t multi_led[2];
 
 	/* Write the multi-LED mode control registers */
 	multi_led[0] = (config->slot[1] << 4) | (config->slot[0]);
 	multi_led[1] = (config->slot[3] << 4) | (config->slot[2]);
 
-	if (i2c_reg_write_byte(data->i2c, MAX30101_I2C_ADDRESS,
-			       MAX30101_REG_MULTI_LED, multi_led[0])) {
+	if (i2c_reg_write_byte_dt(&config->i2c, MAX30101_REG_MULTI_LED,
+				  multi_led[0])) {
 		return -EIO;
 	}
-	if (i2c_reg_write_byte(data->i2c, MAX30101_I2C_ADDRESS,
-			       MAX30101_REG_MULTI_LED + 1, multi_led[1])) {
+	if (i2c_reg_write_byte_dt(&config->i2c, MAX30101_REG_MULTI_LED + 1,
+				  multi_led[1])) {
 		return -EIO;
 	}
 #endif
@@ -204,6 +205,7 @@ static int max30101_init(struct device *dev)
 }
 
 static struct max30101_config max30101_config = {
+	.i2c = I2C_DT_SPEC_INST_GET(0),
 	.fifo = (CONFIG_MAX30101_SMP_AVE << MAX30101_FIFO_CFG_SMP_AVE_SHIFT) |
 #ifdef CONFIG_MAX30101_FIFO_ROLLOVER_EN
 		MAX30101_FIFO_CFG_ROLLOVER_EN_MASK |
@@ -242,7 +244,7 @@ static struct max30101_config max30101_config = {
 
 static struct max30101_data max30101_data;
 
-DEVICE_AND_API_INIT(max30101, DT_INST_0_MAX_MAX30101_LABEL, max30101_init,
+SENSOR_DEVICE_DT_INST_DEFINE(0, max30101_init, NULL,
 		    &max30101_data, &max30101_config,
 		    POST_KERNEL, CONFIG_SENSOR_INIT_PRIORITY,
 		    &max30101_driver_api);

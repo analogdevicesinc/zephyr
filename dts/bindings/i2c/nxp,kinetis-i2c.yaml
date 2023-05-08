@@ -1,18 +1,19 @@
 # Copyright (c) 2017 Linaro Limited
 # SPDX-License-Identifier: Apache-2.0
 
-title: Kinetis I2C Controller
-
-description: >
-    This is a representation of the Kinetis I2C nodes
+description: Kinetis I2C node
 
 compatible: "nxp,kinetis-i2c"
 
-include: i2c-controller.yaml
+include: ["i2c-controller.yaml", "pinctrl-device.yaml"]
 
 properties:
-    reg:
-      required: true
+  reg:
+    required: true
 
-    interrupts:
-      required: true
+  interrupts:
+    required: true
+
+  pinctrl-0:
+    type: phandles
+    required: true

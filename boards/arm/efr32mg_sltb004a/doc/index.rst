@@ -10,8 +10,7 @@ The EFR32™ Mighty Gecko Starter Kit EFR32MG-SLTB004A (a.k.a Thunderboard
 Sense 2) contains a MCU from the EFR32MG family built on ARM® Cortex®-M4F
 processor with low power capabilities.
 
-.. image:: ./efr32mg_sltb004a.jpg
-   :width: 640px
+.. image:: efr32mg_sltb004a.jpg
    :align: center
    :alt: EFR32MG-SLTB004A
 
@@ -59,6 +58,8 @@ The efr32mg_sltb004a board configuration supports the following hardware feature
 +-----------+------------+-------------------------------------+
 | Interface | Controller | Driver/Component                    |
 +===========+============+=====================================+
+| MPU       | on-chip    | memory protection unit              |
++-----------+------------+-------------------------------------+
 | NVIC      | on-chip    | nested vector interrupt controller  |
 +-----------+------------+-------------------------------------+
 | SYSTICK   | on-chip    | systick                             |
@@ -73,6 +74,12 @@ The efr32mg_sltb004a board configuration supports the following hardware feature
 |           |            | serial port-interrupt               |
 +-----------+------------+-------------------------------------+
 | I2C       | on-chip    | i2c port-polling                    |
++-----------+------------+-------------------------------------+
+| SPI(M)    | on-chip    | spi port-polling                    |
++-----------+------------+-------------------------------------+
+| WATCHDOG  | on-chip    | watchdog                            |
++-----------+------------+-------------------------------------+
+| TRNG      | on-chip    | true random number generator        |
 +-----------+------------+-------------------------------------+
 
 The default configuration can be found in the defconfig file:
@@ -113,9 +120,17 @@ in the board's and microcontroller's datasheets and manuals.
 +------+-------------+-----------------------------------+
 | PC11 | I2C_SCL     | EXP15_I2C_SCL I2C0_SCL #15        |
 +------+-------------+-----------------------------------+
-| PC4  | I2C_SDA     | ENV_I2C_SDA I2C1_SDA #17          |
+| PB6  | I2C_SDA     | CCS811_I2C_SDA I2C1_SDA #6        |
 +------+-------------+-----------------------------------+
-| PC5  | I2C_SCL     | ENV_I2C_SCL I2C1_SCL #17          |
+| PB7  | I2C_SCL     | CCS811_I2C_SCL I2C1_SCL #6        |
++------+-------------+-----------------------------------+
+| PK0  | SPI_MOSI    | Flash MOSI US2_TX #29             |
++------+-------------+-----------------------------------+
+| PK2  | SPI_MISO    | Flash MISO US2_RX #30             |
++------+-------------+-----------------------------------+
+| PF7  | SPI_SCLK    | Flash SCLK US2_CLK #18            |
++------+-------------+-----------------------------------+
+| PK1  | SPI_CS      | Flash Chip Select (GPIO)          |
 +------+-------------+-----------------------------------+
 
 System Clock
@@ -187,7 +202,7 @@ the following message:
    https://www.silabs.com/documents/public/user-guides/ug309-sltb004a-user-guide.pdf
 
 .. _EFR32MG-SLTB004A Schematics:
-   https://www.silabs.com/documents/public/schematic-files/TBSense2-BRD4166A-D00-schematic.pdf
+   https://www.silabs.com/documents/public/schematic-files/BRD4166A-D00-schematic.pdf
 
 .. _EFR32MG Website:
    https://www.silabs.com/products/wireless/mesh-networking/efr32mg-mighty-gecko-zigbee-thread-soc

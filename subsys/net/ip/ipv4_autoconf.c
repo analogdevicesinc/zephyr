@@ -9,20 +9,21 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_ipv4_autoconf, CONFIG_NET_IPV4_AUTO_LOG_LEVEL);
 
 #include "net_private.h"
 #include <errno.h>
 #include "../l2/ethernet/arp.h"
-#include <net/net_pkt.h>
-#include <net/net_core.h>
-#include <net/net_if.h>
+#include <zephyr/net/net_pkt.h>
+#include <zephyr/net/net_core.h>
+#include <zephyr/net/net_if.h>
+#include <zephyr/random/rand32.h>
 
 #include "ipv4_autoconf_internal.h"
 
 /* Have only one timer in order to save memory */
-static struct k_delayed_work ipv4auto_timer;
+static struct k_work_delayable ipv4auto_timer;
 
 /* Track currently active timers */
 static sys_slist_t ipv4auto_ifaces;
@@ -94,7 +95,7 @@ static void ipv4_autoconf_send_announcement(
 enum net_verdict net_ipv4_autoconf_input(struct net_if *iface,
 					 struct net_pkt *pkt)
 {
-	struct net_if_config *cfg = net_if_get_config(iface);
+	struct net_if_config *cfg;
 	struct net_arp_hdr *arp_hdr;
 
 	cfg = net_if_get_config(iface);
@@ -111,22 +112,22 @@ enum net_verdict net_ipv4_autoconf_input(struct net_if *iface,
 
 	arp_hdr = NET_ARP_HDR(pkt);
 
-	if (!net_ipv4_addr_cmp(&arp_hdr->dst_ipaddr,
-			       &cfg->ipv4auto.requested_ip)) {
+	if (!net_ipv4_addr_cmp_raw(arp_hdr->dst_ipaddr,
+				   (uint8_t *)&cfg->ipv4auto.requested_ip)) {
 		/* No conflict */
 		return NET_CONTINUE;
 	}
 
-	if (!net_ipv4_addr_cmp(&arp_hdr->src_ipaddr,
-			       &cfg->ipv4auto.requested_ip)) {
+	if (!net_ipv4_addr_cmp_raw(arp_hdr->src_ipaddr,
+				   (uint8_t *)&cfg->ipv4auto.requested_ip)) {
 		/* No need to defend */
 		return NET_CONTINUE;
 	}
 
 	NET_DBG("Conflict detected from %s for %s, state %d",
-		log_strdup(net_sprint_ll_addr((u8_t *)&arp_hdr->src_hwaddr,
-					      arp_hdr->hwlen)),
-		log_strdup(net_sprint_ipv4_addr(&arp_hdr->dst_ipaddr)),
+		net_sprint_ll_addr((uint8_t *)&arp_hdr->src_hwaddr,
+					      arp_hdr->hwlen),
+		net_sprint_ipv4_addr(&arp_hdr->dst_ipaddr),
 		cfg->ipv4auto.state);
 
 	cfg->ipv4auto.conflict_cnt++;
@@ -158,6 +159,32 @@ enum net_verdict net_ipv4_autoconf_input(struct net_if *iface,
 	}
 
 	return NET_DROP;
+}
+
+static inline void ipv4_autoconf_addr_set(struct net_if_ipv4_autoconf *ipv4auto)
+{
+	struct in_addr netmask = { { { 255, 255, 0, 0 } } };
+
+	if (ipv4auto->announce_cnt <=
+		(IPV4_AUTOCONF_ANNOUNCE_NUM - 1)) {
+		net_ipaddr_copy(&ipv4auto->current_ip,
+				&ipv4auto->requested_ip);
+		ipv4_autoconf_send_announcement(ipv4auto);
+		return;
+	}
+
+	/* Success, add new IPv4 address. */
+	if (!net_if_ipv4_addr_add(ipv4auto->iface,
+					&ipv4auto->requested_ip,
+					NET_ADDR_AUTOCONF, 0)) {
+		NET_DBG("Failed to add IPv4 addr to iface %p",
+			ipv4auto->iface);
+		return;
+	}
+
+	net_if_ipv4_set_netmask(ipv4auto->iface, &netmask);
+
+	ipv4auto->state = NET_IPV4_AUTOCONF_ASSIGNED;
 }
 
 static void ipv4_autoconf_send(struct net_if_ipv4_autoconf *ipv4auto)
@@ -194,49 +221,33 @@ static void ipv4_autoconf_send(struct net_if_ipv4_autoconf *ipv4auto)
 			ipv4_autoconf_send_probe(ipv4auto);
 			break;
 		}
-	/* passthrough */
+		__fallthrough;
 	case NET_IPV4_AUTOCONF_ANNOUNCE:
-		if (ipv4auto->announce_cnt <=
-		    (IPV4_AUTOCONF_ANNOUNCE_NUM - 1)) {
-			net_ipaddr_copy(&ipv4auto->current_ip,
-					&ipv4auto->requested_ip);
-			ipv4_autoconf_send_announcement(ipv4auto);
-			break;
-		}
-
-		/* success, add new IPv4 address */
-		if (!net_if_ipv4_addr_add(ipv4auto->iface,
-					  &ipv4auto->requested_ip,
-					  NET_ADDR_AUTOCONF, 0)) {
-			NET_DBG("Failed to add IPv4 addr to iface %p",
-				ipv4auto->iface);
-			return;
-		}
-
-		ipv4auto->state = NET_IPV4_AUTOCONF_ASSIGNED;
+		ipv4_autoconf_addr_set(ipv4auto);
 		break;
+
 	default:
 		break;
 	}
 }
 
-static u32_t ipv4_autoconf_get_timeout(struct net_if_ipv4_autoconf *ipv4auto)
+static uint32_t ipv4_autoconf_get_timeout(struct net_if_ipv4_autoconf *ipv4auto)
 {
 	switch (ipv4auto->state) {
 	case NET_IPV4_AUTOCONF_PROBE:
 		if (ipv4auto->conflict_cnt >= IPV4_AUTOCONF_MAX_CONFLICTS) {
 			NET_DBG("Rate limiting");
-			return K_SECONDS(IPV4_AUTOCONF_RATE_LIMIT_INTERVAL);
+			return MSEC_PER_SEC * IPV4_AUTOCONF_RATE_LIMIT_INTERVAL;
 
 		} else if (ipv4auto->probe_cnt == IPV4_AUTOCONF_PROBE_NUM) {
-			return K_SECONDS(IPV4_AUTOCONF_ANNOUNCE_INTERVAL);
+			return MSEC_PER_SEC * IPV4_AUTOCONF_ANNOUNCE_INTERVAL;
 		}
 
 		return IPV4_AUTOCONF_PROBE_WAIT * MSEC_PER_SEC +
 			(sys_rand32_get() % MSEC_PER_SEC);
 
 	case NET_IPV4_AUTOCONF_ANNOUNCE:
-		return K_SECONDS(IPV4_AUTOCONF_ANNOUNCE_INTERVAL);
+		return MSEC_PER_SEC * IPV4_AUTOCONF_ANNOUNCE_INTERVAL;
 
 	default:
 		break;
@@ -245,19 +256,17 @@ static u32_t ipv4_autoconf_get_timeout(struct net_if_ipv4_autoconf *ipv4auto)
 	return 0;
 }
 
-static void ipv4_autoconf_submit_work(u32_t timeout)
+static void ipv4_autoconf_submit_work(uint32_t timeout)
 {
-	if (!k_delayed_work_remaining_get(&ipv4auto_timer) ||
-	    timeout < k_delayed_work_remaining_get(&ipv4auto_timer)) {
-		k_delayed_work_cancel(&ipv4auto_timer);
-		k_delayed_work_submit(&ipv4auto_timer, timeout);
+	k_work_cancel_delayable(&ipv4auto_timer);
+	k_work_reschedule(&ipv4auto_timer, K_MSEC(timeout));
 
-		NET_DBG("Next wakeup in %d ms",
-			k_delayed_work_remaining_get(&ipv4auto_timer));
-	}
+	NET_DBG("Next wakeup in %d ms",
+		k_ticks_to_ms_ceil32(
+			k_work_delayable_remaining_get(&ipv4auto_timer)));
 }
 
-static bool ipv4_autoconf_check_timeout(s64_t start, u32_t time, s64_t timeout)
+static bool ipv4_autoconf_check_timeout(int64_t start, uint32_t time, int64_t timeout)
 {
 	start += time;
 	if (start < 0) {
@@ -272,16 +281,16 @@ static bool ipv4_autoconf_check_timeout(s64_t start, u32_t time, s64_t timeout)
 }
 
 static bool ipv4_autoconf_timedout(struct net_if_ipv4_autoconf *ipv4auto,
-				   s64_t timeout)
+				   int64_t timeout)
 {
 	return ipv4_autoconf_check_timeout(ipv4auto->timer_start,
 					   ipv4auto->timer_timeout,
 					   timeout);
 }
 
-static u32_t ipv4_autoconf_manage_timeouts(
+static uint32_t ipv4_autoconf_manage_timeouts(
 	struct net_if_ipv4_autoconf *ipv4auto,
-	s64_t timeout)
+	int64_t timeout)
 {
 	if (ipv4_autoconf_timedout(ipv4auto, timeout)) {
 		ipv4_autoconf_send(ipv4auto);
@@ -294,15 +303,15 @@ static u32_t ipv4_autoconf_manage_timeouts(
 
 static void ipv4_autoconf_timeout(struct k_work *work)
 {
-	u32_t timeout_update = UINT32_MAX - 1;
-	s64_t timeout = k_uptime_get();
+	uint32_t timeout_update = UINT32_MAX - 1;
+	int64_t timeout = k_uptime_get();
 	struct net_if_ipv4_autoconf *current, *next;
 
 	ARG_UNUSED(work);
 
 	SYS_SLIST_FOR_EACH_CONTAINER_SAFE(&ipv4auto_ifaces, current, next,
 					  node) {
-		u32_t next_timeout;
+		uint32_t next_timeout;
 
 		next_timeout = ipv4_autoconf_manage_timeouts(current, timeout);
 		if (next_timeout < timeout_update) {
@@ -313,7 +322,7 @@ static void ipv4_autoconf_timeout(struct k_work *work)
 	if (timeout_update != UINT32_MAX && timeout_update > 0) {
 		NET_DBG("Waiting for %u ms", timeout_update);
 
-		k_delayed_work_submit(&ipv4auto_timer, timeout_update);
+		k_work_reschedule(&ipv4auto_timer, K_MSEC(timeout_update));
 	}
 }
 
@@ -323,7 +332,7 @@ static void ipv4_autoconf_start_timer(struct net_if *iface,
 	sys_slist_append(&ipv4auto_ifaces, &ipv4auto->node);
 
 	ipv4auto->timer_start = k_uptime_get();
-	ipv4auto->timer_timeout = K_SECONDS(IPV4_AUTOCONF_START_DELAY);
+	ipv4auto->timer_timeout = MSEC_PER_SEC * IPV4_AUTOCONF_START_DELAY;
 	ipv4auto->iface = iface;
 
 	ipv4_autoconf_submit_work(ipv4auto->timer_timeout);
@@ -333,6 +342,10 @@ void net_ipv4_autoconf_start(struct net_if *iface)
 {
 	/* Initialize interface and start probing */
 	struct net_if_config *cfg;
+
+	if (!net_if_flag_is_set(iface, NET_IF_IPV4)) {
+		return;
+	}
 
 	cfg = net_if_get_config(iface);
 	if (!cfg) {
@@ -375,11 +388,11 @@ void net_ipv4_autoconf_reset(struct net_if *iface)
 	sys_slist_find_and_remove(&ipv4auto_ifaces, &cfg->ipv4auto.node);
 
 	if (sys_slist_is_empty(&ipv4auto_ifaces)) {
-		k_delayed_work_cancel(&ipv4auto_timer);
+		k_work_cancel_delayable(&ipv4auto_timer);
 	}
 }
 
 void net_ipv4_autoconf_init(void)
 {
-	k_delayed_work_init(&ipv4auto_timer, ipv4_autoconf_timeout);
+	k_work_init_delayable(&ipv4auto_timer, ipv4_autoconf_timeout);
 }

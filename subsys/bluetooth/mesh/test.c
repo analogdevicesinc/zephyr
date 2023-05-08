@@ -1,5 +1,3 @@
-/*  Bluetooth Mesh */
-
 /*
  * Copyright (c) 2017 Intel Corporation
  *
@@ -9,10 +7,7 @@
 #include <string.h>
 #include <errno.h>
 
-#include <bluetooth/mesh.h>
-
-#define LOG_MODULE_NAME bt_mesh_test
-#include "common/log.h"
+#include <zephyr/bluetooth/mesh.h>
 
 #include "mesh.h"
 #include "test.h"

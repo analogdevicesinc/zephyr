@@ -5,47 +5,66 @@
  */
 
 #define LOG_LEVEL CONFIG_LOG_DEFAULT_LEVEL
-#include <logging/log.h>
-LOG_MODULE_REGISTER(main);
+#include <zephyr/logging/log.h>
+LOG_MODULE_REGISTER(spi_loopback);
 
-#include <zephyr.h>
-#include <sys/printk.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/printk.h>
 #include <string.h>
 #include <stdio.h>
-#include <ztest.h>
+#include <zephyr/ztest.h>
 
-#include <drivers/spi.h>
+#include <zephyr/drivers/spi.h>
 
-#define SPI_DRV_NAME	CONFIG_SPI_LOOPBACK_DRV_NAME
-#define SPI_SLAVE	CONFIG_SPI_LOOPBACK_SLAVE_NUMBER
-#define SLOW_FREQ	CONFIG_SPI_LOOPBACK_SLOW_FREQ
-#define FAST_FREQ	CONFIG_SPI_LOOPBACK_FAST_FREQ
+#define SPI_FAST_DEV	DT_COMPAT_GET_ANY_STATUS_OKAY(test_spi_loopback_fast)
+#define SPI_SLOW_DEV	DT_COMPAT_GET_ANY_STATUS_OKAY(test_spi_loopback_slow)
 
-#if defined(CONFIG_SPI_LOOPBACK_CS_GPIO)
-#define CS_CTRL_GPIO_DRV_NAME CONFIG_SPI_LOOPBACK_CS_CTRL_GPIO_DRV_NAME
-struct spi_cs_control spi_cs = {
-	.gpio_pin = CONFIG_SPI_LOOPBACK_CS_CTRL_GPIO_PIN,
-	.delay = 0,
-};
-#define SPI_CS (&spi_cs)
+#if CONFIG_SPI_LOOPBACK_MODE_LOOP
+#define MODE_LOOP SPI_MODE_LOOP
 #else
-#define SPI_CS NULL
-#define CS_CTRL_GPIO_DRV_NAME ""
+#define MODE_LOOP 0
 #endif
+
+#define SPI_OP SPI_OP_MODE_MASTER | SPI_MODE_CPOL | MODE_LOOP | \
+	       SPI_MODE_CPHA | SPI_WORD_SET(8) | SPI_LINES_SINGLE
+
+
+static struct spi_dt_spec spi_fast = SPI_DT_SPEC_GET(SPI_FAST_DEV, SPI_OP, 0);
+static struct spi_dt_spec spi_slow = SPI_DT_SPEC_GET(SPI_SLOW_DEV, SPI_OP, 0);
+
+/* to run this test, connect MOSI pin to the MISO of the SPI */
 
 #define STACK_SIZE 512
 #define BUF_SIZE 17
-u8_t buffer_tx[] = "0123456789abcdef\0";
-u8_t buffer_rx[BUF_SIZE] = {};
+#define BUF2_SIZE 36
+
+#if CONFIG_NOCACHE_MEMORY
+static const char tx_data[BUF_SIZE] = "0123456789abcdef\0";
+static __aligned(32) char buffer_tx[BUF_SIZE] __used __attribute__((__section__(".nocache")));
+static __aligned(32) char buffer_rx[BUF_SIZE] __used __attribute__((__section__(".nocache")));
+static const char tx2_data[BUF2_SIZE] = "Thequickbrownfoxjumpsoverthelazydog\0";
+static __aligned(32) char buffer2_tx[BUF2_SIZE] __used __attribute__((__section__(".nocache")));
+static __aligned(32) char buffer2_rx[BUF2_SIZE] __used __attribute__((__section__(".nocache")));
+#else
+/* this src memory shall be in RAM to support using as a DMA source pointer.*/
+static uint8_t buffer_tx[] = "0123456789abcdef\0";
+static uint8_t buffer_rx[BUF_SIZE] = {};
+
+static uint8_t buffer2_tx[] = "Thequickbrownfoxjumpsoverthelazydog\0";
+static uint8_t buffer2_rx[BUF2_SIZE] = {};
+#endif
 
 /*
  * We need 5x(buffer size) + 1 to print a comma-separated list of each
  * byte in hex, plus a null.
  */
-u8_t buffer_print_tx[BUF_SIZE * 5 + 1];
-u8_t buffer_print_rx[BUF_SIZE * 5 + 1];
+static uint8_t buffer_print_tx[BUF_SIZE * 5 + 1];
+static uint8_t buffer_print_rx[BUF_SIZE * 5 + 1];
 
-static void to_display_format(const u8_t *src, size_t size, char *dst)
+static uint8_t buffer_print_tx2[BUF2_SIZE * 5 + 1];
+static uint8_t buffer_print_rx2[BUF2_SIZE * 5 + 1];
+
+static void to_display_format(const uint8_t *src, size_t size, char *dst)
 {
 	size_t i;
 
@@ -54,37 +73,69 @@ static void to_display_format(const u8_t *src, size_t size, char *dst)
 	}
 }
 
-struct spi_config spi_cfg_slow = {
-	.frequency = SLOW_FREQ,
-	.operation = SPI_OP_MODE_MASTER | SPI_MODE_CPOL |
-	SPI_MODE_CPHA | SPI_WORD_SET(8) | SPI_LINES_SINGLE,
-	.slave = SPI_SLAVE,
-	.cs = SPI_CS,
-};
-
-struct spi_config spi_cfg_fast = {
-	.frequency = FAST_FREQ,
-	.operation = SPI_OP_MODE_MASTER | SPI_MODE_CPOL |
-	SPI_MODE_CPHA | SPI_WORD_SET(8) | SPI_LINES_SINGLE,
-	.slave = SPI_SLAVE,
-	.cs = SPI_CS,
-};
-
-#if defined(CONFIG_SPI_LOOPBACK_CS_GPIO)
-static int cs_ctrl_gpio_config(void)
+/* test transferring different buffers on the same dma channels */
+static int spi_complete_multiple(struct spi_dt_spec *spec)
 {
-	spi_cs.gpio_dev = device_get_binding(CS_CTRL_GPIO_DRV_NAME);
-	if (!spi_cs.gpio_dev) {
-		LOG_ERR("Cannot find %s!", CS_CTRL_GPIO_DRV_NAME);
-		zassert_not_null(spi_cs.gpio_dev, "Invalid gpio device");
+	struct spi_buf tx_bufs[2];
+	const struct spi_buf_set tx = {
+		.buffers = tx_bufs,
+		.count = ARRAY_SIZE(tx_bufs)
+	};
+
+	tx_bufs[0].buf = buffer_tx;
+	tx_bufs[0].len = BUF_SIZE;
+
+	tx_bufs[1].buf = buffer2_tx;
+	tx_bufs[1].len = BUF2_SIZE;
+
+
+	struct spi_buf rx_bufs[2];
+	const struct spi_buf_set rx = {
+		.buffers = rx_bufs,
+		.count = ARRAY_SIZE(rx_bufs)
+	};
+
+	rx_bufs[0].buf = buffer_rx;
+	rx_bufs[0].len = BUF_SIZE;
+
+	rx_bufs[1].buf = buffer2_rx;
+	rx_bufs[1].len = BUF2_SIZE;
+
+	int ret;
+
+	LOG_INF("Start complete multiple");
+
+	ret = spi_transceive_dt(spec, &tx, &rx);
+	if (ret) {
+		LOG_ERR("Code %d", ret);
+		zassert_false(ret, "SPI transceive failed");
+		return ret;
+	}
+
+	if (memcmp(buffer_tx, buffer_rx, BUF_SIZE)) {
+		to_display_format(buffer_tx, BUF_SIZE, buffer_print_tx);
+		to_display_format(buffer_rx, BUF_SIZE, buffer_print_rx);
+		LOG_ERR("Buffer contents are different: %s", buffer_print_tx);
+		LOG_ERR("                           vs: %s", buffer_print_rx);
+		zassert_false(1, "Buffer contents are different");
 		return -1;
 	}
 
+	if (memcmp(buffer2_tx, buffer2_rx, BUF2_SIZE)) {
+		to_display_format(buffer2_tx, BUF2_SIZE, buffer_print_tx2);
+		to_display_format(buffer2_rx, BUF2_SIZE, buffer_print_rx2);
+		LOG_ERR("Buffer 2 contents are different: %s", buffer_print_tx2);
+		LOG_ERR("                             vs: %s", buffer_print_rx2);
+		zassert_false(1, "Buffer 2 contents are different");
+		return -1;
+	}
+
+	LOG_INF("Passed");
+
 	return 0;
 }
-#endif /* CONFIG_SPI_LOOPBACK_CS_GPIO */
 
-static int spi_complete_loop(struct device *dev, struct spi_config *spi_conf)
+static int spi_complete_loop(struct spi_dt_spec *spec)
 {
 	const struct spi_buf tx_bufs[] = {
 		{
@@ -109,9 +160,9 @@ static int spi_complete_loop(struct device *dev, struct spi_config *spi_conf)
 
 	int ret;
 
-	LOG_INF("Start");
+	LOG_INF("Start complete loop");
 
-	ret = spi_transceive(dev, spi_conf, &tx, &rx);
+	ret = spi_transceive_dt(spec, &tx, &rx);
 	if (ret) {
 		LOG_ERR("Code %d", ret);
 		zassert_false(ret, "SPI transceive failed");
@@ -121,10 +172,8 @@ static int spi_complete_loop(struct device *dev, struct spi_config *spi_conf)
 	if (memcmp(buffer_tx, buffer_rx, BUF_SIZE)) {
 		to_display_format(buffer_tx, BUF_SIZE, buffer_print_tx);
 		to_display_format(buffer_rx, BUF_SIZE, buffer_print_rx);
-		LOG_ERR("Buffer contents are different: %s",
-			    buffer_print_tx);
-		LOG_ERR("                           vs: %s",
-			    buffer_print_rx);
+		LOG_ERR("Buffer contents are different: %s", buffer_print_tx);
+		LOG_ERR("                           vs: %s", buffer_print_rx);
 		zassert_false(1, "Buffer contents are different");
 		return -1;
 	}
@@ -134,7 +183,62 @@ static int spi_complete_loop(struct device *dev, struct spi_config *spi_conf)
 	return 0;
 }
 
-static int spi_rx_half_start(struct device *dev, struct spi_config *spi_conf)
+static int spi_null_tx_buf(struct spi_dt_spec *spec)
+{
+	static const uint8_t EXPECTED_NOP_RETURN_BUF[BUF_SIZE] = { 0 };
+
+	(void)memset(buffer_rx, 0x77, BUF_SIZE);
+
+	const struct spi_buf tx_bufs[] = {
+		/* According to documentation, when sending NULL tx buf -
+		 *  NOP frames should be sent on MOSI line
+		 */
+		{
+			.buf = NULL,
+			.len = BUF_SIZE,
+		},
+	};
+	const struct spi_buf rx_bufs[] = {
+		{
+			.buf = buffer_rx,
+			.len = BUF_SIZE,
+		},
+	};
+	const struct spi_buf_set tx = {
+		.buffers = tx_bufs,
+		.count = ARRAY_SIZE(tx_bufs)
+	};
+	const struct spi_buf_set rx = {
+		.buffers = rx_bufs,
+		.count = ARRAY_SIZE(rx_bufs)
+	};
+
+	int ret;
+
+	LOG_INF("Start null tx");
+
+	ret = spi_transceive_dt(spec, &tx, &rx);
+	if (ret) {
+		LOG_ERR("Code %d", ret);
+		zassert_false(ret, "SPI transceive failed");
+		return ret;
+	}
+
+
+	if (memcmp(buffer_rx, EXPECTED_NOP_RETURN_BUF, BUF_SIZE)) {
+		to_display_format(buffer_rx, BUF_SIZE, buffer_print_rx);
+		LOG_ERR("Rx Buffer should contain NOP frames but got: %s",
+			buffer_print_rx);
+		zassert_false(1, "Buffer not as expected");
+		return -1;
+	}
+
+	LOG_INF("Passed");
+
+	return 0;
+}
+
+static int spi_rx_half_start(struct spi_dt_spec *spec)
 {
 	const struct spi_buf tx_bufs[] = {
 		{
@@ -158,11 +262,11 @@ static int spi_rx_half_start(struct device *dev, struct spi_config *spi_conf)
 	};
 	int ret;
 
-	LOG_INF("Start");
+	LOG_INF("Start half start");
 
 	(void)memset(buffer_rx, 0, BUF_SIZE);
 
-	ret = spi_transceive(dev, spi_conf, &tx, &rx);
+	ret = spi_transceive_dt(spec, &tx, &rx);
 	if (ret) {
 		LOG_ERR("Code %d", ret);
 		zassert_false(ret, "SPI transceive failed");
@@ -172,10 +276,8 @@ static int spi_rx_half_start(struct device *dev, struct spi_config *spi_conf)
 	if (memcmp(buffer_tx, buffer_rx, 8)) {
 		to_display_format(buffer_tx, 8, buffer_print_tx);
 		to_display_format(buffer_rx, 8, buffer_print_rx);
-		LOG_ERR("Buffer contents are different: %s",
-			    buffer_print_tx);
-		LOG_ERR("                           vs: %s",
-			    buffer_print_rx);
+		LOG_ERR("Buffer contents are different: %s", buffer_print_tx);
+		LOG_ERR("                           vs: %s", buffer_print_rx);
 		zassert_false(1, "Buffer contents are different");
 		return -1;
 	}
@@ -185,7 +287,7 @@ static int spi_rx_half_start(struct device *dev, struct spi_config *spi_conf)
 	return 0;
 }
 
-static int spi_rx_half_end(struct device *dev, struct spi_config *spi_conf)
+static int spi_rx_half_end(struct spi_dt_spec *spec)
 {
 	const struct spi_buf tx_bufs[] = {
 		{
@@ -213,24 +315,27 @@ static int spi_rx_half_end(struct device *dev, struct spi_config *spi_conf)
 	};
 	int ret;
 
-	LOG_INF("Start");
+	if (IS_ENABLED(CONFIG_SPI_STM32_DMA)) {
+		LOG_INF("Skip half end");
+		return 0;
+	}
+
+	LOG_INF("Start half end");
 
 	(void)memset(buffer_rx, 0, BUF_SIZE);
 
-	ret = spi_transceive(dev, spi_conf, &tx, &rx);
+	ret = spi_transceive_dt(spec, &tx, &rx);
 	if (ret) {
 		LOG_ERR("Code %d", ret);
 		zassert_false(ret, "SPI transceive failed");
 		return -1;
 	}
 
-	if (memcmp(buffer_tx+8, buffer_rx, 8)) {
+	if (memcmp(buffer_tx + 8, buffer_rx, 8)) {
 		to_display_format(buffer_tx + 8, 8, buffer_print_tx);
 		to_display_format(buffer_rx, 8, buffer_print_rx);
-		LOG_ERR("Buffer contents are different: %s",
-			    buffer_print_tx);
-		LOG_ERR("                           vs: %s",
-			    buffer_print_rx);
+		LOG_ERR("Buffer contents are different: %s", buffer_print_tx);
+		LOG_ERR("                           vs: %s", buffer_print_rx);
 		zassert_false(1, "Buffer contents are different");
 		return -1;
 	}
@@ -240,7 +345,7 @@ static int spi_rx_half_end(struct device *dev, struct spi_config *spi_conf)
 	return 0;
 }
 
-static int spi_rx_every_4(struct device *dev, struct spi_config *spi_conf)
+static int spi_rx_every_4(struct spi_dt_spec *spec)
 {
 	const struct spi_buf tx_bufs[] = {
 		{
@@ -276,11 +381,21 @@ static int spi_rx_every_4(struct device *dev, struct spi_config *spi_conf)
 	};
 	int ret;
 
-	LOG_INF("Start");
+	if (IS_ENABLED(CONFIG_SPI_STM32_DMA)) {
+		LOG_INF("Skip every 4");
+		return 0;
+	}
+
+	if (IS_ENABLED(CONFIG_DSPI_MCUX_EDMA)) {
+		LOG_INF("Skip every 4");
+		return 0;
+	}
+
+	LOG_INF("Start every 4");
 
 	(void)memset(buffer_rx, 0, BUF_SIZE);
 
-	ret = spi_transceive(dev, spi_conf, &tx, &rx);
+	ret = spi_transceive_dt(spec, &tx, &rx);
 	if (ret) {
 		LOG_ERR("Code %d", ret);
 		zassert_false(ret, "SPI transceive failed");
@@ -290,19 +405,15 @@ static int spi_rx_every_4(struct device *dev, struct spi_config *spi_conf)
 	if (memcmp(buffer_tx + 4, buffer_rx, 4)) {
 		to_display_format(buffer_tx + 4, 4, buffer_print_tx);
 		to_display_format(buffer_rx, 4, buffer_print_rx);
-		LOG_ERR("Buffer contents are different: %s",
-			    buffer_print_tx);
-		LOG_ERR("                           vs: %s",
-			    buffer_print_rx);
+		LOG_ERR("Buffer contents are different: %s", buffer_print_tx);
+		LOG_ERR("                           vs: %s", buffer_print_rx);
 		zassert_false(1, "Buffer contents are different");
 		return -1;
 	} else if (memcmp(buffer_tx + 12, buffer_rx + 4, 4)) {
 		to_display_format(buffer_tx + 12, 4, buffer_print_tx);
 		to_display_format(buffer_rx + 4, 4, buffer_print_rx);
-		LOG_ERR("Buffer contents are different: %s",
-			    buffer_print_tx);
-		LOG_ERR("                           vs: %s",
-			    buffer_print_rx);
+		LOG_ERR("Buffer contents are different: %s", buffer_print_tx);
+		LOG_ERR("                           vs: %s", buffer_print_rx);
 		zassert_false(1, "Buffer contents are different");
 		return -1;
 	}
@@ -312,6 +423,7 @@ static int spi_rx_every_4(struct device *dev, struct spi_config *spi_conf)
 	return 0;
 }
 
+#if (CONFIG_SPI_ASYNC)
 static struct k_poll_signal async_sig = K_POLL_SIGNAL_INITIALIZER(async_sig);
 static struct k_poll_event async_evt =
 	K_POLL_EVENT_INITIALIZER(K_POLL_TYPE_SIGNAL,
@@ -342,7 +454,7 @@ static void spi_async_call_cb(struct k_poll_event *async_evt,
 	}
 }
 
-static int spi_async_call(struct device *dev, struct spi_config *spi_conf)
+static int spi_async_call(struct spi_dt_spec *spec)
 {
 	const struct spi_buf tx_bufs[] = {
 		{
@@ -366,9 +478,9 @@ static int spi_async_call(struct device *dev, struct spi_config *spi_conf)
 	};
 	int ret;
 
-	LOG_INF("Start");
+	LOG_INF("Start async call");
 
-	ret = spi_transceive_async(dev, spi_conf, &tx, &rx, &async_sig);
+	ret = spi_transceive_signal(spec->bus, &spec->config, &tx, &rx, &async_sig);
 	if (ret == -ENOTSUP) {
 		LOG_DBG("Not supported");
 		return 0;
@@ -382,7 +494,7 @@ static int spi_async_call(struct device *dev, struct spi_config *spi_conf)
 
 	k_sem_take(&caller, K_FOREVER);
 
-	if (result)  {
+	if (result) {
 		LOG_ERR("Call code %d", ret);
 		zassert_false(result, "SPI transceive failed");
 		return -1;
@@ -392,90 +504,101 @@ static int spi_async_call(struct device *dev, struct spi_config *spi_conf)
 
 	return 0;
 }
+#endif
 
-static int spi_resource_lock_test(struct device *lock_dev,
-				  struct spi_config *spi_conf_lock,
-				  struct device *try_dev,
-				  struct spi_config *spi_conf_try)
+static int spi_resource_lock_test(struct spi_dt_spec *lock_spec,
+				  struct spi_dt_spec *try_spec)
 {
-	spi_conf_lock->operation |= SPI_LOCK_ON;
+	lock_spec->config.operation |= SPI_LOCK_ON;
 
-	if (spi_complete_loop(lock_dev, spi_conf_lock)) {
+	if (spi_complete_loop(lock_spec)) {
 		return -1;
 	}
 
-	if (spi_release(lock_dev, spi_conf_lock)) {
+	if (spi_release_dt(lock_spec)) {
 		LOG_ERR("Deadlock now?");
 		zassert_false(1, "SPI release failed");
 		return -1;
 	}
 
-	if (spi_complete_loop(try_dev, spi_conf_try)) {
+	if (spi_complete_loop(try_spec)) {
 		return -1;
 	}
 
 	return 0;
 }
 
-void testing_spi(void)
+ZTEST(spi_loopback, test_spi_loopback)
 {
+#if (CONFIG_SPI_ASYNC)
 	struct k_thread async_thread;
 	k_tid_t async_thread_id;
-	struct device *spi_slow;
-	struct device *spi_fast;
-
+#endif
 	LOG_INF("SPI test on buffers TX/RX %p/%p", buffer_tx, buffer_rx);
 
-#if defined(CONFIG_SPI_LOOPBACK_CS_GPIO)
-	if (cs_ctrl_gpio_config()) {
-		return;
-	}
-#endif /* CONFIG_SPI_LOOPBACK_CS_GPIO */
-
-	spi_slow = device_get_binding(SPI_DRV_NAME);
-	if (!spi_slow) {
-		LOG_ERR("Cannot find %s!\n", SPI_DRV_NAME);
-		zassert_not_null(spi_slow, "Invalid SPI device");
-		return;
-	}
-
-	spi_fast = spi_slow;
-
+#if (CONFIG_SPI_ASYNC)
 	async_thread_id = k_thread_create(&async_thread,
 					  spi_async_stack, STACK_SIZE,
 					  (k_thread_entry_t)spi_async_call_cb,
 					  &async_evt, &caller, NULL,
-					  K_PRIO_COOP(7), 0, 0);
+					  K_PRIO_COOP(7), 0, K_NO_WAIT);
+#endif
+	zassert_true(spi_is_ready_dt(&spi_slow), "Slow spi lookback device is not ready");
 
-	if (spi_complete_loop(spi_slow, &spi_cfg_slow) ||
-	    spi_rx_half_start(spi_slow, &spi_cfg_slow) ||
-	    spi_rx_half_end(spi_slow, &spi_cfg_slow) ||
-	    spi_rx_every_4(spi_slow, &spi_cfg_slow) ||
-	    spi_async_call(spi_slow, &spi_cfg_slow)) {
+	LOG_INF("SPI test slow config");
+
+	if (spi_complete_multiple(&spi_slow) ||
+	    spi_complete_loop(&spi_slow) ||
+	    spi_null_tx_buf(&spi_slow) ||
+	    spi_rx_half_start(&spi_slow) ||
+	    spi_rx_half_end(&spi_slow) ||
+	    spi_rx_every_4(&spi_slow)
+#if (CONFIG_SPI_ASYNC)
+	    || spi_async_call(&spi_slow)
+#endif
+	    ) {
 		goto end;
 	}
 
-	if (spi_complete_loop(spi_fast, &spi_cfg_fast) ||
-	    spi_rx_half_start(spi_fast, &spi_cfg_fast) ||
-	    spi_rx_half_end(spi_fast, &spi_cfg_fast) ||
-	    spi_rx_every_4(spi_fast, &spi_cfg_fast) ||
-	    spi_async_call(spi_fast, &spi_cfg_fast)) {
+	zassert_true(spi_is_ready_dt(&spi_fast), "Fast spi lookback device is not ready");
+
+	LOG_INF("SPI test fast config");
+
+	if (spi_complete_multiple(&spi_fast) ||
+	    spi_complete_loop(&spi_fast) ||
+	    spi_null_tx_buf(&spi_fast) ||
+	    spi_rx_half_start(&spi_fast) ||
+	    spi_rx_half_end(&spi_fast) ||
+	    spi_rx_every_4(&spi_fast)
+#if (CONFIG_SPI_ASYNC)
+	    || spi_async_call(&spi_fast)
+#endif
+	    ) {
 		goto end;
 	}
 
-	if (spi_resource_lock_test(spi_slow, &spi_cfg_slow,
-				   spi_fast, &spi_cfg_fast)) {
+	if (spi_resource_lock_test(&spi_slow, &spi_fast)) {
 		goto end;
 	}
 
 	LOG_INF("All tx/rx passed");
 end:
+#if (CONFIG_SPI_ASYNC)
 	k_thread_abort(async_thread_id);
+#else
+	;
+#endif
 }
 
-/*test case main entry*/
-void test_main(void)
+static void *spi_loopback_setup(void)
 {
-	ztest_test_suite(test_spi, ztest_unit_test(testing_spi));
-	ztest_run_test_suite(test_spi);
+#if CONFIG_NOCACHE_MEMORY
+	memset(buffer_tx, 0, sizeof(buffer_tx));
+	memcpy(buffer_tx, tx_data, sizeof(tx_data));
+	memset(buffer2_tx, 0, sizeof(buffer2_tx));
+	memcpy(buffer2_tx, tx2_data, sizeof(tx2_data));
+#endif
+	return NULL;
 }
+
+ZTEST_SUITE(spi_loopback, NULL, spi_loopback_setup, NULL, NULL, NULL);

@@ -7,35 +7,25 @@
 /dts-v1/;
 
 #include <nxp/nxp_k2x.dtsi>
+#include <zephyr/dt-bindings/pwm/pwm.h>
+#include "frdm_k22f-pinctrl.dtsi"
 
 / {
 	model = "NXP Freedom MK22F board";
 	compatible = "nxp,mk22f12", "nxp,k22f", "nxp,k2x";
 
 	aliases {
-		adc-0 = &adc0;
-		pwm-0 = &pwm0;
-		pwm-1 = &pwm1;
-		pwm-2 = &pwm2;
-		pwm-3 = &pwm3;
-		uart-0 = &uart0;
-		pinmux-a = &pinmux_a;
-		pinmux-b = &pinmux_b;
-		pinmux-c = &pinmux_c;
-		pinmux-d = &pinmux_d;
-		pinmux-e = &pinmux_e;
-		gpio-a = &gpioa;
-		gpio-b = &gpiob;
-		gpio-c = &gpioc;
-		gpio-d = &gpiod;
-		gpio-e = &gpioe;
-		i2c-0 = &i2c0;
-		i2c-1 = &i2c1;
 		led0 = &green_led;
 		led1 = &blue_led;
 		led2 = &red_led;
 		sw0 = &user_button_3;
 		sw1 = &user_button_2;
+		pwm-led0 = &green_pwm_led;
+		green-pwm-led = &green_pwm_led;
+		blue-pwm-led = &blue_pwm_led;
+		red-pwm-led = &red_pwm_led;
+		magn0 = &fxos8700;
+		accel0 = &fxos8700;
 	};
 
 	chosen {
@@ -63,21 +53,40 @@
 		};
 	};
 
+	pwmleds {
+		compatible = "pwm-leds";
+
+		red_pwm_led: red_pwm_led {
+			label = "red_led";
+			pwms = <&ftm0 6 15625000 PWM_POLARITY_INVERTED>;
+		};
+		green_pwm_led: green_pwm_led {
+			label = "green_led";
+			pwms = <&ftm0 7 15625000 PWM_POLARITY_INVERTED>;
+		};
+		blue_pwm_led: blue_pwm_led {
+			label = "blue_led";
+			pwms = <&ftm0 5 15625000 PWM_POLARITY_INVERTED>;
+		};
+	};
+
 	gpio_keys {
 		compatible = "gpio-keys";
 		user_button_2: button_0 {
 			label = "User SW2";
-			gpios = <&gpioc 1 GPIO_INT_ACTIVE_LOW>;
+			gpios = <&gpioc 1 GPIO_ACTIVE_LOW>;
 		};
 		user_button_3: button_1 {
 			label = "User SW3";
-			gpios = <&gpiob 17 GPIO_INT_ACTIVE_LOW>;
+			gpios = <&gpiob 17 GPIO_ACTIVE_LOW>;
 		};
 	};
 
 	arduino_header: connector {
 		compatible = "arduino-header-r3";
 		#gpio-cells = <2>;
+		gpio-map-mask = <0xffffffff 0xffffffc0>;
+		gpio-map-pass-thru = <0 0x3f>;
 		gpio-map = <0 0 &gpiob 0 0>,	/* A0 */
 			   <1 0 &gpiob 1 0>,	/* A1 */
 			   <2 0 &gpioc 1 0>,	/* A2 */
@@ -103,46 +112,86 @@
 	};
 };
 
+&sim {
+	pllfll-select = <KINETIS_SIM_PLLFLLSEL_MCGPLLCLK>;
+	er32k-select = <KINETIS_SIM_ER32KSEL_RTC>;
+};
+
 &adc0 {
 	status = "okay";
 };
 
-&i2c0 {
+&dac0 {
 	status = "okay";
+	voltage-reference = <2>;
+};
+arduino_i2c: &i2c0 {
+	status = "okay";
+	pinctrl-0 = <&i2c0_default>;
+	pinctrl-names = "default";
 
-	fxos8700@1d {
+	fxos8700: fxos8700@1c {
 		compatible = "nxp,fxos8700";
-		reg = <0x1d>;
-		label = "FXOS8700";
-		int1-gpios = <&gpiod 0 0>;
-		int2-gpios = <&gpiod 1 0>;
+		reg = <0x1c>;
+		int1-gpios = <&gpiod 0 GPIO_ACTIVE_LOW>;
+		int2-gpios = <&gpiod 1 GPIO_ACTIVE_LOW>;
 	};
 };
 
+
 arduino_spi: &spi0 {
 	status = "okay";
+	pinctrl-0 = <&spi0_default>;
+	pinctrl-names = "default";
 };
 
-&pwm3 {
+&ftm0 {
 	status = "okay";
+	compatible = "nxp,kinetis-ftm-pwm";
+	#pwm-cells = <3>;
+	pinctrl-0 = <&ftm0_default>;
+	pinctrl-names = "default";
 };
 
 &uart1 {
 	status = "okay";
 	current-speed = <115200>;
+	pinctrl-0 = <&uart1_default>;
+	pinctrl-names = "default";
 };
 
-&usbd {
+&uart2 {
+	pinctrl-0 = <&uart2_default>;
+	pinctrl-names = "default";
+};
+
+zephyr_udc0: &usbotg {
 	compatible = "nxp,kinetis-usbd";
 	status = "okay";
 	num-bidir-endpoints = <8>;
 };
 
+&gpioa {
+	status = "okay";
+};
+
+&gpiob {
+	status = "okay";
+};
+
+&gpioc {
+	status = "okay";
+};
+
+&gpiod {
+	status = "okay";
+};
+
+&gpioe {
+	status = "okay";
+};
+
 &flash0 {
-	/*
-	 * For more information, see:
-	 * http://docs.zephyrproject.org/latest/devices/dts/flash_partitions.html
-	 */
 	partitions {
 		compatible = "fixed-partitions";
 		#address-cells = <1>;

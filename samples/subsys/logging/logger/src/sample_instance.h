@@ -6,15 +6,15 @@
 #ifndef SAMPLE_INSTANCE_H
 #define SAMPLE_INSTANCE_H
 
-#include <kernel.h>
-#include <logging/log_instance.h>
-#include <logging/log.h>
+#include <zephyr/kernel.h>
+#include <zephyr/logging/log_instance.h>
+#include <zephyr/logging/log.h>
 
 #define SAMPLE_INSTANCE_NAME sample_instance
 
 struct sample_instance {
 	LOG_INSTANCE_PTR_DECLARE(log);
-	u32_t cnt;
+	uint32_t cnt;
 };
 
 #define SAMPLE_INSTANCE_DEFINE(_part, _name)				   \

@@ -1,25 +1,26 @@
-title: OpenISA GPIO
-
-description: >
-    This is a representation of the OpenISA GPIO nodes
+description: OpenISA GPIO node
 
 compatible: "openisa,rv32m1-gpio"
 
 include: [gpio-controller.yaml, base.yaml]
 
 properties:
-    reg:
-      required: true
+  reg:
+    required: true
 
-    interrupts:
-      required: true
+  interrupts:
+    required: true
 
-    label:
-      required: true
+  "#gpio-cells":
+    const: 2
 
-    "#gpio-cells":
-      const: 2
+  openisa,rv32m1-port:
+    required: true
+    type: phandle
+    description: |
+      A phandle reference to the device tree node that contains the pinmux
+      port associated with this GPIO controller.
 
-"#cells":
+gpio-cells:
   - pin
   - flags

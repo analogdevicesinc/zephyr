@@ -1,4 +1,0 @@
-tests:
-  section.subsection:
-    build_only: true
-    tags: my_tags

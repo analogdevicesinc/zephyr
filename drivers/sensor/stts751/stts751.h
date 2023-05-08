@@ -12,63 +12,60 @@
 #define ZEPHYR_DRIVERS_SENSOR_STTS751_STTS751_H_
 
 #include <stdint.h>
-#include <drivers/i2c.h>
-#include <gpio.h>
-#include <sensor.h>
+#include <zephyr/drivers/i2c.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/kernel.h>
 #include <zephyr/types.h>
-#include <sys/util.h>
+#include <zephyr/sys/util.h>
+#include <stmemsc.h>
 #include "stts751_reg.h"
 
 struct stts751_config {
-	char *master_dev_name;
-	int (*bus_init)(struct device *dev);
-#ifdef CONFIG_STTS751_TRIGGER
-	const char *event_port;
-	u8_t event_pin;
+#if DT_ANY_INST_ON_BUS_STATUS_OKAY(i2c)
+	struct i2c_dt_spec i2c;
 #endif
-#ifdef DT_ST_STTS751_BUS_I2C
-	u16_t i2c_slv_addr;
+	int (*bus_init)(const struct device *dev);
+#ifdef CONFIG_STTS751_TRIGGER
+	struct gpio_dt_spec int_gpio;
 #endif
 };
 
 struct stts751_data {
-	struct device *bus;
-	s16_t sample_temp;
+	const struct device *dev;
+	int16_t sample_temp;
 
-	stts751_ctx_t *ctx;
+	stmdev_ctx_t *ctx;
 
-#ifdef DT_ST_STTS751_BUS_I2C
-	stts751_ctx_t ctx_i2c;
+#if DT_ANY_INST_ON_BUS_STATUS_OKAY(i2c)
+	stmdev_ctx_t ctx_i2c;
 #endif
 
 #ifdef CONFIG_STTS751_TRIGGER
-	struct device *gpio;
-	u32_t pin;
 	struct gpio_callback gpio_cb;
 
-	struct sensor_trigger data_ready_trigger;
+	const struct sensor_trigger *thsld_trigger;
 	sensor_trigger_handler_t thsld_handler;
 
 #if defined(CONFIG_STTS751_TRIGGER_OWN_THREAD)
-	K_THREAD_STACK_MEMBER(thread_stack, CONFIG_STTS751_THREAD_STACK_SIZE);
+	K_KERNEL_STACK_MEMBER(thread_stack, CONFIG_STTS751_THREAD_STACK_SIZE);
 	struct k_thread thread;
 	struct k_sem gpio_sem;
 #elif defined(CONFIG_STTS751_TRIGGER_GLOBAL_THREAD)
 	struct k_work work;
-	struct device *dev;
 #endif
 
 #endif /* CONFIG_STTS751_TRIGGER */
 };
 
-int stts751_i2c_init(struct device *dev);
+int stts751_i2c_init(const struct device *dev);
 
 #ifdef CONFIG_STTS751_TRIGGER
-int stts751_trigger_set(struct device *dev,
+int stts751_trigger_set(const struct device *dev,
 			const struct sensor_trigger *trig,
 			sensor_trigger_handler_t handler);
 
-int stts751_init_interrupt(struct device *dev);
+int stts751_init_interrupt(const struct device *dev);
 #endif
 
 #endif /* ZEPHYR_DRIVERS_SENSOR_STTS751_STTS751_H_ */

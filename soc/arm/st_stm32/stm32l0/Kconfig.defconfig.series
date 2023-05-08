@@ -1,9 +1,7 @@
-# Kconfig - ST Microelectronics STM32L0 MCU line
-#
+# ST Microelectronics STM32L0 MCU line
+
 # Copyright (c) 2018 Endre Karlson <endre.karlson@gmail.com>
-#
 # SPDX-License-Identifier: Apache-2.0
-#
 
 # Kconfig symbols common to STM32L0 series
 
@@ -14,17 +12,9 @@ source "soc/arm/st_stm32/stm32l0/Kconfig.defconfig.stm32l0*"
 config SOC_SERIES
 	default "stm32l0"
 
-if GPIO_STM32
-
-# GPIO ports A, B and C are set in ../common/Kconfig.defconfig.series
-
-endif # GPIO_STM32
-
-if I2C_STM32
-
-config  I2C_STM32_V2
-	default y
-
-endif # I2C_STM32
+# adjust the fallback because of the LSI oscaillator characteristics
+config TASK_WDT_HW_FALLBACK_DELAY
+	depends on TASK_WDT_HW_FALLBACK
+	default 200
 
 endif # SOC_SERIES_STM32L0X

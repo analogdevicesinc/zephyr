@@ -6,7 +6,7 @@
 
 #include <stdio.h>
 #include <errno.h>
-#include <net/socket.h>
+#include <zephyr/net/socket.h>
 
 int zsock_getnameinfo(const struct sockaddr *addr, socklen_t addrlen,
 		      char *host, socklen_t hostlen,
@@ -25,7 +25,7 @@ int zsock_getnameinfo(const struct sockaddr *addr, socklen_t addrlen,
 	}
 
 	if (serv != NULL) {
-		snprintf(serv, servlen, "%hu", ntohs(a->sin_port));
+		snprintk(serv, servlen, "%hu", ntohs(a->sin_port));
 	}
 
 	return 0;

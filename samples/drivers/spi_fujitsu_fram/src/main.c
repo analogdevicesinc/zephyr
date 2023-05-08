@@ -5,10 +5,10 @@
  */
 
 #include <errno.h>
-#include <zephyr.h>
-#include <sys/printk.h>
-#include <device.h>
-#include <drivers/spi.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/spi.h>
 
 /**
  * @file Sample app using the Fujitsu MB85RS64V FRAM through SPI.
@@ -20,12 +20,13 @@
 #define MB85RS64V_WRITE_CMD 0x02
 #define MAX_USER_DATA_LENGTH 1024
 
-static u8_t data[MAX_USER_DATA_LENGTH], cmp_data[MAX_USER_DATA_LENGTH];
+static uint8_t data[MAX_USER_DATA_LENGTH], cmp_data[MAX_USER_DATA_LENGTH];
 
-static int mb85rs64v_access(struct device *spi, struct spi_config *spi_cfg,
-			    u8_t cmd, u16_t addr, void *data, size_t len)
+static int mb85rs64v_access(const struct device *spi,
+			    struct spi_config *spi_cfg,
+			    uint8_t cmd, uint16_t addr, void *data, size_t len)
 {
-	u8_t access[3];
+	uint8_t access[3];
 	struct spi_buf bufs[] = {
 		{
 			.buf = access,
@@ -64,9 +65,10 @@ static int mb85rs64v_access(struct device *spi, struct spi_config *spi_cfg,
 }
 
 
-static int mb85rs64v_read_id(struct device *spi, struct spi_config *spi_cfg)
+static int mb85rs64v_read_id(const struct device *spi,
+			     struct spi_config *spi_cfg)
 {
-	u8_t id[4];
+	uint8_t id[4];
 	int err;
 
 	err = mb85rs64v_access(spi, spi_cfg,
@@ -95,8 +97,8 @@ static int mb85rs64v_read_id(struct device *spi, struct spi_config *spi_cfg)
 	return 0;
 }
 
-static int write_bytes(struct device *spi, struct spi_config *spi_cfg,
-		       u16_t addr, u8_t *data, u32_t num_bytes)
+static int write_bytes(const struct device *spi, struct spi_config *spi_cfg,
+		       uint16_t addr, uint8_t *data, uint32_t num_bytes)
 {
 	int err;
 
@@ -119,8 +121,8 @@ static int write_bytes(struct device *spi, struct spi_config *spi_cfg,
 	return 0;
 }
 
-static int read_bytes(struct device *spi, struct spi_config *spi_cfg,
-		      u16_t addr, u8_t *data, u32_t num_bytes)
+static int read_bytes(const struct device *spi, struct spi_config *spi_cfg,
+		      uint16_t addr, uint8_t *data, uint32_t num_bytes)
 {
 	int err;
 
@@ -135,18 +137,18 @@ static int read_bytes(struct device *spi, struct spi_config *spi_cfg,
 	return 0;
 }
 
-void main(void)
+int main(void)
 {
-	struct device *spi;
-	struct spi_config spi_cfg;
+	const struct device *spi;
+	struct spi_config spi_cfg = {0};
 	int err;
 
 	printk("fujitsu FRAM example application\n");
 
-	spi = device_get_binding(DT_SPI_1_NAME);
-	if (!spi) {
-		printk("Could not find SPI driver\n");
-		return;
+	spi = DEVICE_DT_GET(DT_ALIAS(spi_1));
+	if (!device_is_ready(spi)) {
+		printk("SPI device %s is not ready\n", spi->name);
+		return 0;
 	}
 
 	spi_cfg.operation = SPI_WORD_SET(8);
@@ -156,15 +158,15 @@ void main(void)
 	err = mb85rs64v_read_id(spi, &spi_cfg);
 	if (err) {
 		printk("Could not verify FRAM ID\n");
-		return;
+		return 0;
 	}
 
 	/* Do one-byte read/write */
 	data[0] = 0xAE;
 	err = write_bytes(spi, &spi_cfg, 0x00, data, 1);
 	if (err) {
-		printk("Error writing to FRAM! errro code (%d)\n", err);
-		return;
+		printk("Error writing to FRAM! error code (%d)\n", err);
+		return 0;
 	} else {
 		printk("Wrote 0xAE to address 0x00.\n");
 	}
@@ -173,7 +175,7 @@ void main(void)
 	err = write_bytes(spi, &spi_cfg, 0x01, data, 1);
 	if (err) {
 		printk("Error writing to FRAM! error code (%d)\n", err);
-		return;
+		return 0;
 	} else {
 		printk("Wrote 0x86 to address 0x01.\n");
 	}
@@ -182,7 +184,7 @@ void main(void)
 	err = read_bytes(spi, &spi_cfg, 0x00, data, 1);
 	if (err) {
 		printk("Error reading from FRAM! error code (%d)\n", err);
-		return;
+		return 0;
 	} else {
 		printk("Read 0x%X from address 0x00.\n", data[0]);
 	}
@@ -191,14 +193,14 @@ void main(void)
 	err = read_bytes(spi, &spi_cfg, 0x01, data, 1);
 	if (err) {
 		printk("Error reading from FRAM! error code (%d)\n", err);
-		return;
+		return 0;
 	} else {
 		printk("Read 0x%X from address 0x01.\n", data[0]);
 	}
 
 	/* Do multi-byte read/write */
 	/* get some random data, and clear out data[] */
-	for (u32_t i = 0; i < sizeof(cmp_data); i++) {
+	for (uint32_t i = 0; i < sizeof(cmp_data); i++) {
 		cmp_data[i] = k_cycle_get_32() & 0xFF;
 		data[i] = 0x00;
 	}
@@ -207,23 +209,23 @@ void main(void)
 	err = write_bytes(spi, &spi_cfg, 0x00, cmp_data, sizeof(cmp_data));
 	if (err) {
 		printk("Error writing to FRAM! error code (%d)\n", err);
-		return;
+		return 0;
 	} else {
 		printk("Wrote %d bytes to address 0x00.\n",
-		       (u32_t) sizeof(cmp_data));
+		       (uint32_t) sizeof(cmp_data));
 	}
 
 	err = read_bytes(spi, &spi_cfg, 0x00, data, sizeof(data));
 	if (err) {
 		printk("Error reading from FRAM! error code (%d)\n", err);
-		return;
+		return 0;
 	} else {
 		printk("Read %d bytes from address 0x00.\n",
-		       (u32_t) sizeof(data));
+		       (uint32_t) sizeof(data));
 	}
 
 	err = 0;
-	for (u32_t i = 0; i < sizeof(cmp_data); i++) {
+	for (uint32_t i = 0; i < sizeof(cmp_data); i++) {
 		if (cmp_data[i] != data[i]) {
 			printk("Data comparison failed @ %d.\n", i);
 			err = -EIO;
@@ -232,4 +234,5 @@ void main(void)
 	if (err == 0) {
 		printk("Data comparison successful.\n");
 	}
+	return 0;
 }

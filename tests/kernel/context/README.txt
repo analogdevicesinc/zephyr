@@ -30,7 +30,9 @@ k_is_in_isr
   - Called from a thread
 
 k_cpu_idle
-  - CPU to be woken up by tick timer.  Thus, after each call, the tick count
+  - Tickless Kernel: CPU to be woken up by a kernel timer (k_timer)
+  - Non-tickless kernel:
+    CPU to be woken up by tick timer.  Thus, after each call, the tick count
     should have advanced by one tick.
 
 irq_lock
@@ -84,7 +86,7 @@ Testing irq_disable() and irq_enable()
 Testing some kernel context routines
 Testing k_current_get() from an ISR and task
 Testing k_is_in_isr() from an ISR
-Testing k_is_in_isr() from a preemtible thread
+Testing k_is_in_isr() from a preemptible thread
 Spawning a thread from a task
 Thread to test k_current_get() and k_is_in_isr()
 Thread to test k_yield()

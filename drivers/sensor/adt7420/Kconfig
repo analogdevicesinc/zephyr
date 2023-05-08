@@ -1,13 +1,13 @@
-# Kconfig - ADT7420 temperature sensor configuration options
-#
+# ADT7420 temperature sensor configuration options
+
 # Copyright (c) 2018 Analog Devices Inc.
-#
 # SPDX-License-Identifier: Apache-2.0
-#
 
 menuconfig ADT7420
 	bool "ADT7420 Temperature Sensor"
-	depends on I2C && HAS_DTS_I2C && HAS_DTS_GPIO
+	default y
+	depends on DT_HAS_ADI_ADT7420_ENABLED
+	select I2C
 	help
 	  Enable the driver for Analog Devices ADT7420 High-Accuracy
 	  16-bit Digital I2C Temperature Sensors.
@@ -69,4 +69,4 @@ config ADT7420_THREAD_STACK_SIZE
 	help
 	  Stack size of thread used by the driver to handle interrupts.
 
-endif #ADT7420
+endif # ADT7420

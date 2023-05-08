@@ -4,9 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <ztest.h>
-#include <zephyr.h>
+#include <zephyr/ztest.h>
+#include <zephyr/kernel.h>
 #include <errno.h>
+#include <zephyr/sys/errno_private.h>
 
 /**
  * @brief Test the thread context
@@ -19,10 +20,13 @@
  * @}
  */
 #define N_THREADS 2
-#define STACK_SIZE (384 + CONFIG_TEST_EXTRA_STACKSIZE)
+#define STACK_SIZE (384 + CONFIG_TEST_EXTRA_STACK_SIZE)
 
 static K_THREAD_STACK_ARRAY_DEFINE(stacks, N_THREADS, STACK_SIZE);
 static struct k_thread threads[N_THREADS];
+
+K_THREAD_STACK_DEFINE(eno_stack, STACK_SIZE);
+struct k_thread eno_thread;
 
 static int errno_values[N_THREADS + 1] = {
 	0xbabef00d,
@@ -46,12 +50,12 @@ static void errno_thread(void *_n, void *_my_errno, void *_unused)
 
 	errno = my_errno;
 
-	k_sleep(30 - (n * 10));
+	k_msleep(30 - (n * 10));
 	if (errno == my_errno) {
-		result[n].pass = 1;
+		result[n].pass = TC_PASS;
 	}
 
-	zassert_equal(errno, my_errno, NULL);
+	zassert_equal(errno, my_errno);
 
 	k_fifo_put(&fifo, &result[n]);
 }
@@ -64,7 +68,7 @@ static void errno_thread(void *_n, void *_my_errno, void *_unused)
  * @details Check whether variable value per-thread are saved during
  *	context switch
  */
-void test_thread_context(void)
+ZTEST(common_errno, test_thread_context)
 {
 	int rv = TC_PASS, test_errno;
 
@@ -86,17 +90,73 @@ void test_thread_context(void)
 	}
 
 	for (int ii = 0; ii < N_THREADS; ii++) {
-		struct result *p = k_fifo_get(&fifo, 100);
+		struct result *p = k_fifo_get(&fifo, K_MSEC(100));
 
-		if (!p || !p->pass) {
+		if (!p || (p->pass != TC_PASS)) {
 			rv = TC_FAIL;
 		}
 	}
 
-	zassert_equal(errno, test_errno, NULL);
+	zassert_equal(errno, test_errno);
 
 	if (errno != errno_values[N_THREADS]) {
 		rv = TC_FAIL;
 	}
+
+	/* Make sure all the test thread end. */
+	for (int ii = 0; ii < N_THREADS; ii++) {
+		k_thread_join(&threads[ii], K_FOREVER);
+	}
+
+	if (rv != TC_PASS) {
+		ztest_test_fail();
+	}
 }
 
+
+#define ERROR_ANY 0xfc
+
+void thread_entry_user(void *p1, void *p2, void *p3)
+{
+#ifdef CONFIG_ARCH_POSIX
+	/* The errno in native posix will be handled by native
+	 * operation system, so we skip it.
+	 */
+	ztest_test_skip();
+#else
+	int got_errno;
+
+	/* assign the error number to C standard errno */
+	errno = ERROR_ANY;
+
+	/* got errno zephyr stored */
+	got_errno = *(z_errno());
+
+	zassert_equal(errno, got_errno, "errno is not corresponding.");
+#endif
+}
+
+/**
+ * @brief Verify errno works well
+ *
+ * @details Check whether a C standard errno can be stored successfully,
+ *  no matter it is using tls or not.
+ *
+ * @ingroup kernel_threadcontext_tests
+ */
+ZTEST_USER(common_errno, test_errno)
+{
+	k_tid_t tid;
+	uint32_t perm = K_INHERIT_PERMS;
+
+	if (k_is_user_context()) {
+		perm = perm | K_USER;
+	}
+
+	tid = k_thread_create(&eno_thread, eno_stack, STACK_SIZE,
+				thread_entry_user, NULL, NULL, NULL,
+				K_PRIO_PREEMPT(1), perm,
+				K_NO_WAIT);
+
+	k_thread_join(tid, K_FOREVER);
+}

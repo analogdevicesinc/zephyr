@@ -15,10 +15,8 @@ CPU and the following devices:
 - Cortex-M System Design Kit GPIO
 - Cortex-M System Design Kit UART
 
-.. image:: img/v2m_musca_b1.png
-     :width: 435px
+.. image:: img/v2m_musca_b1.jpg
      :align: center
-     :height: 362px
      :alt: ARM V2M Musca B1
 
 More information about the board can be found at the `V2M Musca B1 Website`_.
@@ -143,8 +141,9 @@ in the following table:
 +------+------------+----------------+--------------------------+
 | 10   | Reserved   |                | not handled              |
 +------+------------+----------------+--------------------------+
-| 11   | SVC        |                | context switch and       |
-|      |            |                | software interrupts      |
+| 11   | SVC        |                | system calls, kernel     |
+|      |            |                | run-time exceptions,     |
+|      |            |                | and IRQ offloading       |
 +------+------------+----------------+--------------------------+
 | 12   | Debug      |                | system fatal error       |
 |      | monitor    |                |                          |
@@ -364,10 +363,10 @@ For more information refer to the `Srecord Manual`_.
 
 .. code-block:: bash
 
-   srec_cat $BIN_BOOLOADER -Binary -offset $FLASH_OFFSET $BIN_SNS -Binary -offset $IMAGE_OFFSET -o $HEX_FLASHABLE -Intel
+   srec_cat $BIN_BOOTLOADER -Binary -offset $FLASH_OFFSET $BIN_SNS -Binary -offset $IMAGE_OFFSET -o $HEX_FLASHABLE -Intel
 
    # For a 128K bootloader IMAGE_OFFSET = $FLASH_OFFSET + 0x20000
-   srec_cat $BIN_BOOLOADER -Binary -offset 0xA000000 $BIN_SNS -Binary -offset 0xA020000 -o $HEX_FLASHABLE -Intel
+   srec_cat $BIN_BOOTLOADER -Binary -offset 0xA000000 $BIN_SNS -Binary -offset 0xA020000 -o $HEX_FLASHABLE -Intel
 
 Connect the V2M Musca B1 to your host computer using the USB port. You should
 see a USB connection exposing a Mass Storage (MUSCA_B) and a USB Serial Port.
@@ -382,28 +381,28 @@ serial port:
 
 
 .. _V2M Musca B1 Website:
-   https://developer.arm.com/products/system-design/development-boards/iot-test-chips-and-boards/musca-b-test-chip-board
+   https://developer.arm.com/Tools%20and%20Software/Musca-B1%20Test%20Chip%20Board
 
 .. _Musca B1 Technical Reference Manual (TRM):
-   http://infocenter.arm.com/help/topic/com.arm.doc.101312_0000_00_en/arm_musca_b1_test_chip_and_board_technical_reference_manual_101312_0000_00_en.pdf
+   https://developer.arm.com/documentation/101312/latest/
 
 .. _DAPLink Website:
    https://github.com/ARMmbed/DAPLink
 
 .. _Cortex M33 Generic User Guide:
-   http://infocenter.arm.com/help/topic/com.arm.doc.100235_0004_00_en/arm_cortex_m33_dgug_100235_0004_00_en.pdf
+   https://developer.arm.com/documentation/100235/latest/
 
 .. _Trusted Firmware M Guide:
-   https://git.trustedfirmware.org/trusted-firmware-m.git/about/docs/user_guides/tfm_build_instruction.md
+   https://tf-m-user-guide.trustedfirmware.org/building/tfm_build_instruction.html
 
 .. _Corelink SSE-200 Subsystem:
-   https://developer.arm.com/products/system-design/subsystems/corelink-sse-200-subsystem
+   https://developer.arm.com/documentation/dto0051/latest/subsystem-overview/about-the-sse-200
 
 .. _Srecord Manual:
    http://srecord.sourceforge.net/man/man1/srec_cat.html
 
 .. _IDAU:
-   https://developer.arm.com/products/architecture/cpu-architecture/m-profile/docs/100690/latest/attribution-units-sau-and-idau
+   https://developer.arm.com/documentation/100690/latest/Attribution-units--SAU-and-IDAU-
 
 .. _AMBA®:
    https://developer.arm.com/products/architecture/system-architectures/amba

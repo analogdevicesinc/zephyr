@@ -8,8 +8,8 @@
 #ifndef __SETTINGS_NVS_H_
 #define __SETTINGS_NVS_H_
 
-#include <nvs/nvs.h>
-#include "settings/settings.h"
+#include <zephyr/fs/nvs.h>
+#include <zephyr/settings/settings.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -36,8 +36,16 @@ extern "C" {
 struct settings_nvs {
 	struct settings_store cf_store;
 	struct nvs_fs cf_nvs;
-	u16_t last_name_id;
-	const char *flash_dev_name;
+	uint16_t last_name_id;
+	const struct device *flash_dev;
+#if CONFIG_SETTINGS_NVS_NAME_CACHE
+	struct {
+		uint16_t name_hash;
+		uint16_t name_id;
+	} cache[CONFIG_SETTINGS_NVS_NAME_CACHE_SIZE];
+
+	uint16_t cache_next;
+#endif
 };
 
 /* register nvs to be a source of settings */

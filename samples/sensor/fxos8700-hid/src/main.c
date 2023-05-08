@@ -5,62 +5,36 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-#include <zephyr.h>
-#include <device.h>
-#include <drivers/gpio.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/sensor.h>
 
-#include <usb/usb_device.h>
-#include <usb/class/usb_hid.h>
+#include <zephyr/usb/usb_device.h>
+#include <zephyr/usb/class/usb_hid.h>
 
 #define LOG_LEVEL LOG_LEVEL_DBG
 LOG_MODULE_REGISTER(main);
 
-/* change this to use another GPIO port */
-#ifdef DT_ALIAS_SW0_GPIOS_CONTROLLER
-#define PORT0 DT_ALIAS_SW0_GPIOS_CONTROLLER
-#else
-#error DT_ALIAS_SW0_GPIOS_CONTROLLER needs to be set
-#endif
+#define SW0_NODE DT_ALIAS(sw0)
+#define SW1_NODE DT_ALIAS(sw1)
 
-/* change this to use another GPIO pin */
-#ifdef DT_ALIAS_SW0_GPIOS_PIN
-#define PIN0     DT_ALIAS_SW0_GPIOS_PIN
-#else
-#error DT_ALIAS_SW0_GPIOS_PIN needs to be set
-#endif
-
-/* The switch pin pull-up/down flags */
-#ifdef DT_ALIAS_SW0_GPIOS_FLAGS
-#define PIN0_FLAGS DT_ALIAS_SW0_GPIOS_FLAGS
-#else
-#error DT_ALIAS_SW0_GPIOS_FLAGS needs to be set
+#if DT_NODE_HAS_STATUS(SW0_NODE, okay)
+static const struct gpio_dt_spec sw0_gpio = GPIO_DT_SPEC_GET(SW0_NODE, gpios);
 #endif
 
 /* If second button exists, use it as right-click. */
-#ifdef DT_ALIAS_SW1_GPIOS_PIN
-#define PIN1	DT_ALIAS_SW1_GPIOS_PIN
+#if DT_NODE_HAS_STATUS(SW1_NODE, okay)
+static const struct gpio_dt_spec sw1_gpio = GPIO_DT_SPEC_GET(SW1_NODE, gpios);
 #endif
 
-#ifdef DT_ALIAS_SW1_GPIOS_CONTROLLER
-#define PORT1	DT_ALIAS_SW1_GPIOS_CONTROLLER
-#endif
+static const struct gpio_dt_spec led_gpio = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
 
-#ifdef DT_ALIAS_SW1_GPIOS_FLAGS
-#define PIN1_FLAGS DT_ALIAS_SW1_GPIOS_FLAGS
-#endif
 
-#define LED_PORT	DT_ALIAS_LED0_GPIOS_CONTROLLER
-#define LED		DT_ALIAS_LED0_GPIOS_PIN
+static const uint8_t hid_report_desc[] = HID_MOUSE_REPORT_DESC(2);
 
-#ifdef CONFIG_FXOS8700
-#include <drivers/sensor.h>
-#define SENSOR_ACCEL_NAME DT_INST_0_NXP_FXOS8700_LABEL
-#endif
-
-static const u8_t hid_report_desc[] = HID_MOUSE_REPORT_DESC(2);
-
-static u32_t def_val[4];
-static volatile u8_t status[4];
+static uint32_t def_val[4];
+static volatile uint8_t status[4];
 static K_SEM_DEFINE(sem, 0, 1);	/* starts off "not available" */
 static struct gpio_callback callback[4];
 
@@ -73,13 +47,13 @@ static struct gpio_callback callback[4];
 #define MOUSE_BTN_MIDDLE	BIT(2)
 
 
-static void left_button(struct device *gpio, struct gpio_callback *cb,
-			u32_t pins)
+static void left_button(const struct device *gpio, struct gpio_callback *cb,
+			uint32_t pins)
 {
-	u32_t cur_val;
-	u8_t state = status[MOUSE_BTN_REPORT_POS];
+	uint32_t cur_val;
+	uint8_t state = status[MOUSE_BTN_REPORT_POS];
 
-	gpio_pin_read(gpio, PIN0, &cur_val);
+	cur_val = gpio_pin_get(gpio, pins);
 	if (def_val[0] != cur_val) {
 		state |= MOUSE_BTN_LEFT;
 	} else {
@@ -92,14 +66,15 @@ static void left_button(struct device *gpio, struct gpio_callback *cb,
 	}
 }
 
-#ifdef DT_ALIAS_SW1_GPIOS_PIN
-static void right_button(struct device *gpio, struct gpio_callback *cb,
-			 u32_t pins)
-{
-	u32_t cur_val;
-	u8_t state = status[MOUSE_BTN_REPORT_POS];
+#if DT_NODE_HAS_STATUS(SW1_NODE, okay)
+static void right_button(const struct device *gpio, struct gpio_callback *cb,
+			 uint32_t pins)
 
-	gpio_pin_read(gpio, PIN1, &cur_val);
+{
+	uint32_t cur_val;
+	uint8_t state = status[MOUSE_BTN_REPORT_POS];
+
+	cur_val = gpio_pin_get(gpio, pins);
 	if (def_val[0] != cur_val) {
 		state |= MOUSE_BTN_RIGHT;
 	} else {
@@ -113,26 +88,34 @@ static void right_button(struct device *gpio, struct gpio_callback *cb,
 }
 #endif
 
-int callbacks_configure(struct device *gpio, u32_t pin, int flags,
-			void (*handler)(struct device*, struct gpio_callback*,
-			u32_t), struct gpio_callback *callback, u32_t *val)
+int callbacks_configure(const struct gpio_dt_spec *gpio,
+			gpio_callback_handler_t handler,
+			struct gpio_callback *callback, uint32_t *val)
 {
-	if (!gpio) {
-		LOG_ERR("Could not find PORT");
-		return -ENXIO;
+	int ret;
+
+	if (!device_is_ready(gpio->port)) {
+		LOG_ERR("%s: device not ready.", gpio->port->name);
+		return -ENODEV;
 	}
-	gpio_pin_configure(gpio, pin,
-			   GPIO_DIR_IN | GPIO_INT |
-			   GPIO_INT_EDGE | GPIO_INT_DOUBLE_EDGE |
-			   flags);
-	gpio_pin_read(gpio, pin, val);
-	gpio_init_callback(callback, handler, BIT(pin));
-	gpio_add_callback(gpio, callback);
-	gpio_pin_enable_callback(gpio, pin);
+
+	gpio_pin_configure_dt(gpio, GPIO_INPUT);
+
+	ret = gpio_pin_get_dt(gpio);
+	if (ret < 0) {
+		return ret;
+	}
+
+	*val = (uint32_t)ret;
+
+	gpio_init_callback(callback, handler, BIT(gpio->pin));
+	gpio_add_callback(gpio->port, callback);
+	gpio_pin_interrupt_configure_dt(gpio, GPIO_INT_EDGE_TO_ACTIVE);
+
 	return 0;
 }
 
-static bool read_accel(struct device *dev)
+static bool read_accel(const struct device *dev)
 {
 	struct sensor_value val[3];
 	int ret;
@@ -165,7 +148,8 @@ static bool read_accel(struct device *dev)
 	}
 }
 
-static void trigger_handler(struct device *dev, struct sensor_trigger *tr)
+static void trigger_handler(const struct device *dev,
+			    const struct sensor_trigger *tr)
 {
 	ARG_UNUSED(tr);
 
@@ -182,44 +166,41 @@ static void trigger_handler(struct device *dev, struct sensor_trigger *tr)
 	}
 }
 
-void main(void)
+int main(void)
 {
-	u8_t report[4] = { 0x00 };
-	u8_t toggle = 0U;
-	struct device *led_dev, *accel_dev, *hid_dev;
+	int ret;
+	uint8_t report[4] = { 0x00 };
+	const struct device *accel_dev, *hid_dev;
 
-	led_dev = device_get_binding(LED_PORT);
-	if (led_dev == NULL) {
-		LOG_ERR("Could not get %s device", LED_PORT);
-		return;
+	if (!device_is_ready(led_gpio.port)) {
+		LOG_ERR("%s: device not ready.", led_gpio.port->name);
+		return 0;
 	}
 
 	hid_dev = device_get_binding("HID_0");
 	if (hid_dev == NULL) {
 		LOG_ERR("Cannot get USB HID Device");
-		return;
+		return 0;
 	}
 
-	gpio_pin_configure(led_dev, LED, GPIO_DIR_OUT);
+	gpio_pin_configure_dt(&led_gpio, GPIO_OUTPUT);
 
-	if (callbacks_configure(device_get_binding(PORT0), PIN0, PIN0_FLAGS,
-				&left_button, &callback[0], &def_val[0])) {
+	if (callbacks_configure(&sw0_gpio, &left_button, &callback[0], &def_val[0])) {
 		LOG_ERR("Failed configuring left button callback.");
-		return;
+		return 0;
 	}
 
-#ifdef DT_ALIAS_SW1_GPIOS_PIN
-	if (callbacks_configure(device_get_binding(PORT1), PIN1, PIN1_FLAGS,
-				&right_button, &callback[1], &def_val[1])) {
+#if DT_NODE_HAS_STATUS(SW1_NODE, okay)
+	if (callbacks_configure(&sw1_gpio, &right_button, &callback[1], &def_val[1])) {
 		LOG_ERR("Failed configuring right button callback.");
-		return;
+		return 0;
 	}
 #endif
 
-	accel_dev = device_get_binding(SENSOR_ACCEL_NAME);
-	if (accel_dev == NULL) {
-		LOG_ERR("Could not get %s device", SENSOR_ACCEL_NAME);
-		return;
+	accel_dev = DEVICE_DT_GET_ONE(nxp_fxos8700);
+	if (!device_is_ready(accel_dev)) {
+		LOG_ERR("%s: device not ready.", accel_dev->name);
+		return 0;
 	}
 
 	struct sensor_value attr = {
@@ -230,7 +211,7 @@ void main(void)
 	if (sensor_attr_set(accel_dev, SENSOR_CHAN_ALL,
 			    SENSOR_ATTR_SAMPLING_FREQUENCY, &attr)) {
 		LOG_ERR("Could not set sampling frequency");
-		return;
+		return 0;
 	}
 
 	struct sensor_trigger trig = {
@@ -240,11 +221,18 @@ void main(void)
 
 	if (sensor_trigger_set(accel_dev, &trig, trigger_handler)) {
 		LOG_ERR("Could not set trigger");
-		return;
+		return 0;
 	}
 
 	usb_hid_register_device(hid_dev, hid_report_desc,
 				sizeof(hid_report_desc), NULL);
+
+	ret = usb_enable(NULL);
+	if (ret != 0) {
+		LOG_ERR("Failed to enable USB");
+		return 0;
+	}
+
 	usb_hid_init(hid_dev);
 
 	while (true) {
@@ -258,7 +246,6 @@ void main(void)
 		hid_int_ep_write(hid_dev, report, sizeof(report), NULL);
 
 		/* Toggle LED on sent report */
-		gpio_pin_write(led_dev, LED, toggle);
-		toggle = !toggle;
+		gpio_pin_toggle_dt(&led_gpio);
 	}
 }

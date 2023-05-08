@@ -4,22 +4,23 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <tc_util.h>
-#include <ztest.h>
+#include <zephyr/kernel.h>
+#include <zephyr/tc_util.h>
+#include <zephyr/ztest.h>
 
 int test_frequency(void)
 {
-	u32_t start, end, delta, pct;
+	volatile uint32_t start, end;
+	uint32_t delta, pct;
 
 	TC_PRINT("Testing system tick frequency\n");
 
 	start = k_cycle_get_32();
-	k_sleep(1000);
+	k_sleep(K_MSEC(1000));
 	end = k_cycle_get_32();
 
 	delta = end - start;
-	pct = (u64_t)delta * 100U / sys_clock_hw_cycles_per_sec();
+	pct = (uint64_t)delta * 100U / sys_clock_hw_cycles_per_sec();
 
 	printk("delta: %u  expected: %u  %u%%\n", delta,
 	       sys_clock_hw_cycles_per_sec(), pct);
@@ -39,7 +40,7 @@ int test_frequency(void)
  * Validates monotonic timer's clock calibration.
  *
  * It reads the System clock’s h/w timer frequency value continuously
- * using k_cycle_get_32() to verify its working and correctiveness.
+ * using k_cycle_get_32() to verify its working and correctness.
  * It also checks system tick frequency by checking the delta error
  * between generated and system clock provided HW cycles per sec values.
  *
@@ -47,19 +48,18 @@ int test_frequency(void)
  *
  * @see k_cycle_get_32(), sys_clock_hw_cycles_per_sec()
  */
-void test_timer(void)
+ZTEST(timer_fn, test_timer)
 {
-	u32_t t_last, t_now, i, errors;
-	s32_t diff;
+	volatile uint32_t t_last, t_now;
+	uint32_t i, errors;
+	int32_t diff;
 
 	errors = 0U;
 
-	TC_PRINT("sys_clock_hw_cycles_per_tick() = %d\n",
-		 sys_clock_hw_cycles_per_tick());
+	TC_PRINT("k_ticks_to_cyc_floor32(1) = %d\n",
+		 k_ticks_to_cyc_floor32(1));
 	TC_PRINT("sys_clock_hw_cycles_per_sec() = %d\n",
 		 sys_clock_hw_cycles_per_sec());
-
-	TC_START("test monotonic timer");
 
 	t_last = k_cycle_get_32();
 
@@ -80,8 +80,4 @@ void test_timer(void)
 	zassert_false(test_frequency(), "test frequency failed");
 }
 
-void test_main(void)
-{
-	ztest_test_suite(timer_fn, ztest_unit_test(test_timer));
-	ztest_run_test_suite(timer_fn);
-}
+ZTEST_SUITE(timer_fn, NULL, NULL, NULL, NULL, NULL);

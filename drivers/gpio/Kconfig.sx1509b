@@ -1,46 +1,37 @@
-# Kconfig.sx1509b - SX1509B GPIO configuration options
-#
-#
+# SX1509B GPIO configuration options
+
 # Copyright (c) 2018 Aapo Vienamo
-#
 # SPDX-License-Identifier: Apache-2.0
-#
 
 menuconfig GPIO_SX1509B
 	bool "SX1509B I2C GPIO chip"
-	depends on I2C
-	select HAS_DTS_GPIO
+	default y
+	depends on DT_HAS_SEMTECH_SX1509B_ENABLED
+	select I2C
 	help
 	  Enable driver for SX1509B I2C GPIO chip.
 
+if GPIO_SX1509B
+
 config GPIO_SX1509B_INIT_PRIORITY
 	int "Init priority"
-	depends on GPIO_SX1509B
 	default 70
 	help
 	  Device driver initialization priority.
 
-if !HAS_DTS_I2C
-
-config GPIO_SX1509B_DEV_NAME
-	string "SX1509B GPIO chip Device Name"
-	depends on GPIO_SX1509B
-	default "GPIO_P0"
+config GPIO_SX1509B_INTERRUPT
+	bool "Interrupt enable"
 	help
-	  Specify the device name for the SX1509B I2C GPIO chip.
+	  Enable support for interrupts on GPIO pins.
 
-config GPIO_SX1509B_I2C_ADDR
-	hex "SX1509B GPIO chip I2C slave address"
-	depends on GPIO_SX1509B
-	default 0x3e
+config GPIO_SX1509B_DEBOUNCE_TIME
+	int "Debounce time interval"
+	range 0 7
+	default 0
 	help
-	  Specify the I2C slave address for the SX1509B I2C GPIO chip.
+	  Debounce time interval when debounce enabled.
 
-config GPIO_SX1509B_I2C_MASTER_DEV_NAME
-	string "I2C Master to which SX1509B GPIO chip is connected"
-	depends on GPIO_SX1509B
-	help
-	  Specify the device name of the I2C master device to which SX1509B
-	  chip is binded.
+	  A value V produces a multiplier of 0.5 ms * 2^V, which is
+	  then scaled by 2 MHz / fOSC.  See the datasheet for details.
 
-endif
+endif # GPIO_SX1509B

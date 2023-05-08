@@ -32,8 +32,11 @@
  *   where A[b] means the A'th link-element, whose mem pointer is b.
  */
 
-#include <zephyr/types.h>
 #include <stddef.h>
+
+#include <soc.h>
+
+#include "hal/cpu.h"
 
 #include "memq.h"
 
@@ -97,7 +100,8 @@ memq_link_t *memq_enqueue(memq_link_t *link, void *mem, memq_link_t **tail)
 	/* Update the tail-pointer to point to the new tail element.
 	 * The new tail-element is not expected to point to anything sensible
 	 */
-	*tail = link;
+	cpu_dmb(); /* Ensure data accesses are synchronized */
+	*tail = link; /* Commit: enqueue of memq node */
 
 	return link;
 }
@@ -123,6 +127,33 @@ memq_link_t *memq_peek(memq_link_t *head, memq_link_t *tail, void **mem)
 	}
 
 	return head; /* queue was not empty */
+}
+
+/**
+ * @brief Non-destructive peek of nth (zero indexed) element of queue.
+ *
+ * @param head[in] Pointer to head link-element of queue
+ * @param tail[in] Pointer to tail link-element of queue
+ * @param n[in]    Nth element of queue to peek into
+ * @param mem[out] The memory pointed to by head-element
+ * @return         head or NULL if queue is empty
+ */
+memq_link_t *memq_peek_n(memq_link_t *head, memq_link_t *tail, uint8_t n,
+			 void **mem)
+{
+	/* Traverse to Nth element, zero indexed */
+	do {
+		/* Use memq peek to get the current head and its mem */
+		head = memq_peek(head, tail, mem);
+		if (head == NULL) {
+			return NULL; /* Nth element is empty */
+		}
+
+		/* Progress to next element */
+		head = head->next;
+	} while (n--);
+
+	return head; /*  queue was not empty */
 }
 
 /**

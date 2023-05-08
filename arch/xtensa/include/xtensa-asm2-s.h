@@ -9,6 +9,8 @@
 
 #include "xtensa-asm2-context.h"
 
+#include <offsets.h>
+
 /* Assembler header!  This file contains macros designed to be included
  * only by the assembler.
  */
@@ -38,7 +40,7 @@
  *   context.
  *
  * - If the WOE bit is not enabled (for example, in code written for
- *   the CALL0 ABI), this becomes a silent noop and operates compatbily.
+ *   the CALL0 ABI), this becomes a silent noop and operates compatibly.
  *
  * - In memory protection situations, this relies on the existing
  *   exception handlers (and thus their use of the L/S32E
@@ -88,6 +90,63 @@
 #endif
 .endm
 
+#if XCHAL_HAVE_FP && defined(CONFIG_CPU_HAS_FPU) && defined(CONFIG_FPU_SHARING)
+/*
+ * FPU_REG_SAVE
+ *
+ * Saves the Float Point Unit context registers in the base save
+ * area pointed to by the current stack pointer A1. The Floating-Point
+ * Coprocessor Option adds the FR register file and two User Registers
+ * called FCR and FSR.The FR register file consists of 16 registers of
+ * 32 bits each and is used for all data computation.
+ */
+.macro FPU_REG_SAVE
+	rur.fcr	a0
+	s32i	a0, a1, ___xtensa_irq_bsa_t_fcr_OFFSET
+	rur.fsr	a0
+	s32i	a0, a1, ___xtensa_irq_bsa_t_fsr_OFFSET
+	ssi	f0, a1, ___xtensa_irq_bsa_t_fpu0_OFFSET
+	ssi	f1, a1, ___xtensa_irq_bsa_t_fpu1_OFFSET
+	ssi	f2, a1, ___xtensa_irq_bsa_t_fpu2_OFFSET
+	ssi	f3, a1, ___xtensa_irq_bsa_t_fpu3_OFFSET
+	ssi	f4, a1, ___xtensa_irq_bsa_t_fpu4_OFFSET
+	ssi	f5, a1, ___xtensa_irq_bsa_t_fpu5_OFFSET
+	ssi	f6, a1, ___xtensa_irq_bsa_t_fpu6_OFFSET
+	ssi	f7, a1, ___xtensa_irq_bsa_t_fpu7_OFFSET
+	ssi	f8, a1, ___xtensa_irq_bsa_t_fpu8_OFFSET
+	ssi	f9, a1, ___xtensa_irq_bsa_t_fpu9_OFFSET
+	ssi	f10, a1, ___xtensa_irq_bsa_t_fpu10_OFFSET
+	ssi	f11, a1, ___xtensa_irq_bsa_t_fpu11_OFFSET
+	ssi	f12, a1, ___xtensa_irq_bsa_t_fpu12_OFFSET
+	ssi	f13, a1, ___xtensa_irq_bsa_t_fpu13_OFFSET
+	ssi	f14, a1, ___xtensa_irq_bsa_t_fpu14_OFFSET
+	ssi	f15, a1, ___xtensa_irq_bsa_t_fpu15_OFFSET
+.endm
+
+.macro FPU_REG_RESTORE
+	l32i.n	a0, a1, ___xtensa_irq_bsa_t_fcr_OFFSET
+	wur.fcr	a0
+	l32i.n	a0, a1, ___xtensa_irq_bsa_t_fsr_OFFSET
+	wur.fsr	a0
+	lsi	f0, a1, ___xtensa_irq_bsa_t_fpu0_OFFSET
+	lsi	f1, a1, ___xtensa_irq_bsa_t_fpu1_OFFSET
+	lsi	f2, a1, ___xtensa_irq_bsa_t_fpu2_OFFSET
+	lsi	f3, a1, ___xtensa_irq_bsa_t_fpu3_OFFSET
+	lsi	f4, a1, ___xtensa_irq_bsa_t_fpu4_OFFSET
+	lsi	f5, a1, ___xtensa_irq_bsa_t_fpu5_OFFSET
+	lsi	f6, a1, ___xtensa_irq_bsa_t_fpu6_OFFSET
+	lsi	f7, a1, ___xtensa_irq_bsa_t_fpu7_OFFSET
+	lsi	f8, a1, ___xtensa_irq_bsa_t_fpu8_OFFSET
+	lsi	f9, a1, ___xtensa_irq_bsa_t_fpu9_OFFSET
+	lsi	f10, a1, ___xtensa_irq_bsa_t_fpu10_OFFSET
+	lsi	f11, a1, ___xtensa_irq_bsa_t_fpu11_OFFSET
+	lsi	f12, a1, ___xtensa_irq_bsa_t_fpu12_OFFSET
+	lsi	f13, a1, ___xtensa_irq_bsa_t_fpu13_OFFSET
+	lsi	f14, a1, ___xtensa_irq_bsa_t_fpu14_OFFSET
+	lsi	f15, a1, ___xtensa_irq_bsa_t_fpu15_OFFSET
+.endm
+#endif
+
 /*
  * ODD_REG_SAVE
  *
@@ -101,14 +160,27 @@
  */
 .macro ODD_REG_SAVE
 	rsr.SAR a0
-	s32i a0, a1, BSA_SAR_OFF
+	s32i a0, a1, ___xtensa_irq_bsa_t_sar_OFFSET
 #if XCHAL_HAVE_LOOPS
 	rsr.LBEG a0
-	s32i a0, a1, BSA_LBEG_OFF
+	s32i a0, a1, ___xtensa_irq_bsa_t_lbeg_OFFSET
 	rsr.LEND a0
-	s32i a0, a1, BSA_LEND_OFF
+	s32i a0, a1, ___xtensa_irq_bsa_t_lend_OFFSET
 	rsr.LCOUNT a0
-	s32i a0, a1, BSA_LCOUNT_OFF
+	s32i a0, a1, ___xtensa_irq_bsa_t_lcount_OFFSET
+#endif
+	rsr.exccause a0
+	s32i a0, a1, ___xtensa_irq_bsa_t_exccause_OFFSET
+#if XCHAL_HAVE_S32C1I
+	rsr.SCOMPARE1 a0
+	s32i a0, a1, ___xtensa_irq_bsa_t_scompare1_OFFSET
+#endif
+#if XCHAL_HAVE_THREADPTR && defined(CONFIG_THREAD_LOCAL_STORAGE)
+	rur.THREADPTR a0
+	s32i a0, a1, ___xtensa_irq_bsa_t_threadptr_OFFSET
+#endif
+#if XCHAL_HAVE_FP && defined(CONFIG_CPU_HAS_FPU) && defined(CONFIG_FPU_SHARING)
+	FPU_REG_SAVE
 #endif
 .endm
 
@@ -184,7 +256,8 @@
 
 	/* Recover the interrupted SP from the BSA */
 	l32i a1, a1, 0
-	addi a1, a1, BASE_SAVE_AREA_SIZE
+	l32i a0, a1, ___xtensa_irq_bsa_t_a0_OFFSET
+	addi a1, a1, ___xtensa_irq_bsa_t_SIZEOF
 
 	call4 _xstack_call0_\@
 	mov a1, a3		/* restore original SP */
@@ -227,13 +300,13 @@ _xstack_returned_\@:
 	 * by the save.  Stash it into the unused "a1" slot in the
 	 * BSA and recover it immediately after.  Kind of a hack.
 	 */
-	s32i a2, a1, BSA_SCRATCH_OFF
+	s32i a2, a1, ___xtensa_irq_bsa_t_scratch_OFFSET
 
 	ODD_REG_SAVE
 	call0 xtensa_save_high_regs
 
 	l32i a2, a1, 0
-	l32i a2, a2, BSA_SCRATCH_OFF
+	l32i a2, a2, ___xtensa_irq_bsa_t_scratch_OFFSET
 
 	/* There's a gotcha with level 1 handlers: the INTLEVEL field
 	 * gets left at zero and not set like high priority interrupts
@@ -313,8 +386,14 @@ _do_call_\@:
 	 */
 	beq a6, a1, _restore_\@
 	l32i a1, a1, 0
-	addi a1, a1, BASE_SAVE_AREA_SIZE
+	l32i a0, a1, ___xtensa_irq_bsa_t_a0_OFFSET
+	addi a1, a1, ___xtensa_irq_bsa_t_SIZEOF
+#ifndef CONFIG_KERNEL_COHERENCE
+	/* When using coherence, the registers of the interrupted
+	 * context got spilled upstream in arch_cohere_stacks()
+	 */
 	SPILL_ALL_WINDOWS
+#endif
 	mov a1, a6
 
 _restore_\@:
@@ -339,6 +418,11 @@ _restore_\@:
  * with a simple jump instruction.
  */
 .macro DEF_EXCINT LVL, ENTRY_SYM, C_HANDLER_SYM
+#if defined(CONFIG_XTENSA_SMALL_VECTOR_TABLE_ENTRY)
+.pushsection .iram.text, "ax"
+.global _Level\LVL\()VectorHelper
+_Level\LVL\()VectorHelper :
+#else
 .if \LVL == 1
 .pushsection .iram0.text, "ax"
 .elseif \LVL == XCHAL_DEBUGLEVEL
@@ -350,10 +434,11 @@ _restore_\@:
 .endif
 .global _Level\LVL\()Vector
 _Level\LVL\()Vector:
-	addi a1, a1, -BASE_SAVE_AREA_SIZE
-	s32i a0, a1, BSA_A0_OFF
-	s32i a2, a1, BSA_A2_OFF
-	s32i a3, a1, BSA_A3_OFF
+#endif
+	addi a1, a1, -___xtensa_irq_bsa_t_SIZEOF
+	s32i a0, a1, ___xtensa_irq_bsa_t_a0_OFFSET
+	s32i a2, a1, ___xtensa_irq_bsa_t_a2_OFFSET
+	s32i a3, a1, ___xtensa_irq_bsa_t_a3_OFFSET
 
 	/* Level "1" is the exception handler, which uses a different
 	 * calling convention.  No special register holds the
@@ -364,14 +449,14 @@ _Level\LVL\()Vector:
 	rsr.PS a0
 	movi a2, ~(PS_EXCM_MASK | PS_INTLEVEL_MASK)
 	and a0, a0, a2
-	s32i a0, a1, BSA_PS_OFF
+	s32i a0, a1, ___xtensa_irq_bsa_t_ps_OFFSET
 .else
 	rsr.EPS\LVL a0
-	s32i a0, a1, BSA_PS_OFF
+	s32i a0, a1, ___xtensa_irq_bsa_t_ps_OFFSET
 .endif
 
 	rsr.EPC\LVL a0
-	s32i a0, a1, BSA_PC_OFF
+	s32i a0, a1, ___xtensa_irq_bsa_t_pc_OFFSET
 
 	/* What's happening with this jump is that the L32R
 	 * instruction to load a full 32 bit immediate must use an
@@ -401,6 +486,23 @@ _after_imms\LVL:
 	l32r a0, _handle_excint_imm\LVL
 	jx a0
 .popsection
+
+#if defined(CONFIG_XTENSA_SMALL_VECTOR_TABLE_ENTRY)
+.if \LVL == 1
+.pushsection .iram0.text, "ax"
+.elseif \LVL == XCHAL_DEBUGLEVEL
+.pushsection .DebugExceptionVector.text, "ax"
+.elseif \LVL == XCHAL_NMILEVEL
+.pushsection .NMIExceptionVector.text, "ax"
+.else
+.pushsection .Level\LVL\()InterruptVector.text, "ax"
+.endif
+.global _Level\LVL\()Vector
+_Level\LVL\()Vector :
+j _Level\LVL\()VectorHelper
+.popsection
+#endif
+
 .endm
 
 #endif	/* ZEPHYR_ARCH_XTENSA_INCLUDE_XTENSA_ASM2_S_H */

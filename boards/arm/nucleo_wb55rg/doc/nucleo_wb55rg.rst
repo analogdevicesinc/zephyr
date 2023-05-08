@@ -30,9 +30,7 @@ Low Energy (BLE) SIG specification v5.0 and with IEEE 802.15.4-2011.
   mass storage, virtual COM port and debug port
 
 .. image:: img/nucleowb55rg.jpg
-   :width: 670px
    :align: center
-   :height: 339px
    :alt: Nucleo WB55RG
 
 More information about the board can be found at the `Nucleo WB55RG website`_.
@@ -171,12 +169,29 @@ The Zephyr nucleo_wb55rg board configuration supports the following hardware fea
 +-----------+------------+-------------------------------------+
 | WATCHDOG  | on-chip    | independent watchdog                |
 +-----------+------------+-------------------------------------+
+| RADIO     | on-chip    | Bluetooth Low Energy                |
++-----------+------------+-------------------------------------+
+| die-temp  | on-chip    | die temperature sensor              |
++-----------+------------+-------------------------------------+
 
 Other hardware features are not yet supported on this Zephyr port.
 
 The default configuration can be found in the defconfig file:
 ``boards/arm/nucleo_wb55rg/nucleo_wb55rg_defconfig``
 
+Bluetooth and compatibility with STM32WB Copro Wireless Binaries
+================================================================
+
+To operate bluetooth on Nucleo WB55RG, Cortex-M0 core should be flashed with
+a valid STM32WB Coprocessor binaries (either 'Full stack' or 'HCI Layer').
+These binaries are delivered in STM32WB Cube packages, under
+Projects/STM32WB_Copro_Wireless_Binaries/STM32WB5x/
+For compatibility information with the various versions of these binaries,
+please check `modules/hal/stm32/lib/stm32wb/hci/README <https://github.com/zephyrproject-rtos/hal_stm32/blob/main/lib/stm32wb/hci/README>`__
+in the hal_stm32 repo.
+Note that since STM32WB Cube package V1.13.2, "full stack" binaries are not compatible
+anymore for a use in Zephyr and only "HCI Only" versions should be used on the M0
+side.
 
 Connections and IOs
 ===================
@@ -186,6 +201,8 @@ input/output, pull-up, etc.
 
 Default Zephyr Peripheral Mapping:
 ----------------------------------
+
+.. rst-class:: rst-columns
 
 - UART_1 TX/RX : PB7/PB6
 - LPUART_1 TX/RX : PA3/PA2 (arduino_serial)
@@ -229,12 +246,15 @@ Flashing
 ========
 
 Nucleo WB55RG board includes an ST-LINK/V2-1 embedded debug tool
-interface.  This interface is not yet supported by the openocd version.
-Instead, support can be enabled on pyocd by adding "pack" support with
+interface.  This interface is supported by the openocd version included in the
+Zephyr SDK since v0.11.0.
+
+If you prefer, you can use pyocd, but it requires to enable "pack" support with
 the following pyocd command:
 
 .. code-block:: console
 
+   $ pyocd pack --update
    $ pyocd pack --install stm32wb55rg
 
 
