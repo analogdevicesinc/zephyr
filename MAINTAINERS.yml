@@ -430,8 +430,25 @@ Coding Guidelines:
     - carlescufi
     - jfischer-no
   files:
+    - .checkpatch.conf
     - .clang-format
+    - .editorconfig
+    - .gitlint
+    - .yamllint
     - doc/contribute/guidelines.rst
+    - doc/contribute/coding_guidelines/
+    - scripts/checkpatch.pl
+    - scripts/checkpatch/
+    - scripts/ci/check_compliance.py
+    - scripts/ci/guideline_check.py
+    - scripts/ci/pylintrc
+    - scripts/coccicheck
+    - scripts/coccinelle/
+    - scripts/gitlint/
+    - scripts/pylint/
+    - scripts/spelling.txt
+  labels:
+    - "area: Coding Guidelines"
 
 Common Architecture Interface:
   status: odd fixes
@@ -472,8 +489,9 @@ Debug:
 Device Driver Model:
   status: maintained
   maintainers:
-    - tbursztyka
+    - gmarull
   collaborators:
+    - tbursztyka
     - dcpleung
     - nashif
   files:
@@ -648,6 +666,17 @@ Release Notes:
     - include/zephyr/drivers/bbram.h
   labels:
     - "area: Battery Backed RAM (bbram)"
+
+"Drivers: Aux display":
+  status: maintained
+  maintainers:
+    - thedjnK
+  files:
+    - include/zephyr/drivers/auxdisplay.h
+    - drivers/auxdisplay/*
+    - dts/bindings/auxdisplay/*
+  labels:
+    - "area: Aux display"
 
 "Drivers: CAN":
   status: maintained
@@ -1108,12 +1137,14 @@ Release Notes:
     - gmarull
   collaborators:
     - danieldegrasse
+    - aasinclair
   files:
     - drivers/regulator/
     - include/zephyr/drivers/regulator/
     - include/zephyr/drivers/regulator.h
     - include/zephyr/dt-bindings/regulator/
     - tests/drivers/regulator/
+    - tests/drivers/build_all/regulator/
     - doc/hardware/peripherals/regulators.rst
   labels:
     - "area: Regulators"
@@ -1681,9 +1712,9 @@ Mbed TLS:
 MCU Manager:
   status: maintained
   maintainers:
-    - de-nordic
-  collaborators:
     - nordicjm
+  collaborators:
+    - de-nordic
   files:
     - subsys/mgmt/mcumgr/
     - include/zephyr/mgmt/mcumgr/
@@ -2075,7 +2106,7 @@ GD32 Platforms:
     - dts/*/gigadevice/
     - dts/bindings/*/*gd32*
     - soc/arm/gigadevice/
-    - soc/riscv/riscv-privilege/gd32vf103/
+    - soc/riscv/riscv-privileged/gd32vf103/
     - scripts/west_commands/*/*gd32*
   labels:
     - "platform: GD32"
@@ -2223,6 +2254,8 @@ NXP Platforms:
     - EmilioCBen
     - decsny
     - manuargue
+    - dbaluta
+    - iuliana-prodan
   files:
     - boards/arm/mimx*/
     - boards/arm/frdm_k*/
@@ -3014,7 +3047,7 @@ West:
     - de-nordic
     - nordicjm
   files:
-    - modules/Kconfig.mcuboot_bootutil
+    - modules/Kconfig.mcuboot
     - tests/boot/test_mcuboot/
   labels:
     - manifest-mcuboot

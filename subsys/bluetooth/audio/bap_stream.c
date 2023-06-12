@@ -131,6 +131,12 @@ int bt_bap_ep_get_info(const struct bt_bap_ep *ep, struct bt_bap_ep_info *info)
 	info->state = ep->status.state;
 	info->dir = ep->dir;
 
+	if (ep->iso == NULL) {
+		info->paired_ep = NULL;
+	} else {
+		info->paired_ep = bt_bap_iso_get_paired_ep(ep);
+	}
+
 	return 0;
 }
 
@@ -176,7 +182,6 @@ enum bt_bap_ascs_reason bt_audio_verify_qos(const struct bt_codec_qos *qos)
 	return BT_BAP_ASCS_REASON_NONE;
 }
 
-#if CONFIG_BT_CODEC_MAX_DATA_LEN > 0
 bool bt_audio_valid_codec_data(const struct bt_codec_data *data)
 {
 	if (data->data.data_len > ARRAY_SIZE(data->value)) {
@@ -187,7 +192,6 @@ bool bt_audio_valid_codec_data(const struct bt_codec_data *data)
 
 	return true;
 }
-#endif /* CONFIG_BT_CODEC_MAX_DATA_LEN > 0 */
 
 bool bt_audio_valid_codec(const struct bt_codec *codec)
 {
@@ -253,6 +257,45 @@ int bt_bap_stream_send(struct bt_bap_stream *stream, struct net_buf *buf,
 #endif /* CONFIG_BT_AUDIO_TX */
 
 #if defined(CONFIG_BT_BAP_UNICAST)
+
+/** Checks if the stream can terminate the CIS
+ *
+ * If the CIS is used for another stream, or if the CIS is not in the connected
+ * state it will return false.
+ */
+bool bt_bap_stream_can_disconnect(const struct bt_bap_stream *stream)
+{
+	const struct bt_bap_ep *stream_ep;
+	enum bt_iso_state iso_state;
+
+	if (stream == NULL) {
+		return false;
+	}
+
+	stream_ep = stream->ep;
+
+	if (stream_ep == NULL || stream_ep->iso == NULL) {
+		return false;
+	}
+
+	iso_state = stream_ep->iso->chan.state;
+
+	if (iso_state == BT_ISO_STATE_CONNECTED || iso_state == BT_ISO_STATE_CONNECTING) {
+		const struct bt_bap_ep *pair_ep;
+
+		pair_ep = bt_bap_iso_get_paired_ep(stream_ep);
+
+		/* If there are no paired endpoint, or the paired endpoint is
+		 * not in the streaming state, we can disconnect the CIS
+		 */
+		if (pair_ep == NULL || pair_ep->status.state != BT_BAP_EP_STATE_STREAMING) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
 static bool bt_bap_stream_is_broadcast(const struct bt_bap_stream *stream)
 {
 	return (IS_ENABLED(CONFIG_BT_BAP_BROADCAST_SOURCE) &&

@@ -337,6 +337,8 @@ int bt_hci_cmd_send_sync(uint16_t opcode, struct net_buf *buf,
 		switch (status) {
 		case BT_HCI_ERR_CONN_LIMIT_EXCEEDED:
 			return -ECONNREFUSED;
+		case BT_HCI_ERR_INSUFFICIENT_RESOURCES:
+			return -ENOMEM;
 		default:
 			return -EIO;
 		}
@@ -654,6 +656,8 @@ int bt_le_create_conn_synced(const struct bt_conn *conn, const struct bt_le_ext_
 	cp = net_buf_add(buf, sizeof(*cp));
 	(void)memset(cp, 0, sizeof(*cp));
 
+	cp->subevent = subevent;
+	cp->adv_handle = adv->handle;
 	bt_addr_le_copy(&cp->peer_addr, &conn->le.dst);
 	cp->filter_policy = BT_HCI_LE_CREATE_CONN_FP_NO_FILTER;
 	cp->own_addr_type = own_addr_type;
@@ -1356,8 +1360,7 @@ void bt_hci_le_enh_conn_complete(struct bt_hci_evt_le_enh_conn_complete *evt)
 			if (IS_ENABLED(CONFIG_BT_PRIVACY) &&
 			    !atomic_test_bit(adv->flags, BT_ADV_USE_IDENTITY)) {
 				conn->le.resp_addr.type = BT_ADDR_LE_RANDOM;
-				if (bt_addr_cmp(&evt->local_rpa,
-						BT_ADDR_ANY) != 0) {
+				if (!bt_addr_eq(&evt->local_rpa, BT_ADDR_ANY)) {
 					bt_addr_copy(&conn->le.resp_addr.a,
 						     &evt->local_rpa);
 				} else {
@@ -1402,7 +1405,7 @@ void bt_hci_le_enh_conn_complete(struct bt_hci_evt_le_enh_conn_complete *evt)
 
 		if (IS_ENABLED(CONFIG_BT_PRIVACY)) {
 			conn->le.init_addr.type = BT_ADDR_LE_RANDOM;
-			if (bt_addr_cmp(&evt->local_rpa, BT_ADDR_ANY) != 0) {
+			if (!bt_addr_eq(&evt->local_rpa, BT_ADDR_ANY)) {
 				bt_addr_copy(&conn->le.init_addr.a,
 					     &evt->local_rpa);
 			} else {

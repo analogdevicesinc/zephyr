@@ -7,6 +7,8 @@ compatible: "ti,ads114s08"
 
 include: [adc-controller.yaml, spi-device.yaml]
 
+bus: ads114s0x
+
 properties:
   "#io-channel-cells":
     const: 1
@@ -25,6 +27,23 @@ properties:
     type: phandle-array
     description: |
       GPIO for start/sync, used to signal the ADC that a conversion should be started
+
+  idac-current:
+    type: int
+    enum:
+      - 0
+      - 10
+      - 50
+      - 100
+      - 250
+      - 500
+      - 750
+      - 1000
+      - 1500
+      - 2000
+    default: 0
+    description: |
+      IDAC current in microampere, the default value turns the current source off
 
 io-channel-cells:
   - input

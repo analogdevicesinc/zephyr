@@ -402,6 +402,14 @@
 				       STM32_ADC_RES(10, 0x01)
 				       STM32_ADC_RES(8, 0x02)
 				       STM32_ADC_RES(6, 0x03)>;
+			/* Errata ES0418: For sampling time set to 1.5 or 3.5
+			 * cycles, the sampling in a single ADC conversion or in
+			 * the first conversion of a sequence takes one extra
+			 * cycle.
+			 * So instead of 2 4, we set 3 5.
+			 */
+			sampling-times = <3 5 8 13 20 40 80 161>;
+			num-sampling-time-common-channels = <2>;
 		};
 
 		dma1: dma@40020000 {
@@ -436,6 +444,21 @@
 		ts-cal2-temp = <130>;
 		ts-cal-vrefanalog = <3000>;
 		io-channels = <&adc1 12>;
+		status = "disabled";
+	};
+
+	vref: vref {
+		compatible = "st,stm32-vref";
+		vrefint-cal-addr = <0x1FFF75AA>;
+		vrefint-cal-mv = <3000>;
+		io-channels = <&adc1 13>;
+		status = "disabled";
+	};
+
+	vbat: vbat {
+		compatible = "st,stm32-vbat";
+		ratio = <3>;
+		io-channels = <&adc1 14>;
 		status = "disabled";
 	};
 };

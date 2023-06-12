@@ -1,6 +1,7 @@
 # Bluetooth ATT/GATT configuration options
 
 # Copyright (c) 2019 Intel Corporation
+# Copyright (c) 2023 Nordic Semiconductor
 # SPDX-License-Identifier: Apache-2.0
 
 menu "L2CAP Options"
@@ -8,7 +9,6 @@ menu "L2CAP Options"
 config BT_L2CAP_TX_BUF_COUNT
 	int "Number of L2CAP TX buffers"
 	default NET_BUF_TX_COUNT if NET_L2_BT
-	default 10 if BT_MCS
 	default BT_BUF_ACL_TX_COUNT
 	range 2 255
 	help
@@ -71,5 +71,17 @@ config BT_L2CAP_ECRED
 	help
 	  This option enables support for LE Connection oriented Channels with
 	  Enhanced Credit Based Flow Control support on dynamic L2CAP Channels.
+
+config BT_L2CAP_SEG_RECV
+	bool "L2CAP Receive segment direct API [EXPERIMENTAL]"
+	select EXPERIMENTAL
+	help
+
+	  Enable API for direct receiving of L2CAP SDU segments, bypassing the
+	  Host's fixed-function SDU re-assembler, RX SDU buffer management and
+	  credit issuer.
+
+	  This API enforces conformance with L2CAP TS, but is otherwise as
+	  flexible and semantically simple as possible.
 
 endmenu

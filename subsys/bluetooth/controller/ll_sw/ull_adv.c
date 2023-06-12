@@ -9,7 +9,7 @@
 
 #include <zephyr/kernel.h>
 #include <soc.h>
-#include <zephyr/bluetooth/hci.h>
+#include <zephyr/bluetooth/hci_types.h>
 #include <zephyr/sys/byteorder.h>
 
 #include "hal/cpu.h"
@@ -606,7 +606,7 @@ uint8_t ll_adv_params_set(uint16_t interval, uint8_t adv_type,
 				sizeof(struct pdu_adv_adi));
 
 			adi = (void *)pri_dptr;
-			adi->sid = sid;
+			PDU_ADV_ADI_SID_SET(adi, sid);
 		}
 		adv->sid = sid;
 
@@ -1620,13 +1620,20 @@ int ull_adv_init(void)
 	return 0;
 }
 
-int ull_adv_reset(void)
+uint8_t ll_adv_disable_all(void)
 {
 	uint8_t handle;
 
 	for (handle = 0U; handle < BT_CTLR_ADV_SET; handle++) {
 		(void)disable(handle);
 	}
+
+	return 0U;
+}
+
+int ull_adv_reset(void)
+{
+	(void)ll_adv_disable_all();
 
 #if defined(CONFIG_BT_CTLR_ADV_EXT)
 #if defined(CONFIG_BT_HCI_RAW)

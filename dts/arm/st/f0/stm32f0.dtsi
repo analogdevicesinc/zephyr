@@ -337,6 +337,8 @@
 				       STM32_ADC_RES(10, 0x01)
 				       STM32_ADC_RES(8, 0x02)
 				       STM32_ADC_RES(6, 0x03)>;
+			sampling-times = <2 8 14 29 42 56 72 240>;
+			num-sampling-time-common-channels = <1>;
 		};
 
 		dma1: dma@40020000 {
@@ -347,6 +349,14 @@
 			interrupts = <9 0 10 0 10 0 11 0 11 0>;
 			status = "disabled";
 		};
+	};
+
+	vref: vref {
+		compatible = "st,stm32-vref";
+		vrefint-cal-addr = <0x1FFFF7BA>;
+		vrefint-cal-mv = <3300>;
+		io-channels = <&adc1 17>;
+		status = "disabled";
 	};
 };
 

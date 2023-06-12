@@ -8,6 +8,7 @@ menuconfig ADC_ADS114S0X
 	depends on DT_HAS_TI_ADS114S08_ENABLED
 	select SPI
 	select ADC_CONFIGURABLE_INPUTS
+	select ADC_CONFIGURABLE_EXCITATION_CURRENT_SOURCE_PIN
 	help
 	  Enable the driver implementation for the ADS114S0X family
 
@@ -23,3 +24,13 @@ config ADC_ADS114S0X_ACQUISITION_THREAD_STACK_SIZE
 	help
 	  Size of the stack used for the internal data acquisition
 	  thread.
+
+config ADC_ADS114S0X_GPIO
+	bool "GPIO support"
+	default n
+	depends on GPIO && ADC_ADS114S0X
+	help
+	  Enable GPIO child device support in the ADS114S0x ADC driver.
+
+	  The GPIO functionality is handled by the ADS114S0x GPIO
+	  driver.

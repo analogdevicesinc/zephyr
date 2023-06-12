@@ -544,11 +544,28 @@ add_custom_command(
   OUTPUT ${PROJECT_BINARY_DIR}/include/generated/version.h
   COMMAND ${CMAKE_COMMAND} -DZEPHYR_BASE=${ZEPHYR_BASE}
     -DOUT_FILE=${PROJECT_BINARY_DIR}/include/generated/version.h
+    -DVERSION_TYPE=KERNEL
+    -DVERSION_FILE=${ZEPHYR_BASE}/VERSION
     ${build_version_argument}
     -P ${ZEPHYR_BASE}/cmake/gen_version_h.cmake
   DEPENDS ${ZEPHYR_BASE}/VERSION ${git_dependency}
 )
 add_custom_target(version_h DEPENDS ${PROJECT_BINARY_DIR}/include/generated/version.h)
+
+if(EXISTS ${APPLICATION_SOURCE_DIR}/VERSION)
+  add_custom_command(
+    OUTPUT ${PROJECT_BINARY_DIR}/include/generated/app_version.h
+    COMMAND ${CMAKE_COMMAND} -DZEPHYR_BASE=${ZEPHYR_BASE}
+      -DOUT_FILE=${PROJECT_BINARY_DIR}/include/generated/app_version.h
+      -DVERSION_TYPE=APP
+      -DVERSION_FILE=${APPLICATION_SOURCE_DIR}/VERSION
+      ${build_version_argument}
+      -P ${ZEPHYR_BASE}/cmake/gen_version_h.cmake
+    DEPENDS ${APPLICATION_SOURCE_DIR}/VERSION ${git_dependency}
+  )
+  add_custom_target(app_version_h DEPENDS ${PROJECT_BINARY_DIR}/include/generated/app_version.h)
+  add_dependencies(zephyr_interface app_version_h)
+endif()
 
 # Unfortunately, the order in which CMakeLists.txt code is processed
 # matters so we need to be careful about how we order the processing
@@ -687,6 +704,15 @@ endif()
 
 if(CONFIG_ZTEST)
   list(APPEND SYSCALL_INCLUDE_DIRS ${ZEPHYR_BASE}/subsys/testsuite/ztest/include)
+
+  if(CONFIG_NO_OPTIMIZATIONS AND CONFIG_ZTEST_WARN_NO_OPTIMIZATIONS)
+    message(WARNING "Running tests with CONFIG_NO_OPTIMIZATIONS is generally "
+    "not supported and known to break in many cases due to stack overflow or "
+    "other problems. Please do not file issues about it unless the test is "
+    "specifically tuned to run in this configuration. To disable this warning "
+    "set CONFIG_ZTEST_WARN_NO_OPTIMIZATIONS=n.")
+  endif()
+
 endif()
 
 foreach(d ${SYSCALL_INCLUDE_DIRS})
@@ -1591,7 +1617,7 @@ if(CONFIG_BUILD_OUTPUT_META)
     COMMAND ${PYTHON_EXECUTABLE} ${ZEPHYR_BASE}/scripts/zephyr_module.py
             ${WEST_ARG}
             ${ZEPHYR_MODULES_ARG}
-            ${ZEPHYR_EXTRA_MODULES_ARG}
+            ${EXTRA_ZEPHYR_MODULES_ARG}
             --meta-out ${KERNEL_META_NAME}
             $<$<BOOL:${CONFIG_BUILD_OUTPUT_META_STATE_PROPAGATE}>:--meta-state-propagate>
   )
@@ -1730,6 +1756,19 @@ if(CONFIG_BUILD_OUTPUT_INFO_HEADER)
   list(APPEND
     post_build_byproducts
     ${PROJECT_BINARY_DIR}/include/public/zephyr_image_info.h
+    )
+endif()
+
+if(CONFIG_CHECK_INIT_PRIORITIES)
+  if(CONFIG_CHECK_INIT_PRIORITIES_FAIL_ON_WARNING)
+    set(fail_on_warning "--fail-on-warning")
+  endif()
+  list(APPEND
+    post_build_commands
+    COMMAND ${PYTHON_EXECUTABLE} ${ZEPHYR_BASE}/scripts/build/check_init_priorities.py
+      --build-dir ${PROJECT_BINARY_DIR}/..
+      --edt-pickle ${EDT_PICKLE}
+      ${fail_on_warning}
     )
 endif()
 

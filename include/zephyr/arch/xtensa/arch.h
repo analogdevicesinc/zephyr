@@ -30,6 +30,8 @@
 #include <zephyr/arch/xtensa/gdbstub.h>
 #include <zephyr/debug/sparse.h>
 
+#include <zephyr/arch/xtensa/xtensa_mmu.h>
+
 #ifdef CONFIG_KERNEL_COHERENCE
 #define ARCH_STACK_PTR_ALIGN XCHAL_DCACHE_LINESIZE
 #else
@@ -81,10 +83,18 @@ static ALWAYS_INLINE void arch_nop(void)
 	__asm__ volatile("nop");
 }
 
-#ifdef __cplusplus
-}
-#endif
+static ALWAYS_INLINE void xtensa_vecbase_lock(void)
+{
+	int vecbase;
 
+	__asm__ volatile("rsr.vecbase %0" : "=r" (vecbase));
+
+	/* In some targets the bit 0 of VECBASE works as lock bit.
+	 * When this bit set, VECBASE can't be changed until it is cleared by
+	 * reset. When the target does not have it, it is hardwired to 0.
+	 **/
+	__asm__ volatile("wsr.vecbase %0; rsync" : : "r" (vecbase | 1));
+}
 
 #if defined(CONFIG_XTENSA_RPO_CACHE)
 #if defined(CONFIG_ARCH_HAS_COHERENCE)
@@ -95,6 +105,20 @@ static inline bool arch_mem_coherent(void *ptr)
 	return (addr >> 29) == CONFIG_XTENSA_UNCACHED_REGION;
 }
 #endif
+
+static inline bool arch_xtensa_is_ptr_cached(void *ptr)
+{
+	size_t addr = (size_t) ptr;
+
+	return (addr >> 29) == CONFIG_XTENSA_CACHED_REGION;
+}
+
+static inline bool arch_xtensa_is_ptr_uncached(void *ptr)
+{
+	size_t addr = (size_t) ptr;
+
+	return (addr >> 29) == CONFIG_XTENSA_UNCACHED_REGION;
+}
 
 static ALWAYS_INLINE uint32_t z_xtrpoflip(uint32_t addr, uint32_t rto, uint32_t rfrom)
 {
@@ -219,6 +243,10 @@ static inline void *arch_xtensa_uncached_ptr(void __sparse_cache *ptr)
 	FOR_EACH(_SET_ONE_TLB, (;), 0, 1, 2, 3, 4, 5, 6, 7);	\
 } while (0)
 
+#endif
+
+#ifdef __cplusplus
+}
 #endif
 
 #endif /* !defined(_ASMLANGUAGE) && !defined(__ASSEMBLER__)  */

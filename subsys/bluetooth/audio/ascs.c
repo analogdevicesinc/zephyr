@@ -27,12 +27,16 @@ LOG_MODULE_REGISTER(bt_ascs, CONFIG_BT_ASCS_LOG_LEVEL);
 #include "common/bt_str.h"
 #include "common/assert.h"
 
+#include "../host/att_internal.h"
+
 #include "audio_internal.h"
 #include "bap_iso.h"
 #include "bap_endpoint.h"
 #include "bap_unicast_server.h"
 #include "pacs_internal.h"
 #include "cap_internal.h"
+
+#define ASE_BUF_SEM_TIMEOUT K_MSEC(CONFIG_BT_ASCS_ASE_BUF_TIMEOUT)
 
 #define MAX_ASES_SESSIONS CONFIG_BT_MAX_CONN * \
 				(CONFIG_BT_ASCS_ASE_SNK_COUNT + \
@@ -58,8 +62,43 @@ static struct bt_ascs_ase {
 	struct k_work_delayable disconnect_work;
 } ase_pool[CONFIG_BT_ASCS_MAX_ACTIVE_ASES];
 
-NET_BUF_SIMPLE_DEFINE_STATIC(ase_buf, CONFIG_BT_L2CAP_TX_MTU);
+#define MAX_CODEC_CONFIG \
+	MIN(UINT8_MAX, \
+	    CONFIG_BT_CODEC_MAX_DATA_COUNT * CONFIG_BT_CODEC_MAX_DATA_LEN)
+#define MAX_METADATA \
+	MIN(UINT8_MAX, \
+	    CONFIG_BT_CODEC_MAX_METADATA_COUNT * CONFIG_BT_CODEC_MAX_DATA_LEN)
+
+/* Minimum state size when in the codec configured state */
+#define MIN_CONFIG_STATE_SIZE (1 + 1 + 1 + 1 + 1 + 2 + 3 + 3 + 3 + 3 + 5 + 1)
+/* Minimum state size when in the QoS configured state */
+#define MIN_QOS_STATE_SIZE    (1 + 1 + 1 + 1 + 3 + 1 + 1 + 2 + 1 + 2 + 3 + 1 + 1 + 1)
+
+/* Calculate the size requirement of the ASE BUF, based on the maximum possible
+ * size of the Codec Configured state or the QoS Configured state, as either
+ * of them can be the largest state
+ */
+#define ASE_BUF_SIZE MIN(BT_ATT_MAX_ATTRIBUTE_LEN, \
+			 MAX(MIN_CONFIG_STATE_SIZE + MAX_CODEC_CONFIG, \
+			     MIN_QOS_STATE_SIZE + MAX_METADATA))
+
+/* Verify that the prepare count is large enough to cover the maximum value we support a client
+ * writing
+ */
+BUILD_ASSERT(
+	BT_ATT_BUF_SIZE - 3 >= ASE_BUF_SIZE ||
+		DIV_ROUND_UP(ASE_BUF_SIZE, (BT_ATT_BUF_SIZE - 3)) <= CONFIG_BT_ATT_PREPARE_COUNT,
+	"CONFIG_BT_ATT_PREPARE_COUNT not large enough to cover the maximum supported ASCS value");
+
+/* It is mandatory to support long writes in ASCS unconditionally, and thus
+ * CONFIG_BT_ATT_PREPARE_COUNT must be at least 1 to support the feature
+ */
+BUILD_ASSERT(CONFIG_BT_ATT_PREPARE_COUNT > 0, "CONFIG_BT_ATT_PREPARE_COUNT shall be at least 1");
+
 static const struct bt_bap_unicast_server_cb *unicast_server_cb;
+
+static K_SEM_DEFINE(ase_buf_sem, 1, 1);
+NET_BUF_SIMPLE_DEFINE_STATIC(ase_buf, ASE_BUF_SIZE);
 
 static int control_point_notify(struct bt_conn *conn, const void *data, uint16_t len);
 static int ascs_ep_get_status(struct bt_bap_ep *ep, struct net_buf_simple *buf);
@@ -93,13 +132,39 @@ static void ase_status_changed(struct bt_bap_ep *ep, uint8_t old_state, uint8_t 
 
 	if (conn != NULL) {
 		struct bt_conn_info conn_info;
+		int err;
 
-		bt_conn_get_info(conn, &conn_info);
+		err = bt_conn_get_info(conn, &conn_info);
+		if (err != 0) {
+			LOG_ERR("Failed to get conn %p info: %d", (void *)conn, err);
+
+			return;
+		}
 
 		if (conn_info.state == BT_CONN_STATE_CONNECTED) {
+			const uint8_t att_ntf_header_size = 3; /* opcode (1) + handle (2) */
+			const uint16_t max_ntf_size = bt_gatt_get_mtu(conn) - att_ntf_header_size;
+			uint16_t ntf_size;
+			int err;
+
+			err = k_sem_take(&ase_buf_sem, ASE_BUF_SEM_TIMEOUT);
+			if (err != 0) {
+				LOG_DBG("Failed to take ase_buf_sem: %d", err);
+
+				return;
+			}
+
 			ascs_ep_get_status(ep, &ase_buf);
 
-			bt_gatt_notify(conn, ase->attr, ase_buf.data, ase_buf.len);
+			ntf_size = MIN(max_ntf_size, ase_buf.len);
+			if (ntf_size < ase_buf.len) {
+				LOG_DBG("Sending truncated notification (%u / %u)",
+					ntf_size, ase_buf.len);
+			}
+
+			bt_gatt_notify(conn, ase->attr, ase_buf.data, ntf_size);
+
+			k_sem_give(&ase_buf_sem);
 		}
 	}
 }
@@ -204,6 +269,7 @@ void ascs_ep_set_state(struct bt_bap_ep *ep, uint8_t state)
 
 		switch (state) {
 		case BT_BAP_EP_STATE_IDLE:
+			ep->receiver_ready = false;
 			bt_bap_stream_reset(stream);
 
 			if (ops->released != NULL) {
@@ -227,6 +293,8 @@ void ascs_ep_set_state(struct bt_bap_ep *ep, uint8_t state)
 					      bt_bap_ep_state_str(ep->status.state));
 				return;
 			}
+
+			ep->receiver_ready = false;
 
 			if (ops->configured != NULL) {
 				ops->configured(stream, &ep->qos_pref);
@@ -263,6 +331,8 @@ void ascs_ep_set_state(struct bt_bap_ep *ep, uint8_t state)
 					return;
 				}
 			}
+
+			ep->receiver_ready = false;
 
 			if (ops->qos_set != NULL) {
 				ops->qos_set(stream);
@@ -322,7 +392,6 @@ void ascs_ep_set_state(struct bt_bap_ep *ep, uint8_t state)
 				switch (old_state) {
 				case BT_BAP_EP_STATE_ENABLING:
 				case BT_BAP_EP_STATE_STREAMING:
-					ep->receiver_ready = false;
 					break;
 				default:
 					BT_ASSERT_MSG(false, "Invalid state transition: %s -> %s",
@@ -338,6 +407,8 @@ void ascs_ep_set_state(struct bt_bap_ep *ep, uint8_t state)
 				return;
 			}
 
+			ep->receiver_ready = false;
+
 			if (ops->disabled != NULL) {
 				ops->disabled(stream);
 			}
@@ -349,7 +420,6 @@ void ascs_ep_set_state(struct bt_bap_ep *ep, uint8_t state)
 			case BT_BAP_EP_STATE_QOS_CONFIGURED:
 			case BT_BAP_EP_STATE_ENABLING:
 			case BT_BAP_EP_STATE_STREAMING:
-				ep->receiver_ready = false;
 				break;
 			case BT_BAP_EP_STATE_DISABLING:
 				if (ep->dir == BT_AUDIO_DIR_SOURCE) {
@@ -364,10 +434,9 @@ void ascs_ep_set_state(struct bt_bap_ep *ep, uint8_t state)
 				return;
 			}
 
-			if (ep->iso == NULL ||
-			    ep->iso->chan.state == BT_ISO_STATE_DISCONNECTED) {
-				ascs_ep_set_state(ep, BT_BAP_EP_STATE_IDLE);
-			} else {
+			ep->receiver_ready = false;
+
+			if (bt_bap_stream_can_disconnect(stream)) {
 				/* Either the client or the server may disconnect the
 				 * CISes when entering the releasing state.
 				 */
@@ -377,6 +446,8 @@ void ascs_ep_set_state(struct bt_bap_ep *ep, uint8_t state)
 					LOG_ERR("Failed to disconnect stream %p: %d",
 						stream, err);
 				}
+			} else {
+				ascs_ep_set_state(ep, BT_BAP_EP_STATE_IDLE);
 			}
 
 			break;
@@ -819,7 +890,7 @@ static void ascs_cp_rsp_add(uint8_t id, uint8_t code, uint8_t reason)
 	 */
 	case BT_BAP_ASCS_RSP_CODE_NOT_SUPPORTED:
 	case BT_BAP_ASCS_RSP_CODE_INVALID_LENGTH:
-		rsp->num_ase = 0xff;
+		rsp->num_ase = BT_ASCS_UNSUPP_OR_LENGTH_ERR_NUM_ASE;
 		break;
 	default:
 		rsp->num_ase++;
@@ -938,7 +1009,6 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 {
 	for (size_t i = 0; i < ARRAY_SIZE(ase_pool); i++) {
 		struct bt_ascs_ase *ase = &ase_pool[i];
-		struct bt_bap_stream *stream = ase->ep.stream;
 
 		if (ase->conn != conn) {
 			continue;
@@ -947,23 +1017,6 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 		if (ase->ep.status.state != BT_BAP_EP_STATE_IDLE) {
 			ase_release(ase);
 			/* At this point, `ase` object have been free'd */
-
-			if (stream != NULL) {
-				const struct bt_bap_stream_ops *ops;
-
-				/* Notify upper layer */
-				ops = stream->ops;
-				if (ops != NULL && ops->released != NULL) {
-					ops->released(stream);
-				} else {
-					LOG_WRN("No callback for released set");
-				}
-			}
-		}
-
-		if (stream != NULL && stream->conn != NULL) {
-			bt_conn_unref(stream->conn);
-			stream->conn = NULL;
 		}
 	}
 }
@@ -1105,12 +1158,21 @@ static ssize_t ascs_ase_read(struct bt_conn *conn,
 {
 	uint8_t ase_id = POINTER_TO_UINT(BT_AUDIO_CHRC_USER_DATA(attr));
 	struct bt_ascs_ase *ase = NULL;
+	ssize_t ret_val;
+	int err;
 
 	LOG_DBG("conn %p attr %p buf %p len %u offset %u", (void *)conn, attr, buf, len, offset);
 
 	/* The callback can be used locally to read the ASE_ID in which case conn won't be set. */
 	if (conn != NULL) {
 		ase = ase_find(conn, ase_id);
+	}
+
+	err = k_sem_take(&ase_buf_sem, ASE_BUF_SEM_TIMEOUT);
+	if (err != 0) {
+		LOG_DBG("Failed to take ase_buf_sem: %d", err);
+
+		return BT_GATT_ERR(BT_ATT_ERR_INSUFFICIENT_RESOURCES);
 	}
 
 	/* If NULL, we haven't assigned an ASE, this also means that we are currently in IDLE */
@@ -1120,8 +1182,11 @@ static ssize_t ascs_ase_read(struct bt_conn *conn,
 		ascs_ep_get_status(&ase->ep, &ase_buf);
 	}
 
-	return bt_gatt_attr_read(conn, attr, buf, len, offset, ase_buf.data,
-				 ase_buf.len);
+	ret_val = bt_gatt_attr_read(conn, attr, buf, len, offset, ase_buf.data, ase_buf.len);
+
+	k_sem_give(&ase_buf_sem);
+
+	return ret_val;
 }
 
 static void ascs_cp_cfg_changed(const struct bt_gatt_attr *attr, uint16_t value)
@@ -1809,7 +1874,7 @@ static bool ascs_parse_metadata(struct bt_data *data, void *user_data)
 
 	if (result->count > CONFIG_BT_CODEC_MAX_METADATA_COUNT) {
 		LOG_ERR("Not enough buffers for Codec Config Metadata: %zu > %zu", result->count,
-			CONFIG_BT_CODEC_MAX_METADATA_LEN);
+			CONFIG_BT_CODEC_MAX_DATA_LEN);
 		*result->rsp = BT_BAP_ASCS_RSP(BT_BAP_ASCS_RSP_CODE_NO_MEM,
 					       BT_BAP_ASCS_REASON_NONE);
 		result->err = -ENOMEM;
@@ -1817,9 +1882,9 @@ static bool ascs_parse_metadata(struct bt_data *data, void *user_data)
 		return false;
 	}
 
-	if (data_len > CONFIG_BT_CODEC_MAX_METADATA_LEN) {
+	if (data_len > CONFIG_BT_CODEC_MAX_DATA_LEN) {
 		LOG_ERR("Not enough space for Codec Config Metadata: %u > %zu", data->data_len,
-			CONFIG_BT_CODEC_MAX_METADATA_LEN);
+			CONFIG_BT_CODEC_MAX_DATA_LEN);
 		*result->rsp = BT_BAP_ASCS_RSP(BT_BAP_ASCS_RSP_CODE_NO_MEM,
 					       BT_BAP_ASCS_REASON_NONE);
 		result->err = -ENOMEM;
@@ -2414,9 +2479,7 @@ static void ase_stop(struct bt_ascs_ase *ase)
 	 * for that ASE by following the Connected Isochronous Stream Terminate
 	 * procedure defined in Volume 3, Part C, Section 9.3.15.
 	 */
-	if (ep->iso != NULL &&
-	    ep->iso->chan.state != BT_ISO_STATE_DISCONNECTED &&
-	    ep->iso->chan.state != BT_ISO_STATE_DISCONNECTING) {
+	if (bt_bap_stream_can_disconnect(stream)) {
 		err = ascs_disconnect_stream(stream);
 		if (err < 0) {
 			LOG_ERR("Failed to disconnect stream %p: %d", stream, err);
@@ -2685,7 +2748,12 @@ static ssize_t ascs_cp_write(struct bt_conn *conn,
 	struct net_buf_simple buf;
 	ssize_t ret;
 
-	if (offset) {
+	if (flags & BT_GATT_WRITE_FLAG_PREPARE) {
+		/* Return 0 to allow long writes */
+		return 0;
+	}
+
+	if (offset != 0 && (flags & BT_GATT_WRITE_FLAG_EXECUTE) == 0) {
 		return BT_GATT_ERR(BT_ATT_ERR_INVALID_OFFSET);
 	}
 
@@ -2759,7 +2827,7 @@ BT_GATT_SERVICE_DEFINE(ascs_svc,
 	BT_GATT_PRIMARY_SERVICE(BT_UUID_ASCS),
 	BT_AUDIO_CHRC(BT_UUID_ASCS_ASE_CP,
 		      BT_GATT_CHRC_WRITE | BT_GATT_CHRC_WRITE_WITHOUT_RESP | BT_GATT_CHRC_NOTIFY,
-		      BT_GATT_PERM_WRITE_ENCRYPT,
+		      BT_GATT_PERM_WRITE_ENCRYPT | BT_GATT_PERM_PREPARE_WRITE,
 		      NULL, ascs_cp_write, NULL),
 	BT_AUDIO_CCC(ascs_cp_cfg_changed),
 #if CONFIG_BT_ASCS_ASE_SNK_COUNT > 0

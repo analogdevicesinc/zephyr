@@ -1,6 +1,7 @@
 common:
-  tags: kernel workqueue
-
+  tags:
+    - kernel
+    - workqueue
 tests:
   kernel.workqueue.critical:
     platform_exclude: nsim_sem_mpu_stack_guard
@@ -13,8 +14,3 @@ tests:
     platform_allow: nsim_sem_mpu_stack_guard
     extra_configs:
       - CONFIG_TEST_HW_STACK_PROTECTION=n
-  kernel.workqueue.critical.linker_generator:
-    platform_allow: qemu_cortex_m3
-    tags: linker_generator
-    extra_configs:
-      - CONFIG_CMAKE_LINKER_GENERATOR=y

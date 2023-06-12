@@ -6,8 +6,7 @@
 
 #include <zephyr/kernel.h>
 #include <zephyr/sys/byteorder.h>
-#include <zephyr/bluetooth/bluetooth.h>
-#include <zephyr/bluetooth/hci.h>
+#include <zephyr/bluetooth/hci_types.h>
 
 #include "util/util.h"
 #include "util/mem.h"
@@ -97,8 +96,9 @@ struct ll_conn_iso_group *ll_conn_iso_group_acquire(void)
 
 void ll_conn_iso_group_release(struct ll_conn_iso_group *cig)
 {
-	cig->cig_id  = 0xFF;
-	cig->started = 0;
+	cig->cig_id = 0xFF;
+	cig->state  = CIG_STATE_NO_CIG;
+	cig->lll.num_cis = 0U;
 
 	mem_release(cig, &cig_free);
 }
@@ -259,6 +259,21 @@ struct ll_conn_iso_stream *ll_conn_iso_stream_get_by_group(struct ll_conn_iso_gr
 	return NULL;
 }
 
+struct ll_conn_iso_stream *ll_conn_iso_stream_get_by_id(uint8_t cis_id)
+{
+	struct ll_conn_iso_stream *cis;
+	uint16_t handle;
+
+	for (handle = LL_CIS_HANDLE_BASE; handle <= LL_CIS_HANDLE_LAST; handle++) {
+		cis = ll_conn_iso_stream_get(handle);
+		if (cis->group && (cis->cis_id == cis_id)) {
+			return cis;
+		}
+	}
+
+	return NULL;
+}
+
 struct lll_conn_iso_stream *
 ull_conn_iso_lll_stream_get_by_group(struct lll_conn_iso_group *cig_lll,
 				     uint16_t *handle_iter)
@@ -310,10 +325,24 @@ void ull_conn_iso_lll_cis_established(struct lll_conn_iso_stream *cis_lll)
 {
 	struct ll_conn_iso_stream *cis =
 		ll_conn_iso_stream_get(cis_lll->handle);
+	struct node_rx_pdu *node_rx;
 
 	if (cis->established) {
 		return;
 	}
+
+	node_rx = ull_pdu_rx_alloc();
+	if (!node_rx) {
+		/* No node available - try again later */
+		return;
+	}
+
+	node_rx->hdr.type = NODE_RX_TYPE_CIS_ESTABLISHED;
+
+	/* Send node to ULL RX demuxer for triggering LLCP state machine */
+	node_rx->hdr.handle = cis->lll.acl_handle;
+
+	ull_rx_put_sched(node_rx->hdr.link, node_rx);
 
 	cis->established = 1;
 }
@@ -349,11 +378,18 @@ void ull_conn_iso_done(struct node_rx_event_done *done)
 
 		if (cis->lll.active && cis->lll.handle != LLL_HANDLE_INVALID) {
 			/* CIS was setup and is now expected to be going */
-			if (done->extra.mic_state == LLL_CONN_MIC_FAIL) {
-				/* MIC failure - stop CIS and defer cleanup to after teardown. */
-				ull_conn_iso_cis_stop(cis, NULL, BT_HCI_ERR_TERM_DUE_TO_MIC_FAIL);
-			} else if (!(done->extra.trx_performed_bitmask &
-				     (1U << LL_CIS_IDX_FROM_HANDLE(cis->lll.handle)))) {
+			if (done->extra.trx_performed_bitmask &
+			    (1U << LL_CIS_IDX_FROM_HANDLE(cis->lll.handle))) {
+				if (done->extra.mic_state == LLL_CONN_MIC_FAIL) {
+					/* MIC failure - stop CIS and defer cleanup to after
+					 * teardown.
+					 */
+					ull_conn_iso_cis_stop(cis, NULL,
+							      BT_HCI_ERR_TERM_DUE_TO_MIC_FAIL);
+				} else {
+					cis->event_expire = 0U;
+				}
+			} else {
 				/* We did NOT have successful transaction on established CIS,
 				 * or CIS was not yet established, so handle timeout
 				 */
@@ -381,8 +417,6 @@ void ull_conn_iso_done(struct node_rx_event_done *done)
 							      BT_HCI_ERR_CONN_FAIL_TO_ESTAB);
 
 				}
-			} else {
-				cis->event_expire = 0U;
 			}
 		}
 	}
@@ -589,8 +623,8 @@ static int init_reset(void)
 
 	for (handle = 0; handle < CONFIG_BT_CTLR_CONN_ISO_GROUPS; handle++) {
 		cig = ll_conn_iso_group_get(handle);
-		cig->cig_id  = 0xFF;
-		cig->started = 0;
+		cig->cig_id = 0xFF;
+		cig->state  = CIG_STATE_NO_CIG;
 		cig->lll.num_cis = 0;
 	}
 
@@ -809,7 +843,7 @@ void ull_conn_iso_start(struct ll_conn *conn, uint16_t cis_handle,
 	 * running. If so, we just return with updated offset and
 	 * validated handle.
 	 */
-	if (cig->started) {
+	if (cig->state == CIG_STATE_ACTIVE) {
 		/* We're done */
 		return;
 	}
@@ -910,30 +944,34 @@ void ull_conn_iso_start(struct ll_conn *conn, uint16_t cis_handle,
 #else /* !CONFIG_BT_CTLR_JIT_SCHEDULING */
 	uint32_t ticks_slot_overhead;
 	uint32_t ticks_slot_offset;
-	uint32_t slot_us;
 
 	/* Calculate time reservations for sequential and interleaved packing as
 	 * configured.
 	 */
-	if (IS_CENTRAL(cig)) {
-		/* CIG sync_delay has been calculated considering the configured
-		 * packing.
-		 */
-		slot_us = cig->sync_delay;
-	} else {
+	if (IS_PERIPHERAL(cig)) {
+		uint32_t slot_us;
+
 		/* FIXME: Time reservation for interleaved packing */
 		/* Below is time reservation for sequential packing */
 		slot_us = cis->lll.sub_interval * cis->lll.nse;
-	}
-	slot_us += EVENT_OVERHEAD_START_US + EVENT_OVERHEAD_END_US;
 
-	/* Populate the ULL hdr with event timings overheads */
-	cig->ull.ticks_active_to_start = 0U;
-	cig->ull.ticks_prepare_to_start =
-		HAL_TICKER_US_TO_TICKS(EVENT_OVERHEAD_XTAL_US);
-	cig->ull.ticks_preempt_to_start =
-		HAL_TICKER_US_TO_TICKS(EVENT_OVERHEAD_PREEMPT_MIN_US);
-	cig->ull.ticks_slot = HAL_TICKER_US_TO_TICKS(slot_us);
+		slot_us += EVENT_OVERHEAD_START_US + EVENT_OVERHEAD_END_US;
+
+		/* FIXME: How to use ready_delay_us in the time reservation?
+		 *        i.e. when CISes use different PHYs? Is that even
+		 *        allowed?
+		 *
+		 *        Missing code here, i.e. slot_us += ready_delay_us;
+		 */
+
+		/* Populate the ULL hdr with event timings overheads */
+		cig->ull.ticks_active_to_start = 0U;
+		cig->ull.ticks_prepare_to_start =
+			HAL_TICKER_US_TO_TICKS(EVENT_OVERHEAD_XTAL_US);
+		cig->ull.ticks_preempt_to_start =
+			HAL_TICKER_US_TO_TICKS(EVENT_OVERHEAD_PREEMPT_MIN_US);
+		cig->ull.ticks_slot = HAL_TICKER_US_TO_TICKS(slot_us);
+	}
 
 	ticks_slot_offset = MAX(cig->ull.ticks_active_to_start,
 				cig->ull.ticks_prepare_to_start);
@@ -960,7 +998,7 @@ void ull_conn_iso_start(struct ll_conn *conn, uint16_t cis_handle,
 	LL_ASSERT((ticker_status == TICKER_STATUS_SUCCESS) ||
 		  (ticker_status == TICKER_STATUS_BUSY));
 
-	cig->started = 1;
+	cig->state = CIG_STATE_ACTIVE;
 }
 
 static void ticker_update_cig_op_cb(uint32_t status, void *param)
@@ -1051,12 +1089,13 @@ static void cis_disabled_cb(void *param)
 
 			if (IS_PERIPHERAL(cig)) {
 				/* Remove data path and ISOAL sink/source associated with this
-				 * CIS for both directions.
+				 * CIS for both directions. Disable them one at a time to make sure
+				 * both are removed, even if only one is set.
 				 */
 				ll_remove_iso_path(cis->lll.handle,
-						   BT_HCI_DATAPATH_DIR_CTLR_TO_HOST);
+						   BIT(BT_HCI_DATAPATH_DIR_HOST_TO_CTLR));
 				ll_remove_iso_path(cis->lll.handle,
-						   BT_HCI_DATAPATH_DIR_HOST_TO_CTLR);
+						   BIT(BT_HCI_DATAPATH_DIR_CTLR_TO_HOST));
 
 				ll_conn_iso_stream_release(cis);
 
@@ -1139,11 +1178,11 @@ static void cis_disabled_cb(void *param)
 		}
 	}
 
-	if (cig->started && !active_cises) {
+	if ((cig->state == CIG_STATE_ACTIVE) && !active_cises) {
 		/* This was the last active CIS of the CIG. Initiate CIG teardown by
 		 * stopping ticker.
 		 */
-		cig->started = 0;
+		cig->state = CIG_STATE_INACTIVE;
 
 		ticker_status = ticker_stop(TICKER_INSTANCE_ID_CTLR,
 					    TICKER_USER_ID_ULL_HIGH,

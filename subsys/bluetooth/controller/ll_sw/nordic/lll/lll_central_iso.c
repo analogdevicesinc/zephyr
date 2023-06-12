@@ -40,6 +40,8 @@
 #include "hal/debug.h"
 
 static int init_reset(void);
+static inline void lll_flush_tx(struct lll_conn_iso_stream *cis_lll);
+static inline void lll_flush_rx(struct lll_conn_iso_stream *cis_lll);
 static int prepare_cb(struct lll_prepare_param *p);
 static void abort_cb(struct lll_prepare_param *prepare_param, void *param);
 static void isr_tx(void *param);
@@ -58,8 +60,6 @@ static uint32_t trx_performed_bitmask;
 static uint16_t cis_offset_first;
 static uint16_t cis_handle_curr;
 static uint8_t se_curr;
-static uint8_t bn_tx;
-static uint8_t bn_rx;
 
 #if defined(CONFIG_BT_CTLR_LE_ENC)
 static uint8_t mic_state;
@@ -116,6 +116,24 @@ void lll_central_iso_prepare(void *param)
 static int init_reset(void)
 {
 	return 0;
+}
+
+static inline void lll_flush_tx(struct lll_conn_iso_stream *cis_lll)
+{
+	/* sn and nesn are 1-bit, only Least Significant bit is needed */
+	uint8_t sn_update = cis_lll->tx.bn + 1U - cis_lll->tx.bn_curr;
+
+	/* we'll re-use sn_update when implementing flush timeout */
+	cis_lll->sn += sn_update;
+}
+
+static inline void lll_flush_rx(struct lll_conn_iso_stream *cis_lll)
+{
+	/* sn and nesn are 1-bit, only Least Significant bit is needed */
+	uint8_t nesn_update = cis_lll->rx.bn + 1U - cis_lll->rx.bn_curr;
+
+	/* we'll re-use sn_update when implementing flush timeout */
+	cis_lll->nesn += nesn_update;
 }
 
 static int prepare_cb(struct lll_prepare_param *p)
@@ -179,13 +197,23 @@ static int prepare_cb(struct lll_prepare_param *p)
 	cig_lll->latency_prepare = 0U;
 
 	/* Adjust the SN and NESN for skipped CIG events */
-	/* sn and nesn are 1-bit, only Least Significant bit is needed */
-	cis_lll->sn += cis_lll->tx.bn * lazy;
-	cis_lll->nesn += cis_lll->rx.bn * lazy;
+	if (cis_lll->event_count) {
+		uint16_t cis_lazy;
+
+		if (lazy > cis_lll->event_count) {
+			cis_lazy = lazy - cis_lll->event_count;
+		} else {
+			cis_lazy = lazy;
+		}
+
+		/* sn and nesn are 1-bit, only Least Significant bit is needed */
+		cis_lll->sn += cis_lll->tx.bn * cis_lazy;
+		cis_lll->nesn += cis_lll->rx.bn * cis_lazy;
+	}
 
 	se_curr = 1U;
-	bn_tx = 1U;
-	bn_rx = 1U;
+	cis_lll->tx.bn_curr = 1U;
+	cis_lll->rx.bn_curr = 1U;
 
 	/* Start setting up of Radio h/w */
 	radio_reset();
@@ -203,7 +231,7 @@ static int prepare_cb(struct lll_prepare_param *p)
 	lll_chan_set(data_chan_use);
 
 	/* Get ISO data PDU */
-	if (bn_tx > cis_lll->tx.bn) {
+	if (cis_lll->tx.bn_curr > cis_lll->tx.bn) {
 		payload_count = 0U;
 
 		cis_lll->npi = 1U;
@@ -212,7 +240,7 @@ static int prepare_cb(struct lll_prepare_param *p)
 		pdu_tx->ll_id = PDU_CIS_LLID_START_CONTINUE;
 		pdu_tx->nesn = cis_lll->nesn;
 		pdu_tx->sn = 0U; /* reserved RFU for NULL PDU */
-		pdu_tx->cie = (bn_rx > cis_lll->rx.bn);
+		pdu_tx->cie = (cis_lll->rx.bn_curr > cis_lll->rx.bn);
 		pdu_tx->npi = 1U;
 		pdu_tx->len = 0U;
 	} else {
@@ -254,8 +282,8 @@ static int prepare_cb(struct lll_prepare_param *p)
 			pdu_tx = radio_pkt_empty_get();
 			pdu_tx->ll_id = PDU_CIS_LLID_START_CONTINUE;
 			pdu_tx->nesn = cis_lll->nesn;
-			pdu_tx->cie = (bn_tx > cis_lll->tx.bn) &&
-				      (bn_rx > cis_lll->rx.bn);
+			pdu_tx->cie = (cis_lll->tx.bn_curr > cis_lll->tx.bn) &&
+				      (cis_lll->rx.bn_curr > cis_lll->rx.bn);
 			pdu_tx->len = 0U;
 			pdu_tx->sn = 0U; /* reserved RFU for NULL PDU */
 			pdu_tx->npi = 1U;
@@ -368,9 +396,19 @@ static int prepare_cb(struct lll_prepare_param *p)
 	do {
 		cis_lll = ull_conn_iso_lll_stream_get_by_group(cig_lll, &cis_handle);
 		if (cis_lll && cis_lll->active) {
-			/* sn and nesn are 1-bit, only Least Significant bit is needed */
-			cis_lll->sn += cis_lll->tx.bn * lazy;
-			cis_lll->nesn += cis_lll->rx.bn * lazy;
+			if (cis_lll->event_count) {
+				uint16_t cis_lazy;
+
+				if (lazy > cis_lll->event_count) {
+					cis_lazy = lazy - cis_lll->event_count;
+				} else {
+					cis_lazy = lazy;
+				}
+
+				/* sn and nesn are 1-bit, only Least Significant bit is needed */
+				cis_lll->sn += cis_lll->tx.bn * cis_lazy;
+				cis_lll->nesn += cis_lll->rx.bn * cis_lazy;
+			}
 		}
 	} while (cis_lll);
 
@@ -445,7 +483,7 @@ static void isr_tx(void *param)
 		uint8_t pkt_flags;
 
 		payload_count = (cis_lll->event_count * cis_lll->rx.bn) +
-				(bn_rx - 1U);
+				(cis_lll->rx.bn_curr - 1U);
 		cis_lll->rx.ccm.counter = payload_count;
 
 		pkt_flags = RADIO_PKT_CONF_FLAGS(RADIO_PKT_CONF_PDU_TYPE_DC,
@@ -540,7 +578,6 @@ static void isr_tx(void *param)
 						      &data_chan_prn_s,
 						      &data_chan_remap_idx);
 	} else {
-		struct lll_conn_iso_stream *old_cis_lll;
 		struct lll_conn_iso_stream *next_cis_lll;
 		struct lll_conn_iso_group *cig_lll;
 		struct lll_conn *next_conn_lll;
@@ -552,7 +589,6 @@ static void isr_tx(void *param)
 		uint16_t cis_handle;
 		uint32_t start_us;
 		memq_link_t *link;
-		uint8_t bn;
 
 		/* Calculate channel for next CIS */
 		cig_lll = ull_conn_iso_lll_group_get_by_stream(cis_lll);
@@ -585,7 +621,6 @@ static void isr_tx(void *param)
 		start_us = radio_tmr_start_us(1U, subevent_us);
 		LL_ASSERT(start_us == (subevent_us + 1U));
 
-		old_cis_lll = cis_lll;
 		cis_lll = next_cis_lll;
 
 		/* Tx Ack stale ISO Data */
@@ -618,49 +653,6 @@ static void isr_tx(void *param)
 				break;
 			}
 		} while (link);
-
-		cis_lll = old_cis_lll;
-
-		/* Generate ISO Data Invalid Status */
-		bn = bn_rx;
-		while (bn <= cis_lll->rx.bn) {
-			struct node_rx_iso_meta *iso_meta;
-			struct node_rx_pdu *node_rx;
-
-			/* Ensure there is always one free for reception of
-			 * ISO PDU by the radio h/w DMA, hence peek for two
-			 * available ISO PDU when using one for generating
-			 * invalid ISO data.
-			 */
-			node_rx = ull_iso_pdu_rx_alloc_peek(2U);
-			if (!node_rx) {
-				break;
-			}
-
-			node_rx->hdr.type = NODE_RX_TYPE_ISO_PDU;
-			node_rx->hdr.handle = cis_lll->handle;
-			iso_meta = &node_rx->hdr.rx_iso_meta;
-			iso_meta->payload_number = (cis_lll->event_count *
-						    cis_lll->rx.bn) + (bn - 1U);
-			iso_meta->timestamp =
-				HAL_TICKER_TICKS_TO_US(radio_tmr_start_get()) +
-				radio_tmr_ready_restore();
-			iso_meta->timestamp %=
-				HAL_TICKER_TICKS_TO_US(BIT(HAL_TICKER_CNTR_MSBIT + 1U));
-			iso_meta->status = 1U;
-
-			ull_iso_pdu_rx_alloc();
-			iso_rx_put(node_rx->hdr.link, node_rx);
-
-			bn++;
-		}
-
-#if !defined(CONFIG_BT_CTLR_LOW_LAT_ULL)
-		if (bn != bn_rx) {
-			iso_rx_sched();
-		}
-#endif /* CONFIG_BT_CTLR_LOW_LAT_ULL */
-
 	}
 }
 
@@ -715,36 +707,11 @@ static void isr_rx(void *param)
 			/* Increment sequence number */
 			cis_lll->sn++;
 
-#if defined(CONFIG_BT_CTLR_LE_ENC)
-			if (!cis_lll->npi) {
-				/* Get reference to PDU Tx */
-				struct node_tx_iso *node_tx;
-				struct pdu_cis *pdu_tx;
-				uint8_t payload_index;
-				memq_link_t *link;
-
-				payload_index = bn_tx - 1U;
-				link = memq_peek_n(cis_lll->memq_tx.head,
-						   cis_lll->memq_tx.tail,
-						   payload_index,
-						   (void **)&node_tx);
-				pdu_tx = (void *)node_tx->pdu;
-				if (pdu_tx->len) {
-					/* Get reference to ACL context */
-					const struct lll_conn *conn_lll =
-						ull_conn_lll_get(cis_lll->acl_handle);
-
-					/* if encrypted increment tx counter */
-					if (conn_lll->enc_tx) {
-						cis_lll->tx.ccm.counter++;
-					}
-				}
-			}
-#endif /* CONFIG_BT_CTLR_LE_ENC */
-
 			/* Increment burst number */
-			if (bn_tx <= cis_lll->tx.bn) {
-				bn_tx++;
+			if (cis_lll->tx.bn_curr <= cis_lll->tx.bn) {
+
+				cis_lll->tx.bn_curr++;
+
 			}
 
 			/* TODO: Implement early Tx Ack. Currently Tx Ack
@@ -755,12 +722,12 @@ static void isr_rx(void *param)
 
 		/* Handle valid ISO data Rx */
 		if (!pdu_rx->npi &&
-		    (bn_rx <= cis_lll->rx.bn) &&
+		    (cis_lll->rx.bn_curr <= cis_lll->rx.bn) &&
 		    (pdu_rx->sn == cis_lll->nesn) &&
 		    ull_iso_pdu_rx_alloc_peek(2U)) {
 			struct node_rx_iso_meta *iso_meta;
 
-			/* Increment next expected serial number */
+			/* Increment next expected sequence number */
 			cis_lll->nesn++;
 
 #if defined(CONFIG_BT_CTLR_LE_ENC)
@@ -782,9 +749,6 @@ static void isr_rx(void *param)
 					goto isr_rx_done;
 				}
 
-				/* Increment counter */
-				cis_lll->rx.ccm.counter++;
-
 				/* Record MIC valid */
 				mic_state = LLL_CONN_MIC_PASS;
 			}
@@ -796,7 +760,7 @@ static void isr_rx(void *param)
 			iso_meta = &node_rx->hdr.rx_iso_meta;
 			iso_meta->payload_number = (cis_lll->event_count *
 						    cis_lll->rx.bn) +
-						   (bn_rx - 1U);
+						   (cis_lll->rx.bn_curr - 1U);
 			iso_meta->timestamp =
 				HAL_TICKER_TICKS_TO_US(radio_tmr_start_get()) +
 				radio_tmr_ready_restore();
@@ -812,7 +776,7 @@ static void isr_rx(void *param)
 #endif /* CONFIG_BT_CTLR_LOW_LAT_ULL */
 
 			/* Increment burst number */
-			bn_rx++;
+			cis_lll->rx.bn_curr++;
 
 			/* Need to be acked */
 			ack_pending = 1U;
@@ -823,12 +787,12 @@ static void isr_rx(void *param)
 			 * we received and expect to receive the next PDU in the
 			 * burst.
 			 */
-			if (bn_rx <= cis_lll->rx.bn) {
+			if (cis_lll->rx.bn_curr <= cis_lll->rx.bn) {
 				/* Increment next expected serial number */
 				cis_lll->nesn++;
 
 				/* Increment burst number */
-				bn_rx++;
+				cis_lll->rx.bn_curr++;
 			}
 
 		/* Not NPI, or more than the BN, or no free Rx ISO PDU buffers.
@@ -842,8 +806,8 @@ static void isr_rx(void *param)
 	}
 
 	/* Close Isochronous Event */
-	cie = cie || ((bn_rx > cis_lll->rx.bn) &&
-		      (bn_tx > cis_lll->tx.bn) &&
+	cie = cie || ((cis_lll->rx.bn_curr > cis_lll->rx.bn) &&
+		      (cis_lll->tx.bn_curr > cis_lll->tx.bn) &&
 		      !ack_pending);
 
 isr_rx_next_subevent:
@@ -853,6 +817,7 @@ isr_rx_next_subevent:
 		struct lll_conn_iso_group *cig_lll;
 		struct lll_conn *next_conn_lll;
 		uint8_t phy;
+		uint8_t bn;
 
 		/* Fetch next CIS */
 		/* TODO: Use a new ull_conn_iso_lll_stream_get_active_by_group()
@@ -870,16 +835,14 @@ isr_rx_next_subevent:
 
 		/* Adjust sn when flushing Tx */
 		/* FIXME: When Flush Timeout is implemented */
-		if (bn_tx <= cis_lll->tx.bn) {
-			/* sn and nesn are 1-bit, only Least Significant bit is needed */
-			cis_lll->sn += cis_lll->tx.bn + 1U - bn_tx;
+		if (cis_lll->tx.bn_curr <= cis_lll->tx.bn) {
+			lll_flush_tx(cis_lll);
 		}
 
 		/* Adjust nesn when flushing Rx */
 		/* FIXME: When Flush Timeout is implemented */
-		if (bn_rx <= cis_lll->rx.bn) {
-			/* sn and nesn are 1-bit, only Least Significant bit is needed */
-			cis_lll->nesn += cis_lll->rx.bn + 1U - bn_rx;
+		if (cis_lll->tx.bn_curr <= cis_lll->rx.bn) {
+			lll_flush_rx(cis_lll);
 		}
 
 		/* Get reference to ACL context */
@@ -894,7 +857,6 @@ isr_rx_next_subevent:
 			uint32_t subevent_us;
 			uint32_t start_us;
 			memq_link_t *link;
-			uint8_t bn;
 
 			/* Event counter value,  0-15 bit of cisEventCounter */
 			event_counter = next_cis_lll->event_count;
@@ -948,53 +910,52 @@ isr_rx_next_subevent:
 			} while (link);
 
 			cis_lll = old_cis_lll;
+		}
 
-			/* Generate ISO Data Invalid Status */
-			bn = bn_rx;
-			while (bn <= cis_lll->rx.bn) {
-				struct node_rx_iso_meta *iso_meta;
-				struct node_rx_pdu *node_rx;
+		/* Generate ISO Data Invalid Status */
+		bn = cis_lll->rx.bn_curr;
+		while (bn <= cis_lll->rx.bn) {
+			struct node_rx_iso_meta *iso_meta;
+			struct node_rx_pdu *node_rx;
 
-				/* Ensure there is always one free for reception
-				 * of ISO PDU by the radio h/w DMA, hence peek
-				 * for two available ISO PDU when using one for
-				 * generating invalid ISO data.
-				 */
-				node_rx = ull_iso_pdu_rx_alloc_peek(2U);
-				if (!node_rx) {
-					break;
-				}
-
-				node_rx->hdr.type = NODE_RX_TYPE_ISO_PDU;
-				node_rx->hdr.handle = cis_lll->handle;
-				iso_meta = &node_rx->hdr.rx_iso_meta;
-				iso_meta->payload_number = (cis_lll->event_count *
-							    cis_lll->rx.bn) + (bn - 1U);
-				iso_meta->timestamp =
-					HAL_TICKER_TICKS_TO_US(radio_tmr_start_get()) +
-					radio_tmr_ready_restore();
-				iso_meta->timestamp %=
-					HAL_TICKER_TICKS_TO_US(BIT(HAL_TICKER_CNTR_MSBIT + 1U));
-				iso_meta->status = 1U;
-
-				ull_iso_pdu_rx_alloc();
-				iso_rx_put(node_rx->hdr.link, node_rx);
-
-				bn++;
+			/* Ensure there is always one free for reception
+			 * of ISO PDU by the radio h/w DMA, hence peek
+			 * for two available ISO PDU when using one for
+			 * generating invalid ISO data.
+			 */
+			node_rx = ull_iso_pdu_rx_alloc_peek(2U);
+			if (!node_rx) {
+				break;
 			}
+
+			node_rx->hdr.type = NODE_RX_TYPE_ISO_PDU;
+			node_rx->hdr.handle = cis_lll->handle;
+			iso_meta = &node_rx->hdr.rx_iso_meta;
+			iso_meta->payload_number = (cis_lll->event_count *
+						    cis_lll->rx.bn) + (bn - 1U);
+			iso_meta->timestamp =
+				HAL_TICKER_TICKS_TO_US(radio_tmr_start_get()) +
+				radio_tmr_ready_restore();
+			iso_meta->timestamp %=
+				HAL_TICKER_TICKS_TO_US(BIT(HAL_TICKER_CNTR_MSBIT + 1U));
+			iso_meta->status = 1U;
+
+			ull_iso_pdu_rx_alloc();
+			iso_rx_put(node_rx->hdr.link, node_rx);
+
+			bn++;
+		}
 
 #if !defined(CONFIG_BT_CTLR_LOW_LAT_ULL)
-			if (bn != bn_rx) {
-				iso_rx_sched();
-			}
-#endif /* CONFIG_BT_CTLR_LOW_LAT_ULL */
-
+		if (bn != cis_lll->rx.bn_curr) {
+			iso_rx_sched();
 		}
+#endif /* CONFIG_BT_CTLR_LOW_LAT_ULL */
 
 		/* Reset indices for the next CIS */
 		se_curr = 0U; /* isr_prepare_subevent() will increase se_curr */
-		bn_tx = 1U;
-		bn_rx = 1U;
+		next_cis_lll->tx.bn_curr = 1U;
+		next_cis_lll->rx.bn_curr = 1U;
 
 #if defined(CONFIG_BT_CTLR_TX_PWR_DYNAMIC_CONTROL)
 		radio_tx_power_set(next_cis_lll->tx_pwr_lvl);
@@ -1036,7 +997,7 @@ static void isr_prepare_subevent(void *param)
 	cis_lll = param;
 
 	/* Get ISO data PDU */
-	if (bn_tx > cis_lll->tx.bn) {
+	if (cis_lll->tx.bn_curr > cis_lll->tx.bn) {
 		payload_count = 0U;
 
 		cis_lll->npi = 1U;
@@ -1045,14 +1006,14 @@ static void isr_prepare_subevent(void *param)
 		pdu_tx->ll_id = PDU_CIS_LLID_START_CONTINUE;
 		pdu_tx->nesn = cis_lll->nesn;
 		pdu_tx->sn = 0U; /* reserved RFU for NULL PDU */
-		pdu_tx->cie = (bn_rx > cis_lll->rx.bn);
+		pdu_tx->cie = (cis_lll->rx.bn_curr > cis_lll->rx.bn);
 		pdu_tx->npi = 1U;
 		pdu_tx->len = 0U;
 	} else {
 		struct node_tx_iso *node_tx;
 		memq_link_t *link;
 
-		payload_index = bn_tx - 1U;
+		payload_index = cis_lll->tx.bn_curr - 1U;
 		payload_count = cis_lll->event_count * cis_lll->tx.bn +
 				payload_index;
 
@@ -1076,8 +1037,8 @@ static void isr_prepare_subevent(void *param)
 			pdu_tx = radio_pkt_empty_get();
 			pdu_tx->ll_id = PDU_CIS_LLID_START_CONTINUE;
 			pdu_tx->nesn = cis_lll->nesn;
-			pdu_tx->cie = (bn_tx > cis_lll->tx.bn) &&
-				      (bn_rx > cis_lll->rx.bn);
+			pdu_tx->cie = (cis_lll->tx.bn_curr > cis_lll->tx.bn) &&
+				      (cis_lll->rx.bn_curr > cis_lll->rx.bn);
 			pdu_tx->len = 0U;
 			pdu_tx->sn = 0U; /* reserved RFU for NULL PDU */
 			pdu_tx->npi = 1U;
@@ -1192,20 +1153,18 @@ static void isr_done(void *param)
 
 	/* Adjust sn when flushing Tx */
 	/* FIXME: When Flush Timeout is implemented */
-	if (bn_tx <= cis_lll->tx.bn) {
-		/* sn and nesn are 1-bit, only Least Significant bit is needed */
-		cis_lll->sn += cis_lll->tx.bn + 1U - bn_tx;
+	if (cis_lll->tx.bn_curr <= cis_lll->tx.bn) {
+		lll_flush_tx(cis_lll);
 	}
 
 	/* Adjust nesn when flushing Rx */
 	/* FIXME: When Flush Timeout is implemented */
-	if (bn_rx <= cis_lll->rx.bn) {
-		/* sn and nesn are 1-bit, only Least Significant bit is needed */
-		cis_lll->nesn += cis_lll->rx.bn + 1U - bn_rx;
+	if (cis_lll->rx.bn_curr <= cis_lll->rx.bn) {
+		lll_flush_rx(cis_lll);
 	}
 
 	/* Generate ISO Data Invalid Status */
-	bn = bn_rx;
+	bn = cis_lll->rx.bn_curr;
 	while (bn <= cis_lll->rx.bn) {
 		struct node_rx_iso_meta *iso_meta;
 		struct node_rx_pdu *node_rx;
@@ -1238,7 +1197,7 @@ static void isr_done(void *param)
 	}
 
 #if !defined(CONFIG_BT_CTLR_LOW_LAT_ULL)
-	if (bn != bn_rx) {
+	if (bn != cis_lll->rx.bn_curr) {
 		iso_rx_sched();
 	}
 #endif /* CONFIG_BT_CTLR_LOW_LAT_ULL */
