@@ -16,6 +16,8 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/irq.h>
 #include <zephyr/sys/barrier.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/sys/util_macro.h>
 
 #define DT_DRV_COMPAT nxp_lpc_dma
 
@@ -23,15 +25,15 @@ LOG_MODULE_REGISTER(dma_mcux_lpc, CONFIG_DMA_LOG_LEVEL);
 
 struct dma_mcux_lpc_config {
 	DMA_Type *base;
-	uint32_t num_of_channels;
 	uint32_t otrig_base_address;
 	uint32_t itrig_base_address;
+	uint8_t num_of_channels;
 	uint8_t num_of_otrigs;
 	void (*irq_config_func)(const struct device *dev);
 };
 
 struct channel_data {
-	SDK_ALIGN(dma_descriptor_t dma_descriptor_table[CONFIG_DMA_NUMBER_OF_DESCRIPTORS],
+	SDK_ALIGN(dma_descriptor_t dma_descriptor_table[CONFIG_DMA_MCUX_LPC_NUMBER_OF_DESCRIPTORS],
 		  FSL_FEATURE_DMA_LINK_DESCRIPTOR_ALIGN_SIZE);
 	dma_handle_t dma_handle;
 	const struct device *dev;
@@ -131,7 +133,7 @@ static int dma_mcux_lpc_queue_descriptors(struct channel_data *data,
 			/* Increase the number of descriptors queued */
 			data->num_of_descriptors++;
 
-			if (data->num_of_descriptors >= CONFIG_DMA_NUMBER_OF_DESCRIPTORS) {
+			if (data->num_of_descriptors >= CONFIG_DMA_MCUX_LPC_NUMBER_OF_DESCRIPTORS) {
 				return -ENOMEM;
 			}
 			/* Do we need to queue additional DMA descriptors for this block */
@@ -266,7 +268,6 @@ static int dma_mcux_lpc_configure(const struct device *dev, uint32_t channel,
 	struct dma_mcux_lpc_dma_data *dma_data;
 	struct dma_block_config *block_config;
 	uint32_t virtual_channel;
-	uint32_t total_dma_channels;
 	uint8_t otrig_index;
 	uint8_t src_inc, dst_inc;
 	bool is_periph = true;
@@ -298,14 +299,8 @@ static int dma_mcux_lpc_configure(const struct device *dev, uint32_t channel,
 		return -EINVAL;
 	}
 
-#if defined FSL_FEATURE_DMA_NUMBER_OF_CHANNELS
-	total_dma_channels = FSL_FEATURE_DMA_NUMBER_OF_CHANNELS;
-#else
-	total_dma_channels = FSL_FEATURE_DMA_NUMBER_OF_CHANNELSn(DEV_BASE(dev));
-#endif
-
 	/* Check if the dma channel number is valid */
-	if (channel >= total_dma_channels) {
+	if (channel >= dev_config->num_of_channels) {
 		LOG_ERR("invalid DMA channel number %d", channel);
 		return -EINVAL;
 	}
@@ -676,7 +671,6 @@ static int dma_mcux_lpc_init(const struct device *dev)
 {
 	const struct dma_mcux_lpc_config *config = dev->config;
 	struct dma_mcux_lpc_dma_data *data = dev->data;
-	int total_dma_channels;
 
 	/* Indicate that the Otrig Muxes are not connected */
 	for (int i = 0; i < config->num_of_otrigs; i++) {
@@ -684,17 +678,11 @@ static int dma_mcux_lpc_init(const struct device *dev)
 		data->otrig_array[i].linked_channel = EMPTY_OTRIG;
 	}
 
-#if defined FSL_FEATURE_DMA_NUMBER_OF_CHANNELS
-	total_dma_channels = FSL_FEATURE_DMA_NUMBER_OF_CHANNELS;
-#else
-	total_dma_channels = FSL_FEATURE_DMA_NUMBER_OF_CHANNELSn(DEV_BASE(dev));
-#endif
-
 	/*
 	 * Initialize to -1 to indicate dma channel does not have a slot
 	 * assigned to store dma channel data
 	 */
-	for (int i = 0; i < total_dma_channels; i++) {
+	for (int i = 0; i < config->num_of_channels; i++) {
 		data->channel_index[i] = -1;
 	}
 
@@ -729,6 +717,12 @@ static const struct dma_driver_api dma_mcux_lpc_api = {
 	DMA_MCUX_LPC_DECLARE_CFG(n,					\
 				 DMA_MCUX_LPC_IRQ_CFG_FUNC_INIT(n))
 
+#define DMA_MCUX_LPC_NUM_USED_CHANNELS(n)				\
+	COND_CODE_0(CONFIG_DMA_MCUX_LPC_NUMBER_OF_CHANNELS_ALLOCATED,	\
+		    (DT_INST_PROP(n, dma_channels)),			\
+		    (MIN(CONFIG_DMA_MCUX_LPC_NUMBER_OF_CHANNELS_ALLOCATED,	\
+			DT_INST_PROP(n, dma_channels))))
+
 #define DMA_MCUX_LPC_DECLARE_CFG(n, IRQ_FUNC_INIT)			\
 static const struct dma_mcux_lpc_config dma_##n##_config = {		\
 	.base = (DMA_Type *)DT_INST_REG_ADDR(n),			\
@@ -739,25 +733,19 @@ static const struct dma_mcux_lpc_config dma_##n##_config = {		\
 	IRQ_FUNC_INIT							\
 }
 
-#ifdef FSL_FEATURE_DMA_NUMBER_OF_CHANNELS
-#define TOTAL_DMA_CHANNELS FSL_FEATURE_DMA_NUMBER_OF_CHANNELS
-#else
-#define TOTAL_DMA_CHANNELS FSL_FEATURE_DMA_NUMBER_OF_CHANNELSn		\
-				((DMA_Type *)DT_INST_REG_ADDR(n))
-#endif
-
 #define DMA_INIT(n) \
 									\
 	static const struct dma_mcux_lpc_config dma_##n##_config;	\
 									\
 	static struct channel_data dma_##n##_channel_data_arr		\
-				[DT_INST_PROP(n, dma_channels)] = {0};	\
+			[DMA_MCUX_LPC_NUM_USED_CHANNELS(n)] = {0};	\
 									\
 	static struct dma_otrig dma_##n##_otrig_arr			\
 			[DT_INST_PROP_OR(n, nxp_dma_num_of_otrigs, 0)]; \
 									\
 	static int8_t							\
-		dma_##n##_channel_index_arr[TOTAL_DMA_CHANNELS] = {0};	\
+		dma_##n##_channel_index_arr				\
+				[DT_INST_PROP(n, dma_channels)] = {0};	\
 									\
 	static struct dma_mcux_lpc_dma_data dma_data_##n = {		\
 		.channel_data = dma_##n##_channel_data_arr,		\

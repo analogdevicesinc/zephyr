@@ -20,6 +20,10 @@ API Changes
 Changes in this release
 =======================
 
+* Set :kconfig:option:`CONFIG_BOOTLOADER_SRAM_SIZE` default value to ``0`` (was
+  ``16``). Bootloaders that use a part of the SRAM should set this value to an
+  appropriate size. :github:`60371`
+
 Removed APIs in this release
 ============================
 
@@ -190,8 +194,6 @@ Drivers and Sensors
 
 * PECI
 
-Trusted Firmware-M
-******************
 * Pin control
 
 * PWM
@@ -212,6 +214,12 @@ Trusted Firmware-M
 
 * Timer
 
+  * The TI CC13xx/26xx system clock timer compatible was changed from
+    :dtcompatible:`ti,cc13xx-cc26xx-rtc` to :dtcompatible:`ti,cc13xx-cc26xx-rtc-timer`
+    and the corresponding Kconfig option from :kconfig:option:`CC13X2_CC26X2_RTC_TIMER`
+    to :kconfig:option:`CC13XX_CC26XX_RTC_TIMER` for improved consistency and
+    extensibility. No action is required unless the internal timer was modified.
+
 * USB
 
 * W1
@@ -222,6 +230,10 @@ Trusted Firmware-M
 
 Networking
 **********
+
+* Wi-Fi
+  * Added Passive scan support.
+  * The Wi-Fi scan API updated with Wi-Fi scan parameter to allow scan mode selection.
 
 USB
 ***

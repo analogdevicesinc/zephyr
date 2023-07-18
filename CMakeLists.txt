@@ -346,12 +346,12 @@ toolchain_ld_force_undefined_symbols(
   _ConfigAbsSyms
 )
 
-if(NOT CONFIG_NATIVE_APPLICATION)
+if(NOT CONFIG_NATIVE_BUILD)
   # @Intent: Set linker specific flags for bare metal target
   toolchain_ld_baremetal()
 endif()
 
-if(CONFIG_CPP AND NOT CONFIG_MINIMAL_LIBCPP)
+if(CONFIG_CPP AND NOT CONFIG_MINIMAL_LIBCPP AND NOT CONFIG_NATIVE_LIBRARY)
   # @Intent: Set linker specific flags for C++
   toolchain_ld_cpp()
 endif()
@@ -394,7 +394,12 @@ zephyr_compile_options($<$<COMPILE_LANGUAGE:CXX>:$<TARGET_PROPERTY:compiler-cpp,
 # @Intent: Do not make position independent code / executable
 zephyr_compile_options($<$<COMPILE_LANGUAGE:C>:$<TARGET_PROPERTY:compiler,no_position_independent>>)
 zephyr_compile_options($<$<COMPILE_LANGUAGE:CXX>:$<TARGET_PROPERTY:compiler,no_position_independent>>)
-zephyr_link_libraries($<TARGET_PROPERTY:linker,no_position_independent>)
+
+# In case of CONFIG_NATIVE_LIBRARY we also don't want position independent code,
+# but we cannot tell that to the linker yet as we are first only doing a
+# relocatable link into a static library
+zephyr_link_libraries_ifndef(CONFIG_NATIVE_LIBRARY
+                             $<TARGET_PROPERTY:linker,no_position_independent>)
 
 # Allow the user to inject options when calling cmake, e.g.
 # 'cmake -DEXTRA_CFLAGS="-Werror -Wno-deprecated-declarations" ..'
@@ -480,8 +485,9 @@ if(CONFIG_USERSPACE)
 endif()
 
 get_property(TOPT GLOBAL PROPERTY TOPT)
-set_ifndef(  TOPT -Wl,-T) # clang doesn't pick -T for some reason and complains,
-                          # while -Wl,-T works for both, gcc and clang
+get_property(COMPILER_TOPT TARGET compiler PROPERTY linker_script)
+set_ifndef(  TOPT "${COMPILER_TOPT}")
+set_ifndef(  TOPT -Wl,-T) # Use this if the compiler driver doesn't set a value
 
 if(CONFIG_HAVE_CUSTOM_LINKER_SCRIPT)
   set(LINKER_SCRIPT ${APPLICATION_SOURCE_DIR}/${CONFIG_CUSTOM_LINKER_SCRIPT})
@@ -1209,6 +1215,8 @@ if(CONFIG_USERSPACE OR CONFIG_DEVICE_DEPS)
     LIBRARIES_POST_SCRIPT ""
     DEPENDENCIES          ${CODE_RELOCATION_DEP}
   )
+  target_link_libraries_ifdef(CONFIG_NATIVE_LIBRARY ${ZEPHYR_LINK_STAGE_EXECUTABLE}
+                              $<TARGET_PROPERTY:linker,no_position_independent>)
   target_byproducts(TARGET ${ZEPHYR_LINK_STAGE_EXECUTABLE}
                     BYPRODUCTS ${PROJECT_BINARY_DIR}/${ZEPHYR_LINK_STAGE_EXECUTABLE}.map
   )
@@ -1426,6 +1434,8 @@ toolchain_ld_link_elf(
   LINKER_SCRIPT         ${PROJECT_BINARY_DIR}/${ZEPHYR_CURRENT_LINKER_CMD}
   DEPENDENCIES          ${CODE_RELOCATION_DEP}
 )
+target_link_libraries_ifdef(CONFIG_NATIVE_LIBRARY ${ZEPHYR_LINK_STAGE_EXECUTABLE}
+                            $<TARGET_PROPERTY:linker,partial_linking>)
 target_byproducts(TARGET ${ZEPHYR_LINK_STAGE_EXECUTABLE}
                   BYPRODUCTS ${PROJECT_BINARY_DIR}/${ZEPHYR_LINK_STAGE_EXECUTABLE}.map
 )
@@ -1755,15 +1765,32 @@ if(CONFIG_BUILD_OUTPUT_STRIPPED)
 endif()
 
 if(CONFIG_BUILD_OUTPUT_EXE)
-  list(APPEND
-    post_build_commands
-    COMMAND
-    ${CMAKE_COMMAND} -E copy ${KERNEL_ELF_NAME} ${KERNEL_EXE_NAME}
+  if (NOT CONFIG_NATIVE_LIBRARY)
+    list(APPEND
+      post_build_commands
+      COMMAND
+      ${CMAKE_COMMAND} -E copy ${KERNEL_ELF_NAME} ${KERNEL_EXE_NAME}
+      )
+    list(APPEND
+      post_build_byproducts
+      ${KERNEL_EXE_NAME}
+      )
+  else()
+    if(CMAKE_GENERATOR STREQUAL "Unix Makefiles")
+      set(MAKE "${CMAKE_MAKE_PROGRAM}" CACHE FILEPATH "cmake defined make")
+    endif()
+    find_program(MAKE make REQUIRED)
+    add_custom_target(native_runner_executable
+      ALL
+      COMMENT "Building native simulator runner, and linking final executable"
+      COMMAND
+      ${MAKE} -f ${ZEPHYR_BASE}/scripts/native_simulator/Makefile all --warn-undefined-variables
+        -r NSI_CONFIG_FILE=${CMAKE_BINARY_DIR}/zephyr/NSI/nsi_config
+      # nsi_config is created by the board cmake file
+      DEPENDS ${logical_target_for_zephyr_elf}
+      BYPRODUCTS ${KERNEL_EXE_NAME}
     )
-  list(APPEND
-    post_build_byproducts
-    ${KERNEL_EXE_NAME}
-    )
+  endif()
 endif()
 
 if(CONFIG_BUILD_OUTPUT_INFO_HEADER)

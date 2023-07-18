@@ -51,6 +51,21 @@ static struct ec_host_cmd ec_host_cmd = {
 		},
 };
 
+#ifdef CONFIG_EC_HOST_CMD_IN_PROGRESS_STATUS
+/* Indicates that a command has sent EC_HOST_CMD_IN_PROGRESS but hasn't sent a final status */
+static bool cmd_in_progress;
+
+/* The final result of the last command that has sent EC_HOST_CMD_IN_PROGRESS */
+static enum ec_host_cmd_status saved_status = EC_HOST_CMD_UNAVAILABLE;
+#endif
+
+#ifdef CONFIG_EC_HOST_CMD_LOG_SUPPRESSED
+static uint16_t suppressed_cmds[CONFIG_EC_HOST_CMD_LOG_SUPPRESSED_NUMBER];
+static uint16_t suppressed_cmds_count[CONFIG_EC_HOST_CMD_LOG_SUPPRESSED_NUMBER];
+static int64_t suppressed_cmds_deadline = CONFIG_EC_HOST_CMD_LOG_SUPPRESSED_INTERVAL_SECS * 1000U;
+static size_t suppressed_cmds_number;
+#endif /* CONFIG_EC_HOST_CMD_LOG_SUPPRESSED */
+
 static uint8_t cal_checksum(const uint8_t *const buffer, const uint16_t size)
 {
 	uint8_t checksum = 0;
@@ -60,6 +75,74 @@ static uint8_t cal_checksum(const uint8_t *const buffer, const uint16_t size)
 	}
 	return (uint8_t)(-checksum);
 }
+
+#ifdef CONFIG_EC_HOST_CMD_IN_PROGRESS_STATUS
+bool ec_host_cmd_send_in_progress_ended(void)
+{
+	return !cmd_in_progress;
+}
+
+enum ec_host_cmd_status ec_host_cmd_send_in_progress_status(void)
+{
+	enum ec_host_cmd_status ret = saved_status;
+
+	saved_status = EC_HOST_CMD_UNAVAILABLE;
+
+	return ret;
+}
+#endif /* CONFIG_EC_HOST_CMD_IN_PROGRESS_STATUS */
+
+#ifdef CONFIG_EC_HOST_CMD_LOG_SUPPRESSED
+int ec_host_cmd_add_suppressed(uint16_t cmd_id)
+{
+	if (suppressed_cmds_number >= CONFIG_EC_HOST_CMD_LOG_SUPPRESSED_NUMBER) {
+		return -EIO;
+	}
+
+	suppressed_cmds[suppressed_cmds_number] = cmd_id;
+	++suppressed_cmds_number;
+
+	return 0;
+}
+
+static bool ec_host_cmd_is_suppressed(uint16_t cmd_id)
+{
+	int i;
+
+	for (i = 0; i < suppressed_cmds_number; i++) {
+		if (suppressed_cmds[i] == cmd_id) {
+			suppressed_cmds_count[i]++;
+
+			return true;
+		}
+	}
+
+	return false;
+}
+
+void ec_host_cmd_dump_suppressed(void)
+{
+	int i;
+	int64_t uptime = k_uptime_get();
+
+	LOG_PRINTK("[%llds HC Suppressed:", uptime / 1000U);
+	for (i = 0; i < suppressed_cmds_number; i++) {
+		LOG_PRINTK(" 0x%x=%d", suppressed_cmds[i], suppressed_cmds_count[i]);
+		suppressed_cmds_count[i] = 0;
+	}
+	LOG_PRINTK("]\n");
+
+	/* Reset the timer */
+	suppressed_cmds_deadline = uptime + CONFIG_EC_HOST_CMD_LOG_SUPPRESSED_INTERVAL_SECS * 1000U;
+}
+
+static void ec_host_cmd_check_suppressed(void)
+{
+	if (k_uptime_get() >= suppressed_cmds_deadline) {
+		ec_host_cmd_dump_suppressed();
+	}
+}
+#endif /* CONFIG_EC_HOST_CMD_LOG_SUPPRESSED */
 
 static void send_status_response(const struct ec_host_cmd_backend *backend,
 				 struct ec_host_cmd_tx_buf *tx,
@@ -123,7 +206,7 @@ static enum ec_host_cmd_status validate_handler(const struct ec_host_cmd_handler
 		return EC_HOST_CMD_INVALID_RESPONSE;
 	}
 
-	if (args->version > sizeof(handler->version_mask) ||
+	if (args->version >= NUM_BITS(handler->version_mask) ||
 	    !(handler->version_mask & BIT(args->version))) {
 		return EC_HOST_CMD_INVALID_VERSION;
 	}
@@ -155,11 +238,49 @@ static enum ec_host_cmd_status prepare_response(struct ec_host_cmd_tx_buf *tx, u
 	return EC_HOST_CMD_SUCCESS;
 }
 
+void ec_host_cmd_set_user_cb(ec_host_cmd_user_cb_t cb, void *user_data)
+{
+	struct ec_host_cmd *hc = &ec_host_cmd;
+
+	hc->user_cb = cb;
+	hc->user_data = user_data;
+}
+
 int ec_host_cmd_send_response(enum ec_host_cmd_status status,
 			      const struct ec_host_cmd_handler_args *args)
 {
 	struct ec_host_cmd *hc = &ec_host_cmd;
 	struct ec_host_cmd_tx_buf *tx = &hc->tx;
+
+#ifdef CONFIG_EC_HOST_CMD_IN_PROGRESS_STATUS
+	if (cmd_in_progress) {
+		/* We previously got EC_HOST_CMD_IN_PROGRESS. This must be the completion
+		 * of that command, so save the result code.
+		 */
+		LOG_INF("HC pending done, size=%d, result=%d",
+			args->output_buf_size, status);
+
+		/* Don't support saving response data, so mark the response as unavailable
+		 * in that case.
+		 */
+		if (args->output_buf_size != 0) {
+			saved_status = EC_HOST_CMD_UNAVAILABLE;
+		} else {
+			saved_status = status;
+		}
+
+		/* We can't send the response back to the host now since we already sent
+		 * the in-progress response and the host is on to other things now.
+		 */
+		cmd_in_progress = false;
+
+		return EC_HOST_CMD_SUCCESS;
+
+	} else if (status == EC_HOST_CMD_IN_PROGRESS) {
+		cmd_in_progress = true;
+		LOG_INF("HC pending");
+	}
+#endif /* CONFIG_EC_HOST_CMD_IN_PROGRESS_STATUS */
 
 	if (status != EC_HOST_CMD_SUCCESS) {
 		const struct ec_host_cmd_request_header *const rx_header =
@@ -185,11 +306,33 @@ int ec_host_cmd_send_response(enum ec_host_cmd_status status,
 	return hc->backend->api->send(hc->backend);
 }
 
+void ec_host_cmd_rx_notify(void)
+{
+	struct ec_host_cmd *hc = &ec_host_cmd;
+	struct ec_host_cmd_rx_ctx *rx = &hc->rx_ctx;
+
+	hc->rx_status = verify_rx(rx);
+
+	if (!hc->rx_status && hc->user_cb) {
+		hc->user_cb(rx, hc->user_data);
+	}
+
+	k_sem_give(&hc->rx_ready);
+}
+
 static void ec_host_cmd_log_request(const uint8_t *rx_buf)
 {
 	static uint16_t prev_cmd;
 	const struct ec_host_cmd_request_header *const rx_header =
 		(const struct ec_host_cmd_request_header *const)rx_buf;
+
+#ifdef CONFIG_EC_HOST_CMD_LOG_SUPPRESSED
+	if (ec_host_cmd_is_suppressed(rx_header->cmd_id)) {
+		ec_host_cmd_check_suppressed();
+
+		return;
+	}
+#endif /* CONFIG_EC_HOST_CMD_LOG_SUPPRESSED */
 
 	if (IS_ENABLED(CONFIG_EC_HOST_CMD_LOG_DBG_BUFFERS)) {
 		if (rx_header->data_len) {
@@ -233,19 +376,21 @@ FUNC_NORETURN static void ec_host_cmd_thread(void *hc_handle, void *arg2, void *
 	/* The pointer to rx buffer is constant during communication */
 	struct ec_host_cmd_handler_args args = {
 		.output_buf = (uint8_t *)tx->buf + TX_HEADER_SIZE,
-		.output_buf_max = tx->len_max - TX_HEADER_SIZE,
 		.input_buf = rx->buf + RX_HEADER_SIZE,
 		.reserved = NULL,
 	};
 
 	while (1) {
 		/* Wait until RX messages is received on host interface */
-		k_sem_take(&rx->handler_owns, K_FOREVER);
+		k_sem_take(&hc->rx_ready, K_FOREVER);
 
 		ec_host_cmd_log_request(rx->buf);
-		status = verify_rx(rx);
-		if (status != EC_HOST_CMD_SUCCESS) {
-			ec_host_cmd_send_response(status, &args);
+
+		/* Check status of the rx data, that has been verified in
+		 * ec_host_cmd_send_received.
+		 */
+		if (hc->rx_status != EC_HOST_CMD_SUCCESS) {
+			ec_host_cmd_send_response(hc->rx_status, &args);
 			continue;
 		}
 
@@ -266,6 +411,7 @@ FUNC_NORETURN static void ec_host_cmd_thread(void *hc_handle, void *arg2, void *
 		args.command = rx_header->cmd_id;
 		args.version = rx_header->cmd_ver;
 		args.input_buf_size = rx_header->data_len;
+		args.output_buf_max = tx->len_max - TX_HEADER_SIZE,
 		args.output_buf_size = 0;
 
 		status = validate_handler(found_handler, &args);
@@ -273,6 +419,12 @@ FUNC_NORETURN static void ec_host_cmd_thread(void *hc_handle, void *arg2, void *
 			ec_host_cmd_send_response(status, &args);
 			continue;
 		}
+
+		/*
+		 * Pre-emptively clear the entire response buffer so we do not
+		 * have any left over contents from previous host commands.
+		 */
+		memset(args.output_buf, 0, args.output_buf_max);
 
 		status = found_handler->handler(&args);
 
@@ -298,7 +450,7 @@ int ec_host_cmd_init(struct ec_host_cmd_backend *backend)
 	hc->backend = backend;
 
 	/* Allow writing to rx buff at startup */
-	k_sem_init(&hc->rx_ctx.handler_owns, 0, 1);
+	k_sem_init(&hc->rx_ready, 0, 1);
 
 	handler_tx_buf = hc->tx.buf;
 	handler_rx_buf = hc->rx_ctx.buf;
