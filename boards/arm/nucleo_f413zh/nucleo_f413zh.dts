@@ -105,6 +105,27 @@
 	pinctrl-names = "default";
 	cs-gpios = <&gpiod 14 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
 	status = "okay";
+	adin1110: adin1110@0 {
+		compatible = "adi,adin1110";
+		reg = <0x0>;
+		spi-max-frequency = <2000000>;
+		int-gpios   = <&gpiof 12 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+		reset-gpios = <&gpiof 13 GPIO_ACTIVE_LOW>;
+		port1 {
+			local-mac-address = [ CA 2F B7 10 23 63 ];
+		};
+		mdio: mdio {
+			compatible = "adi,adin2111-mdio";
+			status = "okay";
+			#address-cells = <1>;
+			#size-cells = <0>;
+			phy@1 {
+				reg = <0x1>;
+				compatible = "adi,adin2111-phy";
+				status = "okay";
+			};
+		};
+	};
 };
 
 zephyr_udc0: &usbotg_fs {
