@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef ZEPHYR_INCLUDE_DRIVERS_MDIO_ADIN2111_H__
-#define ZEPHYR_INCLUDE_DRIVERS_MDIO_ADIN2111_H__
+#ifndef ZEPHYR_INCLUDE_DRIVERS_MDIO_ADINX11X_H__
+#define ZEPHYR_INCLUDE_DRIVERS_MDIO_ADINX11X_H__
 
 #include <stdint.h>
 #include <zephyr/device.h>
@@ -31,7 +31,7 @@ extern "C" {
  * @retval -ETIMEDOUT If transaction timedout on the bus.
  * @retval <0 Error, a negative errno code.
  */
-int adin2111_mdio_c45_read(const struct device *dev, uint8_t prtad,
+int adinx11x_mdio_c45_read(const struct device *dev, uint8_t prtad,
 			   uint8_t devad, uint16_t regad, uint16_t *data);
 
 /**
@@ -51,11 +51,11 @@ int adin2111_mdio_c45_read(const struct device *dev, uint8_t prtad,
  * @retval -ETIMEDOUT If transaction timedout on the bus.
  * @retval <0 Error, a negative errno code.
  */
-int adin2111_mdio_c45_write(const struct device *dev, uint8_t prtad,
+int adinx11x_mdio_c45_write(const struct device *dev, uint8_t prtad,
 			    uint8_t devad, uint16_t regad, uint16_t data);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* ZEPHYR_INCLUDE_DRIVERS_MDIO_ADIN2111_H__ */
+#endif /* ZEPHYR_INCLUDE_DRIVERS_MDIO_ADINX11X_H__ */

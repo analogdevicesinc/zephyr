@@ -288,11 +288,11 @@
 /drivers/ethernet/*w5500*                 @parthitce
 /drivers/ethernet/*xlnx_gem*              @ibirnbaum
 /drivers/ethernet/*smsc91x*               @sgrrzhf
-/drivers/ethernet/*adin2111*              @GeorgeCGV
+/drivers/ethernet/*adinx11x*              @GeorgeCGV
 /drivers/ethernet/phy/                    @rlubos @tbursztyka @arvinf
-/drivers/ethernet/phy/*adin2111*          @GeorgeCGV
+/drivers/ethernet/phy/*adinx11x*          @GeorgeCGV
 /drivers/mdio/                            @rlubos @tbursztyka @arvinf
-/drivers/mdio/*adin2111*                  @GeorgeCGV
+/drivers/mdio/*adinx11x*                  @GeorgeCGV
 /drivers/flash/                           @nashif @de-nordic
 /drivers/flash/*stm32_qspi*               @lmajewski
 /drivers/flash/*b91*                      @andy-liu-telink
