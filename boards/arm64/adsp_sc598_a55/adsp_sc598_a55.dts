@@ -1,0 +1,35 @@
+/*
+ * Copyright (c) 2023 Analog Devices
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ */
+
+/dts-v1/;
+#include <arm64/adi/adsp-sc598-a55.dtsi>
+
+/ {
+	model = "ADSP SC598 Cortex-A55";
+	compatible = "adi,adspsc598";
+
+
+	chosen {
+		zephyr,sram = &sram0;
+		zephyr,console = &uart0;
+		zephyr,shell-uart = &uart0;
+	};
+
+	soc {
+		sram0: memory@90000000 {
+			compatible = "mmio-sram";
+			reg = <0x0 0x90000000 0x0 DT_SIZE_M(2)>;
+		};
+	};
+};
+
+&uart0 {
+	status = "okay";
+	current-speed = <115200>;
+	/* tx-pin = <>; // A-07 */
+	/* rx-pin = <>: // D-09 */
+};

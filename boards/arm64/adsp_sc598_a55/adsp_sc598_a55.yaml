@@ -1,0 +1,12 @@
+identifier: adsp_sc598_a55
+name: adsp sc598 for Cortex-A55
+arch: arm64
+toolchain:
+  - zephyr
+  - cross-compile
+ram: 128
+testing:
+  default: true
+  ignore_tags:
+    - net
+    - bluetooth

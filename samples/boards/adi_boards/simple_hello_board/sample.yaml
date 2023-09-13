@@ -1,0 +1,19 @@
+sample:
+  description: Simple Hello World sample, the simplest Zephyr
+    application
+  name: simple hello board
+common:
+  tags: introduction
+  integration_platforms:
+    - adsp_sc839w
+  harness: console
+  harness_config:
+    type: one_line
+    regex:
+      - "Simple Hello Board! (.*)"
+tests:
+    samples.boards.adi_boards.simple_hello_board:
+    build_only: true
+    platform_allow: adsp_sc839w
+    integration_platforms:
+      - adsp_sc839w

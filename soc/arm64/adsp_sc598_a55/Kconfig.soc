@@ -1,0 +1,14 @@
+# Copyright (c) 2023 Analog Devices
+# SPDX-License-Identifier: Apache-2.0
+
+config SOC_ADSP_SC598_A55
+	bool "ADSP SC598 cortex A55"
+	select ARM64
+	select CPU_CORTEX_A55
+	select GIC_V3
+	select ARMV8_A_NS
+	select SEMIHOST
+	select SEMIHOST_CONSOLE
+	select CPU_HAS_MMU
+	select CPU_HAS_MPU
+	select ARM_MMU 

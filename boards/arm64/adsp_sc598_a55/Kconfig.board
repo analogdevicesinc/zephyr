@@ -1,0 +1,7 @@
+# Copyright (c) 2023 Analog Deivices
+# SPDX-License-Identifier: Apache-2.0
+
+config BOARD_ADSP_SC598_A55
+	bool "ADSP SC598 CORTEX A55 CPU0"
+	depends on SOC_ADSP_SC598_A55
+	select ARM64

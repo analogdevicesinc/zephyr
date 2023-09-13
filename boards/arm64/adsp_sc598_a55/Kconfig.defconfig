@@ -1,0 +1,12 @@
+# Copyright (c) 2023 Analog Devices
+# SPDX-License-Identifier: Apache-2.0
+
+if BOARD_ADSP_SC598_A55
+
+config BUILD_OUTPUT_BIN
+	default y
+
+config BOARD
+	default "ADSP_SC598_a55"
+
+endif # BOARD_ADSP_SC598_A55
