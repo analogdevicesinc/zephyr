@@ -1,0 +1,12 @@
+# LTC4296 PSE Controller configuration options
+
+# Copyright (c) 2024 Antoniu Miclaus
+# SPDX-License-Identifier: Apache-2.0
+
+menuconfig LTC4296
+	bool "LTC4296 PSE Controller"
+	default y
+	depends on DT_HAS_ADI_LTC4296_ENABLED
+	select SPI
+	help
+	  Enable the driver for Analog Devices LTC4296 PSE Controller.

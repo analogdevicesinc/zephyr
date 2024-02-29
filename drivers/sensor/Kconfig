@@ -162,5 +162,7 @@ source "drivers/sensor/veaa_x_3/Kconfig"
 source "drivers/sensor/voltage_divider/Kconfig"
 source "drivers/sensor/xbr818/Kconfig"
 # zephyr-keep-sorted-stop
+source "drivers/sensor/ene_tach_kb1200/Kconfig"
+source "drivers/sensor/ltc4296/Kconfig"
 
 endif # SENSOR
