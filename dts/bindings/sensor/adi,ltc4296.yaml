@@ -1,0 +1,17 @@
+description: LTC4296 PSE Controller
+
+compatible: "adi,ltc4296"
+
+include: [sensor-device.yaml, spi-device.yaml]
+
+properties:
+  sccpo-gpios:
+    type: phandle-array
+    description: |
+      The WAKEn pin is asserted to communicate with the sensor.  The
+      sensor receives this as an active-low signal.
+  sccpi-gpios:
+    type: phandle-array
+    description: |
+      The WAKEn pin is asserted to communicate with the sensor.  The
+      sensor receives this as an active-low signal.
