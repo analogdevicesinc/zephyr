@@ -80,6 +80,7 @@ source "drivers/ethernet/Kconfig.xilinx_axienet"
 source "drivers/ethernet/Kconfig.virtio_net"
 
 source "drivers/ethernet/eth_nxp_enet_qos/Kconfig"
+source "drivers/ethernet/Kconfig.adin6310"
 
 source "drivers/ethernet/dsa/Kconfig"
 source "drivers/ethernet/dwc_xgmac/Kconfig"

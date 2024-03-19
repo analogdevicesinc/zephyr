@@ -1,0 +1,34 @@
+# Copyright (c) 2024 Analog Devices Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  ADIN6310 Ethernet switch with SPI/Ethernet interface.
+
+compatible: "adi,adin6310"
+
+include: [spi-device.yaml]
+
+bus: adin6310
+
+properties:
+  int-gpios:
+    type: phandle-array
+    required: true
+    description: |
+      The interrupt pin of ADIN2111 is active low.
+      If connected directly the MCU pin should be configured
+      as active low.
+  reset-gpios:
+    type: phandle-array
+    description: The reset pin of ADIN2111.
+
+child-binding:
+  description: Port properties
+  properties:
+    ethernet-port:
+      type: boolean
+      description: ethernet or switch port
+    local-mac-address:
+      type: uint8-array
+      description: |
+        Specifies the MAC address that was assigned to the network device.

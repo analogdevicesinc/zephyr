@@ -1,0 +1,18 @@
+# Copyright (c) 2023 PHOENIX CONTACT Electronics GmbH
+# SPDX-License-Identifier: Apache-2.0
+
+menuconfig ETH_ADIN6310
+	bool "ADIN2111 2-port 10BASE-T1L Controller"
+	default y
+	depends on DT_HAS_ADI_ADIN6310_ENABLED
+	select SPI
+	imply CRC
+	help
+	  The ADIN2111 is a low power, 2-port 10BASE-T1L transceiver
+	  designed for industrial Ethernet applications, and is compliant with
+	  the IEEE® 802.3cg-2019™ Ethernet standard for long reach, 10
+	  Mbps single pair Ethernet (SPE).
+
+	  Featuring an integrated media access control (MAC) and a switch,
+	  the ADIN2111 enables direct connectivity with a variety of controllers
+	  via a serial peripheral inter-face (SPI).
