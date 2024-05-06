@@ -1,0 +1,116 @@
+/*
+ * Copyright (c) 2024 Analog Devices, Inc.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include <adi/max32/max32657-pinctrl.dtsi>
+#include <zephyr/dt-bindings/gpio/gpio.h>
+#include <zephyr/dt-bindings/gpio/adi-max32-gpio.h>
+
+/ {
+	model = "Analog Devices MAX32657FPGA";
+	compatible = "adi,max32657fpga";
+
+	chosen {
+		zephyr,console = &uart0;
+		zephyr,shell-uart = &uart0;
+	};
+
+	leds {
+		compatible = "gpio-leds";
+		led1: led_1 {
+			gpios = <&gpio0 2 GPIO_ACTIVE_LOW>;
+			label = "Red LED";
+		};
+	};
+
+	buttons {
+		compatible = "gpio-keys";
+		pb1: pb1 {
+			gpios = <&gpio0 3 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+			label = "SW2";
+		};
+	};
+
+	/* These aliases are provided for compatibility with samples */
+	aliases {
+		led0 = &led1;
+		sw0 = &pb1;
+	};
+
+	reserved-memory {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		/* RAM split used by TFM */
+		secure_ram: partition@20000000 {
+			label = "secure-memory";
+			reg = <0x20000000 DT_SIZE_K(128)>;
+		};
+
+		non_secure_ram: partition@20020000 {
+			label = "non-secure-memory";
+			reg = <0x20020000 DT_SIZE_K(128)>;
+		};
+	};
+};
+
+&flash0 {
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		boot_partition: partition@0 {
+			label = "mcuboot";
+			reg = <0x0 DT_SIZE_K(64)>;
+			read-only;
+		};
+		slot0_partition: partition@10000 {
+			label = "image-0";
+			reg = <0x10000 DT_SIZE_K(256)>;
+		};
+		slot0_ns_partition: partition@50000 {
+			label = "image-0-nonsecure";
+			reg = <0x50000 DT_SIZE_K(192)>;
+		};
+		slot1_partition: partition@80000 {
+			label = "image-1";
+			reg = <0x80000 DT_SIZE_K(256)>;
+		};
+		slot1_ns_partition: partition@c0000 {
+			label = "image-1-nonsecure";
+			reg = <0xc0000 DT_SIZE_K(192)>;
+		};
+		storage_partition: partition@f0000 {
+			label = "storage";
+			reg = <0xf0000 DT_SIZE_K(64)>;
+		};
+	};
+};
+
+&uart0 {
+	pinctrl-0 = <&uart0_tx_p0_9 &uart0_rx_p0_5>;
+	pinctrl-names = "default";
+	current-speed = <115200>;
+	data-bits = <8>;
+	parity = "none";
+	status = "okay";
+};
+
+&clk_ipo {
+	status = "okay";
+};
+
+/*
+ * ERTCO requires for RTC
+ */
+&clk_ertco {
+	status = "okay";
+};
+
+&gpio0 {
+	status = "okay";
+};

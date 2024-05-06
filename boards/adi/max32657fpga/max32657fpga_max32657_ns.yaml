@@ -1,0 +1,14 @@
+identifier: max32657fpga/max32657/ns
+name: max32657fpga-max32657-Non-Secure
+vendor: adi
+type: mcu
+arch: arm
+toolchain:
+  - zephyr
+  - gnuarmemb
+  - xtools
+supported:
+  - gpio
+  - serial
+ram: 128
+flash: 192
