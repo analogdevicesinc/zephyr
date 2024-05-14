@@ -10,5 +10,6 @@ toolchain:
 supported:
   - gpio
   - serial
+  - dma
 ram: 128
 flash: 192
