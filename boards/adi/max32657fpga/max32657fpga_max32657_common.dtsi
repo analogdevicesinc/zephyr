@@ -37,6 +37,7 @@
 	aliases {
 		led0 = &led1;
 		sw0 = &pb1;
+		watchdog0 = &wdt0;
 	};
 
 	reserved-memory {
@@ -112,5 +113,9 @@
 };
 
 &gpio0 {
+	status = "okay";
+};
+
+&wdt0 {
 	status = "okay";
 };
