@@ -8,4 +8,11 @@ if BOARD_ADIN6310SWITCH
 config BOARD
 	default "ADIN6310SWITCH"
 
+if NETWORKING
+
+config NET_L2_ETHERNET
+	default y
+
+endif # NETWORKING
+
 endif # BOARD_ADIN6310SWITCH
