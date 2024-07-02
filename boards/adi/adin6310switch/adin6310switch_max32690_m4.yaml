@@ -1,0 +1,15 @@
+identifier: adin6310-ethernet-switch
+name: adin6310-ethernet-switch
+type: mcu
+arch: arm
+toolchain:
+  - zephyr
+  - gnuarmemb
+  - xtools
+supported:
+  - gpio
+  - serial
+  - i2c
+  - spi
+ram: 1024
+flash: 3072

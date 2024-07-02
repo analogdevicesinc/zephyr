@@ -1,0 +1,225 @@
+/*
+ * Copyright (c) 2023 Analog Devices, Inc.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/dts-v1/;
+
+#include <adi/max32/max32690.dtsi>
+#include <adi/max32/max32690-pinctrl.dtsi>
+#include <zephyr/dt-bindings/gpio/adi-max32-gpio.h>
+
+/ {
+	model = "Analog Devices ADIN6310 Ethernet Switch";
+	compatible = "adi,adin6310switch";
+
+	soc {
+		sram_all: memory@20020000 {
+			compatible = "mmio-sram";
+			reg = <0x20020000 DT_SIZE_K(1024)>;
+		};
+	};
+
+	chosen {
+		zephyr,console = &uart3;
+		zephyr,shell-uart = &uart3;
+		zephyr,sram = &sram_all;
+		zephyr,flash = &flash0;
+	};
+
+	leds {
+		compatible = "gpio-leds";
+		red_led: led_0 {
+			gpios = <&gpio0 14 GPIO_ACTIVE_LOW>;
+			label = "LED0";
+		};
+		green_led: led_1 {
+			gpios = <&gpio2 12 GPIO_ACTIVE_LOW>;
+			label = "LED1";
+		};
+	};
+
+	buttons {
+		compatible = "gpio-keys";
+		pb0: pb0 {
+			/* SW2 on EVKIT connects to GPIO4 which does not support interrupts,
+			 * so advised to fit jumper on JH5 to connect SW2 (P4.0) to P2.29
+			 */
+			gpios = <&gpio2 29 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+			label = "SW2";
+		};
+	};
+
+	aliases {
+		led0 = &red_led;
+		led1 = &green_led;
+		sw0 = &pb0;
+	 };
+};
+
+&clk_ipo {
+	status = "okay";
+};
+
+/*
+ * ERTCO requires for RTC
+ */
+&clk_ertco {
+	status = "okay";
+};
+
+&gpio0 {
+	status = "okay";
+};
+
+&gpio1 {
+	status = "okay";
+};
+
+&gpio2 {
+	status = "okay";
+};
+
+&gpio3 {
+	status = "okay";
+};
+
+&uart3 {
+	pinctrl-0 = <&lpuart0b_tx_p3_1 &lpuart0b_rx_p3_0>;
+	pinctrl-names = "default";
+	current-speed = <115200>;
+	data-bits = <8>;
+	parity = "none";
+	status = "okay";
+};
+
+&uart2 {
+	pinctrl-0 = <&uart2a_tx_p1_10 &uart2a_rx_p1_9>;
+	pinctrl-names = "default";
+	current-speed = <115200>;
+	data-bits = <8>;
+	parity = "none";
+	status = "okay";
+};
+
+&uart1 {
+	pinctrl-0 = <&uart1a_tx_p2_16 &uart1a_rx_p2_14>;
+	pinctrl-names = "default";
+	current-speed = <115200>;
+	data-bits = <8>;
+	parity = "none";
+	status = "okay";
+};
+
+&i2c0 {
+	pinctrl-0 = <&i2c0a_scl_p2_8 &i2c0a_sda_p2_7>;
+	pinctrl-names = "default";
+	clock-frequency = <I2C_BITRATE_STANDARD>;
+	status = "okay";
+};
+
+&i2c2 {
+	pinctrl-0 = <&i2c2c_scl_p1_8 &i2c2c_sda_p1_7>;
+	pinctrl-names = "default";
+	clock-frequency = <I2C_BITRATE_STANDARD>;
+	status = "okay";
+};
+
+&spi0b_ss1_p2_26 {
+	power-source = <MAX32_VSEL_VDDIOH>;
+};
+&spi0b_miso_p2_27 {
+	power-source = <MAX32_VSEL_VDDIOH>;
+};
+&spi0b_mosi_p2_28 {
+	power-source = <MAX32_VSEL_VDDIOH>;
+};
+&spi0b_ss1_p2_26 {
+	power-source = <MAX32_VSEL_VDDIOH>;
+};
+&spi0b_sck_p2_29 {
+	power-source = <MAX32_VSEL_VDDIOH>;
+};
+
+&spi4a_ss0_p1_0 {
+	power-source = <MAX32_VSEL_VDDIO>;
+};
+
+&spi4a_mosi_p1_1 {
+	power-source = <MAX32_VSEL_VDDIO>;
+};
+
+&spi4a_miso_p1_2 {
+	power-source = <MAX32_VSEL_VDDIO>;
+};
+
+&spi4a_sck_p1_3 {
+	power-source = <MAX32_VSEL_VDDIO>;
+};
+
+&spi4a_sdio2_p1_4 {
+	power-source = <MAX32_VSEL_VDDIO>;
+};
+
+&spi4a_sdio3_p1_5 {
+	power-source = <MAX32_VSEL_VDDIO>;
+};
+
+&spi0 {
+	pinctrl-0 = <&spi0b_ss1_p2_26 &spi0b_miso_p2_27
+			&spi0b_mosi_p2_28 &spi0b_sck_p2_29>;
+	pinctrl-names = "default";
+	status = "okay";
+	ltc4296: ltc4296@1 {
+		compatible = "adi,ltc4296";
+		spi-max-frequency = <500000>;
+		reg = <0x1>;
+	};
+};
+
+&spi1 {
+	pinctrl-0 = <&spi1a_ss0_p1_23 &spi1a_miso_p1_28
+				&spi1a_mosi_p1_29 &spi1a_sck_p1_26>;
+};
+
+&spi3 {
+	pinctrl-0 = <&spi3a_ss0_p0_19 &spi3a_miso_p0_20
+				&spi3a_mosi_p0_21 &spi3a_sck_p0_16>;
+};
+
+&spi4 {
+	pinctrl-0 = <&spi4a_ss0_p1_0 &spi4a_miso_p1_2
+		     &spi4a_mosi_p1_1 &spi4a_sck_p1_3>;
+
+	pinctrl-names = "default";
+	status = "okay";
+
+	adin6310: adin6310@0 {
+		compatible = "adi,adin6310";
+		reg = <0x0>;
+		spi-max-frequency = <10000000>;
+		int-gpios = <&gpio1 7 (GPIO_ACTIVE_HIGH | MAX32_GPIO_VSEL_VDDIO)>;
+		reset-gpios = <&gpio1 8 (GPIO_ACTIVE_LOW | MAX32_GPIO_VSEL_VDDIO)>;
+
+		port0 {
+			local-mac-address = [ 00 18 80 03 25 60 ];
+		};
+		port1 {
+			local-mac-address = [ 00 18 80 03 25 61 ];
+		};
+		port2 {
+			cpu-port;
+			local-mac-address = [ 00 18 80 03 25 62 ];
+		};
+		port3 {
+			local-mac-address = [ 00 18 80 03 25 63 ];
+		};
+		port4 {
+			local-mac-address = [ 00 18 80 03 25 64 ];
+		};
+		port5 {
+			local-mac-address = [ 00 18 80 03 25 65 ];
+		};
+	};
+};
