@@ -163,11 +163,9 @@ free_txb:
 	return ret;
 }
 
-static int adin6310_read_msg(uint8_t *buf, uint32_t len)
+static int adin6310_read_msg(uint8_t *tx_buffer, uint8_t *rx_buffer, uint32_t len)
 {
 	int ret = 0;
-	uint8_t *xfer_buf_rx;
-	uint8_t *xfer_buf_tx;
 	struct spi_buf rx_buf;
 	struct spi_buf tx_buf;
 	struct spi_buf_set rx_buf_set;
@@ -179,25 +177,27 @@ static int adin6310_read_msg(uint8_t *buf, uint32_t len)
 							   SPI_MODE_GET(0), 0);
 
 	k_mutex_lock(&spi_mutex, K_FOREVER);
-	xfer_buf_rx = k_calloc(len + 1, sizeof(*xfer_buf_rx));
-	if (!xfer_buf_rx) {
-		ret = -ENOMEM;
-		goto mutex_unlock;
-	}
+	// xfer_buf_rx = k_calloc(len + 1, sizeof(*xfer_buf_rx));
+	// if (!xfer_buf_rx) {
+	// 	ret = -ENOMEM;
+	// 	goto mutex_unlock;
+	// }
 
-	xfer_buf_tx = k_calloc(len + 1, sizeof(*xfer_buf_tx));
-	if (!xfer_buf_tx) {
-		LOG_ERR("Calloc error %d xfer_buf_tx", (uint32_t)xfer_buf_tx);
-		ret = -ENOMEM;
-		goto free_rx;
-	}
+	// xfer_buf_tx = k_calloc(len + 1, sizeof(*xfer_buf_tx));
+	// if (!xfer_buf_tx) {
+	// 	LOG_ERR("Calloc error %d xfer_buf_tx", (uint32_t)xfer_buf_tx);
+	// 	ret = -ENOMEM;
+	// 	goto free_rx;
+	// }
 
-	xfer_buf_tx[0] = ADIN6310_SPI_RD_HEADER;
+	memset(tx_buffer, 0, len + 1);
+	memset(rx_buffer, 0, len + 1);
+	tx_buffer[0] = ADIN6310_SPI_RD_HEADER;
 
 	rx_buf.len = len + 1;
-	rx_buf.buf = xfer_buf_rx;
+	rx_buf.buf = rx_buffer;
 	tx_buf.len = len + 1;
-	tx_buf.buf = xfer_buf_tx;
+	tx_buf.buf = tx_buffer;
 
 	rx_buf_set.buffers = &rx_buf;
 	rx_buf_set.count = 1;
@@ -205,54 +205,46 @@ static int adin6310_read_msg(uint8_t *buf, uint32_t len)
 	tx_buf_set.count = 1;
 
 	ret = spi_transceive_dt(&dev_spi, &tx_buf_set, &rx_buf_set);
-	if (ret)
-		goto free_tx;
 
-	memcpy(buf, &xfer_buf_rx[1], len);
+	// memcpy(buf, &xfer_buf_rx[1], len);
 
-free_tx:
-	k_free(xfer_buf_tx);
-free_rx:
-	k_free(xfer_buf_rx);
+// free_tx:
+// 	k_free(xfer_buf_tx);
+// free_rx:
+// 	k_free(xfer_buf_rx);
 mutex_unlock:
 	k_mutex_unlock(&spi_mutex);
 
 	return ret;
 }
 
-static int adin6310_read_message(int tbl_index)
+static int adin6310_read_message(struct adin6310_data *priv, int tbl_index)
 {
 	uint32_t frame_type;
-	uint8_t *frame_buf;
 	uint32_t padded_len;
 	uint32_t rx_len;
-	uint8_t header[4];
 	int ret;
 
-	ret = adin6310_read_msg(header, 4);
+	ret = adin6310_read_msg(priv->tx_buf, priv->rx_buf, 4);
 	if (ret)
 		return ret;
 
-	rx_len = ((header[1] & 0xF) << 8) | header[0];
-	frame_type = (header[1] & 0xF0) >> 4;
+	rx_len = ((priv->rx_buf[2] & 0xF) << 8) | priv->rx_buf[1];
+	frame_type = (priv->rx_buf[2] & 0xF0) >> 4;
 
 	padded_len = rx_len + 0x3;
 	padded_len &= ~GENMASK(1, 0);
 
-	frame_buf = k_calloc(padded_len, sizeof(*frame_buf));
-	if (!frame_buf)
-		return -ENOMEM;
+	ret = adin6310_read_msg(priv->tx_buf, priv->rx_buf, padded_len);
+	if (ret) {
+		LOG_ERR("adin6310_read_msg() error %d", ret);
+		goto out;
+	}
 
-	ret = adin6310_read_msg(frame_buf, padded_len);
-	if (ret)
-		goto free_frame_buf;
+	return SES_ReceiveMessage(tbl_index, SES_PORT_spiInterface, rx_len,
+				  (void*)&priv->rx_buf[1], -1, 0, NULL);
 
-	ret = SES_ReceiveMessage(tbl_index, SES_PORT_spiInterface, rx_len,
-				 (void*)frame_buf, -1, 0, NULL);
-
-free_frame_buf:
-		k_free(frame_buf);
-
+out:
 	return ret;
 }
 
@@ -262,7 +254,7 @@ static void adin6310_msg_recv(void *p1, void *p2, void *p3)
 
 	while (1) {
 		k_sem_take(&reader_thread_sem, K_FOREVER);
-		adin6310_read_message(0);
+		adin6310_read_message(p1, 0);
 	};
 }
 
@@ -512,8 +504,6 @@ static int adin6310_init(const struct device *dev)
 		.sendMessage_p = adin6310_spi_write,
 	};
 
-	printf("ADIN6310 init\n");
-
         if (!spi_is_ready_dt(&cfg->spi)) {
                 LOG_ERR("SPI bus %s not ready", cfg->spi.bus->name);
 		return -ENODEV;
@@ -549,11 +539,11 @@ static int adin6310_init(const struct device *dev)
         k_busy_wait(100);
 
 	k_sem_init(&reader_thread_sem, 0, 1);
-	spi_read_tid = k_thread_create(&read_thread, stack_area,
-					       10000,
-					       adin6310_msg_recv, priv, NULL, NULL,
-					       K_PRIO_PREEMPT(0), K_ESSENTIAL, K_FOREVER);
-	k_thread_name_set(spi_read_tid, "ADIN6310");
+	spi_read_tid = k_thread_create(&priv->rx_thread, priv->rx_thread_stack,
+				       K_KERNEL_STACK_SIZEOF(priv->rx_thread_stack),
+				       adin6310_msg_recv, priv, NULL, NULL,
+				       CONFIG_ETH_ADIN6310_IRQ_THREAD_PRIO, K_ESSENTIAL, K_FOREVER);
+	k_thread_name_set(spi_read_tid, "adin6310_rx_offload");
 
 	gpio_init_callback(&priv->gpio_int_callback, adin6310_int_rdy, BIT(cfg->interrupt.pin));
 	gpio_add_callback(cfg->interrupt.port, &priv->gpio_int_callback);
@@ -575,15 +565,11 @@ static int adin6310_init(const struct device *dev)
 		return ret;
 	}
 
-	printf("ADIN6310 SES_Init()\n");
-
 	ret = SES_AddHwInterface(NULL, &comm_callbacks, &iface);
 	if (ret) {
 		LOG_ERR("SES_AddHwInterface error %d\n", ret);
 		return ret;
 	}
-
-	printf("ADIN6310 SES_AddHwInterface()\n");
 
 	ret = SES_AddDevice(iface, (uint8_t *)cpu_port->mac_addr, &dev_id);
 	if (ret) {
@@ -591,15 +577,13 @@ static int adin6310_init(const struct device *dev)
 		return ret;
 	}
 
-	printf("ADIN6310 SES_AddDevice()\n");
-
 	ret = SES_MX_InitializePorts(dev_id, ADIN6310_NUM_PORTS, initializePorts_p);
 	if (ret) {
 		LOG_ERR("SES_MX_InitializePorts error %d\n", ret);
 		return ret;
 	}
 
-	printf("ADIN6310 init done\n");
+	printf("ADIN6310 probe done\n");
 
 	return adin6310_set_broadcast_route(dev);
 }
