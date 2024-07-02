@@ -37,7 +37,7 @@ void print_ipv4(struct net_if *iface, struct net_if_addr *addr, void *user_data)
 static void print_netifs(struct net_if *iface, void *user_data)
 {
 	struct net_if_addr *if_addr;
-	struct in_addr src = { { { 192, 168, 10, 10 } } };
+	struct in_addr src = { { { 192, 168, 1, 5 } } };
 
 	if_addr = net_if_ipv4_addr_add(iface, &src, NET_ADDR_MANUAL, 0);
 	if (!if_addr){

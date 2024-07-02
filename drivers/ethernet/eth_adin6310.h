@@ -21,23 +21,23 @@ enum adin6310_chip_id {
 };
 
 struct adin6310_port_config {
-	struct device *adin;
+	const struct device *adin;
 	uint32_t id;
 	struct adin6310_data *net_device;
 	uint8_t mac_addr[6];
 	char *name;
-	bool ethernet_port;
+	bool cpu_port;
 };
 
 struct adin6310_port_data {
-	struct device *adin;
+	const struct device *adin;
 	uint32_t id;
 	struct adin6310_data *net_device;
 	struct net_if *iface;
 	uint8_t mac_addr[6];
 	char *name;
 	bool initialized;
-	bool ethernet_port;
+	bool cpu_port;
 };
 
 struct adin6310_data {
@@ -47,9 +47,9 @@ struct adin6310_data {
 	const struct gpio_dt_spec *interrupt;
 	struct k_sem offload_sem;
 	struct k_mutex lock;
-	uint16_t ifaces_left_to_init;
 	uint8_t *buf;
 
+	K_KERNEL_STACK_MEMBER(rx_thread_stack, CONFIG_ETH_ADIN6310_IRQ_THREAD_STACK_SIZE);
 	struct k_thread rx_thread;
 };
 
