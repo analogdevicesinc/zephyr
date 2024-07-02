@@ -25,9 +25,9 @@ properties:
 child-binding:
   description: Port properties
   properties:
-    ethernet-port:
+    cpu-port:
       type: boolean
-      description: ethernet or switch port
+      description: switch configuration port
     local-mac-address:
       type: uint8-array
       description: |

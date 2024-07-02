@@ -26,7 +26,6 @@ LOG_MODULE_REGISTER(eth_adin6310, CONFIG_ETHERNET_LOG_LEVEL);
 #include "SES_frame_api.h"
 #include "SES_interface_management.h"
 
-static struct k_sem semaphores[50];
 struct k_sem reader_thread_sem;
 K_THREAD_STACK_DEFINE(stack_area, 20000);
 K_SEM_DEFINE(read_done_sem, 1, 1);
@@ -50,18 +49,15 @@ struct adin6310_priv {
 
 void* SES_PORT_CreateSemaphore(int initCount, int maxCount)
 {
-	struct k_sem *ret_sem;
-	struct k_sem sem;
+	struct k_sem *sem = NULL;
 
-	for (int i = 0; i < 50; i++) {
-		if (semaphores[i].limit == 0) {
-			k_sem_init(&semaphores[i], initCount, maxCount);
+	sem = k_calloc(1, sizeof(*sem));
+	if (!sem)
+		return NULL;
 
-			return &semaphores[i];
-		}
-	}
+	k_sem_init(sem, initCount, maxCount);
 
-	return 0;
+	return sem;
 }
 
 int32_t SES_PORT_WaitSemaphore(int* semaphore_p, int timeout)
@@ -92,7 +88,7 @@ int32_t SES_PORT_DeleteSemaphore(int* semaphore_p)
 {
 	struct k_sem *sem = (struct k_sem *)semaphore_p;
 
-	memset(sem, 0x0, sizeof(*sem));
+	k_free(sem);
 
 	return 1;
 }
@@ -147,7 +143,6 @@ static int adin6310_spi_write(int intfHandle, int size, void *data_p)
 	tx_buf.len = size + 1;
 	txb = k_calloc(size + 1, 1);
 	if (!txb) {
-		LOG_ERR("Calloc error %d txb", (uint32_t)txb);
 		ret = -ENOMEM;
 		goto free_txb;
 	}
@@ -186,7 +181,6 @@ static int adin6310_read_msg(uint8_t *buf, uint32_t len)
 	k_mutex_lock(&spi_mutex, K_FOREVER);
 	xfer_buf_rx = k_calloc(len + 1, sizeof(*xfer_buf_rx));
 	if (!xfer_buf_rx) {
-		LOG_ERR("Calloc error %d xfer_buf_rx", (uint32_t)xfer_buf_rx);
 		ret = -ENOMEM;
 		goto mutex_unlock;
 	}
@@ -253,13 +247,8 @@ static int adin6310_read_message(int tbl_index)
 	if (ret)
 		goto free_frame_buf;
 
-	ret = SES_ReceiveMessage(tbl_index,
-			SES_PORT_spiInterface,
-			rx_len,
-			(void*)frame_buf,
-			(-1),
-			(0),
-			NULL);
+	ret = SES_ReceiveMessage(tbl_index, SES_PORT_spiInterface, rx_len,
+				 (void*)frame_buf, -1, 0, NULL);
 
 free_frame_buf:
 		k_free(frame_buf);
@@ -281,8 +270,6 @@ static void adin6310_int_rdy(const struct device *port,
 			     struct gpio_callback *cb,
 		      	     gpio_port_pins_t pins)
 {
-	struct adin6310_data *data = CONTAINER_OF(cb, struct adin6310_data, gpio_int_callback);
-
 	k_sem_give(&reader_thread_sem);
 }
 
@@ -398,9 +385,8 @@ static void adin6310_port_iface_init(struct net_if *iface)
 {
 	const struct device *dev = net_if_get_device(iface);
 	struct adin6310_port_data *data = dev->data;
-	struct adin6310_port_config *config = dev->config;
+	const struct adin6310_port_config *config = dev->config;
 	struct adin6310_data *adin_priv = config->net_device;
-	static bool subscribed = false;
 	int ret;
 
 	if (!device_is_ready(config->adin)) {
@@ -414,14 +400,14 @@ static void adin6310_port_iface_init(struct net_if *iface)
 	data->net_device = config->net_device;
 	data->name = config->name;
 	data->initialized = false;
-	data->ethernet_port = config->ethernet_port;
+	data->cpu_port = config->cpu_port;
 	memcpy(data->mac_addr, config->mac_addr, 6);
 
-	net_if_set_link_addr(iface, config->mac_addr, 6, NET_LINK_ETHERNET);
+	net_if_set_link_addr(iface, data->mac_addr, 6, NET_LINK_ETHERNET);
 	ethernet_init(iface);
 	net_if_carrier_off(iface);
 
-	ret = SES_RxSesFramesByMac(config->mac_addr, SES_REQUEST_PORT_ATTRIBUTE, adin6310_rx_callback);
+	ret = SES_RxSesFramesByMac(data->mac_addr, SES_REQUEST_PORT_ATTRIBUTE, adin6310_rx_callback);
 	if (ret) {
 		LOG_ERR("Error (%d) configuring MAC filter for port %d", ret, config->id);
 		return;
@@ -495,13 +481,13 @@ static int adin6310_set_broadcast_route(const struct device *dev)
 					&index);
 }
 
-static int adin6310_get_eth_port(const struct device *dev,
+static int adin6310_get_cpu_port(const struct device *dev,
 				 const struct adin6310_port_config **port)
 {
 	const struct adin6310_config *config = dev->config;
 
 	for (int i = 0; i < ADIN6310_NUM_PORTS; i++) {
-		if (config->port_config[i].ethernet_port) {
+		if (config->port_config[i].cpu_port) {
 			*port = &config->port_config[i];
 
 			return 0;
@@ -514,7 +500,7 @@ static int adin6310_get_eth_port(const struct device *dev,
 static int adin6310_init(const struct device *dev)
 {
         const struct adin6310_config *cfg = dev->config;
-	const struct adin6310_port_config *eth_port;
+	const struct adin6310_port_config *cpu_port;
 	struct adin6310_data *priv = dev->data;
 	sesID_t dev_id;
 	int iface;
@@ -525,6 +511,8 @@ static int adin6310_init(const struct device *dev)
 		.release_p = adin6310_spi_remove,
 		.sendMessage_p = adin6310_spi_write,
 	};
+
+	printf("ADIN6310 init\n");
 
         if (!spi_is_ready_dt(&cfg->spi)) {
                 LOG_ERR("SPI bus %s not ready", cfg->spi.bus->name);
@@ -577,7 +565,7 @@ static int adin6310_init(const struct device *dev)
 	if (ret)
 		return ret;
 
-	ret = adin6310_get_eth_port(dev, &eth_port);
+	ret = adin6310_get_cpu_port(dev, &cpu_port);
 	if (ret)
 		return ret;
 
@@ -586,23 +574,32 @@ static int adin6310_init(const struct device *dev)
 		LOG_ERR("SES_Init error %d\n", ret);
 		return ret;
 	}
+
+	printf("ADIN6310 SES_Init()\n");
+
 	ret = SES_AddHwInterface(NULL, &comm_callbacks, &iface);
 	if (ret) {
 		LOG_ERR("SES_AddHwInterface error %d\n", ret);
 		return ret;
 	}
 
-	ret = SES_AddDevice(iface, eth_port->mac_addr, &dev_id);
+	printf("ADIN6310 SES_AddHwInterface()\n");
+
+	ret = SES_AddDevice(iface, (uint8_t *)cpu_port->mac_addr, &dev_id);
 	if (ret) {
 		LOG_ERR("SES_AddDevice error %d\n", ret);
 		return ret;
 	}
+
+	printf("ADIN6310 SES_AddDevice()\n");
 
 	ret = SES_MX_InitializePorts(dev_id, ADIN6310_NUM_PORTS, initializePorts_p);
 	if (ret) {
 		LOG_ERR("SES_MX_InitializePorts error %d\n", ret);
 		return ret;
 	}
+
+	printf("ADIN6310 init done\n");
 
 	return adin6310_set_broadcast_route(dev);
 }
@@ -619,8 +616,6 @@ static const struct ethernet_api adin6310_port_api = {
 
 #define ADIN6310_SPI_OPERATION ((uint16_t)(SPI_OP_MODE_MASTER | SPI_TRANSFER_MSB | SPI_WORD_SET(8)))
 
-#define ADIN6310_STR(x)		#x
-
 #define ADIN6310_PRIV_PORT_CONFIG(parent, inst, idx)	\
 	adin6310_port_config_##parent##_##inst
 
@@ -632,7 +627,7 @@ static const struct ethernet_api adin6310_port_api = {
 		.net_device = &adin6310_data_##parent,							\
 		.name = "port_" #idx,									\
 		.mac_addr = DT_PROP(DT_CHILD(DT_DRV_INST(parent), inst), local_mac_address),		\
-		.ethernet_port = DT_PROP(DT_CHILD(DT_DRV_INST(parent), inst), ethernet_port),		\
+		.cpu_port = DT_PROP(DT_CHILD(DT_DRV_INST(parent), inst), cpu_port),			\
 	}; 												\
 	NET_DEVICE_INIT_INSTANCE(parent##_port_##idx, "port_" #idx, idx,				\
 				 NULL, NULL, &adin6310_port_data_##parent##_##inst,			\
