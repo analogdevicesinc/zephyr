@@ -135,31 +135,24 @@ static int adin6310_spi_write(int intfHandle, int size, void *data_p)
 							   SPI_OP_MODE_MASTER |
 							   SPI_TRANSFER_MSB |
 							   SPI_MODE_GET(0), 0);
+	struct adin6310_data *priv = (struct adin6310_data *)intfHandle;
 	struct spi_buf tx_buf;
 	struct spi_buf_set tx;
-	uint8_t *txb;
-	int ret = 0;
+	int ret;
 
-	k_mutex_lock(&spi_mutex, K_FOREVER);
+	k_mutex_lock(&priv->lock, K_FOREVER);
 	tx_buf.len = size + 1;
-	txb = k_calloc(size + 1, 1);
-	if (!txb) {
-		ret = -ENOMEM;
-		goto free_txb;
-	}
 
-	tx_buf.buf = txb;
+	tx_buf.buf = priv->tx_buf;
 	tx.buffers = &tx_buf;
 	tx.count = 1;
 
-	txb[0] = ADIN6310_SPI_WR_HEADER;
-	memcpy(&txb[1], data_p, size);
+	priv->tx_buf[0] = ADIN6310_SPI_WR_HEADER;
+	memcpy(&priv->tx_buf[1], data_p, size);
 	ret = spi_write_dt(&dev_spi, &tx);
 	
 	SES_PORT_Free(data_p);
-free_txb:
-	k_free(txb);
-	k_mutex_unlock(&spi_mutex);
+	k_mutex_unlock(&priv->lock);
 
 	return ret;
 }
@@ -532,6 +525,7 @@ static int adin6310_init(const struct device *dev)
         gpio_pin_set_dt(&cfg->reset, 0);
         k_busy_wait(100);
 
+	k_mutex_init(&priv->lock);
 	k_sem_init(&reader_thread_sem, 0, 1);
 	spi_read_tid = k_thread_create(&priv->rx_thread, priv->rx_thread_stack,
 				       K_KERNEL_STACK_SIZEOF(priv->rx_thread_stack),
