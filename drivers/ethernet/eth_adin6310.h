@@ -47,6 +47,7 @@ struct adin6310_data {
 	const struct gpio_dt_spec *interrupt;
 	struct k_sem offload_sem;
 	struct k_mutex lock;
+	uint8_t frame_buf[CONFIG_ETH_ADIN6310_BUFFER_SIZE];
 	uint8_t rx_buf[CONFIG_ETH_ADIN6310_BUFFER_SIZE];
 	uint8_t tx_buf[CONFIG_ETH_ADIN6310_BUFFER_SIZE];
 	struct k_sem semaphores[CONFIG_ETH_ADIN6310_SEMAPHORE_COUNT];

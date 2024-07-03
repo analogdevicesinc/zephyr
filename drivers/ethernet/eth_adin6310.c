@@ -21,6 +21,7 @@ LOG_MODULE_REGISTER(eth_adin6310, CONFIG_ETHERNET_LOG_LEVEL);
 #include "eth_adin6310.h"
 #include "SMP_stack_api.h"
 #include "SES_port_api.h"
+#include "SES_codes.h"
 #include "SES_switch.h"
 #include "SES_event.h"
 #include "SES_frame_api.h"
@@ -302,8 +303,8 @@ static void adin6310_rx_callback(int32_t frame_len, uint8_t *frame, SES_frameAtt
 static int adin6310_port_send(const struct device *dev, struct net_pkt *pkt)
 {
 	struct adin6310_port_data *data = dev->data;
+	struct adin6310_data *priv = data->net_device;
 	size_t pkt_len = net_pkt_get_len(pkt);
-	uint8_t *pkt_buf;
 	int ret;
 
 	SES_transmitFrameData_t txData_p = {
@@ -324,27 +325,20 @@ static int adin6310_port_send(const struct device *dev, struct net_pkt *pkt)
 	if (!net_if_is_carrier_ok(pkt->iface))
 		net_if_carrier_on(pkt->iface);
 
-	pkt_buf = k_calloc(pkt_len, sizeof(*pkt_buf));
-	if (!pkt_buf) {
-		LOG_ERR("Port %d failed to alloc packet buffer", data->id);
-		return -ENOMEM;
-	}
-
-	txData_p.data_p = pkt_buf;
-	ret = net_pkt_read(pkt, pkt_buf, pkt_len);
+	txData_p.data_p = priv->frame_buf;
+	ret = net_pkt_read(pkt, priv->frame_buf, pkt_len);
 	if (ret < 0) {
 		LOG_ERR("Port %d failed to read PKT into TX buffer", data->id);
-		goto free_pkt_buf;
+		return ret;
 	}
 
 	ret = SES_XmitFrame(&txData_p);
-	if (ret)
+	if (ret != SES_OK) {
 		LOG_ERR("Port %d failed to send packet", data->id);
+		return -1;
+	}
 
-free_pkt_buf:
-	k_free(pkt_buf);
-
-	return ret;
+	return 0;
 }
 
 static int adin6310_add_filter(uint8_t mac_addr[6])
