@@ -120,7 +120,7 @@ static int adin6310_spi_init(void *param_p,
 {
 	*intfType_p = SES_PORT_spiInterface;
 
-	return 0;
+	return (int)param_p;
 }
 
 static int adin6310_spi_remove(int intfHandle)
@@ -242,7 +242,7 @@ static int adin6310_read_message(struct adin6310_data *priv, int tbl_index)
 		goto out;
 	}
 
-	return SES_ReceiveMessage(tbl_index, SES_PORT_spiInterface, rx_len,
+	return SES_ReceiveMessage(priv, SES_PORT_spiInterface, rx_len,
 				  (void*)&priv->rx_buf[1], -1, 0, NULL);
 
 out:
@@ -559,7 +559,7 @@ static int adin6310_init(const struct device *dev)
 		return ret;
 	}
 
-	ret = SES_AddHwInterface(NULL, &comm_callbacks, &iface);
+	ret = SES_AddHwInterface(priv, &comm_callbacks, &iface);
 	if (ret) {
 		LOG_ERR("SES_AddHwInterface error %d\n", ret);
 		return ret;
