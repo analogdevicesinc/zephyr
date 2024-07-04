@@ -28,11 +28,7 @@ LOG_MODULE_REGISTER(eth_adin6310, CONFIG_ETHERNET_LOG_LEVEL);
 #include "SES_interface_management.h"
 
 struct k_sem reader_thread_sem;
-K_THREAD_STACK_DEFINE(stack_area, 20000);
-K_SEM_DEFINE(read_done_sem, 1, 1);
-K_MUTEX_DEFINE(spi_mutex);
 
-static struct k_thread read_thread;
 static k_tid_t spi_read_tid;
 
 const SES_portInit_t initializePorts_p[] = {
@@ -42,10 +38,6 @@ const SES_portInit_t initializePorts_p[] = {
 	{ 1, SES_rgmiiMode, { 0, 0, 0 }, 1, SES_phyADIN1300, {true, 0, 5, SES_phySpeed1000, SES_phyDuplexModeFull, SES_autoMdix}},
 	{ 1, SES_rgmiiMode, { 0, 0, 0 }, 1, SES_phyADIN1100, {true, 0, 2, SES_phySpeed10, SES_phyDuplexModeFull, SES_autoMdix}},
 	{ 1, SES_rgmiiMode, { 0, 0, 0 }, 1, SES_phyADIN1100, {true, 0, 3, SES_phySpeed10, SES_phyDuplexModeFull, SES_autoMdix}}
-};
-
-struct adin6310_priv {
-        struct k_sem msg_recv_sem;
 };
 
 void* SES_PORT_CreateSemaphore(int initCount, int maxCount)
