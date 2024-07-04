@@ -501,44 +501,62 @@ static int adin6310_init(const struct device *dev)
 	k_thread_name_set(priv->offload_thread_id, "adin6310_rx_offload");
 
 	gpio_init_callback(&priv->gpio_int_callback, adin6310_int_rdy, BIT(cfg->interrupt.pin));
-	gpio_add_callback(cfg->interrupt.port, &priv->gpio_int_callback);
+	ret = gpio_add_callback(cfg->interrupt.port, &priv->gpio_int_callback);
+	if (ret)
+		return ret;
 
 	k_thread_start(priv->offload_thread_id);
 
 	priv->interrupt = &cfg->interrupt;
 	ret = gpio_pin_interrupt_configure_dt(&cfg->interrupt, GPIO_INT_EDGE_TO_ACTIVE);
 	if (ret)
-		return ret;
+		goto stop_thread;
 
 	ret = adin6310_get_cpu_port(dev, &cpu_port);
 	if (ret)
-		return ret;
+		goto stop_thread;
 
 	ret = SES_Init();
-	if (ret) {
+	if (ret != SES_OK) {
 		LOG_ERR("SES_Init error %d\n", ret);
-		return ret;
+		ret = -1;
+		goto stop_thread;
 	}
 
 	ret = SES_AddHwInterface(priv, &comm_callbacks, &iface);
-	if (ret) {
+	if (ret != SES_OK) {
 		LOG_ERR("SES_AddHwInterface error %d\n", ret);
-		return ret;
+		ret = -1;
+		goto stop_thread;
 	}
 
 	ret = SES_AddDevice(iface, (uint8_t *)cpu_port->mac_addr, &dev_id);
-	if (ret) {
+	if (ret != SES_OK) {
 		LOG_ERR("SES_AddDevice error %d\n", ret);
-		return ret;
+		ret = -1;
+		goto stop_thread;
 	}
 
 	ret = SES_MX_InitializePorts(dev_id, ADIN6310_NUM_PORTS, initializePorts_p);
 	if (ret) {
 		LOG_ERR("SES_MX_InitializePorts error %d\n", ret);
-		return ret;
+		ret = -1;
+		goto stop_thread;
 	}
 
-	return adin6310_set_broadcast_route(dev);
+	ret = adin6310_set_broadcast_route(dev);
+	if (ret) {
+		ret = -1;
+		goto stop_thread;
+	}
+
+	return 0;
+
+stop_thread:
+	k_thread_abort(priv->offload_thread_id);
+	gpio_remove_callback_dt(cfg->interrupt.port, &priv->gpio_int_callback);
+
+	return ret;
 }
 
 static const struct ethernet_api adin6310_port_api = {
