@@ -211,7 +211,7 @@ static void adin6310_msg_recv(void *p1, void *p2, void *p3)
 	k_thread_custom_data_set(p1);
 
 	while (1) {
-		k_sem_take(&priv->reader_thread_sem, K_FOREVER);
+		k_sem_take(&priv->offload_thread_sem, K_FOREVER);
 		adin6310_read_message(p1, 0);
 	};
 }
@@ -222,7 +222,7 @@ static void adin6310_int_rdy(const struct device *port,
 {
 	struct adin6310_data *priv = CONTAINER_OF(cb, struct adin6310_data, gpio_int_callback);
 
-	k_sem_give(&priv->reader_thread_sem);
+	k_sem_give(&priv->offload_thread_sem);
 }
 
 static void adin6310_rx_callback(int32_t frame_len, uint8_t *frame, SES_frameAttributes_t *attrs)
@@ -492,9 +492,9 @@ static int adin6310_init(const struct device *dev)
         k_busy_wait(100);
 
 	k_mutex_init(&priv->lock);
-	k_sem_init(&priv->reader_thread_sem, 0, 1);
-	priv->offload_thread_id = k_thread_create(&priv->rx_thread, priv->rx_thread_stack,
-						  K_KERNEL_STACK_SIZEOF(priv->rx_thread_stack),
+	k_sem_init(&priv->offload_thread_sem, 0, 1);
+	priv->offload_thread_id = k_thread_create(&priv->offload_thread, priv->offload_thread_stack,
+						  K_KERNEL_STACK_SIZEOF(priv->offload_thread_stack),
 						  adin6310_msg_recv, priv, NULL, NULL,
 						  CONFIG_ETH_ADIN6310_IRQ_THREAD_PRIO,
 						  K_ESSENTIAL, K_FOREVER);
