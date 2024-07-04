@@ -52,6 +52,7 @@ struct adin6310_data {
 	uint8_t tx_buf[CONFIG_ETH_ADIN6310_BUFFER_SIZE];
 	struct k_sem semaphores[CONFIG_ETH_ADIN6310_SEMAPHORE_COUNT];
 
+	k_tid_t offload_thread_id;
 	struct k_sem reader_thread_sem;
 	K_KERNEL_STACK_MEMBER(rx_thread_stack, CONFIG_ETH_ADIN6310_IRQ_THREAD_STACK_SIZE);
 	struct k_thread rx_thread;

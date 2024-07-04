@@ -27,8 +27,6 @@ LOG_MODULE_REGISTER(eth_adin6310, CONFIG_ETHERNET_LOG_LEVEL);
 #include "SES_frame_api.h"
 #include "SES_interface_management.h"
 
-static k_tid_t spi_read_tid;
-
 const SES_portInit_t initializePorts_p[] = {
 	{ 1, SES_rgmiiMode, { 0, 0, 0 }, 1, SES_phyADIN1100, {true, 0, 0, SES_phySpeed10, SES_phyDuplexModeFull, SES_autoMdix}},
 	{ 1, SES_rgmiiMode, { 0, 0, 0 }, 1, SES_phyADIN1100, {true, 0, 1, SES_phySpeed10, SES_phyDuplexModeFull, SES_autoMdix}},
@@ -495,16 +493,17 @@ static int adin6310_init(const struct device *dev)
 
 	k_mutex_init(&priv->lock);
 	k_sem_init(&priv->reader_thread_sem, 0, 1);
-	spi_read_tid = k_thread_create(&priv->rx_thread, priv->rx_thread_stack,
-				       K_KERNEL_STACK_SIZEOF(priv->rx_thread_stack),
-				       adin6310_msg_recv, priv, NULL, NULL,
-				       CONFIG_ETH_ADIN6310_IRQ_THREAD_PRIO, K_ESSENTIAL, K_FOREVER);
-	k_thread_name_set(spi_read_tid, "adin6310_rx_offload");
+	priv->offload_thread_id = k_thread_create(&priv->rx_thread, priv->rx_thread_stack,
+						  K_KERNEL_STACK_SIZEOF(priv->rx_thread_stack),
+						  adin6310_msg_recv, priv, NULL, NULL,
+						  CONFIG_ETH_ADIN6310_IRQ_THREAD_PRIO,
+						  K_ESSENTIAL, K_FOREVER);
+	k_thread_name_set(priv->offload_thread_id, "adin6310_rx_offload");
 
 	gpio_init_callback(&priv->gpio_int_callback, adin6310_int_rdy, BIT(cfg->interrupt.pin));
 	gpio_add_callback(cfg->interrupt.port, &priv->gpio_int_callback);
 
-	k_thread_start(spi_read_tid);
+	k_thread_start(priv->offload_thread_id);
 
 	priv->interrupt = &cfg->interrupt;
 	ret = gpio_pin_interrupt_configure_dt(&cfg->interrupt, GPIO_INT_EDGE_TO_ACTIVE);
