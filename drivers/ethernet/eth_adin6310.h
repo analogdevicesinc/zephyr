@@ -53,9 +53,9 @@ struct adin6310_data {
 	struct k_sem semaphores[CONFIG_ETH_ADIN6310_SEMAPHORE_COUNT];
 
 	k_tid_t offload_thread_id;
-	struct k_sem reader_thread_sem;
-	K_KERNEL_STACK_MEMBER(rx_thread_stack, CONFIG_ETH_ADIN6310_IRQ_THREAD_STACK_SIZE);
-	struct k_thread rx_thread;
+	struct k_sem offload_thread_sem;
+	K_KERNEL_STACK_MEMBER(offload_thread_stack, CONFIG_ETH_ADIN6310_IRQ_THREAD_STACK_SIZE);
+	struct k_thread offload_thread;
 };
 
 struct adin6310_config {
