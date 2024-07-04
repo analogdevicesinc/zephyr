@@ -170,7 +170,7 @@ static int adin6310_spi_read(struct adin6310_data *priv, uint8_t *data, uint32_t
 							   SPI_TRANSFER_MSB |
 							   SPI_MODE_GET(0), 0);
 
-	k_mutex_lock(&spi_mutex, K_FOREVER);
+	k_mutex_lock(&priv->lock, K_FOREVER);
 
 	memset(priv->tx_buf, 0, len + 1);
 	priv->tx_buf[0] = ADIN6310_SPI_RD_HEADER;
@@ -187,8 +187,7 @@ static int adin6310_spi_read(struct adin6310_data *priv, uint8_t *data, uint32_t
 
 	ret = spi_transceive_dt(&dev_spi, &tx_buf_set, &rx_buf_set);
 
-mutex_unlock:
-	k_mutex_unlock(&spi_mutex);
+	k_mutex_unlock(&priv->lock);
 
 	return ret;
 }
