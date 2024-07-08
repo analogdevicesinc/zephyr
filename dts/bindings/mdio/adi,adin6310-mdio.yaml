@@ -1,0 +1,9 @@
+# Copyright (c) 2023 PHOENIX CONTACT Electronics GmbH
+# SPDX-License-Identifier: Apache-2.0
+
+description: ADIN6310 MDIO Driver node
+
+compatible: "adi,adin6310-mdio"
+
+include: mdio-controller.yaml
+
