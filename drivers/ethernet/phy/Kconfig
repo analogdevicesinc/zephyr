@@ -40,6 +40,13 @@ config PHY_ADIN2111
 	help
 	  Enable ADIN2111 PHY driver.
 
+config PHY_ADIN1300
+	bool "ADIN1300 PHY driver"
+	default y
+	depends on DT_HAS_ADI_ADIN1300_ENABLED
+	help
+	  Enable ADIN1300 PHY driver.
+
 config PHY_MICROCHIP_KSZ8081
 	bool "Microchip KSZ8081 PHY Driver"
 	default y
