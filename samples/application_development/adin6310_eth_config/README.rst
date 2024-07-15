@@ -1,38 +1,41 @@
-.. _external_library:
+.. _adin6310_eth_config:
 
-External Library
+ADIN6310 ethernet configuration
 #################
 
 Overview
 ********
 
-A simple example that demonstrates how to include an external static library
-into the Zephyr build system.
-The demonstrates both how to build the external library using a different build
-system and how to include the built static library.
+This is an example of using the ADIN6310 kernel driver. The forwarding rules
+are the same as in the unmanaged example, however the Zephyr's networking
+stack may used in order to process frames received on a "configuration port"
+(defined in the device tree by the "cpu-port" property).
 
-Windows Note
-************
+Building and Running
+********************
 
-To use this sample on a Windows host operating system, GNU Make needs to be in
-your path. This can be setup using chocolatey or by manually installing it.
+Build the sample application like this:
 
-Chocolatey Method
-=================
+.. code-block:: console
 
-Install make using the following command:
+   west build -b adin6310switch/max32690/m4 samples/application_development/adin6310_unmanaged -DLIB_ADIN6310_PATH=... -p auto
 
-.. code-block:: bash
+Flashing the application may be done by running:
 
-   choco install make
+.. code-block:: console
 
-Once installed, build the application as normal.
+   west flash --runner=jlink
 
-Manual Install Method
-=====================
+Testing
+*******
 
-The pre-built make application can be downloaded from
-https://gnuwin32.sourceforge.net/packages/make.htm by either getting both the
-``Binaries`` and ``Dependencies`` and extracting them to the same folder, or
-getting the ``Complete package`` setup. Once installed and in the path, build
-the application as normal.
+The sample may be tested by connecting over an Ethernet cable to the "cpu-port"
+of the switch and then running the ping command.
+
+.. code-block:: console
+
+   ping 192.168.1.5
+   PING 192.168.1.5 (192.168.1.5) 56(84) bytes of data.
+   64 bytes from 192.168.1.5: icmp_seq=1 ttl=64 time=1008 ms
+   64 bytes from 192.168.1.5: icmp_seq=2 ttl=64 time=3.93 ms
+   64 bytes from 192.168.1.5: icmp_seq=3 ttl=64 time=1.81 ms
