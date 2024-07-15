@@ -204,22 +204,66 @@
 
 		port0 {
 			local-mac-address = [ 00 18 80 03 25 60 ];
+			phy-connection-type = "rgmii";
 		};
 		port1 {
 			local-mac-address = [ 00 18 80 03 25 61 ];
+			phy-connection-type = "rgmii";
 		};
 		port2 {
 			cpu-port;
 			local-mac-address = [ 00 18 80 03 25 62 ];
+			phy-connection-type = "rgmii";
 		};
 		port3 {
 			local-mac-address = [ 00 18 80 03 25 63 ];
+			phy-connection-type = "rgmii";
 		};
 		port4 {
 			local-mac-address = [ 00 18 80 03 25 64 ];
+			phy-connection-type = "rgmii";
 		};
 		port5 {
 			local-mac-address = [ 00 18 80 03 25 65 ];
+			phy-connection-type = "rgmii";
+		};
+
+		mdio {
+			compatible = "adi,adin6310-mdio";
+			#address-cells = <1>;
+			#size-cells = <0>;
+			status = "okay";
+
+			phy0: ethernet-phy@0 {
+				reg = <0x0>;
+				compatible = "adi,adin1100-phy";
+				status = "disabled";
+			};
+			phy1: ethernet-phy@1 {
+				reg = <0x1>;
+				compatible = "adi,adin1100-phy";
+				status = "disabled";
+			};
+			phy3: ethernet-phy@6 {
+				reg = <0x6>;
+				compatible = "ethernet-phy";
+				status = "disabled";
+			};
+			phy4: ethernet-phy@5 {
+				reg = <0x5>;
+				compatible = "ethernet-phy";
+				status = "disabled";
+			};
+			phy5: ethernet-phy@2 {
+				reg = <0x2>;
+				compatible = "adi,adin1100-phy";
+				status = "disabled";
+			};
+			phy6: ethernet-phy@3 {
+				reg = <0x3>;
+				compatible = "adi,adin1100-phy";
+				status = "disabled";
+			};
 		};
 	};
 };
