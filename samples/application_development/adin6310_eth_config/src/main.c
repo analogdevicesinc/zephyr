@@ -27,8 +27,6 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(main, CONFIG_LOG_DEFAULT_LEVEL);
 
-#define DISABLE_AUTOMATIC_FW_UPDATE
-
 void print_ipv4(struct net_if *iface, struct net_if_addr *addr, void *user_data)
 {
 	printf("Iface ip addr: 0x%X\n", addr->address.in_addr.s_addr);
