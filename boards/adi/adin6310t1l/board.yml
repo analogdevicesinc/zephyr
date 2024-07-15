@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 board:
-  name: adin6310switch
+  name: adin6310t1l
   vendor: adi
   socs:
     - name: max32690

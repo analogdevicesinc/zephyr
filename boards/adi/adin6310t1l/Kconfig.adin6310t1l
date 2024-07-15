@@ -1,0 +1,7 @@
+# MAX32690 board configuration
+
+# Copyright (c) 2024 Analog Devices, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+config BOARD_ADIN6310T1L
+	select SOC_MAX32690_M4 if BOARD_ADIN6310T1L_MAX32690_M4

@@ -1,12 +1,12 @@
-# ADIN6310_ETHERNET_SWITCH board configuration
+# EVAL_ADIN6310T1L_EBZ board configuration
 
 # Copyright (c) 2024 Analog Devices, Inc.
 # SPDX-License-Identifier: Apache-2.0
 
-if BOARD_ADIN6310SWITCH
+if BOARD_ADIN6310T1L
 
 config BOARD
-	default "ADIN6310SWITCH"
+	default "ADIN6310T1L"
 
 if NETWORKING
 
@@ -15,4 +15,4 @@ config NET_L2_ETHERNET
 
 endif # NETWORKING
 
-endif # BOARD_ADIN6310SWITCH
+endif # BOARD_ADIN6310T1L
