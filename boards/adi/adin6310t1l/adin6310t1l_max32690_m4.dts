@@ -237,32 +237,32 @@
 			phy0: ethernet-phy@0 {
 				reg = <0x0>;
 				compatible = "adi,adin1100-phy";
-				status = "disabled";
+				status = "okay";
 			};
 			phy1: ethernet-phy@1 {
 				reg = <0x1>;
 				compatible = "adi,adin1100-phy";
-				status = "disabled";
+				status = "okay";
 			};
 			phy3: ethernet-phy@6 {
 				reg = <0x6>;
 				compatible = "ethernet-phy";
-				status = "disabled";
+				status = "okay";
 			};
 			phy4: ethernet-phy@5 {
 				reg = <0x5>;
 				compatible = "ethernet-phy";
-				status = "disabled";
+				status = "okay";
 			};
 			phy5: ethernet-phy@2 {
 				reg = <0x2>;
 				compatible = "adi,adin1100-phy";
-				status = "disabled";
+				status = "okay";
 			};
 			phy6: ethernet-phy@3 {
 				reg = <0x3>;
 				compatible = "adi,adin1100-phy";
-				status = "disabled";
+				status = "okay";
 			};
 		};
 	};

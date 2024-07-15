@@ -1,5 +1,5 @@
-identifier: adin6310-ethernet-switch
-name: adin6310-ethernet-switch
+identifier: eval-adin6310t1l-ebz
+name: eval-adin6310t1l-ebz
 type: mcu
 arch: arm
 toolchain:
