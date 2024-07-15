@@ -33,8 +33,16 @@ static int adin1300_reg_read(const struct device *dev, uint16_t reg_addr,
 			     uint32_t *data)
 {
         const struct adin1300_config *cfg = dev->config;
+	uint16_t mdio_data;
+	int ret;
 
-        return mdio_read(cfg->mdio, 0x3, reg_addr, data);
+        ret = mdio_read(cfg->mdio, cfg->phy_addr, reg_addr, &mdio_data);
+	if (ret)
+		return ret;
+
+	*data = mdio_data;
+
+	return 0;
 }
 
 static int adin1300_reg_write(const struct device *dev, uint16_t reg_addr,
@@ -42,12 +50,12 @@ static int adin1300_reg_write(const struct device *dev, uint16_t reg_addr,
 {
         const struct adin1300_config *cfg = dev->config;
 
-        return mdio_write(cfg->mdio, 0x3, reg_addr, data);
+        return mdio_write(cfg->mdio, cfg->phy_addr, reg_addr, data);
 }
 
 static int adin1300_get_id(const struct device *dev, uint32_t *phy_id)
 {
-       	uint16_t val;
+       	uint32_t val = 0;
 
 	if (adin1300_reg_read(dev, MII_PHYID1R, &val) < 0) {
 		return -EIO;
@@ -66,11 +74,21 @@ static int adin1300_get_id(const struct device *dev, uint32_t *phy_id)
 
 static int adin1300_init(const struct device *dev)
 {
-        struct phy_adin1300_config *cfg = dev->config;
+        const struct adin1300_config *cfg = dev->config;
         uint32_t id;
 
-        adin1300_get_id(dev, &id);
-        printf("ADIN1300 id 0x%X\n", id);
+        // printf("ADIN1300 phy addr: 0x%X\n", cfg);
+
+	// for (int i = 0; i < 32; i++) {
+	// 	cfg->phy_addr = i;
+	// 	adin1300_get_id(dev, &id);
+	// 	printf("ADIN1300 scan addr %d value 0x%X\n", i, id);
+	// }
+
+	// adin1300_get_id(dev, &id);
+        // printf("ADIN1300 id 0x%X\n", id);
+
+	printf("ADIN1300 probe done\n");
 
         return 0;
 }
@@ -84,7 +102,7 @@ static const struct ethphy_driver_api adin1300_api = {
 };
 
 #define ADIN1300_PHY_INITIALIZE(n)						\
-	static const struct adin1300_config adin1300_config_##n = {	\
+	static struct adin1300_config adin1300_config_##n = {	\
 		.mdio = DEVICE_DT_GET(DT_INST_BUS(n)),				\
 		.phy_addr = DT_INST_REG_ADDR(n),				\
 	};									\
