@@ -4,9 +4,7 @@ cmake_minimum_required(VERSION 3.20.0)
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(adin6310_unmanaged)
 
-# FILE(GLOB adin6310_srcs ${CMAKE_CURRENT_SOURCE_DIR}/lib_adin6310/srcs/*.c)
 target_sources(app PRIVATE src/main.c)
-# target_include_directories(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/lib_adin6310/inc)
 target_link_libraries(app PUBLIC libm.a)
 
 zephyr_get_include_directories_for_lang_as_string(       C includes)

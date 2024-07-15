@@ -19,11 +19,8 @@ LOG_MODULE_REGISTER(eth_adin6310, CONFIG_LOG_DEFAULT_LEVEL);
 #include "SES_switch.h"
 #include "SES_vlan.h"
 #include "SES_frame_api.h"
-#include "SES_PORT_interface.h"
 #include "SES_interface_management.h"
 #include "zephyr/sys/util.h"
-
-#define DISABLE_AUTOMATIC_FW_UPDATE
 
 #define ADIN6310_SPI_WR_HEADER	0x40
 #define ADIN6310_SPI_RD_HEADER	0x80
@@ -129,7 +126,6 @@ static int adin6310_spi_write(int intfHandle, int size, void *data_p)
 	uint8_t *txb;
 	int ret = 0;
 
-	// k_mutex_lock(&spi_mutex, K_FOREVER);
 	tx_buf.len = size + 1;
 	txb = k_calloc(size + 1, 1);
 	if (!txb) {
@@ -149,7 +145,6 @@ static int adin6310_spi_write(int intfHandle, int size, void *data_p)
 	SES_PORT_Free(data_p);
 free_txb:
 	k_free(txb);
-	// k_mutex_unlock(&spi_mutex);
 
 	return ret;
 }
