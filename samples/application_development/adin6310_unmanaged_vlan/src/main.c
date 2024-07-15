@@ -331,37 +331,37 @@ int main(void)
 		printf("SES_MX_InitializePorts() error %d\n", ret);
 
 
-	ret = SES_SetVlanPortType(SES_macPort0, (uint16_t)1, (uint16_t)10, SES_vlanTrunk);
+	ret = SES_SetVlanPortType(SES_macPort0, (uint16_t)1, (uint16_t)10, 0, SES_vlanTrunk);
 	if (ret) {
 		printf("SES_SetVlanPortType() error %d\n", ret);
 		return ret;
 	}
 
-	ret = SES_SetVlanPortType(SES_macPort1, (uint16_t)1, (uint16_t)10, SES_vlanTrunk);
+	ret = SES_SetVlanPortType(SES_macPort1, (uint16_t)1, (uint16_t)10, 0, SES_vlanTrunk);
 	if (ret) {
 		printf("SES_SetVlanPortType() error %d\n", ret);
 		return ret;
 	}
 
-	ret = SES_SetVlanPortType(SES_macPort2, (uint16_t)1, (uint16_t)10, SES_vlanTrunk);
+	ret = SES_SetVlanPortType(SES_macPort2, (uint16_t)1, (uint16_t)10, 0, SES_vlanTrunk);
 	if (ret) {
 		printf("SES_SetVlanPortType() error %d\n", ret);
 		return ret;
 	}
 
-	ret = SES_SetVlanPortType(SES_macPort3, (uint16_t)1, (uint16_t)10, SES_vlanTrunk);
+	ret = SES_SetVlanPortType(SES_macPort3, (uint16_t)1, (uint16_t)10, 0, SES_vlanTrunk);
 	if (ret) {
 		printf("SES_SetVlanPortType() error %d\n", ret);
 		return ret;
 	}
 
-	ret = SES_SetVlanPortType(SES_macPort4, (uint16_t)1, (uint16_t)10, SES_vlanTrunk);
+	ret = SES_SetVlanPortType(SES_macPort4, (uint16_t)1, (uint16_t)10, 0, SES_vlanTrunk);
 	if (ret) {
 		printf("SES_SetVlanPortType() error %d\n", ret);
 		return ret;
 	}
 
-	ret = SES_SetVlanPortType(SES_macPort5, (uint16_t)1, (uint16_t)10, SES_vlanTrunk);
+	ret = SES_SetVlanPortType(SES_macPort5, (uint16_t)1, (uint16_t)10, 0, SES_vlanTrunk);
 	if (ret) {
 		printf("SES_SetVlanPortType() error %d\n", ret);
 		return ret;
