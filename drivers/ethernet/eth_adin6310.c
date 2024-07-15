@@ -14,12 +14,12 @@ LOG_MODULE_REGISTER(eth_adin6310, CONFIG_ETHERNET_LOG_LEVEL);
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/spi.h>
 #include "zephyr/sys/util.h"
-
 #include <zephyr/net/net_pkt.h>
 #include <zephyr/net/ethernet.h>
 #include <zephyr/net/phy.h>
 
 #include "eth_adin6310.h"
+
 #include "SMP_stack_api.h"
 #include "SES_port_api.h"
 #include "SES_codes.h"
@@ -37,7 +37,7 @@ static SES_portInit_t default_config[6] = {
 	{ 0, SES_rgmiiMode, { 0, 0, 0 }, 1, SES_phyUnmanaged, {true, 0, 3, SES_phySpeed10, SES_phyDuplexModeFull, SES_autoMdix}}
 };
 
-void* SES_PORT_CreateSemaphore(int initCount, int maxCount)
+void *SES_PORT_CreateSemaphore(int initCount, int maxCount)
 {
 	struct k_sem *sem = NULL;
 
@@ -181,7 +181,7 @@ static int adin6310_spi_read(struct adin6310_data *priv, uint8_t *data, uint32_t
 	return ret;
 }
 
-static int adin6310_read_message(struct adin6310_data *priv, int tbl_index)
+static int adin6310_read_message(struct adin6310_data *priv)
 {
 	uint32_t frame_type;
 	uint32_t padded_len;
@@ -213,7 +213,7 @@ static void adin6310_msg_recv(void *p1, void *p2, void *p3)
 
 	while (1) {
 		k_sem_take(&priv->offload_thread_sem, K_FOREVER);
-		adin6310_read_message(p1, 0);
+		adin6310_read_message(p1);
 	};
 }
 
@@ -361,15 +361,6 @@ static void adin6310_port_iface_init(struct net_if *iface)
 	data->iface = iface;
 	adin_priv->port_data[data->id] = data;
 }
-
-#if defined(CONFIG_NET_STATISTICS_ETHERNET)
-static struct net_stats_eth *adin6310_port_get_stats(const struct device *dev)
-{
-	struct adin6310_data *data = dev->data;
-
-	return NULL;
-}
-#endif /* CONFIG_NET_STATISTICS_ETHERNET */
 
 static int adin6310_set_broadcast_route(const struct device *dev)
 {

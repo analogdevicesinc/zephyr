@@ -28,7 +28,7 @@ config ETH_ADIN6310_IRQ_THREAD_STACK_SIZE
 
 config ETH_ADIN6310_IRQ_THREAD_PRIO
 	int "Priority for internal incoming packet handler"
-	default 2
+	default 1
 	help
 	  Priority level for internal thread which is ran for ADIN
 	  INT IRQ processing.
