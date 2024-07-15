@@ -5,6 +5,7 @@
  */
 
 #include <zephyr/logging/log.h>
+#define DT_DRV_COMPAT adi_adin6310
 LOG_MODULE_REGISTER(eth_adin6310, CONFIG_ETHERNET_LOG_LEVEL);
 
 #include <zephyr/kernel.h>
@@ -27,13 +28,13 @@ LOG_MODULE_REGISTER(eth_adin6310, CONFIG_ETHERNET_LOG_LEVEL);
 #include "SES_frame_api.h"
 #include "SES_interface_management.h"
 
-const SES_portInit_t initializePorts_p[] = {
-	{ 1, SES_rgmiiMode, { 0, 0, 0 }, 1, SES_phyADIN1100, {true, 0, 0, SES_phySpeed10, SES_phyDuplexModeFull, SES_autoMdix}},
-	{ 1, SES_rgmiiMode, { 0, 0, 0 }, 1, SES_phyADIN1100, {true, 0, 1, SES_phySpeed10, SES_phyDuplexModeFull, SES_autoMdix}},
-	{ 1, SES_rgmiiMode, { 0, 0, 0 }, 1, SES_phyADIN1300, {true, 0, 6, SES_phySpeed1000, SES_phyDuplexModeFull, SES_autoMdix}},
-	{ 1, SES_rgmiiMode, { 0, 0, 0 }, 1, SES_phyADIN1300, {true, 0, 5, SES_phySpeed1000, SES_phyDuplexModeFull, SES_autoMdix}},
-	{ 1, SES_rgmiiMode, { 0, 0, 0 }, 1, SES_phyADIN1100, {true, 0, 2, SES_phySpeed10, SES_phyDuplexModeFull, SES_autoMdix}},
-	{ 1, SES_rgmiiMode, { 0, 0, 0 }, 1, SES_phyADIN1100, {true, 0, 3, SES_phySpeed10, SES_phyDuplexModeFull, SES_autoMdix}}
+static SES_portInit_t default_config[6] = {
+	{ 0, SES_rgmiiMode, { 0, 0, 0 }, 1, SES_phyUnmanaged, {true, 0, 0, SES_phySpeed10, SES_phyDuplexModeFull, SES_autoMdix}},
+	{ 0, SES_rgmiiMode, { 0, 0, 0 }, 1, SES_phyUnmanaged, {true, 0, 1, SES_phySpeed10, SES_phyDuplexModeFull, SES_autoMdix}},
+	{ 0, SES_rgmiiMode, { 0, 0, 0 }, 1, SES_phyADIN1300, {true, 0, 6, SES_phySpeed10, SES_phyDuplexModeFull, SES_autoMdix}},
+	{ 0, SES_rgmiiMode, { 0, 0, 0 }, 1, SES_phyADIN1300, {true, 0, 5, SES_phySpeed10, SES_phyDuplexModeFull, SES_autoMdix}},
+	{ 0, SES_rgmiiMode, { 0, 0, 0 }, 1, SES_phyUnmanaged, {true, 0, 2, SES_phySpeed10, SES_phyDuplexModeFull, SES_autoMdix}},
+	{ 0, SES_rgmiiMode, { 0, 0, 0 }, 1, SES_phyUnmanaged, {true, 0, 3, SES_phySpeed10, SES_phyDuplexModeFull, SES_autoMdix}}
 };
 
 void* SES_PORT_CreateSemaphore(int initCount, int maxCount)
@@ -128,7 +129,7 @@ static int adin6310_spi_write(int intfHandle, int size, void *data_p)
 	struct spi_buf_set tx;
 	int ret;
 
-	k_mutex_lock(&priv->lock, K_FOREVER);
+	k_mutex_lock(&priv->spi_lock, K_FOREVER);
 	tx_buf.len = size + 1;
 
 	tx_buf.buf = priv->tx_buf;
@@ -140,7 +141,7 @@ static int adin6310_spi_write(int intfHandle, int size, void *data_p)
 	ret = spi_write_dt(&dev_spi, &tx);
 	
 	SES_PORT_Free(data_p);
-	k_mutex_unlock(&priv->lock);
+	k_mutex_unlock(&priv->spi_lock);
 
 	return ret;
 }
@@ -158,7 +159,7 @@ static int adin6310_spi_read(struct adin6310_data *priv, uint8_t *data, uint32_t
 							   SPI_TRANSFER_MSB |
 							   SPI_MODE_GET(0), 0);
 
-	k_mutex_lock(&priv->lock, K_FOREVER);
+	k_mutex_lock(&priv->spi_lock, K_FOREVER);
 
 	memset(priv->tx_buf, 0, len + 1);
 	priv->tx_buf[0] = ADIN6310_SPI_RD_HEADER;
@@ -175,7 +176,7 @@ static int adin6310_spi_read(struct adin6310_data *priv, uint8_t *data, uint32_t
 
 	ret = spi_transceive_dt(&dev_spi, &tx_buf_set, &rx_buf_set);
 
-	k_mutex_unlock(&priv->lock);
+	k_mutex_unlock(&priv->spi_lock);
 
 	return ret;
 }
@@ -344,7 +345,6 @@ static void adin6310_port_iface_init(struct net_if *iface)
 	data->id = config->id;
 	data->net_device = config->net_device;
 	data->name = config->name;
-	data->initialized = false;
 	data->cpu_port = config->cpu_port;
 	memcpy(data->mac_addr, config->mac_addr, 6);
 
@@ -358,7 +358,6 @@ static void adin6310_port_iface_init(struct net_if *iface)
 		return;
 	}
 
-	data->initialized = true;
 	data->iface = iface;
 	adin_priv->port_data[data->id] = data;
 }
@@ -442,6 +441,123 @@ static int adin6310_get_cpu_port(const struct device *dev,
 	return -ENODEV;
 }
 
+static SES_phyType_t adin6310_match_phy(uint32_t phy_id, uint32_t phy_mask)
+{
+	uint32_t known_phy_ids[] = {
+		[SES_phyADIN1100] = 0x283BC81,
+		[SES_phyADIN1200] = 0x283BC20,
+		[SES_phyADIN1300] = 0x283BC30,
+	};
+
+	for (uint8_t i = 0; i < ARRAY_SIZE(known_phy_ids); i++) {
+		if ((phy_id & phy_mask) == (known_phy_ids[i] & phy_mask))
+			return (SES_phyType_t)i;
+	}
+
+	return SES_phyUnmanaged;
+}
+
+static int adin6310_get_phy_id(const struct device *phy, uint32_t *phy_id)
+{
+	uint32_t id1 = 0, id2 = 0;
+	int ret;
+
+	ret = phy_read(phy, 0x2, &id1);
+	if (ret)
+		return ret;
+	
+	ret = phy_read(phy, 0x3, &id2);
+	if (ret)
+		return ret;
+
+	*phy_id = FIELD_PREP(GENMASK(31, 16), id1);
+	*phy_id |= id2;
+
+	return 0;
+}
+
+static int adin6310_config_ports(const struct device *dev, uint32_t ses_dev_id)
+{
+	const struct adin6310_config *cfg = dev->config;
+	int ret;
+
+	for (int i = 0; i < ADIN6310_NUM_PORTS; i++) {
+		default_config[i].enablePort = 1;
+		default_config[i].phyConfig.phyAddr = cfg->phys[i].phy_addr;
+	}
+
+	ret = SES_MX_InitializePorts(ses_dev_id, ADIN6310_NUM_PORTS, default_config);
+	if (ret != SES_OK) {
+		printf("Error SES_MX_InitializePorts() (init)\n");
+		return -1;
+	}
+
+	return 0;
+}
+
+static int adin6310_stop(const struct device *dev)
+{
+	return 0;
+}
+
+static int adin6310_start(const struct device *dev)
+{
+	struct adin6310_port_data *port_data = dev->data;
+	const struct device *adin_dev = port_data->adin;
+	const struct adin6310_config *cfg = adin_dev->config;
+	struct adin6310_data *data = adin_dev->data;
+	SES_phyType_t ses_phy;
+	uint32_t phy_id;
+	int ret = 0;
+
+	k_mutex_lock(&data->lock, K_FOREVER);
+
+	if (data->ses_configured) {
+		goto unlock;
+	}
+	
+
+	for (int i = 0; i < ADIN6310_NUM_PORTS; i++) {
+		printf("PHY state %d\n", cfg->phys[i].enabled);
+		continue;
+		if (!device_is_ready(cfg->phys[i].dev)) {
+			continue;
+		}
+
+		ret = adin6310_get_phy_id(cfg->phys[i].dev, &phy_id);
+		if (ret) {
+			LOG_ERR("Error while reading the PHY ID (%d)", ret);
+			goto unlock;
+		}
+
+		/* 
+		 * Match known PHYs by comparing the phy id. The last 4 bits represent
+		 * the revision number, so we have to ignore them.
+		 */
+		ses_phy = adin6310_match_phy(phy_id, GENMASK(31, 4));
+
+		printf("PHY found %d\n", ses_phy);
+
+		default_config[i].enablePort = 1;
+		default_config[i].phyType = ses_phy;
+		default_config[i].phyConfig.phyAddr = cfg->phys[i].phy_addr;
+	}
+
+	ret = SES_MX_InitializePorts(0, ADIN6310_NUM_PORTS, default_config);
+	if (ret != SES_OK) {
+		printf("Error SES_MX_InitializePorts()\n");
+		ret = -1;
+		goto unlock;
+	}
+
+	data->ses_configured = true;
+
+unlock:
+	k_mutex_unlock(&data->lock);
+
+	return ret;
+}
+
 static int adin6310_init(const struct device *dev)
 {
         const struct adin6310_config *cfg = dev->config;
@@ -492,6 +608,7 @@ static int adin6310_init(const struct device *dev)
         k_busy_wait(100);
 
 	k_mutex_init(&priv->lock);
+	k_mutex_init(&priv->spi_lock);
 	k_sem_init(&priv->offload_thread_sem, 0, 1);
 	priv->offload_thread_id = k_thread_create(&priv->offload_thread, priv->offload_thread_stack,
 						  K_KERNEL_STACK_SIZEOF(priv->offload_thread_stack),
@@ -537,10 +654,9 @@ static int adin6310_init(const struct device *dev)
 		goto stop_thread;
 	}
 
-	ret = SES_MX_InitializePorts(dev_id, ADIN6310_NUM_PORTS, initializePorts_p);
+	ret = adin6310_config_ports(dev, dev_id);
 	if (ret) {
 		LOG_ERR("SES_MX_InitializePorts error %d\n", ret);
-		ret = -1;
 		goto stop_thread;
 	}
 
@@ -564,17 +680,33 @@ static const struct ethernet_api adin6310_port_api = {
 	.get_capabilities = adin6310_port_get_capabilities,
 	.set_config = adin6310_port_set_config,
 	.send = adin6310_port_send,
+	.start = adin6310_start,
+	.stop = adin6310_stop,
 #if defined(CONFIG_NET_STATISTICS_ETHERNET)
 	.get_stats = adin6310_port_get_stats,
 #endif /* CONFIG_NET_STATISTICS_ETHERNET */
 };
+
+#define ADIN6310_PHY_INFO(id) { 			\
+	.dev = DEVICE_DT_GET_OR_NULL(id),		\
+	.phy_addr = DT_REG_ADDR(id),			\
+	.enabled = DT_NODE_HAS_STATUS(id, okay),	\
+},
+
+#define ADIN6310_DEFINE_PHYS(adin6310_inst)								\
+	static const struct adin6310_phy_info adin6310_phys[6] = {					\
+		DT_FOREACH_CHILD(DT_CHILD(DT_NODELABEL(adin6310), mdio), ADIN6310_PHY_INFO)		\
+	}
 
 #define ADIN6310_SPI_OPERATION ((uint16_t)(SPI_OP_MODE_MASTER | SPI_TRANSFER_MSB | SPI_WORD_SET(8)))
 
 #define ADIN6310_PRIV_PORT_CONFIG(parent, inst, idx)	\
 	adin6310_port_config_##parent##_##inst
 
-#define ADIN6310_PORT_INIT(parent, inst, idx)								\
+#define ADIN6310_MDIO_PHY_BY_ADDR(adin_n, phy_addr)						\
+	DEVICE_DT_GET_OR_NULL(DT_CHILD(DT_INST_CHILD(adin_n, mdio), ethernet_phy_##phy_addr))
+
+#define ADIN6310_PORT_INIT(parent, inst, idx, phy_n)							\
 	static struct adin6310_port_data adin6310_port_data_##parent##_##inst = {0};			\
 	static const struct adin6310_port_config adin6310_port_config_##parent##_##inst = {		\
 		.adin = DEVICE_DT_INST_GET(parent),							\
@@ -583,7 +715,7 @@ static const struct ethernet_api adin6310_port_api = {
 		.name = "port_" #idx,									\
 		.mac_addr = DT_PROP(DT_CHILD(DT_DRV_INST(parent), inst), local_mac_address),		\
 		.cpu_port = DT_PROP(DT_CHILD(DT_DRV_INST(parent), inst), cpu_port),			\
-	}; 												\
+	};												\
 	NET_DEVICE_INIT_INSTANCE(parent##_port_##idx, "port_" #idx, idx,				\
 				 NULL, NULL, &adin6310_port_data_##parent##_##inst,			\
 				 &adin6310_port_config_##parent##_##inst, CONFIG_ETH_INIT_PRIORITY,	\
@@ -597,12 +729,13 @@ static const struct ethernet_api adin6310_port_api = {
 				&adin6310_data_##inst, &adin6310_config_##inst,			\
 				POST_KERNEL, CONFIG_ETH_INIT_PRIORITY,				\
 				NULL);								\
-	ADIN6310_PORT_INIT(inst, port0, 0)							\
-	ADIN6310_PORT_INIT(inst, port1, 1)							\
-	ADIN6310_PORT_INIT(inst, port2, 2)							\
-	ADIN6310_PORT_INIT(inst, port3, 3)							\
-	ADIN6310_PORT_INIT(inst, port4, 4)							\
-	ADIN6310_PORT_INIT(inst, port5, 5)							\
+	ADIN6310_PORT_INIT(inst, port0, 0, 1)							\
+	ADIN6310_PORT_INIT(inst, port1, 1, 2)							\
+	ADIN6310_PORT_INIT(inst, port2, 2, 3)							\
+	ADIN6310_PORT_INIT(inst, port3, 3, 4)							\
+	ADIN6310_PORT_INIT(inst, port4, 4, 5)							\
+	ADIN6310_PORT_INIT(inst, port5, 5, 6)							\
+	ADIN6310_DEFINE_PHYS(inst);								\
 	static const struct adin6310_config adin6310_config_##inst = {				\
 		.id = ADIN6310,									\
 		.spi = SPI_DT_SPEC_INST_GET(inst, ADIN6310_SPI_OPERATION, 1),			\
@@ -615,10 +748,8 @@ static const struct ethernet_api adin6310_port_api = {
 			ADIN6310_PRIV_PORT_CONFIG(inst, port3, 3),				\
 			ADIN6310_PRIV_PORT_CONFIG(inst, port4, 4),				\
 			ADIN6310_PRIV_PORT_CONFIG(inst, port5, 5),				\
-		}										\
+		},										\
+		.phys = adin6310_phys,								\
 	};
-	
 
-#undef DT_DRV_COMPAT
-#define DT_DRV_COMPAT adi_adin6310 
 DT_INST_FOREACH_STATUS_OKAY(ADIN6310_DT_INST)

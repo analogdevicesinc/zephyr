@@ -20,8 +20,17 @@ enum adin6310_chip_id {
 	ADIN6310 = 1,
 };
 
+struct adin6310_phy_info {
+	struct device *dev;
+	uint32_t phy_addr;
+	bool enabled;
+};
+
 struct adin6310_port_config {
 	const struct device *adin;
+	const struct device *mdio;
+	struct device *phy;
+	uint32_t phy_addr;
 	uint32_t id;
 	struct adin6310_data *net_device;
 	uint8_t mac_addr[6];
@@ -31,12 +40,13 @@ struct adin6310_port_config {
 
 struct adin6310_port_data {
 	const struct device *adin;
+	struct device *phy;
+	uint32_t phy_addr;
 	uint32_t id;
 	struct adin6310_data *net_device;
 	struct net_if *iface;
 	uint8_t mac_addr[6];
 	char *name;
-	bool initialized;
 	bool cpu_port;
 };
 
@@ -46,10 +56,12 @@ struct adin6310_data {
 	struct gpio_callback gpio_int_callback;
 	const struct gpio_dt_spec *interrupt;
 	struct k_mutex lock;
+	struct k_mutex spi_lock;
 	uint8_t frame_buf[CONFIG_ETH_ADIN6310_BUFFER_SIZE];
 	uint8_t rx_buf[CONFIG_ETH_ADIN6310_BUFFER_SIZE];
 	uint8_t tx_buf[CONFIG_ETH_ADIN6310_BUFFER_SIZE];
 	struct k_sem semaphores[CONFIG_ETH_ADIN6310_SEMAPHORE_COUNT];
+	bool ses_configured;
 
 	k_tid_t offload_thread_id;
 	struct k_sem offload_thread_sem;
@@ -62,7 +74,8 @@ struct adin6310_config {
 	struct spi_dt_spec spi;
 	const struct gpio_dt_spec interrupt;
 	const struct gpio_dt_spec reset;
-	const struct adin6310_port_config port_config[ADIN6310_NUM_PORTS];
+	struct adin6310_port_config port_config[ADIN6310_NUM_PORTS];
+	const struct adin6310_phy_info *phys;
 };
 
 #endif /* _ETH_ADIN6310_PRIV_H_ */

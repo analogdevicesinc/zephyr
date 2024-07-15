@@ -9,14 +9,7 @@ menuconfig ETH_ADIN6310
 	select THREAD_CUSTOM_DATA
 	imply CRC
 	help
-	  The ADIN2111 is a low power, 2-port 10BASE-T1L transceiver
-	  designed for industrial Ethernet applications, and is compliant with
-	  the IEEE® 802.3cg-2019™ Ethernet standard for long reach, 10
-	  Mbps single pair Ethernet (SPE).
-
-	  Featuring an integrated media access control (MAC) and a switch,
-	  the ADIN2111 enables direct connectivity with a variety of controllers
-	  via a serial peripheral inter-face (SPI).
+	  The ADIN6310 is a 6 port Ethernet switch.
 
 if ETH_ADIN6310
 
