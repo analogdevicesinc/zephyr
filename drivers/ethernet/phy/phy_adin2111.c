@@ -640,9 +640,9 @@ static const struct ethphy_driver_api phy_adin2111_api = {
 	static const struct phy_adin2111_config phy_adin2111_config_##n = {	\
 		.mdio = DEVICE_DT_GET(DT_INST_BUS(n)),				\
 		.phy_addr = DT_INST_REG_ADDR(n),				\
-		.led0_en = DT_INST_PROP(n, led0_en),				\
-		.led1_en = DT_INST_PROP(n, led1_en),				\
-		.tx_24v = !(DT_INST_PROP(n, disable_tx_mode_24v)),		\
+		.led0_en = DT_INST_PROP_OR(n, led0_en, 0),				\
+		.led1_en = DT_INST_PROP_OR(n, led1_en, 0),				\
+		.tx_24v = !(DT_INST_PROP_OR(n, disable_tx_mode_24v, 0)),		\
 		IF_ENABLED(DT_HAS_COMPAT_STATUS_OKAY(adi_adin1100_phy),		\
 		(.mii = 1))						\
 	};									\
