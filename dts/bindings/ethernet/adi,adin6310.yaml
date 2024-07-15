@@ -15,20 +15,28 @@ properties:
     type: phandle-array
     required: true
     description: |
-      The interrupt pin of ADIN2111 is active low.
+      The interrupt pin of ADIN6310 is active low.
       If connected directly the MCU pin should be configured
       as active low.
   reset-gpios:
     type: phandle-array
-    description: The reset pin of ADIN2111.
+    description: The reset pin of ADIN6310.
 
 child-binding:
   description: Port properties
   properties:
-    cpu-port:
-      type: boolean
-      description: switch configuration port
     local-mac-address:
       type: uint8-array
       description: |
         Specifies the MAC address that was assigned to the network device.
+    cpu-port:
+      type: boolean
+      description: switch configuration port
+    phy-connection-type:
+      type: string
+      description: |
+        Specifies the interface connection type between ethernet MAC and PHY.
+      enum:
+        - "rmii"
+        - "rgmii"
+        - "sgmii"
