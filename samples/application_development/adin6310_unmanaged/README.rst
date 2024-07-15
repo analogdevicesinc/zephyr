@@ -1,38 +1,29 @@
-.. _external_library:
+.. _adin6310_unmanaged:
 
-External Library
+ADIN6310 unmanaged configuration
 #################
 
 Overview
 ********
 
-A simple example that demonstrates how to include an external static library
-into the Zephyr build system.
-The demonstrates both how to build the external library using a different build
-system and how to include the built static library.
+A simple example showcasing how to use the ADIN6310 SES driver in Zephyr's
+userspace. The ADIN6310 kernel driver is not used in this case, however its
+specific devicetree node is still required, since the interrupt configuration
+depends on it.
+The switch is configured in an unmanaged mode, meaning that it will forward
+frames received on each port to every other port.
 
-Windows Note
-************
+Building and Running
+********************
 
-To use this sample on a Windows host operating system, GNU Make needs to be in
-your path. This can be setup using chocolatey or by manually installing it.
+Build the sample application like this:
 
-Chocolatey Method
-=================
+.. code-block:: console
 
-Install make using the following command:
+   west build -b adin6310switch/max32690/m4 samples/application_development/adin6310_unmanaged -DLIB_ADIN6310_PATH=... -p auto 
 
-.. code-block:: bash
+Flashing the application may be done by running:
 
-   choco install make
+.. code-block:: console
 
-Once installed, build the application as normal.
-
-Manual Install Method
-=====================
-
-The pre-built make application can be downloaded from
-https://gnuwin32.sourceforge.net/packages/make.htm by either getting both the
-``Binaries`` and ``Dependencies`` and extracting them to the same folder, or
-getting the ``Complete package`` setup. Once installed and in the path, build
-the application as normal.
+   west flash --runner=jlink
