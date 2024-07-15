@@ -47,6 +47,15 @@ if(CONFIG_ETH_ADIN6310)
 			      ${LIB_ADIN6310_PATH}/src/ses-tsn-api-srv/src/*.c
 			      ${LIB_ADIN6310_PATH}/src/smp-stk/src/*.c
   )
+
+  if(CONFIG_ETH_ADIN6310_DISABLE_FW_UPDATE)
+    add_compile_definitions(DISABLE_AUTOMATIC_FW_UPDATE)
+    list(REMOVE_ITEM lib_adin6310_srcs ${LIB_ADIN6310_PATH}/src/ses-tsn-api-srv/src/SES_bootloader.c
+                                      ${LIB_ADIN6310_PATH}/src/ses-tsn-api-srv/src/SES_bootloader_dev.c
+                                      ${LIB_ADIN6310_PATH}/src/ses-tsn-api-srv/src/SES_firmware_dev.c
+                                      ${LIB_ADIN6310_PATH}/src/ses-tsn-api-srv/src/SES_firmware.c)
+  endif()
+
   zephyr_library_sources(eth_adin6310.c)
   zephyr_library_sources(${lib_adin6310_srcs})
   zephyr_include_directories(${LIB_ADIN6310_PATH}/src/ses-proxy-srv/inc
