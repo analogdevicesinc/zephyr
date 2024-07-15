@@ -25,6 +25,7 @@ LOG_MODULE_REGISTER(mdio_adin6310, CONFIG_ETHERNET_LOG_LEVEL);
 struct mdio_adin6310_config {
         int32_t id;
         const struct device *adin;
+	uint32_t phy_addr_map[6];
 };
 
 static void mdio_adin6310_bus_enable(const struct device *dev)
@@ -33,6 +34,18 @@ static void mdio_adin6310_bus_enable(const struct device *dev)
 
 static void mdio_adin6310_bus_disable(const struct device *dev)
 {
+}
+
+static uint32_t adin6310_port_lookup(const struct device *dev, uint32_t prtad)
+{
+	const struct mdio_adin6310_config *cfg = dev->config;
+ 
+	for (int i = 0; i < 6; i++) {
+		if (cfg->phy_addr_map[i] == prtad)
+			return i + 1;		
+	}
+
+	return 0;
 }
 
 static int mdio_adin6310_read_c45(const struct device *dev, uint8_t prtad,
@@ -68,19 +81,39 @@ static int mdio_adin6310_write_c45(const struct device *dev, uint8_t prtad,
 static int mdio_adin6310_read(const struct device *dev, uint8_t prtad,
 			      uint8_t regad, uint16_t *data)
 {
-	return SES_ReadPhyReg(prtad, regad, data);
+	uint32_t port;
+	int ret;
+
+	port = adin6310_port_lookup(dev, prtad);
+	if (port == 0)
+		return -1;
+
+	ret = SES_ReadPhyReg((SES_mac_t)port, regad, data);
+	if (ret)
+		return ret;
+
+	return 0;
 }
 
 static int mdio_adin6310_write(const struct device *dev, uint8_t prtad,
 			      uint8_t regad, uint16_t data)
 {
-	return SES_WritePhyReg(prtad, regad, data);
-}
+	uint32_t port;
 
+	port = adin6310_port_lookup(dev, prtad);
+	if (port == 0)
+		return -1;
+
+	return SES_WritePhyReg((SES_mac_t)port, regad, data);
+}
 
 static int mdio_adin6310_init(const struct device *dev)
 {
-	printf("INIT MDIO\n");
+	const struct mdio_adin6310_config *cfg = dev->config;
+
+	for (int i = 0; i < 6; i++) {
+		printf("ADIN6310 MDIO mapping port %d addr %d\n", i, cfg->phy_addr_map[i]);
+	}
 
         return 0;
 }
@@ -90,13 +123,16 @@ static const struct mdio_driver_api mdio_adin6310_api = {
         .write = mdio_adin6310_write,
         .bus_enable = mdio_adin6310_bus_enable,
         .bus_disable = mdio_adin6310_bus_disable,
-        .read_c45 = mdio_adin6310_read_c45,
-	.write_c45 = mdio_adin6310_write_c45,
+        // .read_c45 = mdio_adin6310_read_c45,
+	// .write_c45 = mdio_adin6310_write_c45,
 };
+
+#define ADIN6310_PHY_ADDRS(id) DT_REG_ADDR(id),	
 
 #define ADIN6310_MDIO_INIT(n)							\
 	static const struct mdio_adin6310_config mdio_adin6310_config_##n = {	\
 		.adin = DEVICE_DT_GET(DT_INST_BUS(n)),				\
+		.phy_addr_map = {DT_FOREACH_CHILD_STATUS_OKAY(DT_DRV_INST(n), ADIN6310_PHY_ADDRS)} \
 	};									\
 	DEVICE_DT_INST_DEFINE(n, &mdio_adin6310_init, NULL,			\
 			      NULL, &mdio_adin6310_config_##n,			\
