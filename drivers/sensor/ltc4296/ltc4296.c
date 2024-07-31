@@ -1201,6 +1201,8 @@ static int ltc4296_init(const struct device *dev)
 {
 	const struct ltc4296_dev_config *cfg = dev->config;
 
+	printf("LTC4296 probe!\n");
+
 	if (!spi_is_ready_dt(&cfg->bus)) {
 		LOG_ERR("SPI bus %s not ready", cfg->bus.bus->name);
 		return -ENODEV;

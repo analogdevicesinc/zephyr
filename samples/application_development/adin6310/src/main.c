@@ -20,6 +20,7 @@ LOG_MODULE_REGISTER(eth_adin6310, CONFIG_LOG_DEFAULT_LEVEL);
 #include "SES_vlan.h"
 #include "SES_frame_api.h"
 #include "SES_interface_management.h"
+#include "TSN_ptp.h"
 #include "zephyr/sys/util.h"
 
 #define ADIN6310_SPI_WR_HEADER	0x40
@@ -32,9 +33,6 @@ K_MUTEX_DEFINE(spi_mutex);
 
 void* SES_PORT_CreateSemaphore(int initCount, int maxCount)
 {
-	struct k_sem *ret_sem;
-	struct k_sem sem;
-
 	for (int i = 0; i < 50; i++) {
 		if (semaphores[i].limit == 0) {
 			k_sem_init(&semaphores[i], initCount, maxCount);
@@ -126,6 +124,7 @@ static int adin6310_spi_write(int intfHandle, int size, void *data_p)
 	uint8_t *txb;
 	int ret = 0;
 
+	k_mutex_lock(&spi_mutex, K_FOREVER);
 	tx_buf.len = size + 1;
 	txb = k_calloc(size + 1, 1);
 	if (!txb) {
@@ -145,13 +144,14 @@ static int adin6310_spi_write(int intfHandle, int size, void *data_p)
 	SES_PORT_Free(data_p);
 free_txb:
 	k_free(txb);
+	k_mutex_unlock(&spi_mutex);
 
 	return ret;
 }
 
-int adin6310_read(uint8_t *buf, uint32_t len)
+int adin6310_spi_read(uint8_t *buf, uint32_t len)
 {
-	int ret;
+	int ret = 0;
 	uint8_t *xfer_buf_tx;
 	uint8_t *xfer_buf_rx;
 	struct spi_buf rx_buf;
@@ -164,15 +164,20 @@ int adin6310_read(uint8_t *buf, uint32_t len)
 							   SPI_TRANSFER_MSB |
 							   SPI_MODE_GET(0), 0);
 
+	k_mutex_lock(&spi_mutex, K_FOREVER);
 	xfer_buf_rx = k_calloc(len + 1, sizeof(xfer_buf_rx));
-	if (!xfer_buf_rx)
-		return -ENOMEM;
+	if (!xfer_buf_rx) {
+		ret = -ENOMEM;
+		goto unlock;
+	}
 
 	xfer_buf_tx = k_calloc(len + 1, sizeof(*xfer_buf_tx));
-	if (!xfer_buf_tx)
+	if (!xfer_buf_tx) {
+		ret = -ENOMEM;
 		goto free_rx;
+	}
 
-	xfer_buf_tx[0] = 0x80;
+	xfer_buf_tx[0] = ADIN6310_SPI_RD_HEADER;
 
 	rx_buf.len = len + 1;
 	rx_buf.buf = xfer_buf_rx;
@@ -194,21 +199,22 @@ free_tx:
 	k_free(xfer_buf_tx);
 free_rx:
 	k_free(xfer_buf_rx);
+unlock:
+	k_mutex_unlock(&spi_mutex);
 
 	return ret;
 }
 
-int adin6310_spi_read(int tbl_index)
+int adin6310_read_message(int tbl_index)
 {
 	uint32_t frame_type;
 	uint8_t *frame_buf;
 	uint32_t padded_len;
 	uint32_t rx_len;
 	uint8_t header[4];
-	uint32_t pad;
 	int ret;
 
-	ret = adin6310_read(header, 4);
+	ret = adin6310_spi_read(header, 4);
 	if (ret)
 		return ret;
 
@@ -222,7 +228,7 @@ int adin6310_spi_read(int tbl_index)
 	if (!frame_buf)
 		return -ENOMEM;
 
-	ret = adin6310_read(frame_buf, padded_len);
+	ret = adin6310_spi_read(frame_buf, padded_len);
 	if (ret)
 		return ret;
 
@@ -247,7 +253,7 @@ void adin6310_msg_recv(void *p1, void *p2, void *p3)
 
 	while (1) {
 		k_sem_take(&reader_thread_sem, K_FOREVER);
-		ret = adin6310_spi_read(0);
+		ret = adin6310_read_message(0);
 		if (ret)
 			return;
 	};
@@ -256,11 +262,6 @@ void adin6310_msg_recv(void *p1, void *p2, void *p3)
 void adin6310_int_rdy()
 {
 	k_sem_give(&reader_thread_sem);
-}
-
-void adin6310_print_config(const SES_portInit_t *config, uint32_t len)
-{
-	
 }
 
 int adin6310_vlan_example()
@@ -306,6 +307,23 @@ int adin6310_vlan_example()
 	return 0;
 }
 
+int adin6310_ptp_example()
+{
+	TSN_ptp_instance_type_t instanceType;
+	uint16_t numberPtpPorts;
+	uint16_t linkPortNumber[6];
+	TSN_ptp_init_instance_ds_t instance_ds = { 0 };
+	uint32_t instanceIndexFirmware;
+	int ret;
+
+	ret = SES_PtpStart();
+
+	// ret = SES_PtpCreatePtpInstance(TSN_ptp_instance_type_oc, 6, linkPortNumber, 
+	// 			       &instance_ds,);
+
+	return ret;
+}
+
 int main(void)
 {
 	int32_t ret;
@@ -317,13 +335,14 @@ int main(void)
 	struct gpio_callback cb_data;
 	uint8_t mac_addr[6] = {0x00, 0x18, 0x80, 0x03, 0x25, 0x60};
 
+	const struct device *const ltc4296_dev = DEVICE_DT_GET(DT_NODELABEL(ltc4296));
 	const SES_portInit_t initializePorts_p[] = {
-	{ 1, SES_rgmiiMode, { 0, 0, 0 }, 1, SES_phyADIN1100, {true, 0, 0, SES_phySpeed10, SES_phyDuplexModeFull, SES_autoMdix}},
-	{ 1, SES_rgmiiMode, { 0, 0, 0 }, 1, SES_phyADIN1100, {true, 0, 1, SES_phySpeed10, SES_phyDuplexModeFull, SES_autoMdix}},
-	{ 1, SES_rgmiiMode, { 0, 0, 0 }, 1, SES_phyADIN1300, {true, 0, 6, SES_phySpeed1000, SES_phyDuplexModeFull, SES_autoMdix}},
-	{ 1, SES_rgmiiMode, { 0, 0, 0 }, 1, SES_phyADIN1300, {true, 0, 5, SES_phySpeed1000, SES_phyDuplexModeFull, SES_autoMdix}},
-	{ 1, SES_rgmiiMode, { 0, 0, 0 }, 1, SES_phyADIN1100, {true, 0, 2, SES_phySpeed10, SES_phyDuplexModeFull, SES_autoMdix}},
-	{ 1, SES_rgmiiMode, { 0, 0, 0 }, 1, SES_phyADIN1100, {true, 0, 3, SES_phySpeed10, SES_phyDuplexModeFull, SES_autoMdix}}
+		{ 1, SES_rgmiiMode, { 0, 0, 0 }, 1, SES_phyADIN1100, {true, 0, 0, SES_phySpeed10, SES_phyDuplexModeFull, SES_autoMdix}},
+		{ 1, SES_rgmiiMode, { 0, 0, 0 }, 1, SES_phyADIN1100, {true, 0, 1, SES_phySpeed10, SES_phyDuplexModeFull, SES_autoMdix}},
+		{ 1, SES_rgmiiMode, { 0, 0, 0 }, 1, SES_phyADIN1300, {true, 0, 6, SES_phySpeed1000, SES_phyDuplexModeFull, SES_autoMdix}},
+		{ 1, SES_rgmiiMode, { 0, 0, 0 }, 1, SES_phyADIN1300, {true, 0, 5, SES_phySpeed1000, SES_phyDuplexModeFull, SES_autoMdix}},
+		{ 1, SES_rgmiiMode, { 0, 0, 0 }, 1, SES_phyADIN1100, {true, 0, 2, SES_phySpeed10, SES_phyDuplexModeFull, SES_autoMdix}},
+		{ 1, SES_rgmiiMode, { 0, 0, 0 }, 1, SES_phyADIN1100, {true, 0, 3, SES_phySpeed10, SES_phyDuplexModeFull, SES_autoMdix}}
 	};
 
 	SES_driverFunctions_t comm_callbacks = {
@@ -384,24 +403,40 @@ int main(void)
 		printf("SES_Init() error\n");
 
 	ret = SES_AddHwInterface(NULL, &comm_callbacks, &iface);
-	if (ret)
+	if (ret) {
 		printf("SES_AddHwInterface() error\n");
+		return ret;
+	}
 
 	ret = SES_AddDevice(iface, mac_addr, &dev_id);
-	if (ret)
+	if (ret) {
 		printf("SES_AddDevice() error %d\n", ret);
+		return ret;
+	}
 
 	ret = SES_MX_InitializePorts(dev_id, 6, initializePorts_p);
-	if (ret)
+	if (ret) {
 		printf("SES_MX_InitializePorts() error %d\n", ret);
+		return ret;
+	}
 
 	switch (switch_op){
 	case 0:
+		/* Unmanaged switch example */
 		printf("Running example 0\n");
+		ret = device_init(ltc4296_dev);
+		if (ret) {
+			printf("Could not initialize %s\n", ltc4296_dev->name);
+			return ret;
+		}
+		break;
+	case 1:
+		printf("Running example 1\n");
 		ret = adin6310_vlan_example();
 		break;
 	default:
 		printf("Invalid selection\n");
+		return 0;
 	}
 
 	if (ret) {
