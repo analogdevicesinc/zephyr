@@ -21,6 +21,9 @@ properties:
   reset-gpios:
     type: phandle-array
     description: The reset pin of ADIN6310.
+  cfg-gpios:
+    type: phandle-array
+    description: Generic configuration pins for user defined settings.
 
 child-binding:
   description: Port properties

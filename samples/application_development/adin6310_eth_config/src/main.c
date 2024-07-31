@@ -48,5 +48,9 @@ int main(void)
 
 	net_if_foreach(print_netifs, NULL);
 
+	while (1){
+		k_sleep(K_MSEC(10));
+	}
+
 	return 0;
 }
