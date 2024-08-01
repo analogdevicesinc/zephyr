@@ -19,6 +19,7 @@ LOG_MODULE_REGISTER(eth_adin6310, CONFIG_LOG_DEFAULT_LEVEL);
 #include "SES_switch.h"
 #include "SES_vlan.h"
 #include "SES_frame_api.h"
+#include "SES_codes.h"
 #include "SES_interface_management.h"
 #include "TSN_ptp.h"
 #include "zephyr/sys/util.h"
@@ -307,21 +308,50 @@ int adin6310_vlan_example()
 	return 0;
 }
 
-int adin6310_ptp_example()
-{
-	TSN_ptp_instance_type_t instanceType;
-	uint16_t numberPtpPorts;
-	uint16_t linkPortNumber[6];
-	TSN_ptp_init_instance_ds_t instance_ds = { 0 };
-	uint32_t instanceIndexFirmware;
-	int ret;
-
-	ret = SES_PtpStart();
-
-	// ret = SES_PtpCreatePtpInstance(TSN_ptp_instance_type_oc, 6, linkPortNumber, 
-	// 			       &instance_ds,);
-
-	return ret;
+int32_t timesync(void) {
+	int32_t rv = 0;
+ 
+	if (SES_OK != SES_PtpStart())
+		return;
+	//Configure CMLDS, Clock identity
+	const TSN_ptp_init_cmlds_ds_t initDs = { {0x7a, 0xc6, 0xbb, 022, 0x22, 0x22, 0xff, 0xff } };
+	printf("SES_PtpInitCmlds :: %d\n", SES_PtpInitCmlds(&initDs));
+ 
+ 
+	uint16_t numberPtpPorts = 6;
+	uint16_t linkPortNumber[6] = { 1, 2, 3, 4,5, 6 };
+	TSN_ptp_init_instance_ds_t init_s = {
+		.clock_identity = { 0x7a, 0xc6, 0xbb, 0x22, 0x22, 0x22, 0x00, 0x00 },
+		.clock_number = 0,
+		.domain_number = 0
+	};
+	uint32_t instanceIndex;
+	rv = SES_PtpCreatePtpInstance(TSN_ptp_instance_type_ptp_relay, numberPtpPorts, &linkPortNumber, &init_s, &instanceIndex);
+ 
+	// Initialize default_ds
+	TSN_ptp_default_ds_t default_ds;
+	rv = SES_PtpGetDefaultDs(instanceIndex, &default_ds);
+	default_ds.instance_enable = 1;
+	rv = SES_PtpSetDefaultDs(instanceIndex, &default_ds);
+	printf("SES_PtpSetDefaultDs - %d\n", rv);
+ 
+	// Initialize port_ds with peer to peer delay
+	TSN_ptp_port_ds_t port_ds;
+	rv = SES_PtpGetPortDs(instanceIndex, 0, &port_ds);
+	port_ds.delay_mechanism = TSN_ptp_delay_mechanism_p2p,
+		port_ds.port_enable = 1;
+ 
+ 
+	rv = SES_PtpSetPortDs(instanceIndex, 2, &port_ds);
+	rv = SES_PtpSetPortDs(instanceIndex, 3, &port_ds);
+ 
+	port_ds.mean_link_delay_thresh = 0xFA00000; // 4000ns * 2^16 
+	rv = SES_PtpSetPortDs(instanceIndex, 0, &port_ds);
+	rv = SES_PtpSetPortDs(instanceIndex, 1, &port_ds);
+	rv = SES_PtpSetPortDs(instanceIndex, 4, &port_ds);
+	rv = SES_PtpSetPortDs(instanceIndex, 5, &port_ds);
+ 
+	return rv;
 }
 
 int main(void)
@@ -423,7 +453,8 @@ int main(void)
 	switch (switch_op){
 	case 0:
 		/* Unmanaged switch example */
-		printf("Running example 0\n");
+		printf("Running Switch in unmanaged mode with PSE enabled \n");
+		ret = adin6310_vlan_example();
 		ret = device_init(ltc4296_dev);
 		if (ret) {
 			printf("Could not initialize %s\n", ltc4296_dev->name);
@@ -431,8 +462,44 @@ int main(void)
 		}
 		break;
 	case 1:
-		printf("Running example 1\n");
+		printf("Running Switch in unmanaged mode without PSE\n");
 		ret = adin6310_vlan_example();
+		if (ret) {
+			printf("Could not initialize %s\n", ltc4296_dev->name);
+			return ret;
+		}
+		break;
+
+	case 2:
+		printf("Time Synchonization example");
+		ret = device_init(ltc4296_dev);
+		ret = timesync();
+		if (ret) {
+			printf("Could not initialize Time Sync");
+			return ret;
+		}
+		break;
+
+	case 4: 
+		printf("IGMP Snooping");
+		ret = device_init(ltc4296_dev);
+		ret = SES_IgmpEnable();
+		if (ret) {
+			printf("IGMP Init Error!!\n");
+			return ret;
+		}
+		break;
+	case 8:
+		printf("LLDP Protcol");
+		ret = device_init(ltc4296_dev);
+		if (SES_LLDP_Init() != 1)
+		{		
+			ret = SES_LLDP_Start();
+		}
+		if (ret) {
+			printf("LLDP Init Error!!\n");
+			return ret;
+		}
 		break;
 	default:
 		printf("Invalid selection\n");
