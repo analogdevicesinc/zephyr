@@ -354,6 +354,23 @@ int32_t timesync(void) {
 	return rv;
 }
 
+int adin6310_enable_pse(struct device *ltc4296, uint8_t switch_op)
+{
+	/* PoDL is disabled for switch_op == 1 */
+	if (FIELD_GET(BIT(0), switch_op) == 1)
+		return 0;
+
+	return device_init(ltc4296);
+}
+
+bool adin6310_validate_state(uint8_t switch_op)
+{
+	if (FIELD_GET(BIT(0), switch_op) && switch_op != 1)
+		return false;
+
+	return true;
+}
+
 int main(void)
 {
 	int32_t ret;
@@ -450,48 +467,55 @@ int main(void)
 		return ret;
 	}
 
-	switch (switch_op){
-	case 0:
-		/* Unmanaged switch example */
-		printf("Running Switch in unmanaged mode with PSE enabled \n");
-		ret = adin6310_vlan_example();
-		ret = device_init(ltc4296_dev);
-		if (ret) {
-			printf("Could not initialize %s\n", ltc4296_dev->name);
-			return ret;
-		}
-		break;
-	case 1:
-		printf("Running Switch in unmanaged mode without PSE\n");
-		ret = adin6310_vlan_example();
-		if (ret) {
-			printf("Could not initialize %s\n", ltc4296_dev->name);
-			return ret;
-		}
-		break;
+	if (!adin6310_validate_state(switch_op)){
+		printf("Invalid PoDL configuration\n");
+		return -1;
+	}
 
-	case 2:
-		printf("Time Synchonization example");
-		ret = device_init(ltc4296_dev);
+	ret = adin6310_enable_pse(ltc4296_dev, switch_op);
+	if (ret){
+		printf("Could not initialize %s\n", ltc4296_dev->name);
+		return ret;
+	}
+
+	if (switch_op & BIT(0)) {
+		printf("Running Switch in unmanaged mode with PSE enabled\n");
+		ret = adin6310_vlan_example();
+		if (ret) {
+			printf("VLAN init error!\n");
+			return ret;
+		}
+	}
+
+	if (switch_op & BIT(1)) {
+		printf("Running Switch in unmanaged mode with PSE disabled\n");
+		ret = adin6310_vlan_example();
+		if (ret) {
+			printf("VLAN init error!\n");
+			return ret;
+		}
+	}
+
+	if (switch_op & BIT(2)){
+		printf("Time Synchonization example\n");
 		ret = timesync();
 		if (ret) {
-			printf("Could not initialize Time Sync");
+			printf("Could not initialize Time Sync\n");
 			return ret;
 		}
-		break;
+	}
 
-	case 4: 
-		printf("IGMP Snooping");
-		ret = device_init(ltc4296_dev);
+	if (switch_op & BIT(3)){
+		printf("IGMP Snooping\n");
 		ret = SES_IgmpEnable();
 		if (ret) {
-			printf("IGMP Init Error!!\n");
+			printf("IGMP init error\n");
 			return ret;
 		}
-		break;
-	case 8:
-		printf("LLDP Protcol");
-		ret = device_init(ltc4296_dev);
+	}
+
+	if (switch_op & BIT(4)){
+		printf("LLDP Protcol\n");
 		if (SES_LLDP_Init() != 1)
 		{		
 			ret = SES_LLDP_Start();
@@ -500,16 +524,9 @@ int main(void)
 			printf("LLDP Init Error!!\n");
 			return ret;
 		}
-		break;
-	default:
-		printf("Invalid selection\n");
-		return 0;
 	}
 
-	if (ret) {
-		printf("Error while running the example (%d)\n", ret);
-		return ret;
-	}
+	printf("Configuration done\n");
 
 	while (1) {
 		k_sleep(K_MSEC(10));
