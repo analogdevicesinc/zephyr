@@ -363,14 +363,6 @@ int adin6310_enable_pse(struct device *ltc4296, uint8_t switch_op)
 	return device_init(ltc4296);
 }
 
-bool adin6310_validate_state(uint8_t switch_op)
-{
-	if (FIELD_GET(BIT(0), switch_op) && switch_op != 1)
-		return false;
-
-	return true;
-}
-
 int main(void)
 {
 	int32_t ret;
@@ -467,11 +459,6 @@ int main(void)
 		return ret;
 	}
 
-	if (!adin6310_validate_state(switch_op)){
-		printf("Invalid PoDL configuration\n");
-		return -1;
-	}
-
 	ret = adin6310_enable_pse(ltc4296_dev, switch_op);
 	if (ret){
 		printf("Could not initialize %s\n", ltc4296_dev->name);
@@ -479,7 +466,14 @@ int main(void)
 	}
 
 	if (switch_op & BIT(0)) {
-		printf("Running Switch in unmanaged mode with PSE enabled\n");
+		printf("PSE disabled\n");
+		ret = adin6310_vlan_example();
+		if (ret) {
+			printf("VLAN init error!\n");
+			return ret;
+		}
+	} else {
+		printf("PSE enabled\n");
 		ret = adin6310_vlan_example();
 		if (ret) {
 			printf("VLAN init error!\n");
@@ -487,20 +481,23 @@ int main(void)
 		}
 	}
 
-	if (switch_op & BIT(1)) {
-		printf("Running Switch in unmanaged mode with PSE disabled\n");
-		ret = adin6310_vlan_example();
+	if (switch_op & BIT(1)){
+		printf("Time Synchonization example\n");
+		ret = timesync();
 		if (ret) {
-			printf("VLAN init error!\n");
+			printf("Could not initialize Time Sync\n");
 			return ret;
 		}
 	}
 
 	if (switch_op & BIT(2)){
-		printf("Time Synchonization example\n");
-		ret = timesync();
+		printf("LLDP Protcol\n");
+		if (SES_LLDP_Init() != 1)
+		{		
+			ret = SES_LLDP_Start();
+		}
 		if (ret) {
-			printf("Could not initialize Time Sync\n");
+			printf("LLDP Init Error!!\n");
 			return ret;
 		}
 	}
@@ -510,18 +507,6 @@ int main(void)
 		ret = SES_IgmpEnable();
 		if (ret) {
 			printf("IGMP init error\n");
-			return ret;
-		}
-	}
-
-	if (switch_op & BIT(4)){
-		printf("LLDP Protcol\n");
-		if (SES_LLDP_Init() != 1)
-		{		
-			ret = SES_LLDP_Start();
-		}
-		if (ret) {
-			printf("LLDP Init Error!!\n");
 			return ret;
 		}
 	}
