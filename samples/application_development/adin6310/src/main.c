@@ -437,6 +437,12 @@ int main(void)
 	if (ret)
 		return ret;
 
+	k_sleep(K_MSEC(1));
+	srand(k_cycle_get_32());
+	mac_addr[3] = rand();
+	mac_addr[4] = rand();
+	mac_addr[5] = rand();
+
 	ret = SES_Init();
 	if (ret)
 		printf("SES_Init() error\n");
@@ -458,6 +464,12 @@ int main(void)
 		printf("SES_MX_InitializePorts() error %d\n", ret);
 		return ret;
 	}
+
+	printf("Configured MAC address: ");
+	for (int i = 0; i < 5; i++)
+		printf("0x%X:", mac_addr[i]);
+
+	printf("0x%X\n", mac_addr[5]);
 
 	ret = adin6310_enable_pse(ltc4296_dev, switch_op);
 	if (ret){
