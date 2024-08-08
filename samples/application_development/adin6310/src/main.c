@@ -308,20 +308,22 @@ int adin6310_vlan_example()
 	return 0;
 }
 
-int32_t timesync(void) {
+int32_t timesync(uint8_t mac_addr[6]) {
 	int32_t rv = 0;
  
 	if (SES_OK != SES_PtpStart())
 		return;
 	//Configure CMLDS, Clock identity
-	const TSN_ptp_init_cmlds_ds_t initDs = { {0x7a, 0xc6, 0xbb, 022, 0x22, 0x22, 0xff, 0xff } };
+	const TSN_ptp_init_cmlds_ds_t initDs = { {mac_addr[0], mac_addr[1], mac_addr[2],
+						mac_addr[3], mac_addr[4], mac_addr[5], 0xff, 0xff } };
 	printf("SES_PtpInitCmlds :: %d\n", SES_PtpInitCmlds(&initDs));
  
  
 	uint16_t numberPtpPorts = 6;
 	uint16_t linkPortNumber[6] = { 1, 2, 3, 4,5, 6 };
+
 	TSN_ptp_init_instance_ds_t init_s = {
-		.clock_identity = { 0x7a, 0xc6, 0xbb, 0x22, 0x22, 0x22, 0x00, 0x00 },
+		.clock_identity = { mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5], 0x00, 0x00 },
 		.clock_number = 0,
 		.domain_number = 0
 	};
@@ -495,10 +497,16 @@ int main(void)
 
 	if (switch_op & BIT(1)){
 		printf("Time Synchonization example\n");
-		ret = timesync();
+		ret = timesync(mac_addr);
 		if (ret) {
 			printf("Could not initialize Time Sync\n");
 			return ret;
+		}
+
+		for (uint8_t i = 0; i < 6; i++) {
+			mac_addr[5]++;
+			ret = SES_SetMacAddress(i + 1, mac_addr);
+			printf("Set MAC Address for port%d :: %d\n",i, ret);
 		}
 	}
 
