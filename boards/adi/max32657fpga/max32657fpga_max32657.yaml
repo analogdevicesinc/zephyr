@@ -12,5 +12,6 @@ supported:
   - serial
   - dma
   - watchdog
+  - trng
 ram: 128
 flash: 256
