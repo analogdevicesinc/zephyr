@@ -475,9 +475,9 @@ int main(void)
 
 	printf("Configured MAC address: ");
 	for (int i = 0; i < 5; i++)
-		printf("0x%X:", mac_addr[i]);
+		printf("%02x:", mac_addr[i]);
 
-	printf("0x%X\n", mac_addr[5]);
+	printf("%02x\n", mac_addr[5]);
 
 	if (switch_op & BIT(0)) {
 		printf("PSE disabled\n");
