@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 Andriy Gelman
+ * Copyright (c) 2024 Analog Devices Inc.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
