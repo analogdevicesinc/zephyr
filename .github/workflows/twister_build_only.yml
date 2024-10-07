@@ -35,7 +35,7 @@ jobs:
       fail-fast: false
       matrix:
         runner: [zephyr-16-core-large]
-        board: [max32655evkit/max32655/m4, max32655fthr/max32655/m4, max32662evkit, max32666evkit/max32666/cpu0, max32666fthr/max32666/cpu0, max32670evkit, max32672evkit, max32672fthr, max32675evkit, max32680evkit/max32680/m4, max32690evkit/max32690/m4]
+        board: [max32655evkit/max32655/m4, max32655fthr/max32655/m4, max32662evkit, max32666evkit/max32666/cpu0, max32666fthr/max32666/cpu0, max32670evkit, max32672evkit, max32672fthr, max32675evkit, max32680evkit/max32680/m4, max32690evkit/max32690/m4, max32657fpga/max32657/ns, max32657fpga/max32657]
     needs: twister-build-prep
     if: needs.twister-build-prep.outputs.size != 0
     uses: ./.github/workflows/twister_build.yml
