@@ -350,6 +350,21 @@
 					#io-channel-cells = <1>;
 				};
 			};
+
+			test_spi_ad4130: max11253@17 {
+				compatible = "adi,ad4130";
+				reg = <0xb>;
+				spi-max-frequency = <0>;
+				gpio0-enable;
+				gpio1-enable;
+				gpio0-direction;
+				gpio1-direction;
+				gpo0-enable;
+				gpo1-enable;
+				drdy-gpios = <&test_gpio 0 0>;
+				self-calibration;
+				#io-channel-cells = <1>;
+			};
 		};
 	};
 };
