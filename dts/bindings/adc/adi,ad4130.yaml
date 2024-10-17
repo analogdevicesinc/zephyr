@@ -1,8 +1,12 @@
 # Common fields for Analog Devices AD4130
 
+description: AD4130 ADC Controller
+
+compatible: "adi,ad4130-adc"
+
 include: [adc-controller.yaml, spi-device.yaml]
 
-compatible: "adi,ad4130"
+
 
 properties:
   "#io-channel-cells":

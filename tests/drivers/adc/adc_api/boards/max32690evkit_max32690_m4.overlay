@@ -7,7 +7,82 @@
 / {
 	zephyr,user {
 		/* adjust channel number according to pinmux in board.dts */
-		io-channels = <&adc 0>, <&adc 1>;
+		io-channels = <&spi_ad4130 0>;
+	};
+};
+
+&spi0 {
+	status = "okay";
+	/* one entry for every devices at spi.dtsi */
+	cs-gpios = <&gpio0 14 GPIO_ACTIVE_LOW>;
+
+	spi_ad4130: ad4130@0 {
+		status = "okay";
+		compatible = "adi,ad4130-adc";
+		spi-max-frequency = <10000000>;
+		reg = <0x0>;	
+		#address-cells = <1>;
+		#size-cells = <0>;
+		#io-channel-cells = <1>;
+
+		gpio0-enable;
+		gpio1-enable;
+		gpio0-direction;
+		gpio1-direction;
+		gpo0-enable;
+		gpo1-enable;
+		self-calibration;
+		drdy-gpios = <&gpio0 0 0 >;
+	
+		channel@0 {
+			reg = <0>;
+			zephyr,gain = "ADC_GAIN_1";
+			zephyr,reference = "ADC_REF_INTERNAL";
+			zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+			zephyr,resolution = <16>;
+			zephyr,input-positive = <0>;
+		};
+	
+		channel@1 {
+			reg = <1>;
+			zephyr,gain = "ADC_GAIN_1";
+			zephyr,reference = "ADC_REF_INTERNAL";
+			zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+			zephyr,resolution = <16>;
+			zephyr,input-positive = <1>;
+		};
+	
+		channel@2 {
+			reg = <2>;
+			zephyr,gain = "ADC_GAIN_1";
+			zephyr,reference = "ADC_REF_INTERNAL";
+			zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+			zephyr,resolution = <16>;
+			zephyr,input-positive = <0>;
+			zephyr,input-negative = <1>;
+		};
+	
+		channel@3 {
+			reg = <3>;
+			zephyr,gain = "ADC_GAIN_1";
+			zephyr,reference = "ADC_REF_EXTERNAL0";
+			zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+			zephyr,resolution = <16>;
+			zephyr,input-positive = <0>;
+			zephyr,input-negative = <1>;
+			zephyr,vref-mv = <1571>;
+		};
+	
+		channel@4 {
+			reg = <4>;
+			zephyr,gain = "ADC_GAIN_2";
+			zephyr,reference = "ADC_REF_EXTERNAL0";
+			zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+			zephyr,resolution = <16>;
+			zephyr,input-positive = <0>;
+			zephyr,input-negative = <1>;
+			zephyr,vref-mv = <1571>;
+		};
 	};
 };
 

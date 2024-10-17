@@ -6,7 +6,7 @@
 config ADC_AD4130
 	bool "AD4130 driver"
 	default y
-	depends on DT_HAS_ADI_AD4130_ENABLED
+	depends on DT_HAS_ADI_AD4130_ADC_ENABLED
 	select SPI
 	select ADC_CONFIGURABLE_INPUTS
 	help
