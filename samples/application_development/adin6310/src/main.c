@@ -13,6 +13,7 @@ LOG_MODULE_REGISTER(eth_adin6310, CONFIG_LOG_DEFAULT_LEVEL);
 #include <zephyr/net/net_config.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/spi.h>
+#include <zephyr/drivers/sensor/ltc4296.h>
 
 #include "SMP_stack_api.h"
 #include "SES_port_api.h"
@@ -374,6 +375,8 @@ int main(void)
 	uint8_t switch_op = 0;
 	struct k_thread thread_data;
 	struct gpio_callback cb_data;
+	struct ltc4296_vi ltc4296_voltage;
+	struct ltc4296_dev_config *ltc4296_config;
 	uint8_t mac_addr[6] = {0x00, 0x18, 0x80, 0x03, 0x25, 0x60};
 
 	const struct device *const ltc4296_dev = DEVICE_DT_GET(DT_NODELABEL(ltc4296));
@@ -450,6 +453,8 @@ int main(void)
 		printf("Could not initialize %s\n", ltc4296_dev->name);
 		return ret;
 	}
+
+	ltc4296_config = ltc4296_dev->config;
 
 	ret = SES_Init();
 	if (ret)
@@ -534,7 +539,14 @@ int main(void)
 	printf("Configuration done\n");
 
 	while (1) {
-		k_sleep(K_MSEC(10));
+		k_sleep(K_MSEC(1000));
+
+		/* PSE disabled */
+		if (FIELD_GET(BIT(0), switch_op) == 1)
+			continue;
+
+		for (int i = 0; i < 4; i++)
+			ltc4296_retry_spoe_sccp(ltc4296_dev, i, &ltc4296_voltage);
 	}
 
 	return 0;

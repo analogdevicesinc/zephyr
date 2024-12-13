@@ -181,12 +181,19 @@
 
 struct ltc4296_data {
 	uint16_t sample;
+	uint8_t current_sccp_port;
+};
+
+struct ltc4296_port_config {
+	struct gpio_dt_spec sccpo_gpio;
+	struct gpio_dt_spec sccpi_gpio;
+	uint8_t power_class;
+	uint32_t hs_resistor;
 };
 
 struct ltc4296_dev_config {
 	struct spi_dt_spec bus;
-	struct gpio_dt_spec sccpo_gpio;
-	struct gpio_dt_spec sccpi_gpio;
+	struct ltc4296_port_config port_config[LTC4296_MAX_PORTS];
 };
 
 #endif /* ZEPHYR_DRIVERS_SENSOR_LTC4296_LTC4296_H_ */

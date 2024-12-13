@@ -4,14 +4,24 @@ compatible: "adi,ltc4296"
 
 include: [sensor-device.yaml, spi-device.yaml]
 
-properties:
-  sccpo-gpios:
-    type: phandle-array
-    description: |
-      The WAKEn pin is asserted to communicate with the sensor.  The
-      sensor receives this as an active-low signal.
-  sccpi-gpios:
-    type: phandle-array
-    description: |
-      The WAKEn pin is asserted to communicate with the sensor.  The
-      sensor receives this as an active-low signal.
+child-binding:
+  description: LTC4296 PSE Controller port properties
+  properties:
+    sccpo-gpios:
+      type: phandle-array
+      description: |
+        The WAKEn pin is asserted to communicate with the sensor.  The
+        sensor receives this as an active-low signal.
+    sccpi-gpios:
+      type: phandle-array
+      description: |
+        The WAKEn pin is asserted to communicate with the sensor.  The
+        sensor receives this as an active-low signal.
+    adi,power-class:
+      type: int
+      description: |
+        Specifies the SPE's maximum power class.
+    adi,hs-resistor:
+      type: int
+      description: |
+        Specifies the SPE's high-side current sense resistor value.
