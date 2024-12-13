@@ -14,19 +14,13 @@
 #include <math.h>
 
 #include <zephyr/drivers/sensor/ltc4296.h>
+#include <zephyr/dt-bindings/sensor/ltc4296.h>
 
 #include "ltc4296.h"
 #include "ltc4296_sccp.h"
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(LTC4296, CONFIG_SENSOR_LOG_LEVEL);
-
-/* LTC4296_1_IGAIN / Rsense[port_no]
- * {(0.1/3), (0.1/1.5), (0.1/0.68), (0.1/0.25), (0.1/0.1)} */
-const int ltc4296_spoe_rsense[LTC4296_MAX_PORTS] = {333, 666, 1470, 4000, 10000};
-
-/* Value of RSense resistor for each port in mOhm */
-const int ltc4296_spoe_sense_resistor[LTC4296_MAX_PORTS] = {3000, 1500, 680, 250, 100};
 
 int ltc4296_spoe_vol_range_mv[12][2] = { {20000,30000},  /* SPoE Class 10         */
 						{20000,30000},  /* SPoE Class 11         */
@@ -226,11 +220,9 @@ int ltc4296_read_gadc(const struct device *dev, int *port_voltage_mv)
 	}
 	if( (val16 & LTC4296_GADC_NEW_MSK) == LTC4296_GADC_NEW_MSK)
 	{
-		printk("new value available\n");
 		/* A new ADC value is available */
-		*port_voltage_mv = (((val16 & LTC4296_GADC_MSK) - 2049) * LTC4296_VGAIN);
+		*port_voltage_mv = ((uint32_t)((val16 & LTC4296_GADC_MSK) - 2048) * LTC4296_VGAIN);
 	} else {
-		printk("NO new value available\n");
 		return ADI_LTC_INVALID_ADC_VOLTAGE;
 	}
 
@@ -431,6 +423,7 @@ int ltc4296_read_port_adc(const struct device *dev, enum ltc4296_port port_no, i
 	int ret;
 	uint8_t port_addr = 0;
 	uint16_t val16;
+	struct ltc4296_dev_config *config = dev->config;
 
 	ret = ltc4296_get_port_addr(port_no, LTC_PORT_ADCDAT, &port_addr);
 	if (ret != 0) {
@@ -442,7 +435,8 @@ int ltc4296_read_port_adc(const struct device *dev, enum ltc4296_port port_no, i
 	}
 	if( (val16 & LTC4296_NEW_MSK) == LTC4296_NEW_MSK) {
 		/* A new ADC value is available */
-		*port_i_out_ma =( ((val16 & 0x0FFF) - 2049) * ltc4296_spoe_rsense[port_no] / 10);
+		*port_i_out_ma =(((val16 & 0x0FFF) - 2048) * 1000 /
+				 (10 * config->port_config[port_no].hs_resistor));
 	} else {
 		return ADI_LTC_INVALID_ADC_PORT_CURRENT;
 	}
@@ -530,6 +524,7 @@ int ltc4296_set_port_mfvs(const struct device *dev, enum ltc4296_port port_no)
 	uint8_t port_addr = 0;
 	uint16_t val16 = 0;
 	int mfvs_threshold = 0, val = 0;
+	struct ltc4296_dev_config *config = dev->config;
 
 	ret = ltc4296_get_port_addr(port_no, LTC_PORT_ADCCFG, &port_addr);
 	if (ret != 0) {
@@ -537,7 +532,7 @@ int ltc4296_set_port_mfvs(const struct device *dev, enum ltc4296_port port_no)
 	}
 	/* LTC4296-1 Set Port ADC MFVS Threshold Value
 	*/
-	val = ltc4296_spoe_sense_resistor[port_no];
+	val = config->port_config[port_no].hs_resistor;
 	mfvs_threshold = (625 * val / 10);
 	/* Roundof to the nearest integer */
 	val16 = round(mfvs_threshold) / 1000;
@@ -786,6 +781,7 @@ int ltc4296_chk_port_events(const struct device *dev, enum ltc4296_port ltc4296_
 int ltc4296_do_apl(const struct device *dev, enum ltc4296_board_class board_class,
 		   enum ltc4296_port ltc4296_port, struct ltc4296_vi *ltc4296_vi)
 {
+	struct ltc4296_dev_config *config = dev->config;
 	int ret = ADI_LTC_DISCONTINUE_APL;
 	enum ltc4296_port_status port_status;
 	enum ltc4296_pse_status port_pwr_status;
@@ -901,6 +897,7 @@ int ltc4296_do_spoe_sccp(const struct device *dev, enum ltc4296_board_class boar
 			 enum ltc4296_port ltc4296_port, struct ltc4296_vi *ltc4296_vi)
 {
 	int ret;
+	struct ltc4296_dev_config *config = dev->config;
 	enum ltc4296_port_status port_chk;
 	enum ltc4296_pse_status pse_pwr_status;
 	int port_vout_mv, port_vin_mv, port_iout_ma;
@@ -989,16 +986,9 @@ int ltc4296_do_spoe_sccp(const struct device *dev, enum ltc4296_board_class boar
 				return ret;
 			}
 			if( (port_status & LTC4296_PSE_STATUS_MSK) == LTC_PSE_STATUS_SEARCHING) {
-				/* This condition check is specific to DEMO-ADIN1100D2Z,
-					* as the board has all 5 port connected in parallel
-					*/
-				if( (port_status & LTC4296_DET_VLOW_MSK) == LTC4296_DET_VLOW_MSK) {
-					ret = ltc4296_port_disable(dev, ltc4296_port);
-					LOG_ERR("LTC4296-1 Port%d output voltage for classification too low \n",ltc4296_port);
-					return ADI_LTC_DISCONTINUE_SCCP;
-				}
 				/* Perform Classification */
-				// ret = ltc4296_sccp_res_pd(&sccp_response_data, CMD_BROADCAST_ADDR, CMD_READ_SCRATCHPAD);
+				((struct ltc4296_data *)(dev->data))->current_sccp_port = ltc4296_port;
+				ret = ltc4296_sccp_res_pd(dev, &sccp_response_data, CMD_BROADCAST_ADDR, CMD_READ_SCRATCHPAD);
 				if(ret == ADI_LTC_SCCP_PD_PRESENT) {
 					ret = ltc4296_is_pd_compatible(dev, board_class, sccp_response_data, &pd_class);
 					if(ret == ADI_LTC_SCCP_PD_CLASS_COMPATIBLE) {
@@ -1149,8 +1139,22 @@ int ltc4296_pwr_test(const struct device *dev, enum ltc4296_board_class board_cl
 	return ADI_LTC_TEST_COMPLETE;
 }
 
+int ltc4296_retry_spoe_sccp(const struct device *dev, enum ltc4296_port ltc4296_port,
+			    struct ltc4296_vi *ltc4296_vi)
+{
+	struct ltc4296_dev_config *config = dev->config;
+	uint32_t config_power_class;
+
+	config_power_class = config->port_config[ltc4296_port].power_class - LTC4296_PSE_SCCP_CLASS_10;
+
+	return ltc4296_do_spoe_sccp(dev, config_power_class, ltc4296_port, ltc4296_vi);
+}
+
 static int ltc4296_probe(const struct device *dev)
 {
+	struct ltc4296_dev_config *config = dev->config;
+	struct ltc4296_vi ltc4296_vi;
+	uint8_t power_class;
 	uint16_t value;
 	int ret;
 
@@ -1174,23 +1178,46 @@ static int ltc4296_probe(const struct device *dev)
 		return -EINVAL;
 	}
 
-	ltc4296_port_prebias(dev, LTC_PORT0, LTC_CFG_APL_MODE);
-	ltc4296_port_en(dev, LTC_PORT0);
+	for (int i = 0; i < LTC4296_MAX_PORTS; i++){
+		power_class = config->port_config[i].power_class;
+		switch(power_class){
+		case LTC4296_PSE_DISABLED:
+			ret = ltc4296_port_disable(dev, i);
+			if (ret){
+				LOG_ERR("Error disabling port %d", i);
+			}
+			break;
+		case LTC4296_PSE_APL:
+			ret = ltc4296_port_prebias(dev, i, LTC_CFG_APL_MODE);
+			if (ret){
+				LOG_ERR("Error prebiasing port %d", i);
+				continue;
+			}
+			ret = ltc4296_port_en(dev, i);
+			if (ret){
+				LOG_ERR("Error enabling port %d", i);
+			}
 
-	k_sleep(K_MSEC(100));
+			break;
+		case LTC4296_PSE_SCCP_CLASS_10:
+		case LTC4296_PSE_SCCP_CLASS_11:
+		case LTC4296_PSE_SCCP_CLASS_12:
+		case LTC4296_PSE_SCCP_CLASS_13:
+		case LTC4296_PSE_SCCP_CLASS_14:
+		case LTC4296_PSE_SCCP_CLASS_15:
+			ret = ltc4296_do_spoe_sccp(dev, power_class - LTC4296_PSE_SCCP_CLASS_10,
+						   i, &ltc4296_vi);
+			if (ret != ADI_LTC_SCCP_COMPLETE){
+				LOG_ERR("Error enabling SCCP on port %d", i);
+			}
 
-	ltc4296_port_prebias(dev, LTC_PORT1, LTC_CFG_APL_MODE);
-	ltc4296_port_en(dev, LTC_PORT1);
+			break;
+		default:
+			return -EINVAL;
+		}
 
-	k_sleep(K_MSEC(100));
-
-	ltc4296_port_prebias(dev, LTC_PORT2, LTC_CFG_APL_MODE);
-	ltc4296_port_en(dev, LTC_PORT2);
-
-	k_sleep(K_MSEC(100));
-
-	ltc4296_port_prebias(dev, LTC_PORT3, LTC_CFG_APL_MODE);
-	ltc4296_port_en(dev, LTC_PORT3);
+	
+	}
 
 	k_sleep(K_MSEC(100));
 
@@ -1208,22 +1235,26 @@ static int ltc4296_init(const struct device *dev)
 		return -ENODEV;
 	}
 
-	if (cfg->sccpo_gpio.port) {
-		if (!gpio_is_ready_dt(&cfg->sccpo_gpio)) {
-			LOG_ERR("GPIO device not ready");
-			return -ENODEV;
-		}
+	for (int i = 0; i < 4; i++){
+		if (cfg->port_config[i].sccpo_gpio.port) {
+			if (!gpio_is_ready_dt(&cfg->port_config[i].sccpo_gpio)) {
+				LOG_ERR("GPIO device not ready");
+				return -ENODEV;
+			}
 
-		gpio_pin_configure_dt(&cfg->sccpo_gpio, GPIO_OUTPUT_HIGH);
+			gpio_pin_configure_dt(&cfg->port_config[i].sccpo_gpio, GPIO_OUTPUT_LOW);
+		}
 	}
 
-	if (cfg->sccpi_gpio.port) {
-		if (!gpio_is_ready_dt(&cfg->sccpi_gpio)) {
-			LOG_ERR("GPIO device not ready");
-			return -ENODEV;
-		}
+	for (int i = 0; i < 4; i++){
+		if (cfg->port_config[i].sccpi_gpio.port) {
+			if (!gpio_is_ready_dt(&cfg->port_config[i].sccpi_gpio)) {
+				LOG_ERR("GPIO device not ready");
+				return -ENODEV;
+			}
 
-		gpio_pin_configure_dt(&cfg->sccpi_gpio, GPIO_INPUT);
+			gpio_pin_configure_dt(&cfg->port_config[i].sccpi_gpio, GPIO_INPUT);
+		}
 	}
 
 	return ltc4296_probe(dev);
@@ -1235,6 +1266,14 @@ static const struct sensor_driver_api ltc4296_driver_api = {
 	.channel_get  = ltc4296_channel_get,
 };
 
+#define LTC4296_PORT_INIT(parent, inst)											\
+	{														\
+		.sccpo_gpio = GPIO_DT_SPEC_GET_BY_IDX(DT_CHILD(DT_DRV_INST(parent), inst), sccpo_gpios, 0),		\
+		.sccpi_gpio = GPIO_DT_SPEC_GET_BY_IDX(DT_CHILD(DT_DRV_INST(parent), inst), sccpi_gpios, 0),		\
+		.power_class = DT_PROP_OR(DT_CHILD(DT_DRV_INST(parent), inst), adi_power_class, 0),		\
+		.hs_resistor = DT_PROP_OR(DT_CHILD(DT_DRV_INST(parent), inst), adi_hs_resistor, 0),		\
+	}												\
+
 #define LTC4296_DEFINE(inst)                                                                       \
 	static struct ltc4296_data ltc4296_data_##inst;                                            \
                                                                                                    \
@@ -1242,7 +1281,10 @@ static const struct sensor_driver_api ltc4296_driver_api = {
 		.bus = SPI_DT_SPEC_INST_GET(                                                       \
 			inst,                                                                      \
 			(SPI_WORD_SET(8) | SPI_OP_MODE_MASTER | SPI_TRANSFER_MSB), 0),              \
-		.sccpo_gpio = GPIO_DT_SPEC_INST_GET_OR(inst, sccpo_gpios, { 0 }) 			   \
+		.port_config[0] = LTC4296_PORT_INIT(inst, port0),				  \
+		.port_config[1] = LTC4296_PORT_INIT(inst, port1),				  \
+		.port_config[2] = LTC4296_PORT_INIT(inst, port2),				  \
+		.port_config[3] = LTC4296_PORT_INIT(inst, port3),				  \
 	};                                                                                         \
                                                                                                    \
 	SENSOR_DEVICE_DT_INST_DEFINE(inst, ltc4296_init, NULL, &ltc4296_data_##inst,               \

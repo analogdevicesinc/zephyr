@@ -88,22 +88,25 @@ static uint8_t get_crc(uint8_t* buf)
 uint8_t READ_LINE(const struct device *dev)
 {
 	const struct ltc4296_dev_config *cfg = dev->config;
+	struct ltc4296_data *data = dev->data;
 
-	return gpio_pin_get_dt(&cfg->sccpi_gpio);
+	return gpio_pin_get_dt(&cfg->port_config[data->current_sccp_port].sccpi_gpio);
 }
 
 void PULL_DOWN_LINE(const struct device *dev)
 {
 	const struct ltc4296_dev_config *cfg = dev->config;
+	struct ltc4296_data *data = dev->data;
 
-	gpio_pin_set_dt(&cfg->sccpo_gpio, 0);
+	gpio_pin_set_dt(&cfg->port_config[data->current_sccp_port].sccpo_gpio, 0);
 }
 
 void RELEASE_LINE(const struct device *dev)
 {
 	const struct ltc4296_dev_config *cfg = dev->config;
+	struct ltc4296_data *data = dev->data;
 
-	gpio_pin_set_dt(&cfg->sccpo_gpio, 1);
+	gpio_pin_set_dt(&cfg->port_config[data->current_sccp_port].sccpo_gpio, 1);
 }
 
 void write_bit(const struct device *dev, uint8_t bit)

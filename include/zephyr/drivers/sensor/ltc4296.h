@@ -161,6 +161,8 @@ int ltc4296_do_apl(const struct device *dev, enum ltc4296_board_class board_clas
 		   enum ltc4296_port ltc4296_port, struct ltc4296_vi *ltc4296_vi);
 int ltc4296_do_spoe_sccp(const struct device *dev, enum ltc4296_board_class board_class,
 			 enum ltc4296_port ltc4296_port, struct ltc4296_vi *ltc4296_vi);
+int ltc4296_retry_spoe_sccp(const struct device *dev, enum ltc4296_port ltc4296_port,
+			    struct ltc4296_vi *ltc4296_vi);
 int ltc4296_pwr_test(const struct device *dev, enum ltc4296_board_class board_class);
 
 #endif  /* ZEPHYR_INCLUDE_DRIVERS_SENSOR_LTC4296_H_ */
