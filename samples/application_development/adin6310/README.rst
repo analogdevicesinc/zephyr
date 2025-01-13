@@ -79,8 +79,7 @@ Configuring the LTC4296-1 PSE controller
 By default, the LTC4296 is configured to support SPOE power class 12, and will provide power to devices connected
 to the 10BASE-T1L ports if the SCCP protocol negotiation between the PSE and PD is successful. The PSE maximum
 supported power class and the value of the high side sense resistors (connected to the HSNSPx and HSNSMx pins
-of the LTC4296) can be changed by the user. Their value is configured the `boards/adi/adin6310t1l/adin6310t1l_max32690_m4.dts`
-devicetree file.
+of the LTC4296) can be changed by the user. Their value is configured the `app.overlay` file (in the project directory).
 
 Search for the `ltc4296` node in the devicetree file and modify the `adi,power-class` and `adi,hs-resistor` properties.
 
@@ -88,8 +87,6 @@ Search for the `ltc4296` node in the devicetree file and modify the `adi,power-c
 
    ltc4296: ltc4296@1 {
        port0 {
-			sccpi-gpios = <&gpio2 14 (GPIO_ACTIVE_HIGH | GPIO_PULL_UP | MAX32_GPIO_VSEL_VDDIOH)>;
-			sccpo-gpios = <&gpio2 15 (GPIO_ACTIVE_LOW | GPIO_PULL_UP | MAX32_GPIO_VSEL_VDDIOH)>;
 			adi,power-class = <LTC4296_PSE_SCCP_CLASS_12>;
 			adi,hs-resistor = <250>;
 		};
@@ -108,7 +105,7 @@ The `adi,power-class` property applies on a per port basis, and can be set to on
 
 The `adi,hs-resistor` is expressed in milliohms and can be set to any integer value.
 
-Each LTC4296 port has its own specific node in the devicetree file (port0 to port4), and they can be configured independently, using
+Each LTC4296 port has its own specific node in the devicetree (and the dt overlay) file (port0 to port4), and they can be configured independently, using
 the mentioned properties.
 
 Building
