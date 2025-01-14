@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2019 Vestas Wind Systems A/S
  * Copyright (c) 2024 National Taiwan University Racing Team
+ * Copyright (c) 2025 Analog Devices, Inc.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -30,10 +31,17 @@ static void canopen_detach_all_rx_filters(CO_CANmodule_t *CANmodule)
 		return;
 	}
 
-	for (i = 0U; i < CANmodule->rx_size; i++) {
-		if (CANmodule->rx_array[i].filter_id != -ENOSPC) {
-			can_remove_rx_filter(CANmodule->can_dev, CANmodule->rx_array[i].filter_id);
-			CANmodule->rx_array[i].filter_id = -ENOSPC;
+	if(CANmodule->use_software_filters)
+	{
+		can_remove_rx_filter(CANmodule->can_dev, CANmodule->sw_filter_id);
+	}
+	else
+	{
+		for (i = 0U; i < CANmodule->rx_size; i++) {
+			if (CANmodule->rx_array[i].filter_id != -ENOSPC) {
+				can_remove_rx_filter(CANmodule->can_dev, CANmodule->rx_array[i].filter_id);
+				CANmodule->rx_array[i].filter_id = -ENOSPC;
+			}
 		}
 	}
 }
@@ -51,7 +59,7 @@ static void canopen_rx_callback(const struct device *dev, struct can_frame *fram
 	for (i = 0; i < CANmodule->rx_size; i++) {
 		buffer = &CANmodule->rx_array[i];
 
-		if (buffer->filter_id == -ENOSPC || buffer->pFunct == NULL) {
+		if ((buffer->filter_id == -ENOSPC && !CANmodule->use_software_filters) || buffer->pFunct == NULL) {
 			continue;
 		}
 
@@ -167,6 +175,7 @@ CO_ReturnError_t CO_CANmodule_init(CO_CANmodule_t *CANmodule, void *CANptr, CO_C
 	CANmodule->CANnormal = false;
 	CANmodule->first_tx_msg = true;
 	CANmodule->CANerrorStatus = 0;
+	CANmodule->use_software_filters = false;
 
 	max_filters = can_get_max_filters(can_dev, false);
 	if (max_filters != -ENOSYS) {
@@ -176,15 +185,30 @@ CO_ReturnError_t CO_CANmodule_init(CO_CANmodule_t *CANmodule, void *CANptr, CO_C
 		}
 
 		if (rxSize > max_filters) {
-			LOG_ERR("insufficient number of concurrent CAN RX filters"
+			LOG_WRN("insufficient number of concurrent CAN RX filters"
 				" (needs %d, %d available)",
 				rxSize, max_filters);
-			return CO_ERROR_OUT_OF_MEMORY;
+			LOG_WRN("Falling back to software filters");
+			CANmodule->use_software_filters = true;
 		} else if (rxSize < max_filters) {
 			LOG_DBG("excessive number of concurrent CAN RX filters enabled"
 				" (needs %d, %d available)",
 				rxSize, max_filters);
 		}
+	}
+
+	if(CANmodule->use_software_filters) {
+		const struct can_filter filter_all_standard = {
+			.id = 0,
+			.mask = 0,
+			.flags = 0
+		};
+		err = can_add_rx_filter(CANmodule->can_dev, canopen_rx_callback, CANmodule, &filter_all_standard);
+		if(err < 0) {
+			LOG_ERR("Could not add SW filter. Err %d", err);
+			return CO_ERROR_SYSCALL;
+		}
+		CANmodule->sw_filter_id = err;
 	}
 
 	err = can_set_bitrate(can_dev, KHZ(CANbitRate));
@@ -271,14 +295,18 @@ CO_ReturnError_t CO_CANrxBufferInit(CO_CANmodule_t *CANmodule, uint16_t index, u
 	filter.mask = mask;
 
 	if (buffer->filter_id != -ENOSPC) {
-		can_remove_rx_filter(CANmodule->can_dev, buffer->filter_id);
+		if(!CANmodule->use_software_filters) {
+			can_remove_rx_filter(CANmodule->can_dev, buffer->filter_id);
+		}
 	}
 
-	buffer->filter_id =
-		can_add_rx_filter(CANmodule->can_dev, canopen_rx_callback, CANmodule, &filter);
-	if (buffer->filter_id == -ENOSPC) {
-		LOG_ERR("failed to add CAN rx callback, no free filter");
-		return CO_ERROR_OUT_OF_MEMORY;
+	if(!CANmodule->use_software_filters) {
+		buffer->filter_id =
+			can_add_rx_filter(CANmodule->can_dev, canopen_rx_callback, CANmodule, &filter);
+		if (buffer->filter_id == -ENOSPC) {
+			LOG_ERR("failed to add CAN rx callback, no free filter");
+			return CO_ERROR_OUT_OF_MEMORY;
+		}
 	}
 
 	return CO_ERROR_NO;
