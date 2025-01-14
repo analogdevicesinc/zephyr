@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2019 Vestas Wind Systems A/S
  * Copyright (c) 2024 National Taiwan University Racing Team
+ * Copyright (c) 2025 Analog Devices, Inc.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -98,12 +99,14 @@ typedef struct canopen_module {
 	struct k_work tx_retry_work;
 	CO_CANrx_t *rx_array;
 	CO_CANtx_t *tx_array;
+	int sw_filter_id;
 	uint16_t rx_size;
 	uint16_t tx_size;
 	uint16_t CANerrorStatus;
 	bool_t configured: 1;
 	bool_t CANnormal: 1;
 	bool_t first_tx_msg: 1;
+	bool_t use_software_filters : 1;
 } CO_CANmodule_t;
 
 typedef struct canopen_storage_entry {
