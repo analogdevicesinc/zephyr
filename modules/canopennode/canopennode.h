@@ -68,6 +68,7 @@ struct canopen {
 	CO_storage_entry_t *storage_entries;
 	size_t storage_entries_count;
 #endif /* CO_CONFIG_STORAGE */
+	void (*sync_callback)(struct canopen *co, bool sync);
 	CO_t *CO;
 };
 

@@ -294,6 +294,9 @@ static void sync_thread(void *p1, void *p2, void *p3)
 		CO_LOCK_OD(CO->CANmodule);
 		sync = CO_process_SYNC(CO, elapsed, &next);
 		CO_process_RPDO(CO, sync == CO_SYNC_RX_TX, elapsed, &next);
+		if(co->sync_callback) {
+			co->sync_callback(co, sync == CO_SYNC_RX_TX);
+		}
 		CO_process_TPDO(CO, sync == CO_SYNC_RX_TX, elapsed, &next);
 		CO_UNLOCK_OD(CO->CANmodule);
 
