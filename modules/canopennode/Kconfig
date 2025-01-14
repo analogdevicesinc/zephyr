@@ -2,6 +2,7 @@
 
 # Copyright (c) 2019 Vestas Wind Systems A/S
 # Copyright (c) 2024 National Taiwan University Racing Team
+# Copyright (c) 2025 Analog Devices, Inc.
 # SPDX-License-Identifier: Apache-2.0
 
 config ZEPHYR_CANOPENNODE_MODULE
@@ -18,9 +19,10 @@ if CANOPENNODE
 
 config CANOPENNODE_CONFIG_FILE
 	string "CANopen config file path"
+	default "301/CO_config.h"
 	help
 	  The path to the CANopen config file, use default config if
-	  not provided. Refer to the documentation of301/CO_config.h
+	  not provided. Refer to the documentation of 301/CO_config.h
 	  for supported configurations and their defaults.
 
 config CANOPENNODE_SDO_SRV_TIMEOUT_TIME
@@ -70,6 +72,14 @@ config CANOPENNODE_LEDS_BICOLOR
 	  Handle CANopen LEDs as one bicolor LED, favoring the red LED
 	  over the green LED in accordance with the CiA 303-3
 	  specification.
+
+config CANOPENNODE_LEDS_USE_GPIO
+	bool "Use Zephyr GPIO API for CANopen LED indicators"
+	default y
+
+config CANOPENNODE_LEDS_USE_CALLBACK
+	bool "Use led_callback() function for custom LED indicator logic"
+	default n
 
 config CANOPENNODE_STORAGE_SUBTREE
 	string "Settings subtree name for CANopen storage"

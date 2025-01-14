@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2019 Vestas Wind Systems A/S
  * Copyright (c) 2024 National Taiwan University Racing Team
+ * Copyright (c) 2025 Analog Devices, Inc.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -55,6 +56,7 @@ int canopen_init(struct canopen *co)
 	}
 
 #if CO_CONFIG_LEDS & CO_CONFIG_LEDS_ENABLE
+#ifdef CONFIG_CANOPENNODE_LEDS_USE_GPIO
 	if (!gpio_is_ready_dt(&co->green_led)) {
 		LOG_ERR("green LED device not ready");
 		return -ENODEV;
@@ -67,6 +69,7 @@ int canopen_init(struct canopen *co)
 
 	gpio_pin_set_dt(&co->green_led, 0);
 	gpio_pin_set_dt(&co->red_led, 0);
+#endif /* CONFIG_CANOPENNODE_LEDS_USE_GPIO */
 #endif /* CO_CONFIG_LEDS */
 
 	co->CO = CO_new(NULL, NULL);
@@ -234,6 +237,7 @@ static void mainline_thread(void *p1, void *p2, void *p3)
 		reset = CO_process(CO, false, elapsed, &next);
 
 #if CO_CONFIG_LEDS & CO_CONFIG_LEDS_ENABLE
+#ifdef CONFIG_CANOPENNODE_LEDS_USE_GPIO
 #ifdef CONFIG_CANOPENNODE_LEDS_BICOLOR
 		/* flavors red LED when both on */
 		gpio_pin_set_dt(&co->->green_led, CO_LED_GREEN(CO->LEDs, CO_LED_CANopen) &&
@@ -242,8 +246,11 @@ static void mainline_thread(void *p1, void *p2, void *p3)
 		gpio_pin_set_dt(&co->green_led, CO_LED_GREEN(CO->LEDs, CO_LED_CANopen));
 #endif /* CONFIG_CANOPENNODE_LEDS_BICOLOR */
 		gpio_pin_set_dt(&co->red_led, CO_LED_RED(CO->LEDs, CO_LED_CANopen));
+#endif /* CONFIG_CANOPENNODE_LEDS_USE_GPIO */
+#ifdef CONFIG_CANOPENNODE_LEDS_USE_CALLBACK
+		co->led_callback(co, CO_LED_GREEN(CO->LEDs, CO_LED_CANopen), CO_LED_RED(CO->LEDs, CO_LED_CANopen));
+#endif /* CONFIG_CANOPENNODE_LEDS_USE_CALLBACK */
 #endif /* CO_CONFIG_LEDS */
-
 #if CO_CONFIG_STORAGE & CO_CONFIG_STORAGE_ENABLE
 		canopen_storage_process(co);
 #endif /* CO_CONFIG_STORAGE */
