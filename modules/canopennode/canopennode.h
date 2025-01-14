@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2019 Vestas Wind Systems A/S
  * Copyright (c) 2024 National Taiwan University Racing Team
+ * Copyright (c) 2025 Analog Devices, Inc.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -55,10 +56,13 @@ struct canopen {
 #if OD_CNT_NMT == 1
 	CO_NMT_control_t nmt_control;
 #endif /* OD_CNT_NMT */
-#if CO_CONFIG_LEDS & CO_CONFIG_LEDS_ENABLE
+#if (CO_CONFIG_LEDS & CO_CONFIG_LEDS_ENABLE) && CONFIG_CANOPENNODE_LEDS_USE_GPIO
 	struct gpio_dt_spec green_led;
 	struct gpio_dt_spec red_led;
 #endif /* CO_CONFIG_LEDS */
+#if (CO_CONFIG_LEDS & CO_CONFIG_LEDS_ENABLE) && CONFIG_CANOPENNODE_LEDS_USE_CALLBACK
+	void (*led_callback)(struct canopen *co, bool green, bool red);
+#endif /* CONFIG_CANOPENNODE_LEDS_USE_CALLBACK */
 #if CO_CONFIG_STORAGE & CO_CONFIG_STORAGE_ENABLE
 	CO_storage_t storage; /* should be included in CO_t  */
 	CO_storage_entry_t *storage_entries;
