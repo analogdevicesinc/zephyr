@@ -48,8 +48,6 @@ K_THREAD_STACK_DEFINE(sync_thread_stack, CONFIG_CANOPENNODE_SYNC_THREAD_STACK_SI
 
 int canopen_init(struct canopen *co)
 {
-	int err;
-
 	if (!device_is_ready(co->can_dev)) {
 		LOG_ERR("CAN device not ready");
 		return -ENODEV;
@@ -82,11 +80,11 @@ int canopen_init(struct canopen *co)
 	}
 #endif /* CO_CONFIG_STORAGE */
 
-	err = canopen_reset_communication(co);
-	if (err < 0) {
-		LOG_ERR("failed to reset canopen communication (err %d)", err);
-		return -EIO;
-	}
+	mainline_tid = k_thread_create(&mainline_thread_data, mainline_thread_stack,
+				       K_THREAD_STACK_SIZEOF(mainline_thread_stack),
+				       mainline_thread, co, NULL, NULL,
+				       CONFIG_CANOPENNODE_MAINLINE_THREAD_PRIORITY, 0, K_NO_WAIT);
+	k_thread_name_set(mainline_tid, "canopen_mainline");
 
 	return 0;
 }
@@ -108,28 +106,26 @@ int canopen_reset_communication(struct canopen *co)
 	uint32_t serial_number;
 #endif /* CO_CONFIG_LSS */
 
-	if (mainline_tid != NULL) {
-		/* lock all mutecies before aborting threads to ensure they are not locked when
-		 * aborted */
-		while (true) {
-			if (k_mutex_lock(&CO->CANmodule->can_send_mutex, K_MSEC(100)) < 0 ||
-			    k_mutex_lock(&CO->CANmodule->od_mutex, K_MSEC(100)) < 0 ||
-			    k_mutex_lock(&CO->CANmodule->emcy_mutex, K_MSEC(100)) < 0) {
-				continue;
-			} else {
-				break;
-			}
+	/* lock all mutecies before aborting threads to ensure they are not locked when
+		* aborted */
+	while (true) {
+		if (k_mutex_lock(&CO->CANmodule->can_send_mutex, K_MSEC(100)) < 0 ||
+			k_mutex_lock(&CO->CANmodule->od_mutex, K_MSEC(100)) < 0 ||
+			k_mutex_lock(&CO->CANmodule->emcy_mutex, K_MSEC(100)) < 0) {
+			continue;
+		} else {
+			break;
 		}
-
-		k_thread_abort(mainline_tid);
-		k_thread_abort(sync_tid);
-		mainline_tid = NULL;
-		sync_tid = NULL;
-
-		k_mutex_unlock(&CO->CANmodule->can_send_mutex);
-		k_mutex_unlock(&CO->CANmodule->od_mutex);
-		k_mutex_unlock(&CO->CANmodule->emcy_mutex);
 	}
+
+	if(sync_tid) {
+		k_thread_abort(sync_tid);
+		sync_tid = NULL;
+	}
+
+	k_mutex_unlock(&CO->CANmodule->can_send_mutex);
+	k_mutex_unlock(&CO->CANmodule->od_mutex);
+	k_mutex_unlock(&CO->CANmodule->emcy_mutex);
 
 	CO_CANmodule_disable(CO->CANmodule);
 	err = CO_CANinit(CO, (void *)co->can_dev, co->bitrate);
@@ -203,11 +199,6 @@ int canopen_reset_communication(struct canopen *co)
 
 	CO_CANsetNormalMode(CO->CANmodule);
 
-	mainline_tid = k_thread_create(&mainline_thread_data, mainline_thread_stack,
-				       K_THREAD_STACK_SIZEOF(mainline_thread_stack),
-				       mainline_thread, co, NULL, NULL,
-				       CONFIG_CANOPENNODE_MAINLINE_THREAD_PRIORITY, 0, K_NO_WAIT);
-	k_thread_name_set(mainline_tid, "canopen_mainline");
 	sync_tid = k_thread_create(&sync_thread_data, sync_thread_stack,
 				   K_THREAD_STACK_SIZEOF(sync_thread_stack), sync_thread, co, NULL,
 				   NULL, CONFIG_CANOPENNODE_SYNC_THREAD_PRIORITY, 0, K_NO_WAIT);
@@ -218,9 +209,10 @@ int canopen_reset_communication(struct canopen *co)
 
 static void mainline_thread(void *p1, void *p2, void *p3)
 {
+	int err;
 	struct canopen *co = (struct canopen *)p1;
 	CO_t *CO = co->CO;
-	CO_NMT_reset_cmd_t reset;
+	CO_NMT_reset_cmd_t reset = CO_RESET_NOT;
 	uint32_t start;       /* cycles */
 	uint32_t stop;        /* cycles */
 	uint32_t delta;       /* cycles */
@@ -230,46 +222,62 @@ static void mainline_thread(void *p1, void *p2, void *p3)
 	ARG_UNUSED(p2);
 	ARG_UNUSED(p3);
 
-	while (true) {
-		next = 10000; /* 10 ms */
-		start = k_cycle_get_32();
+	while(reset != CO_RESET_APP && reset != CO_RESET_QUIT) {
+		LOG_INF("Resetting communication");
+		err = canopen_reset_communication(co);
+		if(err != CO_ERROR_NO) {
+			LOG_ERR("canopen_reset_communication failed (%d)", err);
+			reset = CO_RESET_APP; // TODO: is this behaviour ok?
+			break;
+		}
 
-		reset = CO_process(CO, false, elapsed, &next);
+		while(true) {
+			next = 10000; /* 10 ms */
+			start = k_cycle_get_32();
+
+			reset = CO_process(CO, false, elapsed, &next);
+
+			if(reset != CO_RESET_NOT) {
+				break;
+			}
 
 #if CO_CONFIG_LEDS & CO_CONFIG_LEDS_ENABLE
 #ifdef CONFIG_CANOPENNODE_LEDS_USE_GPIO
 #ifdef CONFIG_CANOPENNODE_LEDS_BICOLOR
-		/* flavors red LED when both on */
-		gpio_pin_set_dt(&co->->green_led, CO_LED_GREEN(CO->LEDs, CO_LED_CANopen) &&
-							  !CO_LED_RED(CO->LEDs, CO_LED_CANopen));
+			/* flavors red LED when both on */
+			gpio_pin_set_dt(&co->->green_led, CO_LED_GREEN(CO->LEDs, CO_LED_CANopen) &&
+								!CO_LED_RED(CO->LEDs, CO_LED_CANopen));
 #else
-		gpio_pin_set_dt(&co->green_led, CO_LED_GREEN(CO->LEDs, CO_LED_CANopen));
+			gpio_pin_set_dt(&co->green_led, CO_LED_GREEN(CO->LEDs, CO_LED_CANopen));
 #endif /* CONFIG_CANOPENNODE_LEDS_BICOLOR */
-		gpio_pin_set_dt(&co->red_led, CO_LED_RED(CO->LEDs, CO_LED_CANopen));
+			gpio_pin_set_dt(&co->red_led, CO_LED_RED(CO->LEDs, CO_LED_CANopen));
 #endif /* CONFIG_CANOPENNODE_LEDS_USE_GPIO */
 #ifdef CONFIG_CANOPENNODE_LEDS_USE_CALLBACK
-		co->led_callback(co, CO_LED_GREEN(CO->LEDs, CO_LED_CANopen), CO_LED_RED(CO->LEDs, CO_LED_CANopen));
+			co->led_callback(co, CO_LED_GREEN(CO->LEDs, CO_LED_CANopen), CO_LED_RED(CO->LEDs, CO_LED_CANopen));
 #endif /* CONFIG_CANOPENNODE_LEDS_USE_CALLBACK */
 #endif /* CO_CONFIG_LEDS */
 #if CO_CONFIG_STORAGE & CO_CONFIG_STORAGE_ENABLE
-		canopen_storage_process(co);
+			canopen_storage_process(co);
 #endif /* CO_CONFIG_STORAGE */
 
-		if (reset == CO_RESET_COMM) {
-			LOG_INF("CANopen communication reset");
-			canopen_reset_communication(co);
-		} else if (reset == CO_RESET_APP) {
-			LOG_INF("CANopen application reset");
-			// log panic to flush logs before reboot
-			log_panic();
-
-			sys_reboot(SYS_REBOOT_COLD);
+			k_sleep(K_USEC(next));
+			stop = k_cycle_get_32();
+			delta = stop - start;
+			elapsed = k_cyc_to_us_near32(delta);
 		}
+	}
 
-		k_sleep(K_USEC(next));
-		stop = k_cycle_get_32();
-		delta = stop - start;
-		elapsed = k_cyc_to_us_near32(delta);
+	if(reset == CO_RESET_QUIT) {
+		LOG_ERR("CANopen reset quit - not rebooting");
+		return;
+	}
+
+	if(reset == CO_RESET_APP) {
+		LOG_ERR("CANopen reset app - rebooting");
+		// log panic to flush logs before reboot
+		LOG_PANIC();
+		k_msleep(10);
+		sys_reboot(SYS_REBOOT_COLD);
 	}
 }
 
