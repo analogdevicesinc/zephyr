@@ -93,6 +93,13 @@ typedef enum {
 	AUDIO_CHANNEL_SIDE_RIGHT,	/**< Side right channel */
 	AUDIO_CHANNEL_HEADPHONE_LEFT,   /**< Headphone left */
 	AUDIO_CHANNEL_HEADPHONE_RIGHT,  /**< Headphone right */
+	AUDIO_CHANNEL_LINE_LEFT,	/**< Line left channel */
+	AUDIO_CHANNEL_LINE_RIGHT,	/**< Line right channel */
+	AUDIO_CHANNEL_MIC_LEFT,		/**< Microphone left channel */
+	AUDIO_CHANNEL_MIC_RIGHT,	/**< Microphone right channel */
+	AUDIO_CHANNEL_DIG_LEFT,		/**< Digital left channel */
+	AUDIO_CHANNEL_DIG_RIGHT,	/**< Digital right channel */
+	AUDIO_CHANNEL_MONOOUT,		/**< Mono out channel */
 	AUDIO_CHANNEL_ALL,		/**< All channels */
 } audio_channel_t;
 
