@@ -173,6 +173,8 @@ struct audio_codec_api {
 			 struct audio_codec_cfg *cfg);
 	void (*start_output)(const struct device *dev);
 	void (*stop_output)(const struct device *dev);
+	void (*start_input)(const struct device *dev);
+	void (*stop_input)(const struct device *dev);
 	int (*set_property)(const struct device *dev,
 			    audio_property_t property,
 			    audio_channel_t channel,
@@ -236,6 +238,40 @@ static inline void audio_codec_stop_output(const struct device *dev)
 		(const struct audio_codec_api *)dev->api;
 
 	api->stop_output(dev);
+}
+
+/**
+ * @brief Set codec to start input audio recording
+ *
+ * Setup the audio codec device to start the audio recording
+ *
+ * @param dev Pointer to the device structure for codec driver instance.
+ *
+ * @return none
+ */
+static inline void audio_codec_start_input(const struct device *dev)
+{
+	const struct audio_codec_api *api =
+		(const struct audio_codec_api *)dev->api;
+
+	api->start_input(dev);
+}
+
+/**
+ * @brief Set codec to stop output audio recording
+ *
+ * Setup the audio codec device to stop the audio recording
+ *
+ * @param dev Pointer to the device structure for codec driver instance.
+ *
+ * @return none
+ */
+static inline void audio_codec_stop_input(const struct device *dev)
+{
+	const struct audio_codec_api *api =
+		(const struct audio_codec_api *)dev->api;
+
+	api->stop_input(dev);
 }
 
 /**
