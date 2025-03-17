@@ -1,0 +1,8 @@
+# Copyright (C) 2024 Analog Devices, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+config AUDIO_ADAU1x61
+	bool "ADAU1x61 DAC support"
+	depends on I2C
+	help
+	  Enable Analog Devices ADAU1361/1761/1961 support
