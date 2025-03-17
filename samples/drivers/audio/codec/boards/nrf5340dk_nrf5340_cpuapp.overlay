@@ -1,0 +1,47 @@
+/*
+ * Copyright (c) 2021 Nordic Semiconductor ASA
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+&clock {
+	hfclkaudio-frequency = <12288000>;
+};
+
+&pinctrl {
+	i2s0_default: i2s0_default {
+		group1 {
+			psels = <NRF_PSEL(I2S_SCK_M, 1, 15)>,
+				<NRF_PSEL(I2S_LRCK_M, 1, 12)>,
+				<NRF_PSEL(I2S_SDOUT, 1, 13)>,
+				<NRF_PSEL(I2S_SDIN, 1, 14)>;
+		};
+	};
+};
+
+i2s_rxtx: &i2s0 {
+	status = "okay";
+	pinctrl-0 = <&i2s0_default>;
+	pinctrl-names = "default";
+	clock-source = "ACLK";
+};
+
+&i2c1 {
+	status = "okay";
+	codec: adau@38 {
+        compatible = "adi_adau1761";
+        reg = <0x38>;
+      };
+};
+
+&spi4 {
+	status = "disabled";
+};
+
+&arduino_header {
+	status = "disabled";
+};
+
+&gpio1 {
+	status = "disabled";
+};
