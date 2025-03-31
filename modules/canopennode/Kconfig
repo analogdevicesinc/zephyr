@@ -1,6 +1,7 @@
 # CANopenNode CANopen protocol stack configuration options
 
 # Copyright (c) 2019 Vestas Wind Systems A/S
+# Copyright (c) 2024 National Taiwan University Racing Team
 # SPDX-License-Identifier: Apache-2.0
 
 config ZEPHYR_CANOPENNODE_MODULE
@@ -15,91 +16,66 @@ config CANOPENNODE
 
 if CANOPENNODE
 
-config CANOPENNODE_SDO_BUFFER_SIZE
-	int "CANopen SDO buffer size"
-	default 32
-	range 7 889
+config CANOPENNODE_CONFIG_FILE
+	string "CANopen config file path"
 	help
-	  Size of the internal CANopen SDO buffer in bytes. Size must
-	  be at least equal to the size of the largest variable in the
-	  object dictionary. If data type is DOMAIN, data length is
-	  not limited to the SDO buffer size. If block transfer is
-	  implemented, value should be set to 889.
+	  The path to the CANopen config file, use default config if
+	  not provided. Refer to the documentation of301/CO_config.h
+	  for supported configurations and their defaults.
 
-config CANOPENNODE_TRACE_BUFFER_SIZE
-	int "CANopen trace buffer size"
-	default 100
-	help
-	  Size of the CANopen trace buffer in bytes.
+config CANOPENNODE_SDO_SRV_TIMEOUT_TIME
+	int "CANopen"
+	default 1000
 
-config CANOPENNODE_TX_WORKQUEUE_STACK_SIZE
-	int "Stack size for the CANopen transmit workqueue"
-	default 512
-	help
-	  Size of the stack used for the internal CANopen transmit
-	  workqueue.
+config CANOPENNODE_SDO_CLI_TIMEOUT_TIME
+	int "CANopen"
+	default 500
 
-config CANOPENNODE_TX_WORKQUEUE_PRIORITY
-	int "Priority for CANopen transmit workqueue"
-	default 0 if !COOP_ENABLED
-	default -1
-	help
-	  Priority level of the internal CANopen transmit workqueue.
+config CANOPENNODE_SDO_CLI_BLOCK
+	bool "CANopen"
+	default n
 
-config CANOPENNODE_STORAGE
-	bool "CANopen object dictionary storage"
-	depends on SETTINGS
-	default y
+config CANOPENNODE_MAINLINE_THREAD_STACK_SIZE
+	int "Stack size for the CANopen mainline thread"
+	default 2048
 	help
-	  Enable support for storing the CANopen object dictionary to
-	  non-volatile storage.
+	  Size of the stack used for the internal thread which
+	  processes time consuming CANopen tasks.
 
-config CANOPENNODE_STORAGE_HANDLER_ERASES_EEPROM
-	bool "Erase CANopen object dictionary EEPROM entries in storage handler"
-	depends on CANOPENNODE_STORAGE
+config CANOPENNODE_MAINLINE_THREAD_PRIORITY
+	int "Priority for CANopen mainline thread"
+	default 5
 	help
-	  Erase CANopen object dictionary EEPROM entries upon write to
-	  object dictionary index 0x1011 subindex 1.
-
-config CANOPENNODE_LEDS
-	bool "CANopen LED indicators"
-	default y
-	help
-	  Enable support for CANopen LED indicators according to the CiA
-	  303-3 specification.
-
-config CANOPENNODE_LEDS_BICOLOR
-	bool "CANopen bicolor LED indicator"
-	depends on CANOPENNODE_LEDS
-	help
-	  Handle CANopen LEDs as one bicolor LED, favoring the red LED
-	  over the green LED in accordance with the CiA 303-3
-	  specification.
-
-config CANOPENNODE_SYNC_THREAD
-	bool "CANopen SYNC thread"
-	default y
-	help
-	  Enable internal thread for processing CANopen SYNC RPDOs and
-	  TPDOs. Application layer must take care of SYNC RPDO and
-	  TPDO processing on its own if this is disabled.
+	  Priority level of the internal thread which processes
+	  time consuming CANopen tasks.
 
 config CANOPENNODE_SYNC_THREAD_STACK_SIZE
 	int "Stack size for the CANopen SYNC thread"
-	depends on CANOPENNODE_SYNC_THREAD
-	default 512
+	default 1024
 	help
 	  Size of the stack used for the internal thread which
 	  processes CANopen SYNC RPDOs and TPDOs.
 
 config CANOPENNODE_SYNC_THREAD_PRIORITY
 	int "Priority for CANopen SYNC thread"
-	depends on CANOPENNODE_SYNC_THREAD
 	default 0 if !COOP_ENABLED
 	default -5
 	help
 	  Priority level of the internal thread which processes
 	  CANopen SYNC RPDOs and TPDOs.
+
+config CANOPENNODE_LEDS_BICOLOR
+	bool "CANopen bicolor LED indicator"
+	help
+	  Handle CANopen LEDs as one bicolor LED, favoring the red LED
+	  over the green LED in accordance with the CiA 303-3
+	  specification.
+
+config CANOPENNODE_STORAGE_SUBTREE
+	string "Settings subtree name for CANopen storage"
+	default "canopen"
+	help
+	  Settings subtree name for CANopen storage
 
 config CANOPENNODE_PROGRAM_DOWNLOAD
 	bool "CANopen program download"
