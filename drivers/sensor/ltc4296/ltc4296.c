@@ -1187,7 +1187,7 @@ static int ltc4296_probe(const struct device *dev)
 				LOG_ERR("Error disabling port %d", i);
 			}
 			break;
-		case LTC4296_PSE_APL:
+		case LTC4296_PSE:
 			ret = ltc4296_port_prebias(dev, i, LTC_CFG_APL_MODE);
 			if (ret){
 				LOG_ERR("Error prebiasing port %d", i);
