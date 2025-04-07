@@ -23,6 +23,7 @@ zephyr_include_directories(${LIB_ADIN6310_PATH}/src/ses-proxy-srv/inc
             ${LIB_ADIN6310_PATH}/src/ses-tsn-api-srv/inc
             ${LIB_ADIN6310_PATH}/src/smp-stk/inc
             ${LIB_ADIN6310_PATH}/src/tsn-model-srv/inc
+	    ${LIB_ADIN6310_PATH}/examples/ses-linux-port-srv/inc
 )
 
 set(external_project_cflags
