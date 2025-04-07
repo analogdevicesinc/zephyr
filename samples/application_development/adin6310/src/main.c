@@ -266,6 +266,30 @@ void adin6310_int_rdy()
 	k_sem_give(&reader_thread_sem);
 }
 
+
+
+int adin6310_vlan_example()
+{
+	for (uint16_t vid = 1; vid < 11; vid++) 
+	{
+	printf("VID %d enabled on port 0 to 5 :: %d\n",vid, SES_SetVlanMode(vid, 0xFFF));
+	
+ 	}
+}
+
+int32_t SES_FirmwareCheck(void) {
+	int32_t rv = -1;
+	
+	SES_appInfo_t firmwareInfo;
+	rv = SES_GetFirmwareInfo(&firmwareInfo, sizeof(firmwareInfo));
+	if (rv == SES_PORT_OK)
+	printf("Check Firmware Version :: %s-%s-%d\n", firmwareInfo.partNum, firmwareInfo.version, firmwareInfo.buildNumber);
+	else
+	printf("Check Firmware Version :: Error\n");
+	
+	return rv;
+	}
+/*
 int adin6310_vlan_example()
 {
 	int ret;
@@ -308,6 +332,8 @@ int adin6310_vlan_example()
 
 	return 0;
 }
+
+*/
 
 int32_t timesync(uint8_t mac_addr[6]) {
 	int32_t rv = 0;
@@ -478,6 +504,9 @@ int main(void)
 		return ret;
 	}
 
+
+	ret = SES_FirmwareCheck();
+	
 	printf("Configured MAC address: ");
 	for (int i = 0; i < 5; i++)
 		printf("%02x:", mac_addr[i]);
