@@ -2,7 +2,7 @@
 #define ZEPHYR_INCLUDE_DT_BINDINGS_ADI_LTC4296_H_
 
 #define LTC4296_PSE_DISABLED            0
-#define LTC4296_PSE_APL                 1
+#define LTC4296_PSE                     1
 #define LTC4296_PSE_SCCP_CLASS_10       2
 #define LTC4296_PSE_SCCP_CLASS_11       3
 #define LTC4296_PSE_SCCP_CLASS_12       4
