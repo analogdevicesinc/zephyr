@@ -289,51 +289,7 @@ int32_t SES_FirmwareCheck(void) {
 	
 	return rv;
 	}
-/*
-int adin6310_vlan_example()
-{
-	int ret;
 
-	ret = SES_SetVlanPortType(SES_macPort0, (uint16_t)1, (uint16_t)10, 0, SES_vlanTrunk);
-	if (ret) {
-		printf("SES_SetVlanPortType() error %d\n", ret);
-		return ret;
-	}
-
-	ret = SES_SetVlanPortType(SES_macPort1, (uint16_t)1, (uint16_t)10, 0, SES_vlanTrunk);
-	if (ret) {
-		printf("SES_SetVlanPortType() error %d\n", ret);
-		return ret;
-	}
-
-	ret = SES_SetVlanPortType(SES_macPort2, (uint16_t)1, (uint16_t)10, 0, SES_vlanTrunk);
-	if (ret) {
-		printf("SES_SetVlanPortType() error %d\n", ret);
-		return ret;
-	}
-
-	ret = SES_SetVlanPortType(SES_macPort3, (uint16_t)1, (uint16_t)10, 0, SES_vlanTrunk);
-	if (ret) {
-		printf("SES_SetVlanPortType() error %d\n", ret);
-		return ret;
-	}
-
-	ret = SES_SetVlanPortType(SES_macPort4, (uint16_t)1, (uint16_t)10, 0, SES_vlanTrunk);
-	if (ret) {
-		printf("SES_SetVlanPortType() error %d\n", ret);
-		return ret;
-	}
-
-	ret = SES_SetVlanPortType(SES_macPort5, (uint16_t)1, (uint16_t)10, 0, SES_vlanTrunk);
-	if (ret) {
-		printf("SES_SetVlanPortType() error %d\n", ret);
-		return ret;
-	}
-
-	return 0;
-}
-
-*/
 
 int32_t timesync(uint8_t mac_addr[6]) {
 	int32_t rv = 0;
