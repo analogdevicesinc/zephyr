@@ -183,28 +183,28 @@
 		port0 {
 			sccpi-gpios = <&gpio2 14 (GPIO_ACTIVE_HIGH | GPIO_PULL_UP | MAX32_GPIO_VSEL_VDDIOH)>;
 			sccpo-gpios = <&gpio2 15 (GPIO_ACTIVE_LOW | GPIO_PULL_UP | MAX32_GPIO_VSEL_VDDIOH)>;
-			adi,power-class = <LTC4296_PSE_SCCP_CLASS_12>;
+			adi,power-class = <LTC4296_PSE>;
 			adi,hs-resistor = <250>;
 		};
 
 		port1 {
 			sccpi-gpios = <&gpio2 16 (GPIO_ACTIVE_HIGH | GPIO_PULL_UP | MAX32_GPIO_VSEL_VDDIOH)>;
 			sccpo-gpios = <&gpio2 17 (GPIO_ACTIVE_LOW | GPIO_PULL_UP | MAX32_GPIO_VSEL_VDDIOH)>;
-			adi,power-class = <LTC4296_PSE_SCCP_CLASS_12>;
+			adi,power-class = <LTC4296_PSE>;
 			adi,hs-resistor = <250>;
 		};
 
 		port2 {
 			sccpi-gpios = <&gpio2 18 (GPIO_ACTIVE_HIGH | GPIO_PULL_UP | MAX32_GPIO_VSEL_VDDIOH)>;
 			sccpo-gpios = <&gpio2 20 (GPIO_ACTIVE_LOW | GPIO_PULL_UP | MAX32_GPIO_VSEL_VDDIOH)>;
-			adi,power-class = <LTC4296_PSE_SCCP_CLASS_12>;
+			adi,power-class = <LTC4296_PSE>;
 			adi,hs-resistor = <250>;
 		};
 
 		port3 {
 			sccpi-gpios = <&gpio2 21 (GPIO_ACTIVE_HIGH | GPIO_PULL_UP | MAX32_GPIO_VSEL_VDDIOH)>;
 			sccpo-gpios = <&gpio2 22 (GPIO_ACTIVE_LOW | GPIO_PULL_UP | MAX32_GPIO_VSEL_VDDIOH)>;
-			adi,power-class = <LTC4296_PSE_SCCP_CLASS_12>;
+			adi,power-class = <LTC4296_PSE>;
 			adi,hs-resistor = <250>;
 		};
 	};
