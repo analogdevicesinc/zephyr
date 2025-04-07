@@ -95,7 +95,7 @@ Search for the `ltc4296` node in the devicetree file and modify the `adi,power-c
 The `adi,power-class` property applies on a per port basis, and can be set to one of the following values:
 
 - LTC4296_PSE_DISABLED # PSE disabled for this port
-- LTC4296_PSE_APL # PSE APL mode
+- LTC4296_PSE # PSE mode
 - LTC4296_PSE_SCCP_CLASS_10 # PSE SCCP class 10
 - LTC4296_PSE_SCCP_CLASS_11 # PSE SCCP class 11
 - LTC4296_PSE_SCCP_CLASS_12 # PSE SCCP class 12
