@@ -999,7 +999,7 @@ int ltc4296_do_spoe_sccp(const struct device *dev, enum ltc4296_board_class boar
 
 						ret = ltc4296_port_pwr_available(dev, ltc4296_port);
 						ret = ltc4296_set_gadc_vout(dev, ltc4296_port);
-						LOG_INF("LTC4296-1 Port%d SCCP completed, PD class %d detected, PSE output enabled \n",ltc4296_port, pd_class);
+						printf("LTC4296-1 Port%d SCCP completed, PD class %d detected, PSE output enabled \n",ltc4296_port, pd_class);
 						return ADI_LTC_SCCP_COMPLETE;
 					} else { /* ADIN_LTC_SCCP_PD_OUTOFRANGE or ADIN_LTC_SCCP_PD_NOT_COMPATIBLE */
 						ret = ltc4296_port_disable(dev, ltc4296_port);
@@ -1022,7 +1022,7 @@ int ltc4296_do_spoe_sccp(const struct device *dev, enum ltc4296_board_class boar
 		} else
 		{
 			ltc4296_vi->ltc4296_print_vin = true;
-			LOG_ERR("LTC4296-1 Port%d Vin %dV out of range, expected %dV to %dV \n",
+			LOG_INF("LTC4296-1 Port%d Vin %dV out of range, expected %dV to %dV \n",
 			ltc4296_port, port_vin_mv, ltc4296_spoe_vol_range_mv[board_class][LTC4296_VMIN], ltc4296_spoe_vol_range_mv[board_class][LTC4296_VMAX]);
 			return ADI_LTC_DISCONTINUE_SCCP;
 		}
