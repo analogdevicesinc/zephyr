@@ -922,7 +922,7 @@ int ltc4296_do_spoe_sccp(const struct device *dev, enum ltc4296_board_class boar
 				ltc4296_vi->ltc4296_vout = port_vout_mv;
 			}
 			else {
-				LOG_ERR("LTC4296-1 Port%d Vout N/A \n",ltc4296_port);
+				//LOG_ERR("LTC4296-1 Port%d Vout N/A \n",ltc4296_port);
 				return ADI_LTC_DISCONTINUE_SCCP;
 			}
 			ret = ltc4296_read_port_adc(dev, ltc4296_port, &port_iout_ma);
@@ -930,7 +930,7 @@ int ltc4296_do_spoe_sccp(const struct device *dev, enum ltc4296_board_class boar
 				ltc4296_vi->ltc4296_iout = port_iout_ma;
 				return 0;
 			} else {
-				LOG_ERR("LTC4296-1 Port%d Iout N/A \n",ltc4296_port);
+				//LOG_ERR("LTC4296-1 Port%d Iout N/A \n",ltc4296_port);
 				return ADI_LTC_DISCONTINUE_SCCP;
 			}
 
@@ -940,7 +940,7 @@ int ltc4296_do_spoe_sccp(const struct device *dev, enum ltc4296_board_class boar
 			if (ret != 0) {
 				return ret;
 			}
-			LOG_ERR("LTC4296-1 port %d disabling output \n",ltc4296_port);
+			//LOG_ERR("LTC4296-1 port %d disabling output \n",ltc4296_port);
 			return ADI_LTC_DISCONTINUE_SCCP;
 		}
 	} else if(port_chk == LTC_PORT_DISABLED) {
@@ -957,7 +957,7 @@ int ltc4296_do_spoe_sccp(const struct device *dev, enum ltc4296_board_class boar
 		k_sleep(K_MSEC(4)); /* Delay of 4ms */
 		ret = ltc4296_read_gadc(dev, &port_vin_mv); /* Read Global ADC and calculate Port Vin*/
 		if (ret != 0) {
-			LOG_ERR("LTC4296-1 Port%d Vin measurement not valid, power cannot be enabled \n",ltc4296_port);
+			//LOG_ERR("LTC4296-1 Port%d Vin measurement not valid, power cannot be enabled \n",ltc4296_port);
 			return ADI_LTC_DISCONTINUE_SCCP;
 		}
 
@@ -1003,7 +1003,7 @@ int ltc4296_do_spoe_sccp(const struct device *dev, enum ltc4296_board_class boar
 						return ADI_LTC_SCCP_COMPLETE;
 					} else { /* ADIN_LTC_SCCP_PD_OUTOFRANGE or ADIN_LTC_SCCP_PD_NOT_COMPATIBLE */
 						ret = ltc4296_port_disable(dev, ltc4296_port);
-						LOG_ERR("LTC4296-1 Port%d detected PD class %d, not compatible with PSE %s \n",ltc4296_port, pd_class, *(ltc4296_class_str[board_class]));
+						//LOG_ERR("LTC4296-1 Port%d detected PD class %d, not compatible with PSE %s \n",ltc4296_port, pd_class, *(ltc4296_class_str[board_class]));
 						return ADI_LTC_DISCONTINUE_SCCP;
 					}
 				} else if(ret == ADI_LTC_SCCP_PD_NOT_PRESENT) { /* ADIN_LTC_SCCP_PD_NOT_PRESENT */
@@ -1016,7 +1016,7 @@ int ltc4296_do_spoe_sccp(const struct device *dev, enum ltc4296_board_class boar
 			}
 			else {
 				ret = ltc4296_port_disable(dev, ltc4296_port);
-				LOG_ERR("LTC4296-1 Port%d could not enter classification mode \n",ltc4296_port);
+				//LOG_ERR("LTC4296-1 Port%d could not enter classification mode \n",ltc4296_port);
 				return ADI_LTC_DISCONTINUE_SCCP;
 			}
 		} else
@@ -1052,7 +1052,7 @@ int ltc4296_pwr_test(const struct device *dev, enum ltc4296_board_class board_cl
 	k_sleep(K_MSEC(4)); /* Delay of 4ms */
 	ret = ltc4296_read_gadc(dev, &port_vin_mv); /* Read Global ADC and calculate Port Vin*/
 	if(ret != 0) {
-		LOG_ERR("Vin measurement not valid, power cannot be enabled, test discontinued\n");
+		//LOG_ERR("Vin measurement not valid, power cannot be enabled, test discontinued\n");
 		return ADI_LTC_DISCONTINUE_APL;
 	}
 	ret = ltc4296_is_vin_valid(dev, port_vin_mv, board_class, &vin_valid);
@@ -1091,7 +1091,7 @@ int ltc4296_pwr_test(const struct device *dev, enum ltc4296_board_class board_cl
 					LOG_INF("LTC4296-1 Port%d Vout %dV \n",port_no, port_vout_mv);
 				}
 				else {
-					LOG_ERR("LTC4296-1 Port%d Vout %dV out of limits \n",port_no, port_vout_mv);
+					//LOG_ERR("LTC4296-1 Port%d Vout %dV out of limits \n",port_no, port_vout_mv);
 				}
 			}
 			else {
@@ -1174,7 +1174,7 @@ static int ltc4296_probe(const struct device *dev)
 	}
 
 	if (value != LTC4296_UNLOCK_KEY) {
-		LOG_ERR("Device locked. Write Access is disabled");
+		//LOG_ERR("Device locked. Write Access is disabled");
 		return -EINVAL;
 	}
 
@@ -1184,18 +1184,18 @@ static int ltc4296_probe(const struct device *dev)
 		case LTC4296_PSE_DISABLED:
 			ret = ltc4296_port_disable(dev, i);
 			if (ret){
-				LOG_ERR("Error disabling port %d", i);
+				//LOG_ERR("Error disabling port %d", i);
 			}
 			break;
 		case LTC4296_PSE:
 			ret = ltc4296_port_prebias(dev, i, LTC_CFG_APL_MODE);
 			if (ret){
-				LOG_ERR("Error prebiasing port %d", i);
+				//LOG_ERR("Error prebiasing port %d", i);
 				continue;
 			}
 			ret = ltc4296_port_en(dev, i);
 			if (ret){
-				LOG_ERR("Error enabling port %d", i);
+				//LOG_ERR("Error enabling port %d", i);
 			}
 
 			break;
@@ -1208,7 +1208,7 @@ static int ltc4296_probe(const struct device *dev)
 			ret = ltc4296_do_spoe_sccp(dev, power_class - LTC4296_PSE_SCCP_CLASS_10,
 						   i, &ltc4296_vi);
 			if (ret != ADI_LTC_SCCP_COMPLETE){
-				LOG_ERR("Error enabling SCCP on port %d", i);
+				// //LOG_ERR("Error enabling SCCP on port %d", i);
 			}
 
 			break;
@@ -1231,14 +1231,14 @@ static int ltc4296_init(const struct device *dev)
 	printf("LTC4296 probe!\n");
 
 	if (!spi_is_ready_dt(&cfg->bus)) {
-		LOG_ERR("SPI bus %s not ready", cfg->bus.bus->name);
+		//LOG_ERR("SPI bus %s not ready", cfg->bus.bus->name);
 		return -ENODEV;
 	}
 
 	for (int i = 0; i < 4; i++){
 		if (cfg->port_config[i].sccpo_gpio.port) {
 			if (!gpio_is_ready_dt(&cfg->port_config[i].sccpo_gpio)) {
-				LOG_ERR("GPIO device not ready");
+				//LOG_ERR("GPIO device not ready");
 				return -ENODEV;
 			}
 
@@ -1249,7 +1249,7 @@ static int ltc4296_init(const struct device *dev)
 	for (int i = 0; i < 4; i++){
 		if (cfg->port_config[i].sccpi_gpio.port) {
 			if (!gpio_is_ready_dt(&cfg->port_config[i].sccpi_gpio)) {
-				LOG_ERR("GPIO device not ready");
+				//LOG_ERR("GPIO device not ready");
 				return -ENODEV;
 			}
 
