@@ -114,12 +114,14 @@ In order to compile the project you need to run the following:
 
 `west build -b adin6310t1l/max32690/m4 samples/application_development/adin6310 -DLIB_ADIN6310_PATH=...`
 
-The path to the ADIN6310 SES driver specified using the LIB_ADIN6310_PATH variable shouldn't contain any spacing.
+The path to the ADIN6310 SES driver specified using the LIB_ADIN6310_PATH variable shouldn't contain any spacing. E.g:
+
+`west build -b adin6310t1l/max32690/m4 samples/application_development/adin6310 -DLIB_ADIN6310_PATH=/home/user/adin6310_v50 -p always`
 
 The ADIN6310 software package should have the following structure:
 ```
 .
-└── ADINx310_TSN_Driver_Library_Rel5.0.0 <-- LIB_ADIN6310_PATH should be set to this
+└── ADINx310_TSN_Driver_Library_Relx.x.x <-- LIB_ADIN6310_PATH should be set to this
     ├── bin
     ├── doc
     ├── examples
