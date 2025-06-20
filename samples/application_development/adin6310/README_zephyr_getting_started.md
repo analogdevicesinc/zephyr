@@ -135,13 +135,14 @@ This is a package which contains compilers (plus the associated libraries and GN
 	```
 
 ## Compiling the ADIN6310 project
-The ADIN6310 example project can be found under `samples/application_development/adin6310`. In addition, you will need to have the source code for the ADIN6310 driver.
+The ADIN6310 example project can be found under `samples/application_development/adin6310`. In addition, you will need to have the source code for the ADIN6310 
+[driver](https://www.analog.com/en/products/adin6310.html#software-resources).
 
 In order to compile the project you need to run the following:
 
 ``` bash
 cd ~/zephyr/
-west build -b adin6310t1l/max32690/m4 samples/application_development/adin6310 -DLIB_ADIN6310_PATH=...
+west build -b adin6310t1l/max32690/m4 samples/application_development/adin6310 -DLIB_ADIN6310_PATH=/path_to_driver/
 ```
 The path to the ADIN6310 SES driver specified using the LIB_ADIN6310_PATH variable shouldn't contain any spacing. E.g:
 
