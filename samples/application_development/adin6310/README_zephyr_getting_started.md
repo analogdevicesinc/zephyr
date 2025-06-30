@@ -8,50 +8,77 @@
 `git clone https://github.com/analogdevicesinc/zephyr.git`
 
 2. Checkout the `adin6310_switch` branch
-`git checkout adin6310_switch`
+```bash
+cd zephyr
+git checkout adin6310_switch
+```
 
 # Linux
 
 ## Setting up Zephyr
 
 1. Install Zephyr's dependencies by running the following in a terminal:
-```
-	sudo apt install --no-install-recommends git cmake ninja-build gperf \
-	ccache dfu-util device-tree-compiler wget \
-	python3-dev python3-pip python3-setuptools python3-tk python3-wheel xz-utils file \
-	make gcc gcc-multilib g++-multilib libsdl2-dev libmagic1 python3-venv
+```bash
+sudo apt install --no-install-recommends git cmake ninja-build gperf \
+ccache dfu-util device-tree-compiler wget \
+python3-dev python3-pip python3-setuptools python3-tk python3-wheel xz-utils file \
+make gcc gcc-multilib g++-multilib libsdl2-dev libmagic1 python3-venv
 ```
   2. Setup a Python virtual environment in the zephyr directory:
-`cd zephyr`
-`python3 -m venv .venv`
-`source .venv/bin/activate`
+```bash
+cd ~/zephyr/
+python3 -m venv .venv
+source .venv/bin/activate
+```
 
 3. Install the Python dependencies
-`pip3 install west`
-`pip3 install -r scripts/requirements.txt`
+```bash
+pip3 install west
+pip3 install -r scripts/requirements.txt
+```
 
 4. Create a west project
 west is Zephyr's metatool used for building projects, flashing, running tests and managing external modules.
 First, we'll have to create an empty west project in the `zephyr` directory:
-`west init -l .`
-
+```bash
+west init -l .
+```
 5. Pull Zephyr's external modules and export the CMake package:
-`west update`
-`west zephyr-export` 
+```bash
+west update
+west zephyr-export
+```
 
 6. Install Zephyr SDK:
 This is a package which contains compilers (plus the associated libraries and GNU tools) for all the CPU architectures supported by Zephyr. In order to download and install the SDK, run the following in the `zephyr` directory:
-```
+```bash
+cd ~/zephyr/
 wget https://github.com/zephyrproject-rtos/sdk-ng/releases/download/v0.16.8/zephyr-sdk-0.16.8_linux-x86_64.tar.xz
+tar xvf zephyr-sdk-0.16.8_linux-x86_64.tar.xz
+cd zephyr-sdk-0.16.8
+./setup.sh
 ```
-`tar xvf zephyr-sdk-0.16.8_linux-x86_64.tar.xz`
-`cd zephyr-sdk-0.16.8`
-`./setup.sh`
+To configure your environment for Zephyr development, you need to set the `ZEPHYR_TOOLCHAIN_VARIANT` variable. This variable tells Zephyr which toolchain to use.
 
-Next, you'll have to set the `ZEPHYR_TOOLCHAIN_VARIANT` variable:
-`export ZEPHYR_TOOLCHAIN_VARIANT=zephyr`
+###### Option 1 - Temporary Setup
+To set the variable for the current terminal session, run the following command: `export ZEPHYR_TOOLCHAIN_VARIANT=zephyr`
 
-In order to permanently set the variable's value, you may export it in your terminal's rc file (.bashrc, .zshrc etc). Otherwise, you'll have to set it every time you open a new terminal.
+
+###### Option 2 - Permanent Setup
+Edit the ~/.bashrc file and add:
+```bash
+export ZEPHYR_TOOLCHAIN_VARIANT=zephyr
+```
+
+Then, apply the changes with:
+```bash
+source ~/.bashrc
+```
+
+To confirm that the variable is set correctly, you can run:
+```bash
+echo $ZEPHYR_TOOLCHAIN_VARIANT
+```
 
 # Windows
 ## Setting up Zephyr
@@ -108,12 +135,15 @@ This is a package which contains compilers (plus the associated libraries and GN
 	```
 
 ## Compiling the ADIN6310 project
-The ADIN6310 example project can be found under `samples/application_development/adin6310`. In addition, you will need to have the source code for the ADIN6310 driver.
+The ADIN6310 example project can be found under `samples/application_development/adin6310`. In addition, you will need to have the source code for the ADIN6310 
+[driver](https://www.analog.com/en/products/adin6310.html#software-resources).
 
 In order to compile the project you need to run the following:
 
-`west build -b adin6310t1l/max32690/m4 samples/application_development/adin6310 -DLIB_ADIN6310_PATH=...`
-
+``` bash
+cd ~/zephyr/
+west build -b adin6310t1l/max32690/m4 samples/application_development/adin6310 -DLIB_ADIN6310_PATH=/path_to_driver/
+```
 The path to the ADIN6310 SES driver specified using the LIB_ADIN6310_PATH variable shouldn't contain any spacing. E.g:
 
 `west build -b adin6310t1l/max32690/m4 samples/application_development/adin6310 -DLIB_ADIN6310_PATH=/home/user/adin6310_v50 -p always`
