@@ -84,6 +84,8 @@ static void canopen_tx_callback(const struct device *dev, int error, void *arg)
 
 	ARG_UNUSED(dev);
 
+	if(!CANmodule->configured) return;
+
 	if (error == 0) {
 		CANmodule->first_tx_msg = false;
 	}
