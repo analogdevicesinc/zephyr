@@ -103,6 +103,18 @@ static DEVICE_API(clock_control, max32_clkctrl_api) = {
 	.get_rate = api_get_rate,
 };
 
+int max32_clock_calibrate_ipo()
+{
+	int ret = Wrap_MXC_SYS_ClockCalibrate(MXC_SYS_CLOCK_IPO);
+	if(ret == E_NO_ERROR)
+		return 0;
+	if(ret == E_NOT_SUPPORTED) // Only MAX32662 and MAX32690 implement clock calibration
+		return -ENOSYS;
+	if(ret == E_BAD_PARAM)
+		return -EINVAL;
+	return -1;
+}
+
 static void setup_fixed_clocks(void)
 {
 #if DT_NODE_HAS_COMPAT(DT_NODELABEL(clk_extclk), fixed_clock)

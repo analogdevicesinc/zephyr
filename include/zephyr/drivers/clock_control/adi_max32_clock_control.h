@@ -109,4 +109,16 @@ struct max32_perclk {
 	 : (clk_src) == ADI_MAX32_PRPH_CLK_SRC_EBO       ? ADI_MAX32_CLK_EBO_FREQ                  \
 							 : 0)
 
+/**
+* @brief Calibrates IPO with respect to external ERTCO 32.768KHz oscillator
+*
+* @note Only implemented for MAX32662 and MAX32690
+*
+* @return 0 if successful
+* @return -ENOSYS if IPO calibration is not implemented on the current target
+* @return -EINVAL if hal_adi implementation returns E_BAD_PARAM
+* @return -1 if another error occured
+*/
+int max32_clock_calibrate_ipo(void);
+
 #endif /* ZEPHYR_INCLUDE_DRIVERS_CLOCK_CONTROL_ADI_MAX32_CLOCK_CONTROL_H_ */
