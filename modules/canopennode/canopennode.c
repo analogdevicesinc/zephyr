@@ -73,7 +73,7 @@ int canopen_init(struct canopen *co)
 	co->CO = CO_new(NULL, NULL);
 
 #if CO_CONFIG_STORAGE & CO_CONFIG_STORAGE_ENABLE
-	err = canopen_storage_init(co);
+	int err = canopen_storage_init(co);
 	if (err < 0) {
 		LOG_ERR("CO_storage_init failed (err %d)", err);
 		return -EIO;
