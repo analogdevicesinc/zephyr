@@ -4,6 +4,13 @@ cmake_minimum_required(VERSION 3.20.0)
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(adin6310_unmanaged)
 
+if (DEFINED LIB_ADIN6310_PATH)
+  message("LIB_ADIN6310_PATH=${LIB_ADIN6310_PATH}\n")
+else()
+  message(FATAL_ERROR "Please configure LIB_ADIN6310_PATH. \
+    Supply '-- -DLIB_ADIN6310_PATH' at the command line.")
+endif()
+
 target_sources(app PRIVATE src/main.c)
 target_link_libraries(app PUBLIC libm.a)
 
@@ -11,6 +18,7 @@ zephyr_get_include_directories_for_lang_as_string(       C includes)
 zephyr_get_system_include_directories_for_lang_as_string(C system_includes)
 zephyr_get_compile_definitions_for_lang_as_string(       C definitions)
 zephyr_get_compile_options_for_lang_as_string(           C options)
+
 
 FILE(GLOB lib_adin6310_srcs ${LIB_ADIN6310_PATH}/src/ses-proxy-srv/src/*.c
           ${LIB_ADIN6310_PATH}/src/ses-route-srv/src/*.c
