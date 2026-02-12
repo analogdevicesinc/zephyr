@@ -1,0 +1,20 @@
+identifier: max32651evkit
+name: max32651evkit
+vendor: adi
+type: mcu
+arch: arm
+toolchain:
+  - zephyr
+  - gnuarmemb
+supported:
+  - gpio
+  - serial
+  - spi
+  - i2c
+  - dma
+  - watchdog
+  - counter
+  - rtc_counter
+  - usbd
+ram: 1024
+flash: 3072
