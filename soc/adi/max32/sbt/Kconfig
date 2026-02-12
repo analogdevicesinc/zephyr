@@ -1,0 +1,24 @@
+# Copyright (c) 2026 Analog Devices, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+config MAX32_SECURE_SOC
+	bool "Secure version of the SoC"
+	default y
+	depends on SOC_MAX32651
+	select HAVE_CUSTOM_LINKER_SCRIPT
+	help
+	  Select this option if the SoC is a secure version. It is required to
+	  set the linker configurations and enable image signing.
+
+if MAX32_SECURE_SOC
+
+config CUSTOM_LINKER_SCRIPT
+	default "$(ZEPHYR_BASE)/soc/adi/max32/sbt/linker_with_sig_section.ld"
+
+config MAX32_SECURE_SOC_KEY_PATH
+	string "Secure SoC's key path"
+	help
+	  Path to the private key used to sign the image. This is used by the
+	  signing tool to sign the image.
+
+endif

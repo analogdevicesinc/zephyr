@@ -1,4 +1,4 @@
-# Copyright (c) 2023-2025 Analog Devices, Inc.
+# Copyright (c) 2023-2026 Analog Devices, Inc.
 # SPDX-License-Identifier: Apache-2.0
 
 zephyr_include_directories(${ZEPHYR_BASE}/drivers)
@@ -11,6 +11,10 @@ zephyr_library_sources_ifdef(CONFIG_PM power.c)
 zephyr_linker_sources_ifdef(CONFIG_SOC_FLASH_MAX32 RAMFUNC_SECTION flash.ld)
 if(CONFIG_SOC_MAX78000 OR CONFIG_SOC_MAX78002)
   zephyr_linker_sources(SECTIONS max7800x.ld)
+endif()
+
+if(CONFIG_MAX32_SECURE_SOC)
+  set_target_properties(zephyr_property_target PROPERTIES SIGNING_SCRIPT ${CMAKE_CURRENT_LIST_DIR}/sbt/sbt_signing.cmake)
 endif()
 
 if(CONFIG_ARM)
