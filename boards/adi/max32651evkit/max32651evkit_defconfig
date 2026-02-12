@@ -1,0 +1,19 @@
+# Copyright (c) 2026 Analog Devices, Inc.
+# SPDX-License-Identifier: Apache-2.0
+
+# Enable MPU
+CONFIG_ARM_MPU=y
+
+# Enable GPIO
+CONFIG_GPIO=y
+
+# Console
+CONFIG_CONSOLE=y
+CONFIG_UART_CONSOLE=y
+
+# Enable UART
+CONFIG_SERIAL=y
+CONFIG_UART_INTERRUPT_DRIVEN=y
+
+# Give the path to the key used to sign the image for secure SoC
+CONFIG_MAX32_SECURE_SOC_KEY_PATH="C:/analog/SecureBootTools/devices/MAX32651/keys/maximtestcrk.key"
