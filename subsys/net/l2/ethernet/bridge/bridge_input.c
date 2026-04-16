@@ -166,10 +166,13 @@ enum net_verdict eth_bridge_input_process(struct net_if *iface, struct net_pkt *
 	}
 #endif
 
-	/* Drop all link-local packets for now. */
+	/* Link-local frames (IEEE 802.1D Table 7-10, 01:80:c2:00:00:00-0f)
+	 * must not be forwarded by bridges. Return NET_CONTINUE so the frame
+	 * is processed locally on the original port interface, matching the
+	 * Linux bridge behavior (RX_HANDLER_PASS).
+	 */
 	if (is_link_local_addr(dst_addr)) {
-		NET_DBG("DROP: lladdr");
-		return NET_DROP;
+		return NET_CONTINUE;
 	}
 
 	/* Handle broadcast and multicast */
