@@ -1,0 +1,13 @@
+sample:
+  description: Test bridge FDB (Forwarding Database) functionality
+  name: bridge FDB sample app
+common:
+  harness: net
+  tags:
+    - net
+tests:
+  sample.net.bridge_fdb:
+    build_only: true
+    platform_allow:
+      - adi_eval_adin2111ebz
+    depends_on: eth
