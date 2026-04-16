@@ -1,0 +1,4 @@
+&adin2111 {
+	/delete-property/ spi-oa;
+	/delete-property/ spi-oa-protection;
+};
