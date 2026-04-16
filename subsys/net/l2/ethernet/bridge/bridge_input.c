@@ -126,7 +126,7 @@ static inline bool is_link_local_addr(struct net_eth_addr *addr)
 	    addr->addr[2] == 0xc2 &&
 	    addr->addr[3] == 0x00 &&
 	    addr->addr[4] == 0x00 &&
-	    (addr->addr[5] & 0x0f) == 0x00) {
+	    (addr->addr[5] & 0xf0) == 0x00) {
 		return true;
 	}
 
