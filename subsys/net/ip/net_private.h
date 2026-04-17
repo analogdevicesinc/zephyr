@@ -26,6 +26,11 @@
 #include <zephyr/net/wifi_mgmt.h>
 #endif /* CONFIG_NET_L2_WIFI_MGMT */
 
+#ifdef CONFIG_NET_ETHERNET_BRIDGE_FDB
+/* For struct eth_bridge_fdb_entry */
+#include <zephyr/net/ethernet_bridge_fdb.h>
+#endif /* CONFIG_NET_ETHERNET_BRIDGE_FDB */
+
 #define DEFAULT_NET_EVENT_INFO_SIZE CONFIG_NET_MGMT_EVENT_INFO_DEFAULT_DATA_SIZE
 /* NOTE: Update this union with all *big* event info structs */
 union net_mgmt_events {
@@ -47,6 +52,9 @@ union net_mgmt_events {
 #if defined(CONFIG_NET_HOSTNAME_ENABLE)
 	struct net_event_l4_hostname hostname;
 #endif /* CONFIG_NET_HOSTNAME_ENABLE */
+#if defined(CONFIG_NET_ETHERNET_BRIDGE_FDB)
+	struct eth_bridge_fdb_entry fdb_entry;
+#endif /* CONFIG_NET_ETHERNET_BRIDGE_FDB */
 	char default_event[DEFAULT_NET_EVENT_INFO_SIZE];
 };
 
