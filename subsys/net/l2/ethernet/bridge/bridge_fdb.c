@@ -10,6 +10,7 @@ LOG_MODULE_REGISTER(net_eth_bridge_fdb, CONFIG_NET_ETHERNET_BRIDGE_LOG_LEVEL);
 #include <zephyr/net/net_log.h>
 #include <zephyr/net/ethernet_bridge.h>
 #include <zephyr/net/ethernet_bridge_fdb.h>
+#include <zephyr/net/ethernet_mgmt.h>
 #include <zephyr/kernel.h>
 
 /* FDB table */
@@ -85,6 +86,9 @@ int eth_bridge_fdb_add(struct net_eth_addr *mac, struct net_if *iface)
 	NET_DBG("FDB entry added: %02x:%02x:%02x:%02x:%02x:%02x -> iface %d", mac->addr[0],
 		mac->addr[1], mac->addr[2], mac->addr[3], mac->addr[4], mac->addr[5],
 		net_if_get_by_iface(iface));
+
+	net_mgmt_event_notify_with_info(NET_EVENT_ETHERNET_FDB_ADD,
+					iface, entry, sizeof(*entry));
 out:
 	k_mutex_unlock(&fdb_lock);
 	return ret;
@@ -120,13 +124,15 @@ int eth_bridge_fdb_del(struct net_eth_addr *mac, struct net_if *iface)
 			sys_slist_remove(&fdb_entries, prev, node);
 			fdb_count--;
 
-			/* Free memory */
-			k_mem_slab_free(&fdb_slab, (void *)entry);
-
 			NET_DBG("FDB entry deleted: %02x:%02x:%02x:%02x:%02x:%02x -> iface %d",
 				mac->addr[0], mac->addr[1], mac->addr[2], mac->addr[3],
 				mac->addr[4], mac->addr[5], net_if_get_by_iface(iface));
 
+			net_mgmt_event_notify_with_info(NET_EVENT_ETHERNET_FDB_DEL,
+							iface, entry, sizeof(*entry));
+
+			/* Free memory after notification to avoid use-after-free */
+			k_mem_slab_free(&fdb_slab, (void *)entry);
 			ret = 0;
 			break;
 		}
@@ -276,7 +282,7 @@ int eth_bridge_fdb_learn(struct net_eth_addr *mac, struct net_if *iface)
 		}
 	}
 
-	/* New MAC — allocate a dynamic entry */
+	/* New destination MAC — allocate a dynamic entry */
 	if (fdb_count >= CONFIG_NET_ETHERNET_BRIDGE_FDB_MAX_ENTRIES) {
 		NET_DBG("FDB table full, cannot learn");
 		ret = -ENOMEM;
@@ -300,6 +306,9 @@ int eth_bridge_fdb_learn(struct net_eth_addr *mac, struct net_if *iface)
 	NET_DBG("FDB learned: %02x:%02x:%02x:%02x:%02x:%02x -> iface %d",
 		mac->addr[0], mac->addr[1], mac->addr[2], mac->addr[3],
 		mac->addr[4], mac->addr[5], net_if_get_by_iface(iface));
+
+	net_mgmt_event_notify_with_info(NET_EVENT_ETHERNET_FDB_ADD,
+					iface, entry, sizeof(*entry));
 
 	/* Schedule aging work if not already running */
 	k_work_reschedule(&fdb_aging_work,
