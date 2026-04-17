@@ -145,6 +145,10 @@ static void bridge_show(struct eth_bridge_iface_context *ctx, void *data)
 		shell_fprintf(sh, SHELL_NORMAL, "%-9s", "no");
 	}
 
+#if defined(CONFIG_NET_ETHERNET_BRIDGE_ALLOW_TX)
+	shell_fprintf(sh, SHELL_NORMAL, "%-11s", ctx->allow_tx ? "on" : "off");
+#endif
+
 	k_mutex_lock(&ctx->lock, K_FOREVER);
 
 	ARRAY_FOR_EACH(ctx->eth_iface, i) {
@@ -182,8 +186,13 @@ static int cmd_bridge_show(const struct shell *sh, size_t argc, char *argv[])
 		}
 	}
 
+#if defined(CONFIG_NET_ETHERNET_BRIDGE_ALLOW_TX)
+	shell_fprintf(sh, SHELL_NORMAL, "Bridge %-9s%-9s%-11sInterfaces\n",
+		      "Status", "Config", "Allow TX");
+#else
 	shell_fprintf(sh, SHELL_NORMAL, "Bridge %-9s%-9sInterfaces\n",
 		      "Status", "Config");
+#endif
 
 	if (br != NULL) {
 		bridge_show(net_if_get_device(br)->data, (void *)sh);
@@ -303,6 +312,48 @@ static int cmd_bridge_fdb_show(const struct shell *sh, size_t argc, char *argv[]
 #endif /* CONFIG_NET_ETHERNET_BRIDGE_FDB */
 }
 
+static int cmd_bridge_allow_tx(const struct shell *sh, size_t argc, char *argv[])
+{
+#if defined(CONFIG_NET_ETHERNET_BRIDGE_ALLOW_TX)
+	int br_idx;
+	struct net_if *br;
+	bool allow;
+	int ret;
+
+	br_idx = get_idx(sh, argv[1]);
+	if (br_idx < 0) {
+		return br_idx;
+	}
+
+	br = eth_bridge_get_by_index(br_idx);
+	if (br == NULL) {
+		shell_warn(sh, "Bridge %d not found\n", br_idx);
+		return -ENOENT;
+	}
+
+	if (strcmp(argv[2], "on") == 0) {
+		allow = true;
+	} else if (strcmp(argv[2], "off") == 0) {
+		allow = false;
+	} else {
+		shell_error(sh, "Invalid argument: use 'on' or 'off'\n");
+		return -EINVAL;
+	}
+
+	ret = eth_bridge_set_allow_tx(br, allow);
+	if (ret < 0) {
+		shell_error(sh, "error: bridge allow_tx (%d)\n", ret);
+		return ret;
+	}
+
+	shell_print(sh, "Bridge %d allow_tx %s", br_idx, allow ? "on" : "off");
+	return 0;
+#else
+	shell_warn(sh, "Set CONFIG_NET_ETHERNET_BRIDGE_ALLOW_TX to enable.");
+	return -ENOTSUP;
+#endif /* CONFIG_NET_ETHERNET_BRIDGE_ALLOW_TX */
+}
+
 SHELL_STATIC_SUBCMD_SET_CREATE(bridge_fdb_commands,
 	SHELL_CMD_ARG(add, NULL,
 		SHELL_HELP("Add fdb table entry", "<mac address> <interface index>"),
@@ -321,6 +372,10 @@ SHELL_STATIC_SUBCMD_SET_CREATE(bridge_commands,
 		SHELL_HELP("Add a network interface to a bridge.",
 			"<bridge_index> <one or more interface index>"),
 		cmd_bridge_addif, 3, 5),
+	SHELL_CMD_ARG(allow_tx, NULL,
+		SHELL_HELP("Enable/disable independent TX/RX on bridged interfaces.",
+			"<bridge_index> <on|off>"),
+		cmd_bridge_allow_tx, 3, 0),
 	SHELL_CMD_ARG(delif, NULL,
 		SHELL_HELP("Delete a network interface from a bridge.",
 			"<bridge_index> <one or more interface index>"),
