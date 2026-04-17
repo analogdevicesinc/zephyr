@@ -47,6 +47,15 @@ config NET_ETHERNET_BRIDGE_FDB
 	help
 	  Enables FDB (Forwarding database) table support.
 
+config NET_ETHERNET_BRIDGE_FDB_AGING_TIME
+	int "FDB aging time in seconds"
+	depends on NET_ETHERNET_BRIDGE_FDB
+	default 300
+	range 10 3600
+	help
+	  Time in seconds after which a dynamically learned FDB entry
+	  is removed if no matching traffic is seen.
+
 config NET_ETHERNET_BRIDGE_FDB_MAX_ENTRIES
 	int "Max number of FDB (Forwarding database) entries"
 	depends on NET_ETHERNET_BRIDGE_FDB

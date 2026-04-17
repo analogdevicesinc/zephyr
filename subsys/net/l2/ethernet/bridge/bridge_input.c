@@ -141,6 +141,16 @@ enum net_verdict eth_bridge_input_process(struct net_if *iface, struct net_pkt *
 	struct net_eth_addr *bridge_addr =
 		(struct net_eth_addr *)(net_if_get_link_addr(bridge)->addr);
 
+	/* Learn source MAC from incoming packet */
+#if defined(CONFIG_NET_ETHERNET_BRIDGE_FDB)
+	{
+		struct net_eth_addr *src_addr =
+			(struct net_eth_addr *)(net_pkt_lladdr_src(pkt)->addr);
+
+		eth_bridge_fdb_learn(src_addr, iface);
+	}
+#endif
+
 	/* Lookup FDB table to forward */
 #if defined(CONFIG_NET_ETHERNET_BRIDGE_FDB)
 	if (eth_bridge_fdb_forward(bridge, iface, pkt)) {
