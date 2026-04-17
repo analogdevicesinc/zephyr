@@ -140,6 +140,9 @@ enum net_verdict eth_bridge_input_process(struct net_if *iface, struct net_pkt *
 	struct net_eth_addr *dst_addr = (struct net_eth_addr *)(net_pkt_lladdr_dst(pkt)->addr);
 	struct net_eth_addr *bridge_addr =
 		(struct net_eth_addr *)(net_if_get_link_addr(bridge)->addr);
+#if defined(CONFIG_NET_ETHERNET_BRIDGE_ALLOW_TX)
+	struct eth_bridge_iface_context *br_ctx = net_if_get_device(bridge)->data;
+#endif
 
 	/* Learn source MAC from incoming packet */
 #if defined(CONFIG_NET_ETHERNET_BRIDGE_FDB)
@@ -154,6 +157,11 @@ enum net_verdict eth_bridge_input_process(struct net_if *iface, struct net_pkt *
 	/* Lookup FDB table to forward */
 #if defined(CONFIG_NET_ETHERNET_BRIDGE_FDB)
 	if (eth_bridge_fdb_forward(bridge, iface, pkt)) {
+#if defined(CONFIG_NET_ETHERNET_BRIDGE_ALLOW_TX)
+		if (br_ctx->allow_tx) {
+			return NET_CONTINUE;
+		}
+#endif
 		return NET_DROP;
 	}
 #endif
@@ -169,6 +177,12 @@ enum net_verdict eth_bridge_input_process(struct net_if *iface, struct net_pkt *
 		if (eth_bridge_forward(bridge, iface, pkt) != 0) {
 			return NET_DROP;
 		}
+
+#if defined(CONFIG_NET_ETHERNET_BRIDGE_ALLOW_TX)
+		if (br_ctx->allow_tx) {
+			return NET_CONTINUE;
+		}
+#endif
 
 		if (eth_bridge_handle_locally(bridge, iface, pkt) != 0) {
 			return NET_DROP;
@@ -186,6 +200,12 @@ enum net_verdict eth_bridge_input_process(struct net_if *iface, struct net_pkt *
 
 	/* Forward others */
 	(void)eth_bridge_forward(bridge, iface, pkt);
+
+#if defined(CONFIG_NET_ETHERNET_BRIDGE_ALLOW_TX)
+	if (br_ctx->allow_tx) {
+		return NET_CONTINUE;
+	}
+#endif
 
 	/* Drop forwarded pkt for original iface */
 	return NET_DROP;

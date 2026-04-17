@@ -66,6 +66,9 @@ struct eth_bridge_iface_context {
 
 	/* Is the interface enabled or not */
 	bool status : 1;
+
+	/* Allow independent TX/RX on bridged interfaces */
+	bool allow_tx : 1;
 };
 
 /** @endcond */
@@ -187,6 +190,29 @@ static inline struct net_if *net_eth_get_bridge(struct ethernet_context *ctx)
  * @return net_verdict.
  */
 enum net_verdict eth_bridge_input_process(struct net_if *iface, struct net_pkt *pkt);
+
+/**
+ * @brief Enable or disable independent TX/RX on bridged interfaces.
+ *
+ * When enabled, bridged Ethernet interfaces can independently send and
+ * receive data through their own IP stack, while still forwarding
+ * traffic through the bridge to other ports.
+ *
+ * @param br A pointer to a bridge interface
+ * @param allow true to allow independent TX/RX, false to disable
+ *
+ * @return 0 if OK, negative error code otherwise.
+ */
+int eth_bridge_set_allow_tx(struct net_if *br, bool allow);
+
+/**
+ * @brief Get the allow_tx state of a bridge.
+ *
+ * @param br A pointer to a bridge interface
+ *
+ * @return true if allow_tx is enabled, false otherwise.
+ */
+bool eth_bridge_get_allow_tx(struct net_if *br);
 
 /**
  * @}

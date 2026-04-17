@@ -244,6 +244,43 @@ int eth_bridge_iface_remove(struct net_if *br, struct net_if *iface)
 	return 0;
 }
 
+#if defined(CONFIG_NET_ETHERNET_BRIDGE_ALLOW_TX)
+int eth_bridge_set_allow_tx(struct net_if *br, bool allow)
+{
+	struct eth_bridge_iface_context *ctx;
+
+	if (net_if_l2(br) != &NET_L2_GET_NAME(VIRTUAL) ||
+	    !(net_virtual_get_iface_capabilities(br) & VIRTUAL_INTERFACE_BRIDGE)) {
+		return -EINVAL;
+	}
+
+	ctx = net_if_get_device(br)->data;
+
+	lock_bridge(ctx);
+	ctx->allow_tx = allow;
+	unlock_bridge(ctx);
+
+	NET_DBG("Bridge %d allow_tx %s", net_if_get_by_iface(br),
+		allow ? "enabled" : "disabled");
+
+	return 0;
+}
+
+bool eth_bridge_get_allow_tx(struct net_if *br)
+{
+	struct eth_bridge_iface_context *ctx;
+
+	if (net_if_l2(br) != &NET_L2_GET_NAME(VIRTUAL) ||
+	    !(net_virtual_get_iface_capabilities(br) & VIRTUAL_INTERFACE_BRIDGE)) {
+		return false;
+	}
+
+	ctx = net_if_get_device(br)->data;
+
+	return ctx->allow_tx;
+}
+#endif /* CONFIG_NET_ETHERNET_BRIDGE_ALLOW_TX */
+
 static void random_linkaddr(uint8_t *linkaddr, size_t len)
 {
 	sys_rand_get(linkaddr, len);
