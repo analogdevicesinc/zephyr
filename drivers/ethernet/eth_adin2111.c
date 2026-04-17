@@ -19,6 +19,7 @@ LOG_MODULE_REGISTER(eth_adin2111, CONFIG_ETHERNET_LOG_LEVEL);
 
 #include <zephyr/net/net_if.h>
 #include <zephyr/drivers/ethernet/eth_adin2111.h>
+#include <zephyr/net/ethernet_bridge_fdb.h>
 
 #include "phy/phy_adin2111_priv.h"
 #include "eth_adin2111_priv.h"
@@ -54,6 +55,9 @@ LOG_MODULE_REGISTER(eth_adin2111, CONFIG_ETHERNET_LOG_LEVEL);
 #define ADIN2111_SPI_ACTIVE_DELAY_MS		50U
 /* As per RM rev. A page 20: approximately 10 ms (maximum) for internal logic to be ready. */
 #define ADIN2111_SW_RESET_DELAY_MS		10U
+
+static struct net_mgmt_event_callback fdb_cb;
+static const struct ethernet_api adin2111_port_api;
 
 int eth_adin2111_mac_reset(const struct device *dev)
 {
@@ -1147,6 +1151,86 @@ static int eth_adin2111_set_promiscuous(const struct device *dev, const uint16_t
 }
 #endif
 
+  static void adin2111_fdb_event_handler(struct net_mgmt_event_callback *cb,
+                                         uint64_t mgmt_event,
+                                         struct net_if *iface)
+{
+	const struct device *port_dev = net_if_get_device(iface);
+	const struct adin2111_port_config *cfg;
+	const struct device *adin;
+	const struct adin2111_config *adin2111_cfg;
+	struct eth_bridge_fdb_entry *entry = (struct eth_bridge_fdb_entry *)cb->info;
+	uint16_t other_port;
+	int ret;
+
+	/* Only handle events for interfaces that belong to an ADIN2111 */
+	if (port_dev->api != &adin2111_port_api) {
+		return;
+	}
+
+	cfg = port_dev->config;
+	adin = cfg->adin;
+	adin2111_cfg = adin->config;
+
+	if (adin2111_cfg->id == ADIN1110_MAC) {
+		return;
+	}
+
+	/* Determine the other port index */
+	other_port = (cfg->port_idx == 0) ? 1 : 0;
+
+	(void)eth_adin2111_lock(adin, K_FOREVER);
+
+	if (mgmt_event == NET_EVENT_ETHERNET_FDB_ADD) {
+		/* Check if filter already exists */
+		ret = eth_adin2111_find_filter(adin, entry->mac.addr, other_port);
+		if (ret >= 0) {
+			goto out;
+		}
+
+		/* Find an empty filter slot */
+		int slot = -ENOSPC;
+		uint32_t reg;
+
+		for (int i = ADIN2111_FILTER_FIRST_SLOT; i < ADIN2111_FILTER_SLOTS; i++) {
+			ret = eth_adin2111_reg_read(adin,
+						    ADIN2111_ADDR_FILT_UPR + (i << 1),
+						    &reg);
+			if (ret < 0) {
+				goto out;
+			}
+			if (reg == 0) {
+				slot = i;
+				break;
+			}
+		}
+
+		if (slot < 0) {
+			LOG_WRN("No free filter slots, software bridge will handle forwarding");
+			goto out;
+		}
+
+		/* Program the other port: frames arriving there
+		 * for this MAC should be forwarded internally
+		 */
+		uint32_t rules = (other_port == 0 ? ADIN2111_ADDR_APPLY2PORT1
+						  : ADIN2111_ADDR_APPLY2PORT2)
+				 | ADIN2111_ADDR_TO_OTHER_PORT;
+
+		ret = adin2111_write_filter_address(adin, entry->mac.addr, NULL,
+						    rules, slot);
+		if (ret < 0) {
+			LOG_ERR("Failed to write filter at slot %d: %d", slot, ret);
+		}
+	} else if (mgmt_event == NET_EVENT_ETHERNET_FDB_DEL) {
+		ret = eth_adin2111_clear_mac_filter(adin, entry->mac.addr,
+						    other_port);
+	}
+
+out:
+	eth_adin2111_unlock(adin);
+}
+
 static void adin2111_port_iface_init(struct net_if *iface)
 {
 	const struct device *dev = net_if_get_device(iface);
@@ -1204,6 +1288,11 @@ static void adin2111_port_iface_init(struct net_if *iface)
 			LOG_ERR("Failed to write CONFIG0 SYNC, %d", ret);
 			return;
 		}
+
+		net_mgmt_init_event_callback(&fdb_cb, adin2111_fdb_event_handler,
+					     NET_EVENT_ETHERNET_FDB_ADD |
+					     NET_EVENT_ETHERNET_FDB_DEL);
+		net_mgmt_add_event_callback(&fdb_cb);
 
 		/* all ifaces are done, start INT processing */
 		k_thread_create(&ctx->rx_thread, ctx->rx_thread_stack,
