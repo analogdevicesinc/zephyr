@@ -47,6 +47,13 @@ config NET_ETHERNET_BRIDGE_FDB
 	help
 	  Enables FDB (Forwarding database) table support.
 
+config NET_ETHERNET_BRIDGE_ALLOW_TX
+	bool "Allow independent TX/RX on bridged interfaces (dynamic forwarding)"
+	help
+	  When enabled, bridged Ethernet interfaces can independently send and
+	  receive data through their own IP stack, while still forwarding
+	  traffic through the bridge to other ports.
+
 config NET_ETHERNET_BRIDGE_FDB_AGING_TIME
 	int "FDB aging time in seconds"
 	depends on NET_ETHERNET_BRIDGE_FDB

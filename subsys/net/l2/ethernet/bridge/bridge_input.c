@@ -135,6 +135,9 @@ enum net_verdict eth_bridge_input_process(struct net_if *iface, struct net_pkt *
 	struct net_eth_addr *bridge_addr =
 		(struct net_eth_addr *)(net_if_get_link_addr(bridge)->addr);
 	enum net_verdict verdict = NET_DROP;
+#if defined(CONFIG_NET_ETHERNET_BRIDGE_ALLOW_TX)
+	struct eth_bridge_iface_context *br_ctx = net_if_get_device(bridge)->data;
+#endif
 
 	/* Learn source MAC from incoming packet */
 #if defined(CONFIG_NET_ETHERNET_BRIDGE_FDB)
@@ -151,7 +154,12 @@ enum net_verdict eth_bridge_input_process(struct net_if *iface, struct net_pkt *
 	if (eth_bridge_fdb_forward(bridge, iface, pkt)) {
 		LOG_DBG("FDB handled forwarding pkt %p from iface %p to bridge %p",
 			pkt, iface, bridge);
-			return NET_DROP;
+#if defined(CONFIG_NET_ETHERNET_BRIDGE_ALLOW_TX)
+		if (br_ctx->allow_tx) {
+			return NET_CONTINUE;
+		}
+#endif
+		return NET_DROP;
 	}
 #endif
 
@@ -171,6 +179,12 @@ enum net_verdict eth_bridge_input_process(struct net_if *iface, struct net_pkt *
 				pkt, iface, bridge);
 		}
 
+#if defined(CONFIG_NET_ETHERNET_BRIDGE_ALLOW_TX)
+		if (br_ctx->allow_tx) {
+			return NET_CONTINUE;
+		}
+#endif
+
 		/* Check if the packet should also be handled locally */
 		verdict = eth_bridge_handle_locally(bridge, iface, pkt);
 		if (verdict == NET_DROP) {
@@ -189,7 +203,14 @@ enum net_verdict eth_bridge_input_process(struct net_if *iface, struct net_pkt *
 	} else {
 		/* Packet not meant for us, but forward it to other interfaces */
 		eth_bridge_forward(bridge, iface, pkt);
-		/* Always drop forwarded pkt for original iface */
+
+#if defined(CONFIG_NET_ETHERNET_BRIDGE_ALLOW_TX)
+		if (br_ctx->allow_tx) {
+			return NET_CONTINUE;
+		}
+#endif
+
+		/* Drop forwarded pkt for original iface */
 		NET_DBG("DROP: unicast to other address");
 		return NET_DROP;
 	}
