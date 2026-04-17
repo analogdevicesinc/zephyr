@@ -417,6 +417,273 @@ static void test_recv_with_bridge_fdb(void)
 	check_free_packet_count();
 }
 
+static void _recv_data_broadcast(struct net_if *iface)
+{
+	struct net_pkt *pkt;
+	struct net_eth_hdr eth_hdr;
+	static uint8_t data[] = { 't', 'e', 's', 't', '\0' };
+	int ret;
+
+	pkt = net_pkt_rx_alloc_with_buffer(iface, sizeof(eth_hdr) + sizeof(data),
+					   NET_AF_UNSPEC, 0, K_FOREVER);
+	zassert_not_null(pkt, "");
+
+	/* Broadcast destination */
+	memset(eth_hdr.dst.addr, 0xff, sizeof(eth_hdr.dst.addr));
+
+	eth_hdr.src.addr[0] = 0xa2;
+	eth_hdr.src.addr[1] = 0x11;
+	eth_hdr.src.addr[2] = 0x22;
+	eth_hdr.src.addr[3] = net_if_get_by_iface(iface);
+	eth_hdr.src.addr[4] = 0x77;
+	eth_hdr.src.addr[5] = 0x88;
+
+	eth_hdr.type = net_htons(NET_ETH_PTYPE_ALL);
+
+	ret = net_pkt_write(pkt, &eth_hdr, sizeof(eth_hdr));
+	zassert_equal(ret, 0, "");
+
+	ret = net_pkt_write(pkt, data, sizeof(data));
+	zassert_equal(ret, 0, "");
+
+	DBG("[%d] Fake recv broadcast pkt %p\n", net_if_get_by_iface(iface), pkt);
+	ret = net_recv_data(iface, pkt);
+	zassert_equal(ret, 0, "");
+}
+
+/*
+ * Simulate a packet reception with specific src and dst MACs
+ */
+static void _recv_data_with_macs(struct net_if *iface,
+				 struct net_eth_addr *src,
+				 struct net_eth_addr *dst)
+{
+	struct net_pkt *pkt;
+	struct net_eth_hdr eth_hdr;
+	static uint8_t data[] = { 't', 'e', 's', 't', '\0' };
+	int ret;
+
+	pkt = net_pkt_rx_alloc_with_buffer(iface, sizeof(eth_hdr) + sizeof(data),
+					   NET_AF_UNSPEC, 0, K_FOREVER);
+	zassert_not_null(pkt, "");
+
+	memcpy(&eth_hdr.dst, dst, sizeof(struct net_eth_addr));
+	memcpy(&eth_hdr.src, src, sizeof(struct net_eth_addr));
+	eth_hdr.type = net_htons(NET_ETH_PTYPE_ALL);
+
+	ret = net_pkt_write(pkt, &eth_hdr, sizeof(eth_hdr));
+	zassert_equal(ret, 0, "");
+
+	ret = net_pkt_write(pkt, data, sizeof(data));
+	zassert_equal(ret, 0, "");
+
+	DBG("[%d] Fake recv pkt %p (src %02x:%02x, dst %02x:%02x)\n",
+	    net_if_get_by_iface(iface), pkt,
+	    src->addr[4], src->addr[5],
+	    dst->addr[4], dst->addr[5]);
+	ret = net_recv_data(iface, pkt);
+	zassert_equal(ret, 0, "");
+}
+
+struct fdb_lookup_data {
+	struct net_eth_addr *mac;
+	struct net_if *iface;
+	uint8_t flags;
+	bool found;
+};
+
+static void fdb_lookup_cb(struct eth_bridge_fdb_entry *entry, void *user_data)
+{
+	struct fdb_lookup_data *data = user_data;
+
+	if (memcmp(&entry->mac, data->mac, sizeof(struct net_eth_addr)) == 0) {
+		data->iface = entry->iface;
+		data->flags = entry->flags;
+		data->found = true;
+	}
+}
+
+static void test_recv_with_bridge_fdb_dynamic(void)
+{
+	struct net_eth_addr src_mac = {
+		.addr = {0xa2, 0xdd, 0xee, 0xff, 0x11, 0x22}
+	};
+	struct net_eth_addr dst_mac_unknown = {
+		.addr = {0xb2, 0x99, 0x88, 0x77, 0x66, 0x55}
+	};
+	struct fdb_lookup_data lookup = {0};
+
+	/* First, delete the static FDB entry from the previous test so it
+	 * doesn't interfere with forwarding.
+	 */
+	struct net_eth_addr static_mac;
+	uint8_t iface0_index = net_if_get_by_iface(fake_iface[0]);
+
+	static_mac.addr[0] = 0xb2;
+	static_mac.addr[1] = 0x11;
+	static_mac.addr[2] = 0x22;
+	static_mac.addr[3] = 0x33;
+	static_mac.addr[4] = iface0_index;
+	static_mac.addr[5] = 0x55;
+	(void)eth_bridge_fdb_del(&static_mac, fake_iface[1]);
+
+	/*
+	 * Step 1: Send a packet on fake_iface[0] with a known source MAC.
+	 * This should cause the bridge to learn src_mac -> fake_iface[0].
+	 */
+	_recv_data_with_macs(fake_iface[0], &src_mac, &dst_mac_unknown);
+
+	k_sleep(K_MSEC(100));
+
+	/* Clean up forwarded packets from the unknown-dst flood */
+	for (int i = 0; i < 3; i++) {
+		if (eth_fake_data[i].sent_pkt != NULL) {
+			net_pkt_unref(eth_fake_data[i].sent_pkt);
+			eth_fake_data[i].sent_pkt = NULL;
+		}
+	}
+
+	/*
+	 * Step 2: Verify the FDB now contains a DYNAMIC entry for src_mac
+	 * pointing to fake_iface[0].
+	 */
+	lookup.mac = &src_mac;
+	lookup.found = false;
+	eth_bridge_fdb_foreach(fdb_lookup_cb, &lookup);
+
+	zassert_true(lookup.found, "Dynamic FDB entry not found for src_mac");
+	zassert_equal(lookup.iface, fake_iface[0],
+		      "Dynamic entry points to wrong interface");
+	zassert_equal(lookup.flags, ETHERNET_BRIDGE_FDB_FLAG_DYNAMIC,
+		      "Entry should be dynamic");
+
+	/*
+	 * Step 3: Send a packet on fake_iface[1] with src_mac as the
+	 * destination. The FDB should forward it only to fake_iface[0].
+	 */
+	struct net_eth_addr other_src = {
+		.addr = {0xa2, 0xcc, 0xcc, 0xcc, 0xcc, 0xcc}
+	};
+
+	_recv_data_with_macs(fake_iface[1], &other_src, &src_mac);
+
+	k_sleep(K_MSEC(100));
+
+	/*
+	 * Step 4: Verify forwarding: fake_iface[0] should have received
+	 * the packet, but fake_iface[2] should NOT (no flooding).
+	 */
+	zassert_not_null(eth_fake_data[0].sent_pkt,
+			 "Packet should be forwarded to fake_iface[0]");
+	zassert_is_null(eth_fake_data[2].sent_pkt,
+			"Packet should NOT be flooded to fake_iface[2]");
+
+	/* fake_iface[1] is the source, so it should not receive */
+	zassert_is_null(eth_fake_data[1].sent_pkt,
+			"Packet should NOT be sent back to source");
+
+	net_pkt_unref(eth_fake_data[0].sent_pkt);
+	eth_fake_data[0].sent_pkt = NULL;
+
+	/*
+	 * Step 5: Verify static takes precedence. Add a static entry for
+	 * src_mac pointing to fake_iface[2], and verify it overwrites
+	 * the dynamic one.
+	 */
+	int ret = eth_bridge_fdb_add(&src_mac, fake_iface[2]);
+
+	zassert_equal(ret, 0, "Failed to add static FDB entry");
+
+	lookup.found = false;
+	eth_bridge_fdb_foreach(fdb_lookup_cb, &lookup);
+
+	zassert_true(lookup.found, "FDB entry not found after static add");
+	zassert_equal(lookup.flags, ETHERNET_BRIDGE_FDB_FLAG_STATIC,
+		      "Entry should now be static");
+	zassert_equal(lookup.iface, fake_iface[2],
+		      "Static entry should point to fake_iface[2]");
+
+	/* Clean up the static entry */
+	(void)eth_bridge_fdb_del(&src_mac, fake_iface[2]);
+
+	/* Clean up any remaining dynamic entries from learning */
+	(void)eth_bridge_fdb_del(&other_src, fake_iface[1]);
+
+	check_free_packet_count();
+}
+
+static void test_recv_with_bridge_allow_tx(void)
+{
+	int i, j, ret;
+
+	/* Enable allow_tx (dynamic forwarding) */
+	ret = eth_bridge_set_allow_tx(bridge, true);
+	zassert_equal(ret, 0, "");
+	zassert_true(eth_bridge_get_allow_tx(bridge), "");
+
+	/*
+	 * Test unicast with allow_tx: packets should be forwarded to other
+	 * bridge ports AND continue processing on the original interface
+	 * (returned as NET_CONTINUE). Since the destination MAC doesn't match
+	 * any individual interface MAC, the ethernet layer will drop them
+	 * after the bridge processes them. But the bridge forwarding should
+	 * still work.
+	 */
+	for (i = 0; i < 3; i++) {
+		_recv_data(fake_iface[i]);
+
+		k_sleep(K_MSEC(100));
+
+		/* Packets should still be forwarded to other bridge ports */
+		for (j = 0; j < 3; j += 2) {
+			struct net_pkt *pkt = eth_fake_data[j].sent_pkt;
+
+			if (eth_fake_data[j].iface == fake_iface[i]) {
+				zassert_is_null(pkt, "");
+				continue;
+			}
+
+			eth_fake_data[j].sent_pkt = NULL;
+			zassert_not_null(pkt, "");
+
+			net_pkt_unref(pkt);
+		}
+	}
+
+	/*
+	 * Test broadcast with allow_tx: packets should be forwarded to other
+	 * bridge ports. With allow_tx, broadcast is handled on the original
+	 * interface (NET_CONTINUE) instead of the bridge interface.
+	 */
+	for (i = 0; i < 3; i++) {
+		_recv_data_broadcast(fake_iface[i]);
+
+		k_sleep(K_MSEC(100));
+
+		/* Broadcast should be forwarded to other bridge ports */
+		for (j = 0; j < 3; j += 2) {
+			struct net_pkt *pkt = eth_fake_data[j].sent_pkt;
+
+			if (eth_fake_data[j].iface == fake_iface[i]) {
+				zassert_is_null(pkt, "");
+				continue;
+			}
+
+			eth_fake_data[j].sent_pkt = NULL;
+			zassert_not_null(pkt, "");
+
+			net_pkt_unref(pkt);
+		}
+	}
+
+	/* Disable allow_tx */
+	ret = eth_bridge_set_allow_tx(bridge, false);
+	zassert_equal(ret, 0, "");
+	zassert_false(eth_bridge_get_allow_tx(bridge), "");
+
+	check_free_packet_count();
+}
+
 static void test_recv_after_bridging(void)
 {
 	int ret;
@@ -461,6 +728,10 @@ ZTEST(net_eth_bridge, test_net_eth_bridge)
 	test_setup_bridge();
 	test_recv_with_bridge();
 	test_recv_with_bridge_fdb();
+	DBG("With dynamic FDB learning\n");
+	test_recv_with_bridge_fdb_dynamic();
+	DBG("With allow_tx (dynamic forwarding)\n");
+	test_recv_with_bridge_allow_tx();
 	DBG("After bridging\n");
 	test_recv_after_bridging();
 }
