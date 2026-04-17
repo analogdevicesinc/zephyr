@@ -44,6 +44,8 @@ struct eth_bridge_fdb_entry {
 	struct net_if *iface;
 	/** Entry flags */
 	uint8_t flags;
+	/** Timestamp of last seen packet (k_uptime_get()) for aging */
+	int64_t last_seen;
 	/** Linked list node */
 	sys_snode_t node;
 };
@@ -81,6 +83,20 @@ int eth_bridge_fdb_del_iface(struct net_if *iface);
  * @param user_data User-defined data passed from the foreach function
  */
 typedef void (*eth_bridge_fdb_entry_cb_t)(struct eth_bridge_fdb_entry *entry, void *user_data);
+
+/**
+ * @brief Learn a source MAC address on a given interface (dynamic learning)
+ *
+ * Associates the given MAC address with the interface. If the MAC already
+ * exists as a static entry, it is not modified. If it exists as a dynamic
+ * entry, the interface and timestamp are updated. Multicast and broadcast
+ * addresses are ignored.
+ *
+ * @param mac Source MAC address to learn
+ * @param iface Interface the packet was received on
+ * @return 0 on success, negative errno on failure
+ */
+int eth_bridge_fdb_learn(struct net_eth_addr *mac, struct net_if *iface);
 
 /**
  * @brief Iterate over all entries in the FDB table
