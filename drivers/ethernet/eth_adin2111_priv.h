@@ -13,6 +13,7 @@
 #include <zephyr/drivers/spi.h>
 #include <zephyr/net/net_if.h>
 #include <ethernet/eth_stats.h>
+#include <zephyr/net/ethernet_mgmt.h>
 
 /* SPI frequency maximum, based on clock cycle time */
 #define ADIN2111_SPI_MAX_FREQUENCY		25000000U
