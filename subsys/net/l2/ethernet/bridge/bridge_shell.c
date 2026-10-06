@@ -230,6 +230,11 @@ static int cmd_bridge_fdb_add(const struct shell *sh, size_t argc, char *argv[])
 		return -EINVAL;
 	}
 
+	if (net_if_l2(iface) != &NET_L2_GET_NAME(ETHERNET)) {
+		shell_error(sh, "Interface %d is not Ethernet", iface_idx);
+		return -EINVAL;
+	}
+
 	ret = eth_bridge_fdb_add(&mac, iface);
 	if (ret != 0) {
 		return ret;
@@ -267,6 +272,11 @@ static int cmd_bridge_fdb_del(const struct shell *sh, size_t argc, char *argv[])
 	iface = net_if_get_by_index(iface_idx);
 	if (iface == NULL) {
 		shell_error(sh, "Invalid interface: %d", iface_idx);
+		return -EINVAL;
+	}
+
+	if (net_if_l2(iface) != &NET_L2_GET_NAME(ETHERNET)) {
+		shell_error(sh, "Interface %d is not Ethernet", iface_idx);
 		return -EINVAL;
 	}
 
