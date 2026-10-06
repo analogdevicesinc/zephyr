@@ -87,7 +87,22 @@ int eth_bridge_get_index(struct net_if *br)
 
 struct net_if *eth_bridge_get_by_index(int index)
 {
-	return net_if_get_by_index(index);
+	struct net_if *iface = net_if_get_by_index(index);
+
+	if (iface == NULL) {
+		return NULL;
+	}
+
+	/* Make sure the interface is actually a bridge. Otherwise callers
+	 * (e.g. the shell) would treat an arbitrary device's data as an
+	 * eth_bridge_iface_context and crash.
+	 */
+	if (net_if_l2(iface) != &NET_L2_GET_NAME(VIRTUAL) ||
+	    (net_virtual_get_iface_capabilities(iface) & VIRTUAL_INTERFACE_BRIDGE) == 0) {
+		return NULL;
+	}
+
+	return iface;
 }
 
 int eth_bridge_iface_add(struct net_if *br, struct net_if *iface)
