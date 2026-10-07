@@ -203,6 +203,18 @@ feather_i2c: &i2c0 {
 	drive-strength = <1>;
 };
 
+&spi2_mosi_p0_25 {
+	power-source = <MAX32_VSEL_VDDIOH>;
+};
+
+&spi2_miso_p0_26 {
+	power-source = <MAX32_VSEL_VDDIOH>;
+};
+
+&spi2_sck_p0_27 {
+	power-source = <MAX32_VSEL_VDDIOH>;
+};
+
 zephyr_udc0: &usbhs {
 	status = "okay";
 };
