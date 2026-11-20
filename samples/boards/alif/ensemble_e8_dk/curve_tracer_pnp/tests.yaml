@@ -1,0 +1,14 @@
+sample:
+  name: ADALM-LSMSPG PNP curve tracer on Ensemble E8 DK
+  description: PNP curve tracer using the AD5593R over mikroBUS I2C
+tests:
+  sample.boards.alif.ensemble_e8_dk.curve_tracer_pnp:
+    platform_allow:
+      - ensemble_e8_dk/ae822fa0e5597ls0/rtss_hp
+    integration_platforms:
+      - ensemble_e8_dk/ae822fa0e5597ls0/rtss_hp
+    build_only: true
+    tags:
+      - adc
+      - dac
+      - shell

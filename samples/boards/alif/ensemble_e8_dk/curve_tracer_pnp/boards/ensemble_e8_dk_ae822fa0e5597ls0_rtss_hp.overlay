@@ -1,0 +1,88 @@
+/*
+ * Copyright (c) 2026 Analog Devices, Inc
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include <zephyr/dt-bindings/adc/adc.h>
+
+/*
+ * ADALM-LSMSPG wired to the mikroBUS socket with jumper wires (SDA, SCL,
+ * 3V3, GND only). The AD5593R is the same node as in the adi_lsmspg shield.
+ */
+&mikrobus_i2c {
+	status = "okay";
+
+	ad5593@10 {
+		compatible = "adi,ad559x";
+		reg = <0x10>;
+
+		ad5593_adc: ad5593_adc {
+			compatible = "adi,ad559x-adc";
+			#io-channel-cells = <1>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			channel@0 {
+				reg = <0>;
+				zephyr,gain = "ADC_GAIN_1";
+				zephyr,reference = "ADC_REF_INTERNAL";
+				zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+				zephyr,resolution = <12>;
+				zephyr,vref-mv = <2500>;
+			};
+
+			channel@1 {
+				reg = <1>;
+				zephyr,gain = "ADC_GAIN_1";
+				zephyr,reference = "ADC_REF_INTERNAL";
+				zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+				zephyr,resolution = <12>;
+				zephyr,vref-mv = <2500>;
+			};
+
+			channel@2 {
+				reg = <2>;
+				zephyr,gain = "ADC_GAIN_1";
+				zephyr,reference = "ADC_REF_INTERNAL";
+				zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+				zephyr,resolution = <12>;
+				zephyr,vref-mv = <2500>;
+			};
+		};
+
+		ad5593_dac: ad5593_dac {
+			compatible = "adi,ad559x-dac";
+			#io-channel-cells = <1>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			channel@0 {
+				reg = <0>;
+				zephyr,resolution = <12>;
+				zephyr,vref-mv = <2500>;
+			};
+
+			channel@2 {
+				reg = <2>;
+				zephyr,resolution = <12>;
+				zephyr,vref-mv = <2500>;
+			};
+
+			channel@3 {
+				reg = <3>;
+				zephyr,resolution = <12>;
+				zephyr,vref-mv = <2500>;
+			};
+		};
+	};
+};
+
+/ {
+	zephyr,user {
+		io-channels = <&ad5593_dac 3>, <&ad5593_dac 0>, <&ad5593_dac 2>,
+			      <&ad5593_adc 1>, <&ad5593_adc 2>;
+		io-channel-names = "pnp_ve_drive", "pnp_vb_drive", "pnp_vc_drive",
+				   "pnp_vc_sense", "pnp_vc_drive_meas";
+	};
+};
